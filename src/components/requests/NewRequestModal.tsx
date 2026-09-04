@@ -7,10 +7,18 @@ import {
   User, 
   Phone, 
   Clock, 
-  CheckCircle2 
+  Calendar,
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
-import { LocationRecord, RequestChangeType } from '../../types';
+import { 
+  LocationRecord, 
+  RequestChangeType, 
+  WeeklySchedule, 
+  HolidayHoursOverride 
+} from '../../types';
+import { WeeklyHoursEditor } from '../common/WeeklyHoursEditor';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -18,16 +26,29 @@ interface NewRequestModalProps {
   onClose: () => void;
 }
 
+const COMMON_HOLIDAY_PRESETS = [
+  { name: 'Thanksgiving Day', defaultClosed: true },
+  { name: 'Black Friday', defaultOpen: '06:00 AM', defaultClose: '10:00 PM', defaultClosed: false },
+  { name: 'Christmas Eve', defaultOpen: '09:00 AM', defaultClose: '06:00 PM', defaultClosed: false },
+  { name: 'Christmas Day', defaultClosed: true },
+  { name: 'New Year\'s Eve', defaultOpen: '10:00 AM', defaultClose: '06:00 PM', defaultClosed: false },
+  { name: 'New Year\'s Day', defaultOpen: '11:00 AM', defaultClose: '07:00 PM', defaultClosed: false },
+  { name: 'Memorial Day', defaultOpen: '10:00 AM', defaultClose: '08:00 PM', defaultClosed: false },
+  { name: 'Labor Day', defaultOpen: '10:00 AM', defaultClose: '08:00 PM', defaultClosed: false },
+];
+
 export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   location,
   isOpen,
   onClose,
 }) => {
-  const { locations, currentUser, submitUpdateRequest } = useDirectory();
+  const { locations, currentUser, submitUpdateRequest, hoursTemplates } = useDirectory();
 
   const [selectedLocId, setSelectedLocId] = useState(location?.id || locations[0]?.id || '');
-  const [changeType, setChangeType] = useState<RequestChangeType>('Store Manager Change');
+  const [changeType, setChangeType] = useState<RequestChangeType>('Store Hours Update');
   
+  const targetLoc = locations.find(l => l.id === (location?.id || selectedLocId));
+
   // Dynamic fields
   const [newManagerName, setNewManagerName] = useState('');
   const [newManagerPhone, setNewManagerPhone] = useState('');
@@ -37,9 +58,37 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [notes, setNotes] = useState('');
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
 
-  if (!isOpen) return null;
+  // Structured Hours Builder State (DISPATCH-012)
+  const [requestedSchedule, setRequestedSchedule] = useState<WeeklySchedule>(() => {
+    if (targetLoc?.standardHours) {
+      return JSON.parse(JSON.stringify(targetLoc.standardHours));
+    }
+    return {
+      monday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      tuesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      wednesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      thursday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      friday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      saturday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      sunday: { open: '11:00 AM', close: '07:00 PM', isClosed: false },
+    };
+  });
 
-  const targetLoc = locations.find(l => l.id === (location?.id || selectedLocId));
+  // Holiday Exception State
+  const [holidayName, setHolidayName] = useState('Thanksgiving Day');
+  const [holidayDate, setHolidayDate] = useState(new Date().toISOString().split('T')[0]);
+  const [holidayIsClosed, setHolidayIsClosed] = useState(true);
+  const [holidayOpen, setHolidayOpen] = useState('10:00 AM');
+  const [holidayClose, setHolidayClose] = useState('06:00 PM');
+
+  // Update requested schedule if target location changes
+  React.useEffect(() => {
+    if (targetLoc?.standardHours) {
+      setRequestedSchedule(JSON.parse(JSON.stringify(targetLoc.standardHours)));
+    }
+  }, [selectedLocId, location]);
+
+  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,7 +97,26 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     const requestedChanges: Record<string, any> = {};
     const currentSnapshot: Record<string, any> = {};
 
-    if (changeType === 'Store Manager Change') {
+    if (changeType === 'Store Hours Update') {
+      currentSnapshot.standardHours = targetLoc.standardHours;
+      requestedChanges.standardHours = requestedSchedule;
+    } else if (changeType === 'Holiday / Special Hours') {
+      const newException: HolidayHoursOverride = {
+        id: `hol-${Date.now().toString(36)}`,
+        holidayName,
+        date: holidayDate,
+        hours: {
+          open: holidayIsClosed ? 'Closed' : holidayOpen,
+          close: holidayIsClosed ? 'Closed' : holidayClose,
+          isClosed: holidayIsClosed,
+        }
+      };
+      currentSnapshot.holidayHours = targetLoc.holidayHours || [];
+      requestedChanges.holidayHours = [
+        ...(targetLoc.holidayHours || []).filter(h => h.date !== holidayDate),
+        newException
+      ];
+    } else if (changeType === 'Store Manager Change') {
       currentSnapshot.storeManagerName = targetLoc.storeManagerName || '';
       currentSnapshot.storeManagerPhone = targetLoc.storeManagerPhone || '';
       requestedChanges.storeManagerName = newManagerName;
@@ -75,7 +143,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       changeType,
       currentSnapshot,
       requestedChanges,
-      notes,
+      notes: notes.trim() || `Proposed structured update for ${changeType}`,
       submittedBy: {
         name: currentUser.displayName,
         email: currentUser.email,
@@ -90,18 +158,27 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     }, 1500);
   };
 
+  const isHoursChange = changeType === 'Store Hours Update' || changeType === 'Holiday / Special Hours';
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 animate-fadeIn">
       <div 
-        className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col"
+        className={`bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-2xl w-full ${
+          isHoursChange ? 'max-w-3xl' : 'max-w-lg'
+        } overflow-hidden flex flex-col max-h-[90vh]`}
         onClick={e => e.stopPropagation()}
       >
-        <div className="p-4 bg-neutral-900 text-white flex items-center justify-between">
+        <div className="p-4 bg-neutral-900 text-white flex items-center justify-between border-b border-neutral-800">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-400" />
-            <h3 className="font-bold text-sm sm:text-base">
-              Request Directory Update or Correction
-            </h3>
+            <div>
+              <h3 className="font-bold text-sm sm:text-base">
+                Request Directory Update or Correction
+              </h3>
+              <p className="text-[11px] text-neutral-400">
+                Data Governance & Authoritative Change Queue (DISPATCH-012)
+              </p>
+            </div>
           </div>
           <button onClick={onClose} className="p-1 text-neutral-400 hover:text-white rounded">
             <X className="w-5 h-5" />
@@ -119,44 +196,157 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
             </p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 text-xs">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 text-xs overflow-y-auto flex-1">
             {/* Target Location Selector */}
-            <div>
-              <label className="block text-neutral-500 mb-1 font-semibold">Select Store / Location *</label>
-              <select
-                value={location?.id || selectedLocId}
-                disabled={!!location}
-                onChange={e => setSelectedLocId(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100 font-medium"
-              >
-                {locations.map(l => (
-                  <option key={l.id} value={l.id}>
-                    Store #{l.storeNumber} - {l.name} ({l.city}, {l.state})
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-neutral-500 mb-1 font-semibold">Select Store / Location *</label>
+                <select
+                  value={location?.id || selectedLocId}
+                  disabled={!!location}
+                  onChange={e => setSelectedLocId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100 font-medium"
+                >
+                  {locations.map(l => (
+                    <option key={l.id} value={l.id}>
+                      Store #{l.storeNumber} - {l.name} ({l.city}, {l.state})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Change Type */}
+              <div>
+                <label className="block text-neutral-500 mb-1 font-semibold">Change Type *</label>
+                <select
+                  value={changeType}
+                  onChange={e => setChangeType(e.target.value as RequestChangeType)}
+                  className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100 font-semibold"
+                >
+                  <option value="Store Hours Update">Store Hours Change (7-Day Visual Builder)</option>
+                  <option value="Holiday / Special Hours">Holiday or Special Event Exception</option>
+                  <option value="Store Manager Change">Store Manager Change / Promotion</option>
+                  <option value="Assistant Manager Change">Assistant Manager / Keyholder Update</option>
+                  <option value="Phone Number Correction">Store Phone Number Correction</option>
+                  <option value="Address Correction">Store Address / Suite Correction</option>
+                  <option value="Operational Status Change">Operational Status (Remodel, Closure, Relocation)</option>
+                  <option value="New Location Proposal">New Store / Location Addition</option>
+                </select>
+              </div>
             </div>
 
-            {/* Change Type */}
-            <div>
-              <label className="block text-neutral-500 mb-1 font-semibold">Change Type *</label>
-              <select
-                value={changeType}
-                onChange={e => setChangeType(e.target.value as RequestChangeType)}
-                className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100 font-medium"
-              >
-                <option value="Store Manager Change">Store Manager Change / Promotion</option>
-                <option value="Assistant Manager Change">Assistant Manager / Keyholder Update</option>
-                <option value="Phone Number Correction">Store Phone Number Correction</option>
-                <option value="Address Correction">Store Address / Suite Correction</option>
-                <option value="Store Hours Update">Store Hours Change</option>
-                <option value="Holiday / Special Hours">Holiday or Special Event Hours</option>
-                <option value="Operational Status Change">Operational Status (Remodel, Closure, Relocation)</option>
-                <option value="New Location Proposal">New Store / Location Addition</option>
-              </select>
-            </div>
+            {/* Contextual Visual Hours Builder (DISPATCH-012 Requirement 2) */}
+            {changeType === 'Store Hours Update' && (
+              <div className="space-y-2">
+                <div className="p-2.5 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 rounded-lg flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
+                    <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Configure proposed 7-day schedule for Store #{targetLoc?.storeNumber}</span>
+                  </div>
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-mono">Structured Payload</span>
+                </div>
 
-            {/* Contextual Input Fields based on Type */}
+                <WeeklyHoursEditor
+                  value={requestedSchedule}
+                  onChange={setRequestedSchedule}
+                  templates={hoursTemplates}
+                />
+              </div>
+            )}
+
+            {/* Holiday / Special Hours Builder (DISPATCH-012 Requirement 2) */}
+            {changeType === 'Holiday / Special Hours' && (
+              <div className="p-3.5 bg-neutral-50 dark:bg-neutral-800/40 rounded-lg border border-neutral-200 dark:border-neutral-700 space-y-3">
+                <div className="font-bold text-neutral-900 dark:text-neutral-100 flex items-center justify-between text-xs">
+                  <span className="uppercase">Proposed Holiday Exception</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-neutral-400">Preset:</span>
+                    <select
+                      onChange={e => {
+                        const p = COMMON_HOLIDAY_PRESETS.find(x => x.name === e.target.value);
+                        if (p) {
+                          setHolidayName(p.name);
+                          setHolidayIsClosed(p.defaultClosed);
+                          if (p.defaultOpen) setHolidayOpen(p.defaultOpen);
+                          if (p.defaultClose) setHolidayClose(p.defaultClose);
+                        }
+                      }}
+                      className="px-2 py-0.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-[10px]"
+                    >
+                      {COMMON_HOLIDAY_PRESETS.map(p => (
+                        <option key={p.name} value={p.name}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-neutral-500 mb-1">Holiday / Exception Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={holidayName}
+                      onChange={e => setHolidayName(e.target.value)}
+                      placeholder="e.g. Thanksgiving Day"
+                      className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-neutral-500 mb-1">Exception Date (YYYY-MM-DD)</label>
+                    <input
+                      type="date"
+                      required
+                      value={holidayDate}
+                      onChange={e => setHolidayDate(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-end pb-1">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={holidayIsClosed}
+                        onChange={e => setHolidayIsClosed(e.target.checked)}
+                        className="rounded border-neutral-300 dark:border-neutral-700 text-red-600 focus:ring-red-500 w-4 h-4"
+                      />
+                      <span className={holidayIsClosed ? 'font-bold text-red-600 dark:text-red-400' : 'text-neutral-600 dark:text-neutral-300'}>
+                        Closed All Day
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {!holidayIsClosed && (
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                    <div>
+                      <label className="block text-neutral-500 mb-1">Proposed Open Time</label>
+                      <input
+                        type="text"
+                        value={holidayOpen}
+                        onChange={e => setHolidayOpen(e.target.value)}
+                        placeholder="06:00 AM"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-neutral-500 mb-1">Proposed Close Time</label>
+                      <input
+                        type="text"
+                        value={holidayClose}
+                        onChange={e => setHolidayClose(e.target.value)}
+                        placeholder="10:00 PM"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Store Manager Change Fields */}
             {changeType === 'Store Manager Change' && (
               <div className="p-3 bg-neutral-50 dark:bg-neutral-800/40 rounded-lg border border-neutral-200 dark:border-neutral-700 space-y-3">
                 <div className="text-[11px] text-neutral-500">
@@ -241,17 +431,17 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               </div>
             )}
 
-            {/* Explanation / Reason Notes */}
+            {/* Notes / Business Justification */}
             <div>
               <label className="block text-neutral-500 mb-1 font-semibold">
-                Reason / Details & Effective Date *
+                {isHoursChange ? 'Additional Notes / Effective Start Date (Optional)' : 'Reason / Details & Effective Date *'}
               </label>
               <textarea
-                required
-                rows={3}
+                required={!isHoursChange}
+                rows={2}
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                placeholder="Explain the background, effective start date, authorization details..."
+                placeholder={isHoursChange ? 'e.g. Approved by Regional VP for Q4 Holiday Schedule...' : 'Explain the background, effective start date, authorization details...'}
                 className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100"
               />
             </div>

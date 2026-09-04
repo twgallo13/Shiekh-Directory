@@ -17,12 +17,17 @@ import {
   AlertTriangle,
   ExternalLink,
   ChevronDown,
-  Lock
+  Lock,
+  CheckSquare,
+  Square,
+  Sparkles,
+  Zap
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
+import { BulkUpdateModal } from './BulkUpdateModal';
 
 interface LocationsViewProps {
   onSelectLocation: (location: LocationRecord) => void;
@@ -47,6 +52,10 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'district-groups'>('table');
+
+  // Bulk Selection State (DISPATCH-012)
+  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
 
   const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const isViewer = currentUser.role === 'Viewer';
@@ -84,6 +93,23 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
       return matchesSearch && matchesDistrict && matchesState && matchesStatus && matchesType;
     });
   }, [locations, searchTerm, selectedDistrict, selectedState, selectedStatus, selectedType]);
+
+  // Bulk selection helpers
+  const handleToggleSelect = (id: string) => {
+    setSelectedLocationIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllFiltered = () => {
+    if (selectedLocationIds.length === filteredLocations.length && filteredLocations.length > 0) {
+      setSelectedLocationIds([]);
+    } else {
+      setSelectedLocationIds(filteredLocations.map(l => l.id));
+    }
+  };
+
+  const isAllFilteredSelected = filteredLocations.length > 0 && selectedLocationIds.length === filteredLocations.length;
 
   // Export CSV matching exact Blueprint Specification Section 13
   const handleExportCsv = () => {
@@ -169,6 +195,27 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {canEdit && (
+            <button
+              onClick={() => {
+                if (selectedLocationIds.length === 0) {
+                  // If none selected, select all filtered and open
+                  setSelectedLocationIds(filteredLocations.map(l => l.id));
+                }
+                setIsBulkModalOpen(true);
+              }}
+              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:hover:bg-white text-white dark:text-neutral-900 rounded-md text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400 dark:text-amber-600" />
+              <span>Bulk Update Hours & Status</span>
+              {selectedLocationIds.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-red-600 text-white rounded-full text-[10px]">
+                  {selectedLocationIds.length}
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             onClick={onNavigateToPdf}
             className="px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
@@ -196,6 +243,44 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Floating Selection Banner when items are selected */}
+      {selectedLocationIds.length > 0 && (
+        <div className="p-3 bg-neutral-900 text-white rounded-xl shadow-lg flex items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="font-bold text-xs">
+              {selectedLocationIds.length} of {filteredLocations.length} stores selected
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSelectAllFiltered}
+              className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded text-xs font-medium"
+            >
+              {isAllFilteredSelected ? 'Deselect All' : `Select All (${filteredLocations.length})`}
+            </button>
+
+            {canEdit && (
+              <button
+                onClick={() => setIsBulkModalOpen(true)}
+                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold flex items-center gap-1.5 shadow-xs"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Configure Bulk Hours & Holiday Exception</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setSelectedLocationIds([])}
+              className="text-neutral-400 hover:text-white text-xs px-1"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-3">
@@ -258,10 +343,10 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
           </div>
         </div>
 
-        {/* Filter Dropdowns */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800 text-xs">
-          <div className="flex items-center gap-1 text-neutral-400 font-medium">
-            <Filter className="w-3 h-3" />
+        {/* Filter Row */}
+        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-neutral-100 dark:border-neutral-800">
+          <div className="flex items-center gap-1 text-xs text-neutral-500 font-semibold mr-1">
+            <Filter className="w-3.5 h-3.5" />
             <span>Filters:</span>
           </div>
 
@@ -269,13 +354,12 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
           <select
             value={selectedDistrict}
             onChange={e => setSelectedDistrict(e.target.value)}
-            className="px-2 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs text-neutral-700 dark:text-neutral-300"
+            className="px-2 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs text-neutral-700 dark:text-neutral-300 font-medium"
           >
-            <option value="all">All Districts</option>
+            <option value="all">All Districts (Enterprise-Wide)</option>
             <option value="rudy">District 1 · Rudy Calderon (NorCal / NV / WA / OR / TX)</option>
-            <option value="david">District 2 · David Castro (Central Valley & LA)</option>
-            <option value="karlo">District 3 · Karlo Llovido (Inland Empire / SD)</option>
-            <option value="Non-Retail / Corporate">Corporate / Logistics</option>
+            <option value="david">District 2 · David Castro (Central Valley / LA Central)</option>
+            <option value="karlo">District 3 · Karlo Llovido (Inland Empire / South Bay / SD)</option>
           </select>
 
           {/* State Filter */}
@@ -292,7 +376,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
             <option value="TX">Texas (TX)</option>
           </select>
 
-          {/* Operational Status Filter */}
+          {/* Status Filter */}
           <select
             value={selectedStatus}
             onChange={e => setSelectedStatus(e.target.value)}
@@ -341,6 +425,21 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-neutral-50 dark:bg-neutral-800/80 text-neutral-500 dark:text-neutral-400 font-semibold border-b border-neutral-200 dark:border-neutral-800">
+                  {/* Bulk Checkbox Header */}
+                  <th className="py-2.5 px-3 w-8">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllFiltered}
+                      className="text-neutral-400 hover:text-red-600"
+                      title={isAllFilteredSelected ? 'Deselect All' : 'Select All'}
+                    >
+                      {isAllFilteredSelected ? (
+                        <CheckSquare className="w-4 h-4 text-red-600" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                    </button>
+                  </th>
                   <th className="py-2.5 px-3">Store #</th>
                   <th className="py-2.5 px-3">Location Name & Address</th>
                   <th className="py-2.5 px-3">City / State</th>
@@ -357,13 +456,31 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                   const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
                   const isManagementOnly = loc.storeManagerPhoneVisibility === 'Internal Management Only';
                   const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
+                  const isSelected = selectedLocationIds.includes(loc.id);
 
                   return (
                     <tr
                       key={loc.id}
                       onClick={() => onSelectLocation(loc)}
-                      className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-colors group"
+                      className={`hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-colors group ${
+                        isSelected ? 'bg-red-50/40 dark:bg-red-950/20' : ''
+                      }`}
                     >
+                      {/* Selection Checkbox */}
+                      <td className="py-2.5 px-3" onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSelect(loc.id)}
+                          className="text-neutral-400 hover:text-red-600 mt-0.5"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-red-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </td>
+
                       <td className="py-2.5 px-3 font-bold text-neutral-900 dark:text-neutral-100">
                         <span className="px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 font-mono text-xs">
                           #{loc.storeNumber}
@@ -427,6 +544,15 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                       </td>
                       <td className="py-2.5 px-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
+                          {canEdit && (
+                            <button
+                              onClick={() => onEditLocation(loc)}
+                              className="px-2 py-1 bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 rounded font-semibold text-[11px]"
+                              title="Edit Authoritative Record & Hours"
+                            >
+                              Edit
+                            </button>
+                          )}
                           <button
                             onClick={() => onRequestCorrection(loc)}
                             className="p-1 text-neutral-400 hover:text-amber-600 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -481,21 +607,36 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                     const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
                     const isManagementOnly = loc.storeManagerPhoneVisibility === 'Internal Management Only';
                     const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
+                    const isSelected = selectedLocationIds.includes(loc.id);
 
                     return (
                       <div
-                        key={loc.id}
+                        key={`${grp.dm}-${loc.id}`}
                         onClick={() => onSelectLocation(loc)}
-                        className="p-3 bg-white dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 shadow-2xs hover:shadow-xs hover:border-red-500 cursor-pointer transition-all space-y-2"
+                        className={`p-3 bg-white dark:bg-neutral-800 rounded-lg border shadow-2xs hover:shadow-xs hover:border-red-500 cursor-pointer transition-all space-y-2 ${
+                          isSelected ? 'border-red-500 ring-2 ring-red-500/20' : 'border-neutral-200 dark:border-neutral-700'
+                        }`}
                       >
                         <div className="flex items-start justify-between">
-                          <div>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-900 text-white font-mono">
-                              #{loc.storeNumber}
-                            </span>
-                            <h4 className="font-bold text-xs text-neutral-900 dark:text-neutral-100 mt-1">
-                              {loc.name}
-                            </h4>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleToggleSelect(loc.id);
+                              }}
+                              className="text-neutral-400 hover:text-red-600"
+                            >
+                              {isSelected ? <CheckSquare className="w-4 h-4 text-red-600" /> : <Square className="w-4 h-4" />}
+                            </button>
+                            <div>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-900 text-white font-mono">
+                                #{loc.storeNumber}
+                              </span>
+                              <h4 className="font-bold text-xs text-neutral-900 dark:text-neutral-100 mt-0.5">
+                                {loc.name}
+                              </h4>
+                            </div>
                           </div>
                           <OperationalStatusBadge status={loc.operationalStatus} size="sm" />
                         </div>
@@ -528,18 +669,33 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
             const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
             const isManagementOnly = loc.storeManagerPhoneVisibility === 'Internal Management Only';
             const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
+            const isSelected = selectedLocationIds.includes(loc.id);
 
             return (
               <div
                 key={loc.id}
                 onClick={() => onSelectLocation(loc)}
-                className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:shadow-md hover:border-red-500 cursor-pointer transition-all flex flex-col justify-between"
+                className={`bg-white dark:bg-neutral-900 p-4 rounded-xl border shadow-2xs hover:shadow-md hover:border-red-500 cursor-pointer transition-all flex flex-col justify-between ${
+                  isSelected ? 'border-red-500 ring-2 ring-red-500/20' : 'border-neutral-200 dark:border-neutral-800'
+                }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="px-2 py-0.5 bg-neutral-900 text-white rounded text-xs font-bold font-mono">
-                      STORE #{loc.storeNumber}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          handleToggleSelect(loc.id);
+                        }}
+                        className="text-neutral-400 hover:text-red-600"
+                      >
+                        {isSelected ? <CheckSquare className="w-4 h-4 text-red-600" /> : <Square className="w-4 h-4" />}
+                      </button>
+                      <span className="px-2 py-0.5 bg-neutral-900 text-white rounded text-xs font-bold font-mono">
+                        STORE #{loc.storeNumber}
+                      </span>
+                    </div>
                     <OperationalStatusBadge status={loc.operationalStatus} size="sm" />
                   </div>
 
@@ -570,13 +726,34 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
                 <div className="mt-3 pt-2.5 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-xs text-neutral-400">
                   <span>ID: {loc.id}</span>
-                  <span className="text-red-600 dark:text-red-400 font-semibold hover:underline">View Record →</span>
+                  <div className="flex items-center gap-2">
+                    {canEdit && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          onEditLocation(loc);
+                        }}
+                        className="text-red-600 font-semibold hover:underline"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    <span className="text-neutral-600 dark:text-neutral-300 font-semibold hover:underline">Details →</span>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* Bulk Update Modal (DISPATCH-012) */}
+      <BulkUpdateModal
+        selectedLocationIds={selectedLocationIds}
+        isOpen={isBulkModalOpen}
+        onClose={() => setIsBulkModalOpen(false)}
+        onClearSelection={() => setSelectedLocationIds([])}
+      />
     </div>
   );
 };

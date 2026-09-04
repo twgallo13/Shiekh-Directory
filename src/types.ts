@@ -61,6 +61,18 @@ export interface HolidayHoursOverride {
   hours: DayHours;
 }
 
+export interface HoursTemplate {
+  id: string;
+  name: string;
+  description: string;
+  schedule: WeeklySchedule;
+  defaultForType?: LocationType;
+  isDefault?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
 export interface LocationNotice {
   status: OperationalStatus;
   shortDescription: string;

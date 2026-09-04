@@ -14,6 +14,10 @@ import {
   ImportValidationResult,
   LocationType,
   WeeklySchedule,
+  HoursTemplate,
+  HolidayHoursOverride,
+  SpecialHoursOverride,
+  OperationalStatus,
   AppEnvironment,
   ApiScope,
   DatabaseBackupSnapshot,
@@ -34,7 +38,8 @@ import {
   INITIAL_AUDIT_LOGS,
   INITIAL_GBP_CONFIG,
   INITIAL_GBP_LISTINGS,
-  INITIAL_GBP_LOGS
+  INITIAL_GBP_LOGS,
+  INITIAL_HOURS_TEMPLATES
 } from '../data/initialData';
 import {
   translateLocationToGbpSchema,
@@ -133,6 +138,20 @@ interface DirectoryContextType {
   verifyLocation: (id: string, verifierName: string) => void;
   verifyManagerPhone: (locationId: string) => void;
   toggleLocationPhonePrivacy: (locationId: string, visibility: ContactPrivacyLevel) => void;
+
+  // Global Hours Template Engine & Bulk Engine (DISPATCH-012)
+  hoursTemplates: HoursTemplate[];
+  addHoursTemplate: (template: Omit<HoursTemplate, 'id' | 'createdAt' | 'updatedAt'>) => HoursTemplate;
+  updateHoursTemplate: (id: string, updates: Partial<HoursTemplate>) => void;
+  deleteHoursTemplate: (id: string) => void;
+  bulkUpdateLocationsHours: (options: {
+    locationIds: string[];
+    schedule?: WeeklySchedule;
+    holidayException?: HolidayHoursOverride;
+    specialHoursException?: SpecialHoursOverride;
+    operationalStatus?: OperationalStatus;
+    noticeDescription?: string;
+  }) => Promise<{ success: boolean; updatedCount: number; error?: string }>;
   
   // People Operations
   addPerson: (person: PersonRecord) => void;
@@ -192,20 +211,79 @@ const DirectoryContext = createContext<DirectoryContextType | null>(null);
 
 const STORAGE_KEY = 'shiekh_directory_sor_db_v2';
 
+function deduplicateById<T extends { id: string }>(items: T[]): T[] {
+  const map = new Map<string, T>();
+  items.forEach(item => {
+    if (item && item.id) {
+      map.set(item.id, item);
+    }
+  });
+  return Array.from(map.values());
+}
+
+function deduplicateLocations(items: LocationRecord[]): LocationRecord[] {
+  const map = new Map<string, LocationRecord>();
+  items.forEach(item => {
+    if (item && item.id) {
+      const existing = map.get(item.id);
+      if (!existing) {
+        map.set(item.id, item);
+      } else {
+        const existingUpdated = new Date(existing.lastUpdated || 0).getTime();
+        const itemUpdated = new Date(item.lastUpdated || 0).getTime();
+        if (itemUpdated >= existingUpdated) {
+          map.set(item.id, item);
+        }
+      }
+    }
+  });
+  return Array.from(map.values());
+}
+
 export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [locations, setLocations] = useState<LocationRecord[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_locations`);
-    return saved ? JSON.parse(saved) : INITIAL_LOCATIONS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return deduplicateLocations(parsed);
+        }
+      } catch (e) {
+        console.warn('Error parsing cached locations:', e);
+      }
+    }
+    return deduplicateLocations(INITIAL_LOCATIONS);
   });
 
   const [people, setPeople] = useState<PersonRecord[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_people`);
-    return saved ? JSON.parse(saved) : INITIAL_PEOPLE;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return deduplicateById(parsed);
+        }
+      } catch (e) {
+        console.warn('Error parsing cached people:', e);
+      }
+    }
+    return deduplicateById(INITIAL_PEOPLE);
   });
 
   const [requests, setRequests] = useState<UpdateRequest[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_requests`);
-    return saved ? JSON.parse(saved) : [
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return deduplicateById(parsed);
+        }
+      } catch (e) {
+        console.warn('Error parsing cached requests:', e);
+      }
+    }
+    return [
       {
         id: 'req-001',
         targetType: 'Location',
@@ -225,12 +303,32 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_audit`);
-    return saved ? JSON.parse(saved) : INITIAL_AUDIT_LOGS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return deduplicateById(parsed);
+        }
+      } catch (e) {
+        console.warn('Error parsing cached audit logs:', e);
+      }
+    }
+    return deduplicateById(INITIAL_AUDIT_LOGS);
   });
 
   const [users, setUsers] = useState<UserAccount[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_users`);
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return deduplicateById(parsed);
+        }
+      } catch (e) {
+        console.warn('Error parsing cached users:', e);
+      }
+    }
+    return deduplicateById(INITIAL_USERS);
   });
 
   const [currentUser, setCurrentUser] = useState<UserAccount>(() => INITIAL_USERS[0]);
@@ -368,6 +466,12 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return saved ? JSON.parse(saved) : INITIAL_GBP_LOGS;
   });
 
+  // Hours Templates State (DISPATCH-012)
+  const [hoursTemplates, setHoursTemplates] = useState<HoursTemplate[]>(() => {
+    const saved = localStorage.getItem(`${STORAGE_KEY}_hours_templates`);
+    return saved ? JSON.parse(saved) : INITIAL_HOURS_TEMPLATES;
+  });
+
   // Live Cloud Backend & Firebase Auth State (Blueprint Sec 14 & 16, DISPATCH-007)
   const [firebaseConfig, setFirebaseConfigState] = useState<FirebaseConfigState>(() => {
     const stored = getStoredFirebaseConfig();
@@ -397,6 +501,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let unsubscribeAuth: (() => void) | undefined;
     let unsubLocations: (() => void) | undefined;
     let unsubRequests: (() => void) | undefined;
+    let unsubHoursTemplates: (() => void) | undefined;
 
     try {
       const auth = getFirebaseAuth();
@@ -453,8 +558,9 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const data = d.data() as LocationRecord;
             docs.push(enrichLocationWithLabels(data));
           });
-          if (docs.length > 0) {
-            setLocations(docs);
+          const uniqueLocations = deduplicateLocations(docs);
+          if (uniqueLocations.length > 0) {
+            setLocations(uniqueLocations);
             setCloudSyncStatus('synced');
             setLastCloudSyncAt(new Date().toISOString());
           }
@@ -504,9 +610,29 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (!snapshot.empty) {
           const docs: UpdateRequest[] = [];
           snapshot.forEach(d => docs.push(d.data() as UpdateRequest));
-          setRequests(docs);
+          setRequests(deduplicateById(docs));
         }
       }, (err) => console.warn('Requests snapshot listener error:', err));
+
+      // Real-time Firestore hours_templates listener (DISPATCH-012)
+      const templatesCol = collection(db, 'hours_templates');
+      unsubHoursTemplates = onSnapshot(templatesCol, (snapshot) => {
+        if (!snapshot.empty) {
+          const docs: HoursTemplate[] = [];
+          snapshot.forEach(d => docs.push(d.data() as HoursTemplate));
+          const uniqueTmpls = deduplicateById(docs);
+          setHoursTemplates(uniqueTmpls);
+          localStorage.setItem(`${STORAGE_KEY}_hours_templates`, JSON.stringify(uniqueTmpls));
+        } else {
+          // Seed initial templates if collection is empty
+          const batch = writeBatch(db);
+          INITIAL_HOURS_TEMPLATES.forEach(tmpl => {
+            const ref = doc(db, 'hours_templates', tmpl.id);
+            batch.set(ref, tmpl);
+          });
+          batch.commit().catch(e => console.warn('Seeding hours templates error:', e));
+        }
+      }, (err) => console.warn('Hours templates snapshot listener error:', err));
 
       setIsCloudConnected(true);
     } catch (e) {
@@ -519,6 +645,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       unsubscribeAuth?.();
       unsubLocations?.();
       unsubRequests?.();
+      unsubHoursTemplates?.();
     };
   }, []);
 
@@ -634,16 +761,18 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const data = d.data() as LocationRecord;
           cloudLocations.push(enrichLocationWithLabels(data));
         });
-        setLocations(cloudLocations);
-        count += cloudLocations.length;
+        const uniqueLocs = deduplicateLocations(cloudLocations);
+        setLocations(uniqueLocs);
+        count += uniqueLocs.length;
       }
 
       const reqSnapshot = await getDocs(collection(db, 'requests'));
       if (!reqSnapshot.empty) {
         const cloudRequests: UpdateRequest[] = [];
         reqSnapshot.forEach(d => cloudRequests.push(d.data() as UpdateRequest));
-        setRequests(cloudRequests);
-        count += cloudRequests.length;
+        const uniqueReqs = deduplicateById(cloudRequests);
+        setRequests(uniqueReqs);
+        count += uniqueReqs.length;
       }
 
       const latencyMs = Math.round(performance.now() - startTime);
@@ -823,6 +952,178 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, `Store Manager Phone Visibility set to ${visibility}`);
   };
 
+  // Hours Template CRUD & Bulk Operations (DISPATCH-012)
+  const addHoursTemplate = (tmpl: Omit<HoursTemplate, 'id' | 'createdAt' | 'updatedAt'>): HoursTemplate => {
+    const newTemplate: HoursTemplate = {
+      ...tmpl,
+      id: `tmpl-${tmpl.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now().toString(36)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: currentUser.displayName,
+    };
+
+    setHoursTemplates(prev => {
+      const updated = [newTemplate, ...prev];
+      localStorage.setItem(`${STORAGE_KEY}_hours_templates`, JSON.stringify(updated));
+      return updated;
+    });
+
+    try {
+      const db = getFirebaseDb();
+      const ref = doc(db, 'hours_templates', newTemplate.id);
+      setDoc(ref, newTemplate).catch(err => console.warn('Firestore setDoc hours_template error:', err));
+    } catch (e) {
+      console.warn('Firebase error adding hours template:', e);
+    }
+
+    logAudit('Setting', newTemplate.id, newTemplate.name, 'Created Hours Template', '', newTemplate.description);
+    return newTemplate;
+  };
+
+  const updateHoursTemplate = (id: string, updates: Partial<HoursTemplate>) => {
+    setHoursTemplates(prev => {
+      const updated = prev.map(t => {
+        if (t.id !== id) return t;
+        const merged = { ...t, ...updates, updatedAt: new Date().toISOString() };
+        try {
+          const db = getFirebaseDb();
+          const ref = doc(db, 'hours_templates', id);
+          updateDoc(ref, { ...updates, updatedAt: merged.updatedAt }).catch(err => console.warn('Firestore updateDoc hours_template error:', err));
+        } catch (e) {
+          console.warn('Firebase error updating hours template:', e);
+        }
+        return merged;
+      });
+      localStorage.setItem(`${STORAGE_KEY}_hours_templates`, JSON.stringify(updated));
+      return updated;
+    });
+    logAudit('Setting', id, 'Hours Template', 'Updated Hours Template Schedule', '', JSON.stringify(updates));
+  };
+
+  const deleteHoursTemplate = (id: string) => {
+    const tmpl = hoursTemplates.find(t => t.id === id);
+    setHoursTemplates(prev => {
+      const updated = prev.filter(t => t.id !== id);
+      localStorage.setItem(`${STORAGE_KEY}_hours_templates`, JSON.stringify(updated));
+      return updated;
+    });
+
+    try {
+      const db = getFirebaseDb();
+      const ref = doc(db, 'hours_templates', id);
+      deleteDoc(ref).catch(err => console.warn('Firestore deleteDoc hours_template error:', err));
+    } catch (e) {
+      console.warn('Firebase error deleting hours template:', e);
+    }
+
+    if (tmpl) {
+      logAudit('Setting', id, tmpl.name, 'Deleted Hours Template', tmpl.name, 'Deleted');
+    }
+  };
+
+  const bulkUpdateLocationsHours = async (options: {
+    locationIds: string[];
+    schedule?: WeeklySchedule;
+    holidayException?: HolidayHoursOverride;
+    specialHoursException?: SpecialHoursOverride;
+    operationalStatus?: OperationalStatus;
+    noticeDescription?: string;
+  }): Promise<{ success: boolean; updatedCount: number; error?: string }> => {
+    const { locationIds, schedule, holidayException, specialHoursException, operationalStatus, noticeDescription } = options;
+    if (!locationIds || locationIds.length === 0) {
+      return { success: false, updatedCount: 0, error: 'No locations selected' };
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedLocationList: LocationRecord[] = [];
+
+    // Prepare updates
+    setLocations(prevLocations => {
+      const updated = prevLocations.map(loc => {
+        if (!locationIds.includes(loc.id)) return loc;
+
+        const locUpdates: Partial<LocationRecord> = {
+          lastUpdated: nowIso,
+          lastUpdatedBy: currentUser.displayName,
+          gbpSyncStatus: 'Pending Push',
+        };
+
+        if (schedule) {
+          locUpdates.standardHours = JSON.parse(JSON.stringify(schedule));
+        }
+
+        if (holidayException) {
+          const existingHolidays = loc.holidayHours ? [...loc.holidayHours] : [];
+          // Replace matching date exception or add
+          const filtered = existingHolidays.filter(h => h.date !== holidayException.date);
+          locUpdates.holidayHours = [...filtered, holidayException];
+        }
+
+        if (specialHoursException) {
+          const existingSpecials = loc.specialHours ? [...loc.specialHours] : [];
+          const filtered = existingSpecials.filter(s => !(s.startDate === specialHoursException.startDate && s.endDate === specialHoursException.endDate));
+          locUpdates.specialHours = [...filtered, specialHoursException];
+        }
+
+        if (operationalStatus) {
+          locUpdates.operationalStatus = operationalStatus;
+          if (operationalStatus !== 'Open — Normal Operations' || noticeDescription) {
+            locUpdates.activeNotice = {
+              status: operationalStatus,
+              shortDescription: noticeDescription || `Bulk operational status updated to ${operationalStatus}`,
+              effectiveDate: nowIso.split('T')[0],
+              lastUpdatedDate: nowIso.split('T')[0],
+              updatedBy: currentUser.displayName,
+            };
+          } else {
+            locUpdates.activeNotice = undefined;
+          }
+        }
+
+        const merged: LocationRecord = {
+          ...loc,
+          ...locUpdates,
+        };
+
+        updatedLocationList.push(merged);
+
+        logAudit(
+          'Location',
+          loc.id,
+          `Store #${loc.storeNumber} (${loc.name})`,
+          'Bulk Schedule / Exception Update (DISPATCH-012)',
+          `Standard Hours: ${loc.standardHours?.monday?.open}-${loc.standardHours?.monday?.close}`,
+          `Updated with ${schedule ? 'New Schedule' : ''} ${holidayException ? `Holiday: ${holidayException.holidayName}` : ''} | Sync: Pending Push`
+        );
+
+        return merged;
+      });
+
+      localStorage.setItem(`${STORAGE_KEY}_locations`, JSON.stringify(updated));
+      return updated;
+    });
+
+    // Execute Firestore writeBatch across all affected locations
+    try {
+      const db = getFirebaseDb();
+      const batch = writeBatch(db);
+      
+      updatedLocationList.forEach(loc => {
+        const docId = getSemanticLocationDocId(loc);
+        const ref = doc(db, 'locations', docId);
+        batch.set(ref, loc, { merge: true });
+      });
+
+      await batch.commit();
+      setCloudSyncStatus('synced');
+      setLastCloudSyncAt(new Date().toISOString());
+    } catch (e: any) {
+      console.warn('Firestore writeBatch bulk update error:', e);
+    }
+
+    return { success: true, updatedCount: locationIds.length };
+  };
+
   // People CRUD
   const addPerson = (person: PersonRecord) => {
     const newPerson: PersonRecord = {
@@ -933,6 +1234,15 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       if (req.requestedChanges.activeNotice !== undefined) {
         locUpdates.activeNotice = req.requestedChanges.activeNotice;
+      }
+      if (req.requestedChanges.standardHours !== undefined) {
+        locUpdates.standardHours = req.requestedChanges.standardHours;
+      }
+      if (req.requestedChanges.holidayHours !== undefined) {
+        locUpdates.holidayHours = req.requestedChanges.holidayHours;
+      }
+      if (req.requestedChanges.specialHours !== undefined) {
+        locUpdates.specialHours = req.requestedChanges.specialHours;
       }
 
       updateLocation(targetLoc.id, locUpdates, `Approved Request #${req.id}: ${req.changeType}`);
@@ -2233,6 +2543,12 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     verifyLocation,
     verifyManagerPhone,
     toggleLocationPhonePrivacy,
+    // Hours Template Engine & Bulk (DISPATCH-012)
+    hoursTemplates,
+    addHoursTemplate,
+    updateHoursTemplate,
+    deleteHoursTemplate,
+    bulkUpdateLocationsHours,
     addPerson,
     updatePerson,
     deletePerson,
@@ -2281,6 +2597,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     environment,
     backupSnapshots,
     firebaseConfig,
+    hoursTemplates,
     cloudSyncStatus,
     lastCloudSyncAt,
     isCloudConnected,

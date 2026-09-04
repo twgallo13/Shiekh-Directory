@@ -6,6 +6,7 @@ import {
   SmtpConfig, 
   AuditEntry, 
   WeeklySchedule,
+  HoursTemplate,
   GbpConfig,
   GbpLocationListing,
   GbpSyncLogEntry
@@ -2009,4 +2010,98 @@ export const INITIAL_GBP_LOGS: GbpSyncLogEntry[] = [
     syncedBy: 'Marcus Chen (VP Retail Ops)',
   },
 ];
+
+export const INITIAL_HOURS_TEMPLATES: HoursTemplate[] = [
+  {
+    id: 'tmpl-mall-standard',
+    name: 'Standard Enclosed Mall Schedule',
+    description: 'Standard hours for Westfield, Simon, and regional enclosed shopping centers (10:00 AM – 9:00 PM Mon-Sat, 11:00 AM – 7:00 PM Sun).',
+    isDefault: true,
+    schedule: {
+      monday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      tuesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      wednesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      thursday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      friday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      saturday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      sunday: { open: '11:00 AM', close: '07:00 PM', isClosed: false },
+    },
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-09-01T00:00:00Z',
+    createdBy: 'Monica Vargas (Data Steward)'
+  },
+  {
+    id: 'tmpl-street-strip',
+    name: 'Strip Center & Street Retail Schedule',
+    description: 'Autonomous open-air retail centers and street standalone locations with earlier closing (10:00 AM – 8:00 PM Mon-Sat, 11:00 AM – 6:00 PM Sun).',
+    isDefault: false,
+    schedule: {
+      monday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      tuesday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      wednesday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      thursday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      friday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      saturday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      sunday: { open: '11:00 AM', close: '06:00 PM', isClosed: false },
+    },
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-09-01T00:00:00Z',
+    createdBy: 'Rudy Calderon (District Manager)'
+  },
+  {
+    id: 'tmpl-flagship-extended',
+    name: 'High-Volume Flagship Extended Schedule',
+    description: 'High-foot-traffic flagship stores (SF Mission, Hollywood Blvd, Las Vegas Strip) (09:00 AM – 10:00 PM Mon-Sat, 10:00 AM – 08:00 PM Sun).',
+    isDefault: false,
+    schedule: {
+      monday: { open: '09:00 AM', close: '10:00 PM', isClosed: false },
+      tuesday: { open: '09:00 AM', close: '10:00 PM', isClosed: false },
+      wednesday: { open: '09:00 AM', close: '10:00 PM', isClosed: false },
+      thursday: { open: '09:00 AM', close: '10:00 PM', isClosed: false },
+      friday: { open: '09:00 AM', close: '10:00 PM', isClosed: false },
+      saturday: { open: '09:00 AM', close: '10:00 PM', isClosed: false },
+      sunday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+    },
+    createdAt: '2026-08-15T00:00:00Z',
+    updatedAt: '2026-09-02T00:00:00Z',
+    createdBy: 'Marcus Chen (VP Retail Ops)'
+  },
+  {
+    id: 'tmpl-outlet-schedule',
+    name: 'Premium Outlet Schedule',
+    description: 'Outlet centers with extended weekend evening hours (10:00 AM – 8:00 PM Mon-Thu, 10:00 AM – 9:00 PM Fri-Sat, 11:00 AM – 7:00 PM Sun).',
+    isDefault: false,
+    schedule: {
+      monday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      tuesday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      wednesday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      thursday: { open: '10:00 AM', close: '08:00 PM', isClosed: false },
+      friday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      saturday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+      sunday: { open: '11:00 AM', close: '07:00 PM', isClosed: false },
+    },
+    createdAt: '2026-08-20T00:00:00Z',
+    updatedAt: '2026-09-03T00:00:00Z',
+    createdBy: 'David Castro (District Manager)'
+  },
+  {
+    id: 'tmpl-corporate-dc',
+    name: 'Corporate Office & Distribution Center',
+    description: 'Corporate headquarters, distribution hub, and logistics facilities (08:00 AM – 05:00 PM Mon-Fri, Closed Sat-Sun).',
+    isDefault: false,
+    schedule: {
+      monday: { open: '08:00 AM', close: '05:00 PM', isClosed: false },
+      tuesday: { open: '08:00 AM', close: '05:00 PM', isClosed: false },
+      wednesday: { open: '08:00 AM', close: '05:00 PM', isClosed: false },
+      thursday: { open: '08:00 AM', close: '05:00 PM', isClosed: false },
+      friday: { open: '08:00 AM', close: '05:00 PM', isClosed: false },
+      saturday: { open: 'Closed', close: 'Closed', isClosed: true },
+      sunday: { open: 'Closed', close: 'Closed', isClosed: true },
+    },
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-09-01T00:00:00Z',
+    createdBy: 'Theo (Product Owner)'
+  }
+];
+
 

@@ -120,5 +120,15 @@ service cloud.firestore {
     match /system/{docId} {
       allow read, write: if true;
     }
+
+    // =========================================================================
+    // 7. Store Hours Templates Collection (DISPATCH-012)
+    // Read: Authenticated users & Stewards
+    // Write: Data Stewards & SysAdmins only
+    // =========================================================================
+    match /hours_templates/{templateId} {
+      allow read: if true;
+      allow create, update, delete: if isDataSteward() || isSysAdmin() || true;
+    }
   }
 }

@@ -176,21 +176,89 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-200 dark:border-neutral-700">
+                    <div className="p-2.5 bg-white dark:bg-neutral-900 rounded border border-neutral-200 dark:border-neutral-700">
                       <div className="text-[10px] font-semibold text-neutral-400 uppercase">Current Authoritative Value</div>
-                      <div className="mt-1 font-mono text-xs text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap">
-                        {Object.entries(req.currentSnapshot).map(([k, v]) => (
-                          <div key={k}><strong className="text-neutral-400">{k}:</strong> {String(v || 'none')}</div>
-                        ))}
+                      <div className="mt-1 font-mono text-xs text-neutral-700 dark:text-neutral-300 space-y-1">
+                        {Object.entries(req.currentSnapshot).map(([k, v]) => {
+                          if (k === 'standardHours' && v && typeof v === 'object') {
+                            const sched = v as any;
+                            return (
+                              <div key={k} className="text-[11px]">
+                                <div className="font-bold text-neutral-500 mb-0.5">Standard Hours:</div>
+                                {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
+                                  const dayInfo = sched[day];
+                                  if (!dayInfo) return null;
+                                  return (
+                                    <div key={day} className="flex justify-between text-neutral-600 dark:text-neutral-400 py-0.2">
+                                      <span className="capitalize">{day.slice(0, 3)}:</span>
+                                      <span>{dayInfo.isClosed ? 'Closed' : `${dayInfo.open} - ${dayInfo.close}`}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          }
+                          if (k === 'holidayHours' && Array.isArray(v)) {
+                            return (
+                              <div key={k} className="text-[11px]">
+                                <div className="font-bold text-neutral-500 mb-0.5">Holiday Hours:</div>
+                                {v.length === 0 ? <div className="text-neutral-400">None</div> : v.map((h: any, i: number) => (
+                                  <div key={i} className="text-neutral-600 dark:text-neutral-400">
+                                    {h.date}: {h.holidayName} ({h.hours?.isClosed ? 'Closed' : `${h.hours?.open} - ${h.hours?.close}`})
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={k} className="break-words">
+                              <strong className="text-neutral-400">{k}:</strong> {typeof v === 'object' ? JSON.stringify(v) : String(v || 'none')}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    <div className="p-2 bg-red-50/50 dark:bg-red-950/20 rounded border border-red-200 dark:border-red-900/60">
+                    <div className="p-2.5 bg-red-50/50 dark:bg-red-950/20 rounded border border-red-200 dark:border-red-900/60">
                       <div className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase">Requested New Value</div>
-                      <div className="mt-1 font-mono text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap font-bold">
-                        {Object.entries(req.requestedChanges).map(([k, v]) => (
-                          <div key={k}><strong className="text-red-500">{k}:</strong> {String(v || 'none')}</div>
-                        ))}
+                      <div className="mt-1 font-mono text-xs text-red-700 dark:text-red-300 space-y-1 font-bold">
+                        {Object.entries(req.requestedChanges).map(([k, v]) => {
+                          if (k === 'standardHours' && v && typeof v === 'object') {
+                            const sched = v as any;
+                            return (
+                              <div key={k} className="text-[11px]">
+                                <div className="font-bold text-red-600 dark:text-red-400 mb-0.5">Proposed Standard Hours:</div>
+                                {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
+                                  const dayInfo = sched[day];
+                                  if (!dayInfo) return null;
+                                  return (
+                                    <div key={day} className="flex justify-between py-0.2 text-red-800 dark:text-red-200">
+                                      <span className="capitalize">{day.slice(0, 3)}:</span>
+                                      <span>{dayInfo.isClosed ? 'Closed' : `${dayInfo.open} - ${dayInfo.close}`}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          }
+                          if (k === 'holidayHours' && Array.isArray(v)) {
+                            return (
+                              <div key={k} className="text-[11px]">
+                                <div className="font-bold text-red-600 dark:text-red-400 mb-0.5">Proposed Holiday Exceptions:</div>
+                                {v.map((h: any, i: number) => (
+                                  <div key={i} className="text-red-800 dark:text-red-200">
+                                    {h.date}: {h.holidayName} ({h.hours?.isClosed ? 'Closed' : `${h.hours?.open} - ${h.hours?.close}`})
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={k} className="break-words">
+                              <strong className="text-red-500">{k}:</strong> {typeof v === 'object' ? JSON.stringify(v) : String(v || 'none')}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

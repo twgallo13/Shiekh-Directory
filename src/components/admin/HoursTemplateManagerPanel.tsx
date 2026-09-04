@@ -264,7 +264,7 @@ export const HoursTemplateManagerPanel: React.FC = () => {
                   <input
                     type="text"
                     required
-                    value={templateName}
+                    value={templateName || ''}
                     onChange={e => setTemplateName(e.target.value)}
                     placeholder="e.g. Standard Enclosed Mall Schedule"
                     className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100 font-semibold"
@@ -274,7 +274,7 @@ export const HoursTemplateManagerPanel: React.FC = () => {
                 <div>
                   <label className="block text-neutral-500 mb-1 font-semibold">Default Store Format</label>
                   <select
-                    value={defaultLocType}
+                    value={defaultLocType || 'Enclosed Mall'}
                     onChange={e => setDefaultLocType(e.target.value as LocationType)}
                     className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100"
                   >
@@ -292,7 +292,7 @@ export const HoursTemplateManagerPanel: React.FC = () => {
                 <label className="block text-neutral-500 mb-1 font-semibold">Description</label>
                 <input
                   type="text"
-                  value={templateDesc}
+                  value={templateDesc || ''}
                   onChange={e => setTemplateDesc(e.target.value)}
                   placeholder="e.g. Mon-Sat 10 AM - 9 PM, Sun 11 AM - 7 PM"
                   className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100"

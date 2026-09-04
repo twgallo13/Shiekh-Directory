@@ -317,7 +317,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                     <input
                       type="text"
                       required
-                      value={holidayName}
+                      value={holidayName || ''}
                       onChange={e => setHolidayName(e.target.value)}
                       placeholder="e.g. Thanksgiving Day"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -329,7 +329,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                     <input
                       type="date"
                       required
-                      value={holidayDate}
+                      value={holidayDate || ''}
                       onChange={e => setHolidayDate(e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
                     />
@@ -339,7 +339,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                     <label className="inline-flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        checked={holidayIsClosed}
+                        checked={Boolean(holidayIsClosed)}
                         onChange={e => setHolidayIsClosed(e.target.checked)}
                         className="rounded border-neutral-300 dark:border-neutral-700 text-red-600 focus:ring-red-500 w-4 h-4"
                       />
@@ -356,7 +356,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                       <label className="block text-neutral-500 mb-1">Open Time</label>
                       <input
                         type="text"
-                        value={holidayOpen}
+                        value={holidayOpen || ''}
                         onChange={e => setHolidayOpen(e.target.value)}
                         placeholder="06:00 AM"
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -366,7 +366,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                       <label className="block text-neutral-500 mb-1">Close Time</label>
                       <input
                         type="text"
-                        value={holidayClose}
+                        value={holidayClose || ''}
                         onChange={e => setHolidayClose(e.target.value)}
                         placeholder="10:00 PM"
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -388,7 +388,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                 <div>
                   <label className="block text-neutral-500 mb-1 font-semibold">New Operational Status *</label>
                   <select
-                    value={operationalStatus}
+                    value={operationalStatus || 'Modified Hours'}
                     onChange={e => setOperationalStatus(e.target.value as OperationalStatus)}
                     className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-semibold"
                   >
@@ -407,7 +407,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                   <label className="block text-neutral-500 mb-1 font-semibold">Extended Notice Description</label>
                   <input
                     type="text"
-                    value={noticeDescription}
+                    value={noticeDescription || ''}
                     onChange={e => setNoticeDescription(e.target.value)}
                     placeholder="e.g. Operating on modified holiday schedule as approved by District leadership."
                     className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"

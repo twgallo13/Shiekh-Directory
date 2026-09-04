@@ -161,17 +161,17 @@ interface DirectoryContextType {
   togglePersonContactPrivacy: (personId: string, field: 'phone' | 'email', visibility: ContactPrivacyLevel) => void;
   
   // Request / Corrections Workflow
-  submitUpdateRequest: (request: Omit<UpdateRequest, 'id' | 'submittedAt' | 'status'>) => UpdateRequest;
-  approveUpdateRequest: (requestId: string, reviewerNotes?: string) => void;
-  rejectUpdateRequest: (requestId: string, rejectionNotes: string) => void;
+  submitUpdateRequest: (request: Omit<UpdateRequest, 'id' | 'submittedAt' | 'status'>) => Promise<UpdateRequest>;
+  approveUpdateRequest: (requestId: string, reviewerNotes?: string) => Promise<void>;
+  rejectUpdateRequest: (requestId: string, rejectionNotes: string) => Promise<void>;
   
   // User Onboarding & Access Control (Lifecycle)
-  addUserAccount: (user: Omit<UserAccount, 'id' | 'createdAt'>) => UserAccount;
-  inviteUserAccount: (email: string, role: UserRole, accessScope: UserAccount['accessScope'], personId?: string, assignedDistrict?: string, assignedStoreId?: string) => UserAccount;
-  activateUserAccount: (id: string) => void;
-  resendUserInvite: (id: string) => void;
-  updateUserAccount: (id: string, updates: Partial<UserAccount>) => void;
-  deactivateUserAccount: (id: string) => void;
+  addUserAccount: (user: Omit<UserAccount, 'id' | 'createdAt'>) => Promise<UserAccount>;
+  inviteUserAccount: (email: string, role: UserRole, accessScope: UserAccount['accessScope'], personId?: string, assignedDistrict?: string, assignedStoreId?: string) => Promise<UserAccount>;
+  activateUserAccount: (id: string) => Promise<void>;
+  resendUserInvite: (id: string) => Promise<void>;
+  updateUserAccount: (id: string, updates: Partial<UserAccount>) => Promise<void>;
+  deactivateUserAccount: (id: string) => Promise<void>;
   offboardUserAccount: (
     userId: string,
     options: {
@@ -190,8 +190,8 @@ interface DirectoryContextType {
   
   // Communications & SMTP
   updateSmtpConfig: (config: Partial<SmtpConfig>) => void;
-  sendTestEmail: (toEmail: string) => { success: boolean; log: EmailLogEntry };
-  sendDirectoryPdfEmail: (recipients: string[], subject: string, message: string, paperSize: string) => void;
+  sendTestEmail: (toEmail: string) => Promise<{ success: boolean; error?: string; log: EmailLogEntry }>;
+  sendDirectoryPdfEmail: (recipients: string[], subject: string, message: string, paperSize: string) => Promise<{ success: boolean; error?: string; log: EmailLogEntry }>;
   
   // CSV Import & Migration Validation Gate
   validateAndStageCsv: (csvContent: string) => ImportValidationResult;
@@ -238,6 +238,25 @@ function deduplicateLocations(items: LocationRecord[]): LocationRecord[] {
     }
   });
   return Array.from(map.values());
+}
+
+function sanitizeForFirestore<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (typeof obj === 'object' && !(obj instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = sanitizeForFirestore(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
 }
 
 export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -502,6 +521,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let unsubLocations: (() => void) | undefined;
     let unsubRequests: (() => void) | undefined;
     let unsubHoursTemplates: (() => void) | undefined;
+    let unsubUsers: (() => void) | undefined;
 
     try {
       const auth = getFirebaseAuth();
@@ -520,12 +540,12 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
           if (fbUser.email) {
             const normalizedEmail = fbUser.email.toLowerCase();
-            setUsers(prev => {
-              const match = prev.find(u => u.email.toLowerCase() === normalizedEmail);
-              if (match) {
-                setCurrentUser(match);
-                return prev;
-              }
+            const existing = users.find(u => u.email.toLowerCase() === normalizedEmail);
+            if (existing) {
+              setCurrentUser(existing);
+              // Update lastLogin in Firestore
+              setDoc(doc(db, 'users', existing.id), { lastLogin: new Date().toISOString() }, { merge: true }).catch(() => {});
+            } else {
               const isSysAdmin = normalizedEmail.includes('theo') || normalizedEmail.endsWith('@shiekhshoes.org');
               const isSteward = normalizedEmail.includes('vargas') || normalizedEmail.includes('steward');
               const newRole: UserRole = isSysAdmin ? 'System Administrator' : isSteward ? 'Directory Data Steward' : 'Viewer';
@@ -541,8 +561,9 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 createdAt: new Date().toISOString()
               };
               setCurrentUser(newUser);
-              return [...prev, newUser];
-            });
+              // Save to Firestore users collection — onSnapshot will sync users state
+              setDoc(doc(db, 'users', newUser.id), sanitizeForFirestore(newUser)).catch(() => {});
+            }
           }
         } else {
           setActiveCloudUser(null);
@@ -571,22 +592,22 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const labeled = enrichLocationWithLabels(loc);
             const docId = getSemanticLocationDocId(labeled);
             const ref = doc(db, 'locations', docId);
-            batch.set(ref, labeled);
+            batch.set(ref, sanitizeForFirestore(labeled));
           });
           INITIAL_PEOPLE.forEach(per => {
             const labeled = enrichPersonWithLabels(per);
             const docId = getSemanticPersonDocId(labeled);
             const ref = doc(db, 'people', docId);
-            batch.set(ref, labeled);
+            batch.set(ref, sanitizeForFirestore(labeled));
           });
           INITIAL_USERS.forEach(usr => {
             const docId = getSemanticUserDocId(usr);
             const ref = doc(db, 'users', docId);
-            batch.set(ref, usr);
+            batch.set(ref, sanitizeForFirestore(usr));
           });
           INITIAL_AUDIT_LOGS.forEach(aud => {
             const ref = doc(db, 'audit_logs', aud.id);
-            batch.set(ref, aud);
+            batch.set(ref, sanitizeForFirestore(aud));
           });
           batch.commit().then(() => {
             setCloudSyncStatus('synced');
@@ -628,11 +649,32 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const batch = writeBatch(db);
           INITIAL_HOURS_TEMPLATES.forEach(tmpl => {
             const ref = doc(db, 'hours_templates', tmpl.id);
-            batch.set(ref, tmpl);
+            batch.set(ref, sanitizeForFirestore(tmpl));
           });
           batch.commit().catch(e => console.warn('Seeding hours templates error:', e));
         }
       }, (err) => console.warn('Hours templates snapshot listener error:', err));
+
+      // Real-time Firestore users listener (DISPATCH-014)
+      const usersCol = collection(db, 'users');
+      unsubUsers = onSnapshot(usersCol, (snapshot) => {
+        if (!snapshot.empty) {
+          const docs: UserAccount[] = [];
+          snapshot.forEach(d => docs.push(d.data() as UserAccount));
+          const uniqueUsers = deduplicateById(docs);
+          setUsers(uniqueUsers);
+          localStorage.setItem(`${STORAGE_KEY}_users`, JSON.stringify(uniqueUsers));
+        } else {
+          // Auto-seed initial users if collection is empty
+          const batch = writeBatch(db);
+          INITIAL_USERS.forEach(usr => {
+            const docId = getSemanticUserDocId(usr);
+            const ref = doc(db, 'users', docId);
+            batch.set(ref, sanitizeForFirestore(usr));
+          });
+          batch.commit().catch(e => console.warn('Seeding users collection error:', e));
+        }
+      }, (err) => console.warn('Users snapshot listener error:', err));
 
       setIsCloudConnected(true);
     } catch (e) {
@@ -646,6 +688,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       unsubLocations?.();
       unsubRequests?.();
       unsubHoursTemplates?.();
+      unsubUsers?.();
     };
   }, []);
 
@@ -709,27 +752,27 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       locations.forEach(loc => {
         const labeled = enrichLocationWithLabels(loc);
         const docId = getSemanticLocationDocId(labeled);
-        batch.set(doc(db, 'locations', docId), labeled);
+        batch.set(doc(db, 'locations', docId), sanitizeForFirestore(labeled));
         count++;
       });
       people.forEach(per => {
         const labeled = enrichPersonWithLabels(per);
         const docId = getSemanticPersonDocId(labeled);
-        batch.set(doc(db, 'people', docId), labeled);
+        batch.set(doc(db, 'people', docId), sanitizeForFirestore(labeled));
         count++;
       });
       requests.forEach(req => {
         const docId = getSemanticRequestDocId(req);
-        batch.set(doc(db, 'requests', docId), req);
+        batch.set(doc(db, 'requests', docId), sanitizeForFirestore(req));
         count++;
       });
       users.forEach(u => {
         const docId = getSemanticUserDocId(u);
-        batch.set(doc(db, 'users', docId), u);
+        batch.set(doc(db, 'users', docId), sanitizeForFirestore(u));
         count++;
       });
       auditLogs.forEach(aud => {
-        batch.set(doc(db, 'audit_logs', aud.id), aud);
+        batch.set(doc(db, 'audit_logs', aud.id), sanitizeForFirestore(aud));
         count++;
       });
 
@@ -816,7 +859,9 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [apiClients]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_smtp`, JSON.stringify(smtpConfig));
+    // Strip sensitive passwords from client-side storage
+    const { password, ...safeConfig } = (smtpConfig as any) || {};
+    localStorage.setItem(`${STORAGE_KEY}_smtp`, JSON.stringify(safeConfig));
   }, [smtpConfig]);
 
   useEffect(() => {
@@ -971,7 +1016,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       const db = getFirebaseDb();
       const ref = doc(db, 'hours_templates', newTemplate.id);
-      setDoc(ref, newTemplate).catch(err => console.warn('Firestore setDoc hours_template error:', err));
+      setDoc(ref, sanitizeForFirestore(newTemplate)).catch(err => console.warn('Firestore setDoc hours_template error:', err));
     } catch (e) {
       console.warn('Firebase error adding hours template:', e);
     }
@@ -988,7 +1033,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         try {
           const db = getFirebaseDb();
           const ref = doc(db, 'hours_templates', id);
-          updateDoc(ref, { ...updates, updatedAt: merged.updatedAt }).catch(err => console.warn('Firestore updateDoc hours_template error:', err));
+          updateDoc(ref, sanitizeForFirestore({ ...updates, updatedAt: merged.updatedAt })).catch(err => console.warn('Firestore updateDoc hours_template error:', err));
         } catch (e) {
           console.warn('Firebase error updating hours template:', e);
         }
@@ -1111,7 +1156,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       updatedLocationList.forEach(loc => {
         const docId = getSemanticLocationDocId(loc);
         const ref = doc(db, 'locations', docId);
-        batch.set(ref, loc, { merge: true });
+        batch.set(ref, sanitizeForFirestore(loc), { merge: true });
       });
 
       await batch.commit();
@@ -1178,35 +1223,189 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // Dynamic URL Helper & Backend SMTP Dispatcher (DISPATCH-013 Requirements 3 & 4)
+  const getAppUrl = (): string => {
+    if (typeof window !== 'undefined' && window.location.origin && window.location.origin !== 'null' && !window.location.origin.includes('localhost:3000')) {
+      return window.location.origin;
+    }
+    return (import.meta as any).env?.VITE_APP_URL || 'https://ais-dev-b6gie4rzjr5ec7tbgq3pc2-516719740429.us-east1.run.app';
+  };
+
+  const dispatchEmailApi = async (options: {
+    to: string | string[];
+    subject: string;
+    text?: string;
+    html?: string;
+    emailType: EmailLogEntry['emailType'];
+    details?: string;
+    fromName?: string;
+    fromEmail?: string;
+    replyTo?: string;
+    attachments?: Array<{ filename: string; content: string; contentType?: string }>;
+  }): Promise<{ success: boolean; error?: string; log: EmailLogEntry }> => {
+    const recipients = Array.isArray(options.to) ? options.to.filter(Boolean) : [options.to].filter(Boolean);
+
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipients,
+          subject: options.subject,
+          text: options.text,
+          html: options.html,
+          emailType: options.emailType,
+          fromName: options.fromName || smtpConfig.fromName,
+          fromEmail: options.fromEmail || smtpConfig.fromEmail,
+          replyTo: options.replyTo || smtpConfig.replyTo || smtpConfig.replyToEmail,
+          attachments: options.attachments,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: `HTTP ${res.status}: ${res.statusText || 'Server Error'}`,
+      }));
+
+      const isSuccess = res.ok && data.success;
+      const errorMsg = !isSuccess
+        ? (data.error || data.rawError || data.details || `HTTP ${res.status}: SMTP transport failure.`)
+        : undefined;
+
+      const logEntry: EmailLogEntry = {
+        id: `eml-${Date.now()}`,
+        emailType: options.emailType,
+        recipients,
+        subject: options.subject,
+        sentBy: currentUser.displayName,
+        sentAt: new Date().toISOString(),
+        status: isSuccess ? 'Sent' : 'Failed',
+        details: isSuccess
+          ? (options.details || data.message || `Dispatched via SMTP: ${data.messageId || 'OK'}`)
+          : `SMTP Error [${data.code || res.status}]: ${errorMsg}`,
+      };
+
+      setEmailLogs(prev => [logEntry, ...prev]);
+      return { success: isSuccess, error: errorMsg, log: logEntry };
+    } catch (err: any) {
+      const errorMsg = `Network error calling /api/send-email: ${err.message || String(err)}`;
+      const logEntry: EmailLogEntry = {
+        id: `eml-${Date.now()}`,
+        emailType: options.emailType,
+        recipients,
+        subject: options.subject,
+        sentBy: currentUser.displayName,
+        sentAt: new Date().toISOString(),
+        status: 'Failed',
+        details: errorMsg,
+      };
+
+      setEmailLogs(prev => [logEntry, ...prev]);
+      return { success: false, error: errorMsg, log: logEntry };
+    }
+  };
+
   // Update Requests
-  const submitUpdateRequest = (reqData: Omit<UpdateRequest, 'id' | 'submittedAt' | 'status'>): UpdateRequest => {
+  const submitUpdateRequest = async (reqData: Omit<UpdateRequest, 'id' | 'submittedAt' | 'status'>): Promise<UpdateRequest> => {
     const newReq: UpdateRequest = {
       ...reqData,
       id: `req-${Date.now().toString(36)}`,
       submittedAt: new Date().toISOString(),
       status: 'Submitted',
     };
-    setRequests(prev => [newReq, ...prev]);
 
-    // Send email notification to Directory Steward
-    if (smtpConfig.notifyOnNewRequest) {
-      const emailLog: EmailLogEntry = {
-        id: `eml-${Date.now()}`,
-        emailType: 'Directory Update Request',
-        recipients: [smtpConfig.directoryStewardEmail],
-        subject: `[Shiekh Directory] New Update Request: ${newReq.changeType} for ${newReq.targetName}`,
-        sentBy: currentUser.displayName,
-        sentAt: new Date().toISOString(),
-        status: 'Sent',
-        details: `Submitted by ${newReq.submittedBy.name} (${newReq.submittedBy.email}). Notes: ${newReq.notes}`,
-      };
-      setEmailLogs(prev => [emailLog, ...prev]);
+    // Save to Firestore requests collection
+    try {
+      const db = getFirebaseDb();
+      await setDoc(doc(db, 'requests', newReq.id), sanitizeForFirestore(newReq));
+    } catch (err) {
+      console.warn('Firestore submitUpdateRequest error:', err);
+    }
+
+    setRequests(prev => [newReq, ...prev.filter(r => r.id !== newReq.id)]);
+
+    // Send email notification to Directory Steward with dynamic APP_URL
+    if (smtpConfig.notifyOnNewRequest && smtpConfig.directoryStewardEmail) {
+      const appUrl = getAppUrl();
+      const requestUrl = `${appUrl}/?view=requests&requestId=${newReq.id}`;
+      const subject = `[Shiekh Directory] New Update Request #${newReq.id}: ${newReq.changeType} for ${newReq.targetName}`;
+      const sourceText = newReq.hoursSource ? `\nHours Source / Template: ${newReq.hoursSource}` : '';
+      const textBody = `A new directory update request has been submitted by ${newReq.submittedBy.name} (${newReq.submittedBy.email}).\n\nTarget: ${newReq.targetName}\nChange Type: ${newReq.changeType}${sourceText}\nSubmitted: ${new Date().toLocaleString()}\nNotes: ${newReq.notes}\n\nReview and take action in the Shiekh Directory Queue:\n${requestUrl}`;
+      
+      const htmlBody = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #171717; max-width: 600px; line-height: 1.5;">
+          <h2 style="color: #dc2626; margin-bottom: 8px;">Shiekh Directory SoR — New Update Request</h2>
+          <p>A new store directory update request is waiting for Data Steward review:</p>
+          <div style="background: #f5f5f5; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="margin: 4px 0;"><strong>Request ID:</strong> #${newReq.id}</p>
+            <p style="margin: 4px 0;"><strong>Target:</strong> ${newReq.targetName}</p>
+            <p style="margin: 4px 0;"><strong>Change Type:</strong> ${newReq.changeType}</p>
+            ${newReq.hoursSource ? `<p style="margin: 4px 0;"><strong>Source / Template:</strong> <span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 4px; font-weight: bold;">${newReq.hoursSource}</span></p>` : ''}
+            <p style="margin: 4px 0;"><strong>Submitted By:</strong> ${newReq.submittedBy.name} (${newReq.submittedBy.email})</p>
+            <p style="margin: 4px 0;"><strong>Notes:</strong> <em>"${newReq.notes}"</em></p>
+          </div>
+          <p style="margin: 20px 0;">
+            <a href="${requestUrl}" style="background: #dc2626; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+              Open Request in Directory Queue
+            </a>
+          </p>
+          <p style="font-size: 12px; color: #737373;">Shiekh Shoes Store Directory System of Record • ${appUrl}</p>
+        </div>
+      `;
+
+      try {
+        const emailRes = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: smtpConfig.directoryStewardEmail,
+            subject,
+            text: textBody,
+            html: htmlBody,
+            emailType: 'Directory Update Request',
+            fromName: smtpConfig.fromName,
+            fromEmail: smtpConfig.fromEmail,
+            replyTo: smtpConfig.replyTo || smtpConfig.replyToEmail,
+          }),
+        });
+        const data = await emailRes.json().catch(() => ({ success: false, error: `HTTP ${emailRes.status}` }));
+        const isSuccess = emailRes.ok && data.success;
+        const logEntry: EmailLogEntry = {
+          id: `eml-${Date.now()}`,
+          emailType: 'Directory Update Request',
+          recipients: [smtpConfig.directoryStewardEmail],
+          subject,
+          sentBy: currentUser.displayName,
+          sentAt: new Date().toISOString(),
+          status: isSuccess ? 'Sent' : 'Failed',
+          details: isSuccess
+            ? `Dispatched new request alert to Data Steward (${smtpConfig.directoryStewardEmail}). ID: ${newReq.id}`
+            : `Failed to notify Data Steward: ${data.error || data.rawError || `HTTP ${emailRes.status}`}`,
+        };
+        setEmailLogs(prev => [logEntry, ...prev]);
+        if (!isSuccess) {
+          console.warn('Failed to send steward email notification:', data.error);
+        }
+      } catch (err: any) {
+        console.warn('Network error dispatching new request steward email:', err);
+        const logEntry: EmailLogEntry = {
+          id: `eml-${Date.now()}`,
+          emailType: 'Directory Update Request',
+          recipients: [smtpConfig.directoryStewardEmail],
+          subject,
+          sentBy: currentUser.displayName,
+          sentAt: new Date().toISOString(),
+          status: 'Failed',
+          details: `Network error sending steward notification: ${err.message || String(err)}`,
+        };
+        setEmailLogs(prev => [logEntry, ...prev]);
+      }
     }
 
     return newReq;
   };
 
-  const approveUpdateRequest = (requestId: string, reviewerNotes?: string) => {
+  const approveUpdateRequest = async (requestId: string, reviewerNotes?: string): Promise<void> => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
 
@@ -1248,36 +1447,129 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       updateLocation(targetLoc.id, locUpdates, `Approved Request #${req.id}: ${req.changeType}`);
     }
 
+    const decisionAt = new Date().toISOString();
+    const finalNotes = reviewerNotes || 'Approved and applied to master directory record.';
+
+    // Persist request decision to Firestore
+    try {
+      const db = getFirebaseDb();
+      await setDoc(doc(db, 'requests', requestId), sanitizeForFirestore({
+        status: 'Approved',
+        decisionNotes: finalNotes,
+        decisionBy: currentUser.displayName,
+        decisionAt: decisionAt,
+      }), { merge: true });
+    } catch (err) {
+      console.warn('Firestore approveUpdateRequest error:', err);
+    }
+
     setRequests(prev => prev.map(r => {
       if (r.id !== requestId) return r;
       return {
         ...r,
         status: 'Approved',
-        decisionNotes: reviewerNotes || 'Approved and applied to master directory record.',
+        decisionNotes: finalNotes,
         decisionBy: currentUser.displayName,
-        decisionAt: new Date().toISOString(),
+        decisionAt: decisionAt,
       };
     }));
 
-    // Notify requester
+    // Notify requester with dynamic APP_URL link via Express SMTP backend
     if (smtpConfig.notifyRequesterOnDecision && req.submittedBy.email) {
-      const emailLog: EmailLogEntry = {
-        id: `eml-${Date.now()}`,
-        emailType: 'Request Status Update',
-        recipients: [req.submittedBy.email],
-        subject: `[Shiekh Directory] Request Approved: ${req.changeType} for ${req.targetName}`,
-        sentBy: currentUser.displayName,
-        sentAt: new Date().toISOString(),
-        status: 'Sent',
-        details: reviewerNotes || 'Your update request has been reviewed, approved, and updated in the system of record.',
-      };
-      setEmailLogs(prev => [emailLog, ...prev]);
+      const appUrl = getAppUrl();
+      const locationUrl = `${appUrl}/?view=directory&locationId=${req.targetId}`;
+      const subject = `[Shiekh Directory] Update Request Approved: #${req.id} (${req.targetName})`;
+      const textBody = `Your update request #${req.id} for ${req.targetName} (${req.changeType}) has been APPROVED and applied to the master directory by ${currentUser.displayName}.\n\nDecision Notes: ${finalNotes}\n\nView the updated location in the authoritative directory:\n${locationUrl}`;
+      
+      const htmlBody = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #171717; max-width: 600px; line-height: 1.5;">
+          <h2 style="color: #16a34a; margin-bottom: 8px;">Shiekh Directory SoR — Request Approved</h2>
+          <p>Hello <strong>${req.submittedBy.name}</strong>,</p>
+          <p>Your update request has been reviewed, approved, and applied to the authoritative System of Record.</p>
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="margin: 4px 0;"><strong>Request ID:</strong> #${req.id}</p>
+            <p style="margin: 4px 0;"><strong>Target:</strong> ${req.targetName}</p>
+            <p style="margin: 4px 0;"><strong>Change Type:</strong> ${req.changeType}</p>
+            <p style="margin: 4px 0;"><strong>Approved By:</strong> ${currentUser.displayName}</p>
+            <p style="margin: 4px 0;"><strong>Decision Notes:</strong> <em>"${finalNotes}"</em></p>
+          </div>
+          <p style="margin: 20px 0;">
+            <a href="${locationUrl}" style="background: #16a34a; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+              View Updated Store Record
+            </a>
+          </p>
+          <p style="font-size: 12px; color: #737373;">Shiekh Shoes Store Directory System of Record • ${appUrl}</p>
+        </div>
+      `;
+
+      try {
+        const emailRes = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: req.submittedBy.email,
+            subject,
+            text: textBody,
+            html: htmlBody,
+            emailType: 'Request Status Update',
+            fromName: smtpConfig.fromName,
+            fromEmail: smtpConfig.fromEmail,
+            replyTo: smtpConfig.replyTo || smtpConfig.replyToEmail,
+          }),
+        });
+        const data = await emailRes.json().catch(() => ({ success: false, error: `HTTP ${emailRes.status}` }));
+        const isSuccess = emailRes.ok && data.success;
+        const logEntry: EmailLogEntry = {
+          id: `eml-${Date.now()}`,
+          emailType: 'Request Status Update',
+          recipients: [req.submittedBy.email],
+          subject,
+          sentBy: currentUser.displayName,
+          sentAt: new Date().toISOString(),
+          status: isSuccess ? 'Sent' : 'Failed',
+          details: isSuccess
+            ? (finalNotes || 'Your update request has been approved and committed to the master directory.')
+            : `Failed to notify requester: ${data.error || data.rawError || `HTTP ${emailRes.status}`}`,
+        };
+        setEmailLogs(prev => [logEntry, ...prev]);
+        if (!isSuccess) {
+          console.warn('Failed to send approval email notification:', data.error);
+        }
+      } catch (err: any) {
+        console.warn('Network error dispatching approval decision email:', err);
+        const logEntry: EmailLogEntry = {
+          id: `eml-${Date.now()}`,
+          emailType: 'Request Status Update',
+          recipients: [req.submittedBy.email],
+          subject,
+          sentBy: currentUser.displayName,
+          sentAt: new Date().toISOString(),
+          status: 'Failed',
+          details: `Network error sending approval email: ${err.message || String(err)}`,
+        };
+        setEmailLogs(prev => [logEntry, ...prev]);
+      }
     }
   };
 
-  const rejectUpdateRequest = (requestId: string, rejectionNotes: string) => {
+  const rejectUpdateRequest = async (requestId: string, rejectionNotes: string): Promise<void> => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
+
+    const decisionAt = new Date().toISOString();
+
+    // Persist request decision to Firestore
+    try {
+      const db = getFirebaseDb();
+      await setDoc(doc(db, 'requests', requestId), sanitizeForFirestore({
+        status: 'Rejected',
+        decisionNotes: rejectionNotes,
+        decisionBy: currentUser.displayName,
+        decisionAt: decisionAt,
+      }), { merge: true });
+    } catch (err) {
+      console.warn('Firestore rejectUpdateRequest error:', err);
+    }
 
     setRequests(prev => prev.map(r => {
       if (r.id !== requestId) return r;
@@ -1286,23 +1578,85 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         status: 'Rejected',
         decisionNotes: rejectionNotes,
         decisionBy: currentUser.displayName,
-        decisionAt: new Date().toISOString(),
+        decisionAt: decisionAt,
       };
     }));
 
-    // Notify requester
+    // Notify requester with dynamic APP_URL link via Express SMTP backend
     if (smtpConfig.notifyRequesterOnDecision && req.submittedBy.email) {
-      const emailLog: EmailLogEntry = {
-        id: `eml-${Date.now()}`,
-        emailType: 'Request Status Update',
-        recipients: [req.submittedBy.email],
-        subject: `[Shiekh Directory] Update Request Update: ${req.changeType} for ${req.targetName}`,
-        sentBy: currentUser.displayName,
-        sentAt: new Date().toISOString(),
-        status: 'Sent',
-        details: `Reason / Decision: ${rejectionNotes}`,
-      };
-      setEmailLogs(prev => [emailLog, ...prev]);
+      const appUrl = getAppUrl();
+      const queueUrl = `${appUrl}/?view=requests`;
+      const subject = `[Shiekh Directory] Update Request Rejected: #${req.id} (${req.targetName})`;
+      const textBody = `Your update request #${req.id} for ${req.targetName} (${req.changeType}) was not approved by ${currentUser.displayName}.\n\nReason / Feedback: ${rejectionNotes}\n\nView request details in the directory queue:\n${queueUrl}`;
+      
+      const htmlBody = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #171717; max-width: 600px; line-height: 1.5;">
+          <h2 style="color: #dc2626; margin-bottom: 8px;">Shiekh Directory SoR — Request Not Approved</h2>
+          <p>Hello <strong>${req.submittedBy.name}</strong>,</p>
+          <p>Your update request could not be applied to the master directory at this time.</p>
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="margin: 4px 0;"><strong>Request ID:</strong> #${req.id}</p>
+            <p style="margin: 4px 0;"><strong>Target:</strong> ${req.targetName}</p>
+            <p style="margin: 4px 0;"><strong>Change Type:</strong> ${req.changeType}</p>
+            <p style="margin: 4px 0;"><strong>Reviewed By:</strong> ${currentUser.displayName}</p>
+            <p style="margin: 4px 0;"><strong>Decision Reason:</strong> <em>"${rejectionNotes}"</em></p>
+          </div>
+          <p style="margin: 20px 0;">
+            <a href="${queueUrl}" style="background: #525252; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+              View Request History in Queue
+            </a>
+          </p>
+          <p style="font-size: 12px; color: #737373;">Shiekh Shoes Store Directory System of Record • ${appUrl}</p>
+        </div>
+      `;
+
+      try {
+        const emailRes = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: req.submittedBy.email,
+            subject,
+            text: textBody,
+            html: htmlBody,
+            emailType: 'Request Status Update',
+            fromName: smtpConfig.fromName,
+            fromEmail: smtpConfig.fromEmail,
+            replyTo: smtpConfig.replyTo || smtpConfig.replyToEmail,
+          }),
+        });
+        const data = await emailRes.json().catch(() => ({ success: false, error: `HTTP ${emailRes.status}` }));
+        const isSuccess = emailRes.ok && data.success;
+        const logEntry: EmailLogEntry = {
+          id: `eml-${Date.now()}`,
+          emailType: 'Request Status Update',
+          recipients: [req.submittedBy.email],
+          subject,
+          sentBy: currentUser.displayName,
+          sentAt: new Date().toISOString(),
+          status: isSuccess ? 'Sent' : 'Failed',
+          details: isSuccess
+            ? `Rejection Decision: ${rejectionNotes}`
+            : `Failed to notify requester: ${data.error || data.rawError || `HTTP ${emailRes.status}`}`,
+        };
+        setEmailLogs(prev => [logEntry, ...prev]);
+        if (!isSuccess) {
+          console.warn('Failed to send rejection email notification:', data.error);
+        }
+      } catch (err: any) {
+        console.warn('Network error dispatching rejection decision email:', err);
+        const logEntry: EmailLogEntry = {
+          id: `eml-${Date.now()}`,
+          emailType: 'Request Status Update',
+          recipients: [req.submittedBy.email],
+          subject,
+          sentBy: currentUser.displayName,
+          sentAt: new Date().toISOString(),
+          status: 'Failed',
+          details: `Network error sending rejection email: ${err.message || String(err)}`,
+        };
+        setEmailLogs(prev => [logEntry, ...prev]);
+      }
     }
   };
 
@@ -1433,25 +1787,30 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   // User Accounts & Onboarding Lifecycle
-  const addUserAccount = (userData: Omit<UserAccount, 'id' | 'createdAt'>): UserAccount => {
+  const addUserAccount = async (userData: Omit<UserAccount, 'id' | 'createdAt'>): Promise<UserAccount> => {
     const newUser: UserAccount = {
       ...userData,
       id: `usr-${Date.now().toString(36)}`,
       createdAt: new Date().toISOString(),
     };
-    setUsers(prev => [...prev, newUser]);
+    try {
+      const db = getFirebaseDb();
+      await setDoc(doc(db, 'users', newUser.id), sanitizeForFirestore(newUser));
+    } catch (err) {
+      console.warn('Firestore addUserAccount error:', err);
+    }
     logAudit('User', newUser.id, newUser.displayName, 'Created User Account', '', newUser.role);
     return newUser;
   };
 
-  const inviteUserAccount = (
+  const inviteUserAccount = async (
     email: string,
     role: UserRole,
     accessScope: UserAccount['accessScope'],
     personId?: string,
     assignedDistrict?: string,
     assignedStoreId?: string
-  ): UserAccount => {
+  ): Promise<UserAccount> => {
     const linkedPerson = personId ? people.find(p => p.id === personId) : undefined;
     const token = `inv_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
     
@@ -1471,62 +1830,206 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       createdAt: new Date().toISOString(),
     };
 
-    setUsers(prev => [...prev, newUser]);
+    // 1. Persist newUser object to live Firestore database (no optimistic setUsers to prevent race conditions)
+    try {
+      const db = getFirebaseDb();
+      await setDoc(doc(db, 'users', newUser.id), sanitizeForFirestore(newUser));
+    } catch (dbErr: any) {
+      console.error('Firestore setDoc user error:', dbErr);
+      throw new Error(`Failed to save user account to database: ${dbErr.message || String(dbErr)}`);
+    }
+
     logAudit('User', newUser.id, newUser.displayName, `Sent Onboarding Invitation (${role})`, '', `Token: ${token}`);
 
-    // Log invitation email dispatch
-    if (smtpConfig.notifyOnNewRequest) {
-      const emailLog: EmailLogEntry = {
+    // 2. Dispatch onboarding invitation email via real SMTP Express backend
+    const appUrl = getAppUrl();
+    const inviteUrl = `${appUrl}/?inviteToken=${token}&email=${encodeURIComponent(newUser.email)}`;
+    const subject = `[Shiekh Directory] Invitation to Join Shiekh Directory SoR (${role})`;
+    const textBody = `Hello,\n\nYou have been invited by ${currentUser.displayName} to access the Shiekh Location & Company Directory System of Record (SoR).\n\nAssigned Role: ${role}\nAccess Scope: ${accessScope}\nAccount Email: ${newUser.email}\n\nAccept your invitation and access the directory here:\n${inviteUrl}`;
+    
+    const htmlBody = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #171717; max-width: 600px; line-height: 1.5;">
+        <h2 style="color: #dc2626; margin-bottom: 8px;">Welcome to Shiekh Directory SoR</h2>
+        <p>You have been invited by <strong>${currentUser.displayName}</strong> to access the Shiekh Location & Company Directory system of record.</p>
+        <div style="background: #f5f5f5; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 4px 0;"><strong>Assigned Role:</strong> ${role}</p>
+          <p style="margin: 4px 0;"><strong>Access Scope:</strong> ${accessScope}</p>
+          <p style="margin: 4px 0;"><strong>Account Email:</strong> ${newUser.email}</p>
+        </div>
+        <p style="margin: 20px 0;">
+          <a href="${inviteUrl}" style="background: #dc2626; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+            Accept Invitation & Access Directory
+          </a>
+        </p>
+        <p style="font-size: 12px; color: #737373;">Invitation Token: <code style="font-family: monospace;">${token}</code> • ${appUrl}</p>
+      </div>
+    `;
+
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: newUser.email,
+          subject,
+          text: textBody,
+          html: htmlBody,
+          emailType: 'Directory Update Request',
+          fromName: smtpConfig.fromName,
+          fromEmail: smtpConfig.fromEmail,
+          replyTo: smtpConfig.replyTo || smtpConfig.replyToEmail,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({
+        success: false,
+        error: `HTTP ${res.status}: ${res.statusText || 'Server Error'}`,
+      }));
+
+      if (!res.ok || !data.success) {
+        const errorMsg = data.error || data.rawError || data.details || `HTTP ${res.status}: SMTP transport failure.`;
+        const logEntry: EmailLogEntry = {
+          id: `eml-${Date.now()}`,
+          emailType: 'Directory Update Request',
+          recipients: [newUser.email],
+          subject,
+          sentBy: currentUser.displayName,
+          sentAt: new Date().toISOString(),
+          status: 'Failed',
+          details: `Failed to dispatch invitation email to ${newUser.email}: ${errorMsg}`,
+        };
+        setEmailLogs(prev => [logEntry, ...prev]);
+        throw new Error(`Failed to send invitation email: ${errorMsg}`);
+      }
+
+      const logEntry: EmailLogEntry = {
         id: `eml-${Date.now()}`,
         emailType: 'Directory Update Request',
         recipients: [newUser.email],
-        subject: `[Shiekh Directory] Invitation to Join Shiekh Directory SoR (${role})`,
+        subject,
         sentBy: currentUser.displayName,
         sentAt: new Date().toISOString(),
         status: 'Sent',
-        details: `Invitation link generated with token ${token}. Role: ${role}, Scope: ${accessScope}.`,
+        details: `Invitation link dispatched with token ${token}. Role: ${role}, Scope: ${accessScope}. Message ID: ${data.messageId || 'OK'}`,
       };
-      setEmailLogs(prev => [emailLog, ...prev]);
+      setEmailLogs(prev => [logEntry, ...prev]);
+    } catch (err: any) {
+      if (err.message?.startsWith('Failed to send invitation email:') || err.message?.startsWith('Failed to save user account')) {
+        throw err;
+      }
+      const errorMsg = `Network error calling /api/send-email: ${err.message || String(err)}`;
+      const logEntry: EmailLogEntry = {
+        id: `eml-${Date.now()}`,
+        emailType: 'Directory Update Request',
+        recipients: [newUser.email],
+        subject,
+        sentBy: currentUser.displayName,
+        sentAt: new Date().toISOString(),
+        status: 'Failed',
+        details: errorMsg,
+      };
+      setEmailLogs(prev => [logEntry, ...prev]);
+      throw new Error(errorMsg);
     }
 
     return newUser;
   };
 
-  const activateUserAccount = (id: string) => {
-    updateUserAccount(id, { status: 'Active' });
+  const activateUserAccount = async (id: string): Promise<void> => {
+    await updateUserAccount(id, { status: 'Active' });
     logAudit('User', id, id, 'Activated User Account', 'Invited', 'Active');
   };
 
-  const resendUserInvite = (id: string) => {
+  const resendUserInvite = async (id: string): Promise<void> => {
     const user = users.find(u => u.id === id);
     if (!user) return;
     const token = `inv_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-    updateUserAccount(id, { invitationToken: token });
+    await updateUserAccount(id, { invitationToken: token });
 
-    const emailLog: EmailLogEntry = {
-      id: `eml-${Date.now()}`,
-      emailType: 'Directory Update Request',
-      recipients: [user.email],
-      subject: `[Shiekh Directory] Reminder: Invitation to Join Shiekh Directory SoR`,
-      sentBy: currentUser.displayName,
-      sentAt: new Date().toISOString(),
-      status: 'Sent',
-      details: `Resent onboarding invite token ${token}.`,
-    };
-    setEmailLogs(prev => [emailLog, ...prev]);
+    const appUrl = getAppUrl();
+    const inviteUrl = `${appUrl}/?inviteToken=${token}&email=${encodeURIComponent(user.email)}`;
+    const subject = `[Shiekh Directory] Reminder: Invitation to Join Shiekh Directory SoR`;
+    const textBody = `Hello,\n\nThis is a reminder that you have an active invitation from ${currentUser.displayName} to access the Shiekh Location & Company Directory SoR.\n\nRole: ${user.role}\nAccess Scope: ${user.accessScope}\n\nAccept your invitation here:\n${inviteUrl}`;
+    
+    const htmlBody = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #171717; max-width: 600px; line-height: 1.5;">
+        <h2 style="color: #dc2626; margin-bottom: 8px;">Shiekh Directory SoR — Invitation Reminder</h2>
+        <p>You have a pending invitation from <strong>${currentUser.displayName}</strong> to access the Shiekh Directory SoR.</p>
+        <div style="background: #f5f5f5; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 4px 0;"><strong>Role:</strong> ${user.role}</p>
+          <p style="margin: 4px 0;"><strong>Scope:</strong> ${user.accessScope}</p>
+          <p style="margin: 4px 0;"><strong>Email:</strong> ${user.email}</p>
+        </div>
+        <p style="margin: 20px 0;">
+          <a href="${inviteUrl}" style="background: #dc2626; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+            Accept Invitation & Access Directory
+          </a>
+        </p>
+        <p style="font-size: 12px; color: #737373;">Invitation Token: <code style="font-family: monospace;">${token}</code> • ${appUrl}</p>
+      </div>
+    `;
+
+    try {
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: user.email,
+          subject,
+          text: textBody,
+          html: htmlBody,
+          emailType: 'Directory Update Request',
+          fromName: smtpConfig.fromName,
+          fromEmail: smtpConfig.fromEmail,
+          replyTo: smtpConfig.replyTo || smtpConfig.replyToEmail,
+        }),
+      });
+      const data = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+      const isSuccess = res.ok && data.success;
+      const logEntry: EmailLogEntry = {
+        id: `eml-${Date.now()}`,
+        emailType: 'Directory Update Request',
+        recipients: [user.email],
+        subject,
+        sentBy: currentUser.displayName,
+        sentAt: new Date().toISOString(),
+        status: isSuccess ? 'Sent' : 'Failed',
+        details: isSuccess
+          ? `Resent onboarding invite token ${token}.`
+          : `Failed to resend invite: ${data.error || data.rawError || `HTTP ${res.status}`}`,
+      };
+      setEmailLogs(prev => [logEntry, ...prev]);
+    } catch (err: any) {
+      const logEntry: EmailLogEntry = {
+        id: `eml-${Date.now()}`,
+        emailType: 'Directory Update Request',
+        recipients: [user.email],
+        subject,
+        sentBy: currentUser.displayName,
+        sentAt: new Date().toISOString(),
+        status: 'Failed',
+        details: `Network error resending invite: ${err.message || String(err)}`,
+      };
+      setEmailLogs(prev => [logEntry, ...prev]);
+    }
   };
 
-  const updateUserAccount = (id: string, updates: Partial<UserAccount>) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id !== id) return u;
+  const updateUserAccount = async (id: string, updates: Partial<UserAccount>): Promise<void> => {
+    try {
+      const db = getFirebaseDb();
+      await setDoc(doc(db, 'users', id), sanitizeForFirestore(updates), { merge: true });
+    } catch (err) {
+      console.warn('Firestore updateUserAccount error:', err);
+    }
+    const u = users.find(user => user.id === id);
+    if (u) {
       const updated = { ...u, ...updates };
       logAudit('User', u.id, u.displayName, 'Updated Account Properties', JSON.stringify(u), JSON.stringify(updated));
-      return updated;
-    }));
+    }
   };
 
-  const deactivateUserAccount = (id: string) => {
-    updateUserAccount(id, { status: 'Deactivated' });
+  const deactivateUserAccount = async (id: string): Promise<void> => {
+    await updateUserAccount(id, { status: 'Deactivated' });
   };
 
   const offboardUserAccount = (
@@ -1664,34 +2167,75 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     logAudit('Setting', 'smtp-config', 'SMTP Configuration', 'Updated Email Settings', '', JSON.stringify(updates));
   };
 
-  const sendTestEmail = (toEmail: string) => {
-    const emailLog: EmailLogEntry = {
-      id: `eml-${Date.now()}`,
+  const sendTestEmail = async (toEmail: string): Promise<{ success: boolean; error?: string; log: EmailLogEntry }> => {
+    const appUrl = getAppUrl();
+    const subject = `[Shiekh Directory] Test Email from SMTP Service`;
+    const textBody = `This is an automated diagnostic test email from the Shiekh Location & Company Directory SoR SMTP Service.\n\nServer Time: ${new Date().toISOString()}\nTarget Recipient: ${toEmail}\nTriggered By: ${currentUser.displayName} (${currentUser.role})\nHost: ${smtpConfig.host}:${smtpConfig.port} (TLS: ${smtpConfig.secureTls ? 'Enabled' : 'Disabled'})\n\nApplication URL:\n${appUrl}`;
+    
+    const htmlBody = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #171717; max-width: 600px; line-height: 1.5;">
+        <h2 style="color: #dc2626; margin-bottom: 8px;">Shiekh Directory SoR — SMTP Diagnostic Ping</h2>
+        <p>This is an automated diagnostic test message from the Shiekh Location & Company Directory SoR mail relay.</p>
+        <div style="background: #f5f5f5; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 4px 0;"><strong>Status:</strong> <span style="color: #16a34a; font-weight: bold;">Connection Successful</span></p>
+          <p style="margin: 4px 0;"><strong>Host:</strong> ${smtpConfig.host}:${smtpConfig.port}</p>
+          <p style="margin: 4px 0;"><strong>Encryption:</strong> ${smtpConfig.secureTls ? 'STARTTLS Enforced' : 'Standard'}</p>
+          <p style="margin: 4px 0;"><strong>Sender:</strong> ${smtpConfig.fromName} &lt;${smtpConfig.fromEmail}&gt;</p>
+          <p style="margin: 4px 0;"><strong>Triggered By:</strong> ${currentUser.displayName}</p>
+          <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date().toLocaleString()}</p>
+        </div>
+        <p style="margin: 20px 0;">
+          <a href="${appUrl}" style="background: #dc2626; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+            Open Shiekh Directory
+          </a>
+        </p>
+        <p style="font-size: 12px; color: #737373;">Shiekh Shoes System of Record • ${appUrl}</p>
+      </div>
+    `;
+
+    return await dispatchEmailApi({
+      to: toEmail,
+      subject,
+      text: textBody,
+      html: htmlBody,
       emailType: 'Test Email',
-      recipients: [toEmail],
-      subject: `[Shiekh Directory] Test Email from SMTP Service`,
-      sentBy: currentUser.displayName,
-      sentAt: new Date().toISOString(),
-      status: 'Sent',
-      details: `Handshake successful with ${smtpConfig.host}:${smtpConfig.port} (TLS: ${smtpConfig.secureTls ? 'Enabled' : 'Disabled'}). Authenticated as ${smtpConfig.username}.`,
-    };
-    setEmailLogs(prev => [emailLog, ...prev]);
-    return { success: true, log: emailLog };
+      details: `Diagnostic test email dispatched to ${toEmail}.`,
+    });
   };
 
-  const sendDirectoryPdfEmail = (recipients: string[], subject: string, message: string, paperSize: string) => {
-    const emailLog: EmailLogEntry = {
-      id: `eml-${Date.now()}`,
+  const sendDirectoryPdfEmail = async (recipients: string[], subject: string, message: string, paperSize: string): Promise<{ success: boolean; error?: string; log: EmailLogEntry }> => {
+    const appUrl = getAppUrl();
+    const pdfSubject = subject || 'Shiekh Shoes Store Directory (Master Landscape PDF)';
+    const attachmentName = `Shiekh_Store_Directory_${new Date().toISOString().split('T')[0]}_${paperSize}.pdf`;
+    const textBody = `${message}\n\nGenerated by ${currentUser.displayName} on ${new Date().toLocaleString()}.\nAccess authoritative directory:\n${appUrl}`;
+    
+    const htmlBody = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; color: #171717; max-width: 600px; line-height: 1.5;">
+        <h2 style="color: #dc2626; margin-bottom: 8px;">Shiekh Shoes Store Directory</h2>
+        <p>${message}</p>
+        <div style="background: #f5f5f5; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 4px 0;"><strong>Document:</strong> Master Store Directory (${paperSize})</p>
+          <p style="margin: 4px 0;"><strong>Attachment:</strong> ${attachmentName}</p>
+          <p style="margin: 4px 0;"><strong>Generated By:</strong> ${currentUser.displayName}</p>
+          <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date().toLocaleString()}</p>
+        </div>
+        <p style="margin: 20px 0;">
+          <a href="${appUrl}" style="background: #dc2626; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+            Open Live Shiekh Directory
+          </a>
+        </p>
+        <p style="font-size: 12px; color: #737373;">Shiekh Shoes System of Record • ${appUrl}</p>
+      </div>
+    `;
+
+    return await dispatchEmailApi({
+      to: recipients,
+      subject: pdfSubject,
+      text: textBody,
+      html: htmlBody,
       emailType: 'Store Directory PDF',
-      recipients,
-      subject: subject || 'Shiekh Shoes Store Directory (Master Landscape PDF)',
-      sentBy: currentUser.displayName,
-      sentAt: new Date().toISOString(),
-      status: 'Sent',
       details: message,
-      attachmentName: `Shiekh_Store_Directory_${new Date().toISOString().split('T')[0]}_${paperSize}.pdf`,
-    };
-    setEmailLogs(prev => [emailLog, ...prev]);
+    });
   };
 
   // Google Business Profile (GBP) API Integration Methods (Blueprint Sec 14 & 15)

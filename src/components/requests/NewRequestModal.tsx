@@ -9,7 +9,8 @@ import {
   Clock, 
   Calendar,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { 
@@ -57,8 +58,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
   const [newStatus, setNewStatus] = useState('Open — Normal Operations');
   const [notes, setNotes] = useState('');
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Structured Hours Builder State (DISPATCH-012)
+  // Structured Hours Builder State (DISPATCH-012 & DISPATCH-013)
+  const [hoursSource, setHoursSource] = useState<string>('Custom Hours');
   const [requestedSchedule, setRequestedSchedule] = useState<WeeklySchedule>(() => {
     if (targetLoc?.standardHours) {
       return JSON.parse(JSON.stringify(targetLoc.standardHours));
@@ -90,7 +93,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetLoc) return;
 
@@ -100,6 +103,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
     if (changeType === 'Store Hours Update') {
       currentSnapshot.standardHours = targetLoc.standardHours;
       requestedChanges.standardHours = requestedSchedule;
+      requestedChanges.hoursSource = hoursSource || 'Custom Hours';
     } else if (changeType === 'Holiday / Special Hours') {
       const newException: HolidayHoursOverride = {
         id: `hol-${Date.now().toString(36)}`,
@@ -116,6 +120,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
         ...(targetLoc.holidayHours || []).filter(h => h.date !== holidayDate),
         newException
       ];
+      requestedChanges.hoursSource = `Holiday Preset: ${holidayName}`;
     } else if (changeType === 'Store Manager Change') {
       currentSnapshot.storeManagerName = targetLoc.storeManagerName || '';
       currentSnapshot.storeManagerPhone = targetLoc.storeManagerPhone || '';
@@ -135,27 +140,36 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
       requestedChanges.general = notes;
     }
 
-    submitUpdateRequest({
-      targetType: 'Location',
-      targetId: targetLoc.id,
-      targetName: `Store #${targetLoc.storeNumber} (${targetLoc.name})`,
-      targetStoreNumber: targetLoc.storeNumber,
-      changeType,
-      currentSnapshot,
-      requestedChanges,
-      notes: notes.trim() || `Proposed structured update for ${changeType}`,
-      submittedBy: {
-        name: currentUser.displayName,
-        email: currentUser.email,
-        role: currentUser.role,
-      },
-    });
+    setIsSubmitting(true);
+    try {
+      await submitUpdateRequest({
+        targetType: 'Location',
+        targetId: targetLoc.id,
+        targetName: `Store #${targetLoc.storeNumber} (${targetLoc.name})`,
+        targetStoreNumber: targetLoc.storeNumber,
+        changeType,
+        hoursSource: changeType === 'Store Hours Update' ? (hoursSource || 'Custom Hours') : changeType === 'Holiday / Special Hours' ? `Holiday: ${holidayName}` : undefined,
+        currentSnapshot,
+        requestedChanges,
+        notes: notes.trim() || `Proposed structured update for ${changeType}`,
+        submittedBy: {
+          name: currentUser.displayName,
+          email: currentUser.email,
+          role: currentUser.role,
+        },
+      });
 
-    setSubmittedSuccess(true);
-    setTimeout(() => {
-      setSubmittedSuccess(false);
-      onClose();
-    }, 1500);
+      setSubmittedSuccess(true);
+      setTimeout(() => {
+        setSubmittedSuccess(false);
+        onClose();
+      }, 1500);
+    } catch (err: any) {
+      console.error('Failed to submit update request:', err);
+      alert(`Error submitting request: ${err.message || String(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isHoursChange = changeType === 'Store Hours Update' || changeType === 'Holiday / Special Hours';
@@ -202,7 +216,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               <div>
                 <label className="block text-neutral-500 mb-1 font-semibold">Select Store / Location *</label>
                 <select
-                  value={location?.id || selectedLocId}
+                  value={location?.id || selectedLocId || ''}
                   disabled={!!location}
                   onChange={e => setSelectedLocId(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100 font-medium"
@@ -219,7 +233,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               <div>
                 <label className="block text-neutral-500 mb-1 font-semibold">Change Type *</label>
                 <select
-                  value={changeType}
+                  value={changeType || 'Store Hours Update'}
                   onChange={e => setChangeType(e.target.value as RequestChangeType)}
                   className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100 font-semibold"
                 >
@@ -250,6 +264,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                   value={requestedSchedule}
                   onChange={setRequestedSchedule}
                   templates={hoursTemplates}
+                  onTemplateSelect={(_id, name) => setHoursSource(name)}
                 />
               </div>
             )}
@@ -286,7 +301,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                     <input
                       type="text"
                       required
-                      value={holidayName}
+                      value={holidayName || ''}
                       onChange={e => setHolidayName(e.target.value)}
                       placeholder="e.g. Thanksgiving Day"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -298,7 +313,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                     <input
                       type="date"
                       required
-                      value={holidayDate}
+                      value={holidayDate || ''}
                       onChange={e => setHolidayDate(e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
                     />
@@ -308,7 +323,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                     <label className="inline-flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        checked={holidayIsClosed}
+                        checked={Boolean(holidayIsClosed)}
                         onChange={e => setHolidayIsClosed(e.target.checked)}
                         className="rounded border-neutral-300 dark:border-neutral-700 text-red-600 focus:ring-red-500 w-4 h-4"
                       />
@@ -325,7 +340,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                       <label className="block text-neutral-500 mb-1">Proposed Open Time</label>
                       <input
                         type="text"
-                        value={holidayOpen}
+                        value={holidayOpen || ''}
                         onChange={e => setHolidayOpen(e.target.value)}
                         placeholder="06:00 AM"
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -335,7 +350,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                       <label className="block text-neutral-500 mb-1">Proposed Close Time</label>
                       <input
                         type="text"
-                        value={holidayClose}
+                        value={holidayClose || ''}
                         onChange={e => setHolidayClose(e.target.value)}
                         placeholder="10:00 PM"
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -357,7 +372,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                   <input
                     type="text"
                     required
-                    value={newManagerName}
+                    value={newManagerName || ''}
                     onChange={e => setNewManagerName(e.target.value)}
                     placeholder="e.g. John Doe"
                     className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -368,7 +383,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                   <input
                     type="text"
                     required
-                    value={newManagerPhone}
+                    value={newManagerPhone || ''}
                     onChange={e => setNewManagerPhone(e.target.value)}
                     placeholder="(555) 000-0000"
                     className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -386,7 +401,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                 <input
                   type="text"
                   required
-                  value={newPhone}
+                  value={newPhone || ''}
                   onChange={e => setNewPhone(e.target.value)}
                   placeholder="(555) 000-0000"
                   className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -403,7 +418,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
                 <input
                   type="text"
                   required
-                  value={newAddress}
+                  value={newAddress || ''}
                   onChange={e => setNewAddress(e.target.value)}
                   placeholder="e.g. 123 Main St, Suite #204"
                   className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -415,7 +430,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               <div>
                 <label className="block text-neutral-500 mb-1">Requested Operational Status</label>
                 <select
-                  value={newStatus}
+                  value={newStatus || 'Open — Normal Operations'}
                   onChange={e => setNewStatus(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                 >
@@ -439,7 +454,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               <textarea
                 required={!isHoursChange}
                 rows={2}
-                value={notes}
+                value={notes || ''}
                 onChange={e => setNotes(e.target.value)}
                 placeholder={isHoursChange ? 'e.g. Approved by Regional VP for Q4 Holiday Schedule...' : 'Explain the background, effective start date, authorization details...'}
                 className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs text-neutral-900 dark:text-neutral-100"
@@ -461,10 +476,20 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded font-bold text-xs flex items-center gap-1.5 shadow-xs"
+                disabled={isSubmitting}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-neutral-400 text-white rounded font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer disabled:cursor-not-allowed"
               >
-                <Send className="w-3.5 h-3.5" />
-                <span>Submit to Data Steward</span>
+                {isSubmitting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Submitting to Data Steward...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Submit to Data Steward</span>
+                  </>
+                )}
               </button>
             </div>
           </form>

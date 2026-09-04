@@ -205,6 +205,7 @@ export interface UpdateRequest {
   targetName: string;
   targetStoreNumber?: string;
   changeType: RequestChangeType;
+  hoursSource?: string; // e.g. "Standard Enclosed Mall Schedule" or "Custom Hours" (DISPATCH-013)
   currentSnapshot: Record<string, any>;
   requestedChanges: Record<string, any>;
   notes: string;

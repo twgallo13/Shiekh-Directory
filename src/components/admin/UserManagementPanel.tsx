@@ -21,7 +21,8 @@ import {
   FileText,
   UserCheck,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  RefreshCw
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { UserAccount, UserRole, AccessScope, LocationRecord } from '../../types';
@@ -55,6 +56,8 @@ export const UserManagementPanel: React.FC = () => {
   const [assignedDistrict, setAssignedDistrict] = useState('District 1 (Rudy Calderon)');
   const [assignedStoreId, setAssignedStoreId] = useState('');
   const [createdUserResult, setCreatedUserResult] = useState<UserAccount | null>(null);
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Offboarding Wizard State (Blueprint Sec 9)
   const [offboardingUser, setOffboardingUser] = useState<UserAccount | null>(null);
@@ -96,21 +99,33 @@ export const UserManagementPanel: React.FC = () => {
     }
   };
 
-  const handleCompleteOnboarding = (e: React.FormEvent) => {
+  const handleCompleteOnboarding = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail) return;
 
-    const newUser = inviteUserAccount(
-      newEmail,
-      newRole,
-      newScope,
-      selectedPersonId || undefined,
-      newScope === 'District' ? assignedDistrict : undefined,
-      newScope === 'Store' ? assignedStoreId : undefined
-    );
+    setIsInviting(true);
+    setInviteError(null);
 
-    setCreatedUserResult(newUser);
-    setWizardStep(3);
+    try {
+      const newUser = await inviteUserAccount(
+        newEmail,
+        newRole,
+        newScope,
+        selectedPersonId || undefined,
+        newScope === 'District' ? assignedDistrict : undefined,
+        newScope === 'Store' ? assignedStoreId : undefined
+      );
+
+      setCreatedUserResult(newUser);
+      setWizardStep(3);
+    } catch (err: any) {
+      console.error('Failed to issue invitation:', err);
+      const msg = err.message || 'Failed to issue invitation and send email. Please verify SMTP settings.';
+      setInviteError(msg);
+      alert(`Account Onboarding Error: ${msg}`);
+    } finally {
+      setIsInviting(false);
+    }
   };
 
   const resetWizard = () => {
@@ -122,6 +137,8 @@ export const UserManagementPanel: React.FC = () => {
     setNewRole('Store Manager');
     setNewScope('Store');
     setCreatedUserResult(null);
+    setIsInviting(false);
+    setInviteError(null);
   };
 
   // Find stores assigned to the user undergoing offboarding
@@ -442,7 +459,7 @@ export const UserManagementPanel: React.FC = () => {
                     <input
                       type="text"
                       required
-                      value={newDisplayName}
+                      value={newDisplayName || ''}
                       onChange={e => setNewDisplayName(e.target.value)}
                       placeholder="e.g. Jessica Morales"
                       className="w-full p-2.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs"
@@ -456,7 +473,7 @@ export const UserManagementPanel: React.FC = () => {
                     <input
                       type="email"
                       required
-                      value={newEmail}
+                      value={newEmail || ''}
                       onChange={e => setNewEmail(e.target.value)}
                       placeholder="e.g. j.morales@shiekhshoes.com"
                       className="w-full p-2.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs"
@@ -557,20 +574,40 @@ export const UserManagementPanel: React.FC = () => {
                     </div>
                   )}
 
+                  {inviteError && (
+                    <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                      <div>
+                        <strong>Failed to Issue Invitation:</strong> {inviteError}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="pt-2 flex justify-between">
                     <button
                       type="button"
                       onClick={() => setWizardStep(1)}
-                      className="px-3 py-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs"
+                      disabled={isInviting}
+                      className="px-3 py-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-lg text-xs disabled:opacity-50"
                     >
                       Back
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                      disabled={isInviting}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-neutral-400 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                     >
-                      <Send className="w-4 h-4" />
-                      <span>Issue Invitation & Provision Account</span>
+                      {isInviting ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Sending Real Invite...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Issue Invitation & Provision Account</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>

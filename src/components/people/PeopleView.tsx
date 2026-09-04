@@ -255,7 +255,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                 <input
                   type="text"
                   required
-                  value={newName}
+                  value={newName || ''}
                   onChange={e => setNewName(e.target.value)}
                   placeholder="e.g. Jane Doe"
                   className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"
@@ -266,7 +266,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                   <label className="block text-neutral-500 mb-1">Job Title</label>
                   <input
                     type="text"
-                    value={newTitle}
+                    value={newTitle || ''}
                     onChange={e => setNewTitle(e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"
                   />
@@ -275,7 +275,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                   <label className="block text-neutral-500 mb-1">Department</label>
                   <input
                     type="text"
-                    value={newDept}
+                    value={newDept || ''}
                     onChange={e => setNewDept(e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"
                   />
@@ -286,7 +286,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                 <input
                   type="text"
                   required
-                  value={newPhone}
+                  value={newPhone || ''}
                   onChange={e => setNewPhone(e.target.value)}
                   placeholder="(555) 000-0000"
                   className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded font-mono text-neutral-900 dark:text-neutral-100"
@@ -296,7 +296,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
                 <label className="block text-neutral-500 mb-1">Work Email</label>
                 <input
                   type="email"
-                  value={newEmail}
+                  value={newEmail || ''}
                   onChange={e => setNewEmail(e.target.value)}
                   placeholder="name@shiekhshoes.com"
                   className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"

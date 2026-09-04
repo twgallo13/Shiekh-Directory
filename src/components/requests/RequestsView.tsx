@@ -11,7 +11,8 @@ import {
   Check, 
   X,
   Filter,
-  Plus
+  Plus,
+  Sparkles
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { UpdateRequest, RequestStatus } from '../../types';
@@ -125,6 +126,8 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
         ) : (
           filteredRequests.map(req => {
             const isPending = req.status === 'Submitted' || req.status === 'Under Review';
+            const hoursSource = req.hoursSource || req.requestedChanges?.hoursSource || (req.requestedChanges?.standardHours ? 'Custom Hours' : null);
+
             return (
               <div
                 key={req.id}
@@ -132,13 +135,27 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
               >
                 {/* Header row */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-bold text-neutral-500">
                       #{req.id}
                     </span>
                     <span className="font-bold text-sm text-neutral-900 dark:text-neutral-100">
                       {req.changeType}
                     </span>
+                    {hoursSource && (
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${
+                        hoursSource === 'Custom Hours'
+                          ? 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700'
+                          : 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      }`}>
+                        {hoursSource === 'Custom Hours' ? (
+                          <Clock className="w-2.5 h-2.5 text-neutral-500" />
+                        ) : (
+                          <Sparkles className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                        )}
+                        <span>{hoursSource.startsWith('Template:') || hoursSource.startsWith('Holiday:') ? hoursSource : `Template: ${hoursSource}`}</span>
+                      </span>
+                    )}
                     <span className="text-neutral-400">•</span>
                     <button
                       onClick={() => onSelectLocationById(req.targetId)}
@@ -227,7 +244,14 @@ export const RequestsView: React.FC<RequestsViewProps> = ({
                             const sched = v as any;
                             return (
                               <div key={k} className="text-[11px]">
-                                <div className="font-bold text-red-600 dark:text-red-400 mb-0.5">Proposed Standard Hours:</div>
+                                <div className="flex items-center justify-between font-bold text-red-600 dark:text-red-400 mb-0.5">
+                                  <span>Proposed Standard Hours:</span>
+                                  {hoursSource && (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 font-normal">
+                                      {hoursSource}
+                                    </span>
+                                  )}
+                                </div>
                                 {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
                                   const dayInfo = sched[day];
                                   if (!dayInfo) return null;

@@ -106,6 +106,89 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const [amInput, setAmInput] = useState('');
   const [keyInput, setKeyInput] = useState('');
 
+  // Sync state when location or modal open state changes
+  React.useEffect(() => {
+    if (!isOpen) return;
+    if (location) {
+      setFormData({
+        ...location,
+        storeNumber: location.storeNumber || '',
+        name: location.name || '',
+        type: location.type || 'Enclosed Mall',
+        mallOrCenterName: location.mallOrCenterName || '',
+        address: location.address || '',
+        city: location.city || '',
+        state: location.state || 'CA',
+        zipCode: location.zipCode || '',
+        phone: location.phone || '',
+        timeZone: location.timeZone || 'America/Los_Angeles',
+        region: location.region || 'Southern California',
+        district: location.district || 'District 1 (Rudy Calderon)',
+        districtManagerName: location.districtManagerName || 'Rudy Calderon',
+        storeManagerName: location.storeManagerName || '',
+        storeManagerPhone: location.storeManagerPhone || '',
+        assistantStoreManagerNames: location.assistantStoreManagerNames || [],
+        keyHolderNames: location.keyHolderNames || [],
+        operationalStatus: location.operationalStatus || 'Open — Normal Operations',
+        recordStatus: location.recordStatus || 'Active',
+        standardHours: location.standardHours || {
+          monday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          tuesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          wednesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          thursday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          friday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          saturday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          sunday: { open: '11:00 AM', close: '07:00 PM', isClosed: false },
+        },
+        specialHours: location.specialHours || [],
+        holidayHours: location.holidayHours || [],
+        activeNotice: location.activeNotice,
+      });
+      setNoticeDesc(location.activeNotice?.shortDescription || '');
+      setNoticeEffectiveDate(location.activeNotice?.effectiveDate || new Date().toISOString().split('T')[0]);
+      setNoticeResolutionDate(location.activeNotice?.expectedResolutionDate || '');
+      setHasNotice(Boolean(location.activeNotice || (location.operationalStatus !== 'Open — Normal Operations')));
+    } else {
+      setFormData({
+        storeNumber: '',
+        name: '',
+        type: 'Enclosed Mall',
+        mallOrCenterName: '',
+        address: '',
+        city: '',
+        state: 'CA',
+        zipCode: '',
+        phone: '',
+        timeZone: 'America/Los_Angeles',
+        region: 'Southern California',
+        district: 'District 1 (Rudy Calderon)',
+        districtManagerName: 'Rudy Calderon',
+        storeManagerName: '',
+        storeManagerPhone: '',
+        assistantStoreManagerNames: [],
+        keyHolderNames: [],
+        operationalStatus: 'Open — Normal Operations',
+        recordStatus: 'Active',
+        standardHours: {
+          monday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          tuesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          wednesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          thursday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          friday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          saturday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
+          sunday: { open: '11:00 AM', close: '07:00 PM', isClosed: false },
+        },
+        specialHours: [],
+        holidayHours: [],
+        activeNotice: undefined,
+      });
+      setNoticeDesc('');
+      setNoticeEffectiveDate(new Date().toISOString().split('T')[0]);
+      setNoticeResolutionDate('');
+      setHasNotice(false);
+    }
+  }, [location, isOpen]);
+
   // New Holiday Exception inputs
   const [newHolidayName, setNewHolidayName] = useState('Thanksgiving Day');
   const [newHolidayDate, setNewHolidayDate] = useState(new Date().toISOString().split('T')[0]);
@@ -295,7 +378,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <input
                       type="text"
                       required
-                      value={formData.storeNumber}
+                      value={formData.storeNumber || ''}
                       onChange={e => setFormData({ ...formData, storeNumber: e.target.value })}
                       placeholder="e.g. 42"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -306,7 +389,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <input
                       type="text"
                       required
-                      value={formData.name}
+                      value={formData.name || ''}
                       onChange={e => setFormData({ ...formData, name: e.target.value })}
                       placeholder="e.g. Mission St. Flagship"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -318,7 +401,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div>
                     <label className="block text-neutral-500 mb-1">Location Type</label>
                     <select
-                      value={formData.type}
+                      value={formData.type || 'Enclosed Mall'}
                       onChange={e => setFormData({ ...formData, type: e.target.value as LocationType })}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                     >
@@ -353,7 +436,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <input
                     type="text"
                     required
-                    value={formData.address}
+                    value={formData.address || ''}
                     onChange={e => setFormData({ ...formData, address: e.target.value })}
                     placeholder="123 Main St, Suite #100"
                     className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -365,7 +448,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <input
                       type="text"
                       required
-                      value={formData.city}
+                      value={formData.city || ''}
                       onChange={e => setFormData({ ...formData, city: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                     />
@@ -373,7 +456,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div>
                     <label className="block text-neutral-500 mb-1">State *</label>
                     <select
-                      value={formData.state}
+                      value={formData.state || 'CA'}
                       onChange={e => setFormData({ ...formData, state: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                     >
@@ -389,7 +472,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <input
                       type="text"
                       required
-                      value={formData.zipCode}
+                      value={formData.zipCode || ''}
                       onChange={e => setFormData({ ...formData, zipCode: e.target.value })}
                       placeholder="94110"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -400,7 +483,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <input
                       type="text"
                       required
-                      value={formData.phone}
+                      value={formData.phone || ''}
                       onChange={e => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="(555) 000-0000"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-medium"
@@ -412,7 +495,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div>
                     <label className="block text-neutral-500 mb-1">Time Zone (for Today's Hours & Local Clocks)</label>
                     <select
-                      value={formData.timeZone}
+                      value={formData.timeZone || 'America/Los_Angeles'}
                       onChange={e => setFormData({ ...formData, timeZone: e.target.value as any })}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                     >
@@ -423,7 +506,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div>
                     <label className="block text-neutral-500 mb-1">District / Region</label>
                     <select
-                      value={formData.district}
+                      value={formData.district || 'District 1 (Rudy Calderon)'}
                       onChange={e => {
                         const dist = e.target.value;
                         let dm = 'Rudy Calderon';
@@ -476,7 +559,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div className="flex gap-2 mb-2">
                     <input
                       type="text"
-                      value={amInput}
+                      value={amInput || ''}
                       onChange={e => setAmInput(e.target.value)}
                       placeholder="Assistant Manager name"
                       className="flex-1 px-2.5 py-1 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -505,7 +588,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div className="flex gap-2 mb-2">
                     <input
                       type="text"
-                      value={keyInput}
+                      value={keyInput || ''}
                       onChange={e => setKeyInput(e.target.value)}
                       placeholder="Key holder name"
                       className="flex-1 px-2.5 py-1 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -539,7 +622,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div>
                     <label className="block text-neutral-500 mb-1">Current Status</label>
                     <select
-                      value={formData.operationalStatus}
+                      value={formData.operationalStatus || 'Open — Normal Operations'}
                       onChange={e => {
                         const newStatus = e.target.value as OperationalStatus;
                         setFormData({ ...formData, operationalStatus: newStatus });
@@ -563,7 +646,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   <div>
                     <label className="block text-neutral-500 mb-1">Record Lifecycle</label>
                     <select
-                      value={formData.recordStatus}
+                      value={formData.recordStatus || 'Active'}
                       onChange={e => setFormData({ ...formData, recordStatus: e.target.value as any })}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                     >
@@ -599,7 +682,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       </label>
                       <input
                         type="text"
-                        value={noticeDesc}
+                        value={noticeDesc || ''}
                         onChange={e => setNoticeDesc(e.target.value)}
                         placeholder="e.g. Store temporarily closed for HVAC renovation and interior remodeling."
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-amber-300 dark:border-amber-800 rounded text-xs text-neutral-900 dark:text-neutral-100"
@@ -613,7 +696,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={noticeEffectiveDate}
+                          value={noticeEffectiveDate || ''}
                           onChange={e => setNoticeEffectiveDate(e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                         />
@@ -625,7 +708,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                         </label>
                         <input
                           type="date"
-                          value={noticeResolutionDate}
+                          value={noticeResolutionDate || ''}
                           onChange={e => setNoticeResolutionDate(e.target.value)}
                           className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
                         />
@@ -701,7 +784,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <label className="block text-neutral-500 mb-1">Holiday / Exception Name</label>
                     <input
                       type="text"
-                      value={newHolidayName}
+                      value={newHolidayName || ''}
                       onChange={e => setNewHolidayName(e.target.value)}
                       placeholder="e.g. Thanksgiving Day"
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs"
@@ -712,7 +795,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <label className="block text-neutral-500 mb-1">Exception Date (YYYY-MM-DD)</label>
                     <input
                       type="date"
-                      value={newHolidayDate}
+                      value={newHolidayDate || ''}
                       onChange={e => setNewHolidayDate(e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
                     />
@@ -722,7 +805,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <label className="inline-flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        checked={newHolidayIsClosed}
+                        checked={Boolean(newHolidayIsClosed)}
                         onChange={e => setNewHolidayIsClosed(e.target.checked)}
                         className="rounded border-neutral-300 dark:border-neutral-700 text-red-600 focus:ring-red-500 w-4 h-4"
                       />
@@ -739,7 +822,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <label className="block text-neutral-500 mb-1">Open Time</label>
                       <input
                         type="text"
-                        value={newHolidayOpen}
+                        value={newHolidayOpen || ''}
                         onChange={e => setNewHolidayOpen(e.target.value)}
                         placeholder="06:00 AM"
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"
@@ -749,7 +832,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <label className="block text-neutral-500 mb-1">Close Time</label>
                       <input
                         type="text"
-                        value={newHolidayClose}
+                        value={newHolidayClose || ''}
                         onChange={e => setNewHolidayClose(e.target.value)}
                         placeholder="10:00 PM"
                         className="w-full px-2.5 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono"

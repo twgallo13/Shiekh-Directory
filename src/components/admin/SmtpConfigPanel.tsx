@@ -39,6 +39,12 @@ export const SmtpConfigPanel: React.FC = () => {
   const [logFilter, setLogFilter] = useState<string>('all');
   const [selectedLog, setSelectedLog] = useState<EmailLogEntry | null>(null);
 
+  React.useEffect(() => {
+    if (smtpConfig) {
+      setFormData(smtpConfig);
+    }
+  }, [smtpConfig]);
+
   const handleSave = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     updateSmtpConfig(formData);
@@ -57,28 +63,34 @@ export const SmtpConfigPanel: React.FC = () => {
     setTimeout(() => setSaveSuccess(false), 2000);
   };
 
-  const handleSendTest = (e: React.FormEvent) => {
+  const handleSendTest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!testEmailRecipient) return;
 
     setIsTesting(true);
     setTestResult(null);
 
-    setTimeout(() => {
-      const res = sendTestEmail(testEmailRecipient);
+    try {
+      const res = await sendTestEmail(testEmailRecipient);
       setIsTesting(false);
       if (res.success) {
         setTestResult({
           success: true,
-          message: `Successfully connected to ${formData.host}:${formData.port} and dispatched test message to ${testEmailRecipient}. Handshake acknowledged via TLS.`,
+          message: res.log?.details || `Successfully connected to ${formData.host}:${formData.port} and dispatched test message to ${testEmailRecipient}. Handshake acknowledged via TLS.`,
         });
       } else {
         setTestResult({
           success: false,
-          message: `SMTP connection failed: Unable to authenticate with ${formData.host}:${formData.port}. Check your username or app password.`,
+          message: res.error || res.log?.details || `SMTP connection failed: Unable to authenticate with ${formData.host}:${formData.port}. Check credentials or server environment variables.`,
         });
       }
-    }, 600);
+    } catch (err: any) {
+      setIsTesting(false);
+      setTestResult({
+        success: false,
+        message: err.message || `SMTP Error: Failed to reach backend email relay service.`,
+      });
+    }
   };
 
   const filteredLogs = emailLogs.filter(log => {
@@ -166,7 +178,7 @@ export const SmtpConfigPanel: React.FC = () => {
                   <input
                     type="text"
                     required
-                    value={formData.host}
+                    value={formData.host || ''}
                     onChange={e => setFormData({ ...formData, host: e.target.value })}
                     placeholder="smtp.gmail.com"
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs font-mono text-neutral-900 dark:text-neutral-100"
@@ -180,7 +192,7 @@ export const SmtpConfigPanel: React.FC = () => {
                   <input
                     type="number"
                     required
-                    value={formData.port}
+                    value={formData.port ?? 587}
                     onChange={e => setFormData({ ...formData, port: parseInt(e.target.value) || 587 })}
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs font-mono text-neutral-900 dark:text-neutral-100"
                   />
@@ -195,7 +207,7 @@ export const SmtpConfigPanel: React.FC = () => {
                   <input
                     type="text"
                     required
-                    value={formData.username}
+                    value={formData.username || ''}
                     onChange={e => setFormData({ ...formData, username: e.target.value })}
                     placeholder="notifications@shiekhshoes.com"
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100"
@@ -203,15 +215,20 @@ export const SmtpConfigPanel: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                    App Password / Secret
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                      App Password / Secret
+                    </label>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-semibold">
+                      Stored in Server Env
+                    </span>
+                  </div>
                   <div className="relative">
                     <input
                       type={showPassword ? 'text' : 'password'}
-                      required
-                      value={formData.password}
+                      value={formData.password || ''}
                       onChange={e => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="•••••••••••••••• (Set via SMTP_PASSWORD)"
                       className="w-full pl-3 pr-9 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs font-mono text-neutral-900 dark:text-neutral-100"
                     />
                     <button
@@ -233,7 +250,7 @@ export const SmtpConfigPanel: React.FC = () => {
                   <input
                     type="text"
                     required
-                    value={formData.fromName}
+                    value={formData.fromName || ''}
                     onChange={e => setFormData({ ...formData, fromName: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100"
                   />
@@ -246,7 +263,7 @@ export const SmtpConfigPanel: React.FC = () => {
                   <input
                     type="email"
                     required
-                    value={formData.fromEmail}
+                    value={formData.fromEmail || ''}
                     onChange={e => setFormData({ ...formData, fromEmail: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100"
                   />
@@ -261,7 +278,7 @@ export const SmtpConfigPanel: React.FC = () => {
                   <input
                     type="email"
                     required
-                    value={formData.replyToEmail}
+                    value={formData.replyToEmail || ''}
                     onChange={e => setFormData({ ...formData, replyToEmail: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100"
                   />
@@ -274,7 +291,7 @@ export const SmtpConfigPanel: React.FC = () => {
                   <input
                     type="email"
                     required
-                    value={formData.directoryStewardEmail}
+                    value={formData.directoryStewardEmail || ''}
                     onChange={e => setFormData({ ...formData, directoryStewardEmail: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100 font-bold"
                   />
@@ -285,7 +302,7 @@ export const SmtpConfigPanel: React.FC = () => {
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-neutral-700 dark:text-neutral-300">
                   <input
                     type="checkbox"
-                    checked={formData.secureTls}
+                    checked={Boolean(formData.secureTls)}
                     onChange={e => setFormData({ ...formData, secureTls: e.target.checked })}
                     className="rounded text-red-600 focus:ring-red-500"
                   />

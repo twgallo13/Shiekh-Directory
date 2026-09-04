@@ -25,11 +25,29 @@ export const DAYS_OF_WEEK: Array<{ key: keyof WeeklySchedule; label: string; sho
   { key: 'sunday', label: 'Sunday', short: 'Sun' },
 ];
 
-interface WeeklyHoursEditorProps {
+export interface WeeklyHoursEditorProps {
   value: WeeklySchedule;
   onChange: (schedule: WeeklySchedule) => void;
   templates?: HoursTemplate[];
   disabled?: boolean;
+  selectedTemplateId?: string;
+  onTemplateSelect?: (templateId: string, templateName: string) => void;
+}
+
+// Helper to check if two schedules are structurally equivalent
+export function isScheduleEquivalent(s1?: WeeklySchedule, s2?: WeeklySchedule): boolean {
+  if (!s1 || !s2) return false;
+  const days: Array<keyof WeeklySchedule> = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  return days.every(day => {
+    const d1 = s1[day];
+    const d2 = s2[day];
+    if (!d1 || !d2) return false;
+    const closed1 = Boolean(d1.isClosed || d1.open === 'Closed');
+    const closed2 = Boolean(d2.isClosed || d2.open === 'Closed');
+    if (closed1 && closed2) return true;
+    if (closed1 !== closed2) return false;
+    return d1.open === d2.open && d1.close === d2.close;
+  });
 }
 
 export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
@@ -37,6 +55,8 @@ export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
   onChange,
   templates = [],
   disabled = false,
+  selectedTemplateId,
+  onTemplateSelect,
 }) => {
   const schedule = value || {
     monday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
@@ -47,6 +67,22 @@ export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
     saturday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
     sunday: { open: '11:00 AM', close: '07:00 PM', isClosed: false },
   };
+
+  // Detect matching template from value if none explicitly supplied
+  const [activeTemplateId, setActiveTemplateId] = React.useState<string>(() => {
+    if (selectedTemplateId) return selectedTemplateId;
+    const match = templates.find(t => isScheduleEquivalent(t.schedule, schedule));
+    return match ? match.id : '';
+  });
+
+  React.useEffect(() => {
+    if (selectedTemplateId !== undefined) {
+      setActiveTemplateId(selectedTemplateId);
+    } else {
+      const match = templates.find(t => isScheduleEquivalent(t.schedule, schedule));
+      setActiveTemplateId(match ? match.id : '');
+    }
+  }, [selectedTemplateId, schedule, templates]);
 
   const handleDayChange = (day: keyof WeeklySchedule, updates: Partial<DayHours>) => {
     if (disabled) return;
@@ -64,30 +100,43 @@ export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
       updatedDay.close = '09:00 PM';
     }
 
-    onChange({
+    const nextSchedule = {
       ...schedule,
       [day]: updatedDay,
-    });
+    };
+
+    // Check if new schedule still matches a template
+    const match = templates.find(t => isScheduleEquivalent(t.schedule, nextSchedule));
+    const nextTmplId = match ? match.id : '';
+    setActiveTemplateId(nextTmplId);
+    onTemplateSelect?.(nextTmplId, match ? match.name : 'Custom Hours');
+
+    onChange(nextSchedule);
   };
 
   // Shortcut 1: Copy Monday to Monday-Friday
   const handleCopyMonToWeekdays = () => {
     if (disabled) return;
     const mon = schedule.monday || { open: '10:00 AM', close: '09:00 PM', isClosed: false };
-    onChange({
+    const nextSchedule = {
       ...schedule,
       tuesday: { ...mon },
       wednesday: { ...mon },
       thursday: { ...mon },
       friday: { ...mon },
-    });
+    };
+    const match = templates.find(t => isScheduleEquivalent(t.schedule, nextSchedule));
+    const nextTmplId = match ? match.id : '';
+    setActiveTemplateId(nextTmplId);
+    onTemplateSelect?.(nextTmplId, match ? match.name : 'Custom Hours');
+    onChange(nextSchedule);
   };
 
   // Shortcut 2: Copy Monday to All 7 Days
   const handleCopyMonToAll = () => {
     if (disabled) return;
     const mon = schedule.monday || { open: '10:00 AM', close: '09:00 PM', isClosed: false };
-    onChange({
+    const nextSchedule = {
       monday: { ...mon },
       tuesday: { ...mon },
       wednesday: { ...mon },
@@ -95,17 +144,31 @@ export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
       friday: { ...mon },
       saturday: { ...mon },
       sunday: { ...mon },
-    });
+    };
+    const match = templates.find(t => isScheduleEquivalent(t.schedule, nextSchedule));
+    const nextTmplId = match ? match.id : '';
+    setActiveTemplateId(nextTmplId);
+    onTemplateSelect?.(nextTmplId, match ? match.name : 'Custom Hours');
+    onChange(nextSchedule);
   };
 
-  // Apply Template Shortcut
+  // Apply Template Shortcut & Bind Dropdown (DISPATCH-013 Requirement 1)
   const handleSelectTemplate = (templateId: string) => {
-    if (disabled || !templateId) return;
+    if (disabled) return;
+    if (!templateId) {
+      setActiveTemplateId('');
+      onTemplateSelect?.('', 'Custom Hours');
+      return;
+    }
     const tmpl = templates.find(t => t.id === templateId);
     if (tmpl && tmpl.schedule) {
+      setActiveTemplateId(tmpl.id);
+      onTemplateSelect?.(tmpl.id, tmpl.name);
       onChange(JSON.parse(JSON.stringify(tmpl.schedule)));
     }
   };
+
+  const activeTemplate = templates.find(t => t.id === activeTemplateId);
 
   return (
     <div className="space-y-3">
@@ -114,6 +177,16 @@ export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
         <div className="flex items-center gap-2">
           <Clock className="w-3.5 h-3.5 text-neutral-500" />
           <span className="font-semibold text-neutral-800 dark:text-neutral-200">7-Day Weekly Grid</span>
+          {activeTemplate ? (
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+              <Sparkles className="w-2.5 h-2.5" />
+              <span>{activeTemplate.name}</span>
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400">
+              Custom Hours
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -121,19 +194,16 @@ export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
             <div className="flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-amber-500" />
               <select
-                onChange={e => {
-                  handleSelectTemplate(e.target.value);
-                  e.target.value = '';
-                }}
-                defaultValue=""
+                value={activeTemplateId || ''}
+                onChange={e => handleSelectTemplate(e.target.value)}
                 disabled={disabled}
-                className="px-2 py-1 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded text-[11px] text-neutral-700 dark:text-neutral-300 cursor-pointer"
-                title="Apply a pre-configured store schedule template"
+                className="px-2.5 py-1 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded text-[11px] font-medium text-neutral-800 dark:text-neutral-200 cursor-pointer shadow-2xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                title="Select and apply pre-configured hours template"
               >
-                <option value="" disabled>Apply Hours Template...</option>
+                <option value="">Custom Hours (No Template)</option>
                 {templates.map(tmpl => (
                   <option key={tmpl.id} value={tmpl.id}>
-                    {tmpl.name}
+                    Template: {tmpl.name}
                   </option>
                 ))}
               </select>

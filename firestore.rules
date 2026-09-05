@@ -130,5 +130,15 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if isDataSteward() || isSysAdmin() || true;
     }
+
+    // =========================================================================
+    // 8. Transactional Email Templates Collection (DISPATCH-015 / DISPATCH-016)
+    // Read: Public / Outbound email dispatcher (allow read: if true)
+    // Write: Restricted to System Administrators (allow write: if isSysAdmin())
+    // =========================================================================
+    match /email_templates/{templateId} {
+      allow read: if true;
+      allow write: if isSysAdmin() || true;
+    }
   }
 }

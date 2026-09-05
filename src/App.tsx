@@ -31,6 +31,41 @@ function DirectoryAppContent() {
 
   // Auth / Login Modal (DISPATCH-009)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | undefined>(undefined);
+  const [inviteEmail, setInviteEmail] = useState<string | undefined>(undefined);
+
+  // URL Interception & Routing for Onboarding Invitations and Deep Links (DISPATCH-015)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlInviteToken = params.get('inviteToken');
+      const urlEmail = params.get('email');
+      const urlView = params.get('view');
+      const urlLocationId = params.get('locationId');
+
+      if (urlInviteToken && urlEmail) {
+        setInviteToken(urlInviteToken);
+        setInviteEmail(urlEmail);
+        setIsAuthModalOpen(true);
+      }
+
+      if (urlView) {
+        if (urlView === 'requests') setCurrentTab('requests');
+        else if (urlView === 'directory' || urlView === 'locations') setCurrentTab('locations');
+        else if (urlView === 'people') setCurrentTab('people');
+        else if (urlView === 'admin') setCurrentTab('admin');
+      }
+
+      if (urlLocationId && locations.length > 0) {
+        const found = locations.find(l => l.id === urlLocationId || l.storeNumber === urlLocationId);
+        if (found) {
+          setSelectedLocation(found);
+        }
+      }
+    } catch (e) {
+      console.warn('Error parsing URL parameters:', e);
+    }
+  }, [locations]);
 
   // Location Modals
   const [selectedLocation, setSelectedLocation] = useState<LocationRecord | null>(null);
@@ -202,10 +237,16 @@ function DirectoryAppContent() {
         }}
       />
 
-      {/* Shiekh Identity & Sign-In Modal (DISPATCH-009) */}
+      {/* Shiekh Identity & Sign-In Modal (DISPATCH-009 / DISPATCH-015) */}
       <AuthModal
         isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setInviteToken(undefined);
+          setInviteEmail(undefined);
+        }}
+        initialInviteToken={inviteToken}
+        initialInviteEmail={inviteEmail}
       />
     </div>
   );

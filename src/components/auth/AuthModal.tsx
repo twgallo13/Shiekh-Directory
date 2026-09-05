@@ -19,27 +19,86 @@ import { UserRole } from '../../types';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialInviteToken?: string;
+  initialInviteEmail?: string;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ 
+  isOpen, 
+  onClose,
+  initialInviteToken,
+  initialInviteEmail
+}) => {
   const { 
     currentUser, 
     users, 
     loginWithGoogle, 
     loginWithEmailPassword, 
+    acceptInvitation,
     switchUserAccount, 
     logout,
     isAuthenticated 
   } = useDirectory();
 
-  const [activeTab, setActiveTab] = useState<'signin' | 'corporate_sso' | 'switch'>('signin');
-  const [email, setEmail] = useState('');
+  const [activeTab, setActiveTab] = useState<'signin' | 'corporate_sso' | 'switch' | 'invitation'>(
+    initialInviteToken ? 'invitation' : 'signin'
+  );
+  const [email, setEmail] = useState(initialInviteEmail || '');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [inviteToken, setInviteToken] = useState(initialInviteToken || '');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Sync state if initial props change
+  React.useEffect(() => {
+    if (initialInviteToken) {
+      setInviteToken(initialInviteToken);
+      setActiveTab('invitation');
+    }
+    if (initialInviteEmail) {
+      setEmail(initialInviteEmail);
+    }
+  }, [initialInviteToken, initialInviteEmail]);
+
   if (!isOpen) return null;
+
+  const handleAcceptInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMsg('Passwords do not match. Please re-enter your password.');
+      return;
+    }
+
+    setLoading(true);
+    const res = await acceptInvitation(email, password, inviteToken);
+    setLoading(false);
+
+    if (res.success) {
+      setSuccessMsg(`Account activated! Welcome to Shiekh Directory, ${res.user?.displayName || email}.`);
+      // Clean up URL query parameters
+      if (window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('inviteToken');
+        url.searchParams.delete('email');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+      }
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } else {
+      setErrorMsg(res.message || 'Failed to accept invitation.');
+    }
+  };
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,6 +192,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
         {/* Navigation Tabs */}
         <div className="flex border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-xs font-semibold">
+          {inviteToken && (
+            <button
+              onClick={() => setActiveTab('invitation')}
+              className={`flex-1 py-3 text-center border-b-2 transition-colors ${
+                activeTab === 'invitation'
+                  ? 'border-red-600 text-red-600 dark:text-red-400 bg-white dark:bg-neutral-900 font-bold'
+                  : 'border-transparent text-red-500 hover:text-red-700 dark:hover:text-red-300 bg-red-50/50 dark:bg-red-950/20'
+              }`}
+            >
+              Accept Invitation
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('signin')}
             className={`flex-1 py-3 text-center border-b-2 transition-colors ${
@@ -179,6 +250,102 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-500" />
               <span>{successMsg}</span>
             </div>
+          )}
+
+          {/* TAB 0: ACCEPT INVITATION & CREATE PASSWORD (DISPATCH-015) */}
+          {activeTab === 'invitation' && (
+            <form onSubmit={handleAcceptInvite} className="space-y-3.5">
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-amber-900 dark:text-amber-100">
+                  <KeyRound className="w-4 h-4 text-amber-600" />
+                  <span>Onboarding Invitation Activation</span>
+                </div>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Create your account password to complete onboarding and activate your directory access.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="name@shiekhshoes.com"
+                    className="w-full pl-9 pr-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Invitation Token
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    required
+                    value={inviteToken}
+                    onChange={e => setInviteToken(e.target.value)}
+                    placeholder="inv_..."
+                    className="w-full pl-9 pr-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100 font-mono focus:ring-2 focus:ring-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Create Password (minimum 6 characters)
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="••••••••"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-red-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-colors"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>{loading ? 'Activating Account...' : 'Accept Invitation & Activate Account'}</span>
+                </button>
+              </div>
+            </form>
           )}
 
           {/* TAB 1: EMAIL & PASSWORD LOGIN */}

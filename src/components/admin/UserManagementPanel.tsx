@@ -22,7 +22,8 @@ import {
   UserCheck,
   ShieldAlert,
   ArrowRight,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { UserAccount, UserRole, AccessScope, LocationRecord } from '../../types';
@@ -67,6 +68,7 @@ export const UserManagementPanel: React.FC = () => {
   const [setRemainingVacant, setSetRemainingVacant] = useState(true);
   const [reassignmentMap, setReassignmentMap] = useState<Record<string, { newManagerName: string; newManagerPhone: string; newPersonId?: string }>>({});
   const [offboardSummaryResult, setOffboardSummaryResult] = useState<{ affectedStores: number } | null>(null);
+  const [resendingUserId, setResendingUserId] = useState<string | null>(null);
 
   const filteredUsers = users.filter(u => {
     if (filterRole !== 'all' && u.role !== filterRole) return false;
@@ -78,6 +80,20 @@ export const UserManagementPanel: React.FC = () => {
     navigator.clipboard.writeText(token);
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2000);
+  };
+
+  const handleResendInvite = async (user: UserAccount) => {
+    setResendingUserId(user.id);
+    try {
+      await resendUserInvite(user.id);
+      alert(`Invitation email successfully resent to ${user.email}`);
+    } catch (err: any) {
+      console.error('Failed to resend invite:', err);
+      const msg = err.message || 'Failed to resend invitation email. Please check SMTP configuration.';
+      alert(`Resend Invitation Error: ${msg}`);
+    } finally {
+      setResendingUserId(null);
+    }
   };
 
   const handlePersonSelect = (personId: string) => {
@@ -287,6 +303,8 @@ export const UserManagementPanel: React.FC = () => {
                 const linkedPerson = user.personId ? people.find(p => p.id === user.personId) : null;
                 const isCurrent = currentUser.id === user.id;
                 const assignedStores = getAssignedStoresForUser(user);
+                const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://shiekh-sor.web.app';
+                const inviteLink = `${originUrl}/?inviteToken=${user.invitationToken || 'pending'}&email=${encodeURIComponent(user.email)}`;
 
                 return (
                   <tr key={user.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors">
@@ -308,6 +326,31 @@ export const UserManagementPanel: React.FC = () => {
                           {linkedPerson && (
                             <div className="text-[10px] text-neutral-400">
                               Linked: {linkedPerson.jobTitle}
+                            </div>
+                          )}
+                          {user.status === 'Invited' && (
+                            <div className="mt-1.5 p-1.5 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-md flex items-center justify-between gap-1.5 max-w-sm">
+                              <div className="flex items-center gap-1 min-w-0">
+                                <Key className="w-3 h-3 text-amber-600 shrink-0" />
+                                <a
+                                  href={inviteLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] font-mono text-amber-900 dark:text-amber-200 underline truncate hover:text-red-600"
+                                  title={inviteLink}
+                                >
+                                  {inviteLink}
+                                </a>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(inviteLink)}
+                                className="px-1.5 py-0.5 bg-white dark:bg-neutral-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 rounded text-[10px] font-bold shrink-0 flex items-center gap-1 hover:bg-amber-100 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+                                title="Copy invitation link to clipboard"
+                              >
+                                {copiedToken === inviteLink ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5" />}
+                                <span>{copiedToken === inviteLink ? 'Copied' : 'Copy'}</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -369,19 +412,33 @@ export const UserManagementPanel: React.FC = () => {
                         {user.status === 'Invited' && (
                           <>
                             <button
-                              onClick={() => activateUserAccount(user.id)}
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition-colors"
-                              title="Instantly activate account"
+                              onClick={() => handleCopy(inviteLink)}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Copy onboarding invitation link to clipboard"
                             >
-                              Activate
+                              {copiedToken === inviteLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                              <span>{copiedToken === inviteLink ? 'Copied' : 'Copy Link'}</span>
                             </button>
                             <button
-                              onClick={() => resendUserInvite(user.id)}
-                              className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded text-[11px] font-semibold transition-colors flex items-center gap-1"
+                              onClick={() => handleResendInvite(user)}
+                              disabled={resendingUserId === user.id}
+                              className="px-2 py-1 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
                               title="Resend invitation email"
                             >
-                              <Send className="w-3 h-3" />
-                              <span>Resend</span>
+                              {resendingUserId === user.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin text-neutral-600" />
+                              ) : (
+                                <Send className="w-3 h-3" />
+                              )}
+                              <span>{resendingUserId === user.id ? 'Sending...' : 'Resend Email'}</span>
+                            </button>
+                            <button
+                              onClick={() => startOffboarding(user)}
+                              className="px-2 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 rounded text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Revoke pending invitation and offboard"
+                            >
+                              <UserMinus className="w-3 h-3 text-red-600" />
+                              <span>Offboard</span>
                             </button>
                           </>
                         )}
@@ -389,7 +446,7 @@ export const UserManagementPanel: React.FC = () => {
                         {user.status === 'Active' && !isCurrent && (
                           <button
                             onClick={() => startOffboarding(user)}
-                            className="px-2.5 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 rounded text-[11px] font-bold transition-colors flex items-center gap-1"
+                            className="px-2.5 py-1 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 rounded text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
                             title="Launch Offboarding Wizard (Soft-delete & Reassign Stores)"
                           >
                             <UserMinus className="w-3.5 h-3.5 text-red-600" />

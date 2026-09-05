@@ -246,11 +246,24 @@ export interface UserAccount {
   assignedStoreId?: string;
   assignedDistrict?: string;
   personId?: string; // Linked PersonRecord id
+  firebaseUid?: string; // Merged Firebase Auth UID
   status: 'Active' | 'Invited' | 'Deactivated';
   invitationToken?: string;
   invitedBy?: string;
   lastLogin?: string;
   createdAt: string;
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  subjectTemplate: string;
+  htmlTemplate: string;
+  variables: string[];
+  availableVariables?: string[];
+  updatedAt?: string;
+  category?: 'requests' | 'auth' | 'system';
 }
 
 export interface StagedLocationImport {
@@ -358,7 +371,7 @@ export interface SmtpConfig {
 
 export interface EmailLogEntry {
   id: string;
-  emailType: 'Directory Update Request' | 'Request Status Update' | 'Store Directory PDF' | 'Major Leadership Change' | 'User Offboarding Notice' | 'Operational Status Notice' | 'Test Email';
+  emailType: 'Directory Update Request' | 'Request Status Update' | 'Store Directory PDF' | 'Major Leadership Change' | 'User Offboarding Notice' | 'Operational Status Notice' | 'Test Email' | 'User Onboarding Notice';
   recipients: string[];
   subject: string;
   sentBy: string;

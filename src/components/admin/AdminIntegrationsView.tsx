@@ -29,6 +29,7 @@ import { CutoverSignoffModal } from './CutoverSignoffModal';
 import { GbpSyncPanel } from './GbpSyncPanel';
 import { CloudInfrastructurePanel } from './CloudInfrastructurePanel';
 import { HoursTemplateManagerPanel } from './HoursTemplateManagerPanel';
+import { EmailTemplatesPanel } from './EmailTemplatesPanel';
 
 export const AdminIntegrationsView: React.FC = () => {
   const { 
@@ -36,10 +37,11 @@ export const AdminIntegrationsView: React.FC = () => {
     triggerApiSync,
     locations,
     currentUser,
-    cloudSyncStatus
+    cloudSyncStatus,
+    emailTemplates
   } = useDirectory();
 
-  const [activeTab, setActiveTab] = useState<'cloud' | 'steward' | 'templates' | 'gbp' | 'sops' | 'audit' | 'users' | 'smtp' | 'migration' | 'api' | 'backup'>('cloud');
+  const [activeTab, setActiveTab] = useState<'cloud' | 'steward' | 'templates' | 'email_templates' | 'gbp' | 'sops' | 'audit' | 'users' | 'smtp' | 'migration' | 'api' | 'backup'>('cloud');
   const [syncAllStatus, setSyncAllStatus] = useState<'idle' | 'syncing' | 'completed'>('idle');
   const [isSignoffModalOpen, setIsSignoffModalOpen] = useState(false);
 
@@ -99,6 +101,7 @@ export const AdminIntegrationsView: React.FC = () => {
           { id: 'cloud', label: 'Cloud & Firebase (Sec 16)', icon: Cloud, highlight: cloudSyncStatus === 'syncing' },
           { id: 'steward', label: `Data Steward Queue ${quarantinedCount > 0 ? `(${quarantinedCount})` : ''}`, icon: UserCheck, highlight: quarantinedCount > 0 },
           { id: 'templates', label: 'Hours Templates (DISPATCH-012)', icon: Clock },
+          { id: 'email_templates', label: `Transactional Emails (${emailTemplates.length})`, icon: Mail },
           { id: 'gbp', label: 'Google Business Profile (Sec 14)', icon: Globe },
           { id: 'sops', label: 'Admin SOPs & Runbooks (Sec 22)', icon: BookOpen },
           { id: 'audit', label: 'Audit & Rollbacks (Sec 22)', icon: History },
@@ -135,6 +138,7 @@ export const AdminIntegrationsView: React.FC = () => {
         {activeTab === 'cloud' && <CloudInfrastructurePanel />}
         {activeTab === 'steward' && <StewardVerificationPanel />}
         {activeTab === 'templates' && <HoursTemplateManagerPanel />}
+        {activeTab === 'email_templates' && <EmailTemplatesPanel />}
         {activeTab === 'gbp' && <GbpSyncPanel />}
         {activeTab === 'sops' && <SopKnowledgeBasePanel />}
         {activeTab === 'audit' && <AuditRollbackPanel />}

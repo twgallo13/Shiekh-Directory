@@ -21,15 +21,17 @@ import {
   Square,
   Building,
   UserMinus,
-  AlertTriangle
+  AlertTriangle,
+  FileCode
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { SmtpConfig, EmailLogEntry } from '../../types';
+import { EmailTemplatesPanel } from './EmailTemplatesPanel';
 
 export const SmtpConfigPanel: React.FC = () => {
-  const { smtpConfig, updateSmtpConfig, sendTestEmail, emailLogs } = useDirectory();
+  const { smtpConfig, updateSmtpConfig, sendTestEmail, emailLogs, emailTemplates } = useDirectory();
   
-  const [activeTab, setActiveTab] = useState<'server' | 'rules' | 'logs'>('server');
+  const [activeTab, setActiveTab] = useState<'server' | 'templates' | 'rules' | 'logs'>('server');
   const [formData, setFormData] = useState<SmtpConfig>(smtpConfig);
   const [showPassword, setShowPassword] = useState(false);
   const [testEmailRecipient, setTestEmailRecipient] = useState('theo@shiekhshoes.org');
@@ -121,7 +123,7 @@ export const SmtpConfigPanel: React.FC = () => {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 flex-wrap">
           <button
             onClick={() => setActiveTab('server')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
@@ -132,6 +134,18 @@ export const SmtpConfigPanel: React.FC = () => {
           >
             <Server className="w-3.5 h-3.5" />
             <span>Server & Relay Parameters</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('templates')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${
+              activeTab === 'templates'
+                ? 'bg-red-600 text-white shadow-xs'
+                : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200'
+            }`}
+          >
+            <FileCode className="w-3.5 h-3.5" />
+            <span>Transactional Email Templates ({emailTemplates.length})</span>
           </button>
 
           <button
@@ -416,7 +430,12 @@ export const SmtpConfigPanel: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: Notification Rules Engine (Blueprint Sec 10A) */}
+      {/* TAB 2: Dynamic Transactional Email Templates (DISPATCH-015) */}
+      {activeTab === 'templates' && (
+        <EmailTemplatesPanel />
+      )}
+
+      {/* TAB 3: Notification Rules Engine (Blueprint Sec 10A) */}
       {activeTab === 'rules' && (
         <div className="space-y-6">
           <div className="bg-white dark:bg-neutral-900 p-5 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs">

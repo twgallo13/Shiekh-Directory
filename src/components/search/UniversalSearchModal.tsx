@@ -50,39 +50,138 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
   }, [isOpen, onClose]);
 
   const searchResults = useMemo(() => {
-    const term = searchTerm.toLowerCase().trim();
-    if (!term) {
+    const normalizedTerm = searchTerm.toLowerCase().trim();
+    if (!normalizedTerm) {
       return {
         matchedLocations: locations.slice(0, 5),
         matchedPeople: people.slice(0, 4),
       };
     }
 
+    const cleanPhone = (phoneStr?: string): string => (phoneStr ? phoneStr.replace(/\D/g, '') : '');
+    const rawCleanSearch = normalizedTerm.replace(/^#/, '').replace(/^0+/, '');
+    const rawNumericOnly = normalizedTerm.replace(/\D/g, '');
+    const tokens = normalizedTerm.split(/\s+/).filter(Boolean);
+
+    // Deep scanning and multi-token matching for locations
     const matchedLocations = locations.filter(loc => {
-      return (
-        loc.storeNumber.toLowerCase().includes(term) ||
-        loc.name.toLowerCase().includes(term) ||
-        (loc.mallOrCenterName && loc.mallOrCenterName.toLowerCase().includes(term)) ||
-        loc.city.toLowerCase().includes(term) ||
-        loc.state.toLowerCase().includes(term) ||
-        loc.zipCode.includes(term) ||
-        loc.phone.includes(term) ||
-        (loc.districtManagerName && loc.districtManagerName.toLowerCase().includes(term)) ||
-        (loc.storeManagerName && loc.storeManagerName.toLowerCase().includes(term)) ||
-        (loc.district && loc.district.toLowerCase().includes(term)) ||
-        (loc.region && loc.region.toLowerCase().includes(term))
+      const storeNumClean = loc.storeNumber.replace(/^#/, '').replace(/^0+/, '');
+      const isExactStoreNum = (
+        loc.storeNumber.toLowerCase() === normalizedTerm ||
+        loc.storeNumber.toLowerCase() === normalizedTerm.replace(/^#/, '') ||
+        (rawCleanSearch && storeNumClean === rawCleanSearch)
       );
+
+      if (isExactStoreNum) return true;
+
+      const searchableText = [
+        loc.storeNumber,
+        `#${loc.storeNumber}`,
+        `store ${loc.storeNumber}`,
+        `store #${loc.storeNumber}`,
+        loc.name,
+        loc.mallOrCenterName || '',
+        loc.address,
+        loc.city,
+        loc.state,
+        loc.zipCode,
+        loc.districtManagerName || '',
+        loc.storeManagerName || '',
+        loc.district || '',
+        loc.region || '',
+        loc.type || '',
+        loc.operationalStatus || '',
+        loc.activeNotice || '',
+      ].join(' ').toLowerCase();
+
+      const normalizedPhones = [
+        cleanPhone(loc.phone),
+        cleanPhone(loc.storeManagerPhone),
+      ].filter(Boolean);
+
+      return tokens.every(token => {
+        const cleanToken = token.replace(/[^a-z0-9]/g, '');
+        const numericToken = token.replace(/\D/g, '');
+
+        if (searchableText.includes(token) || (cleanToken && searchableText.includes(cleanToken))) {
+          return true;
+        }
+
+        if (numericToken.length >= 3 && normalizedPhones.some(p => p.includes(numericToken))) {
+          return true;
+        }
+
+        return false;
+      });
     });
 
-    const matchedPeople = people.filter(p => {
-      return (
-        p.name.toLowerCase().includes(term) ||
-        p.jobTitle.toLowerCase().includes(term) ||
-        p.department.toLowerCase().includes(term) ||
-        (p.district && p.district.toLowerCase().includes(term)) ||
-        p.workPhone.includes(term) ||
-        p.workEmail.toLowerCase().includes(term)
+    // Store Number Absolute Priority Sort
+    matchedLocations.sort((a, b) => {
+      const aStoreNumClean = a.storeNumber.replace(/^#/, '').replace(/^0+/, '');
+      const bStoreNumClean = b.storeNumber.replace(/^#/, '').replace(/^0+/, '');
+
+      const aExact = (
+        a.storeNumber.toLowerCase() === normalizedTerm ||
+        a.storeNumber.toLowerCase() === normalizedTerm.replace(/^#/, '') ||
+        (rawCleanSearch && aStoreNumClean === rawCleanSearch)
       );
+      const bExact = (
+        b.storeNumber.toLowerCase() === normalizedTerm ||
+        b.storeNumber.toLowerCase() === normalizedTerm.replace(/^#/, '') ||
+        (rawCleanSearch && bStoreNumClean === rawCleanSearch)
+      );
+
+      // 1. Exact store number match always forced to index 0
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+
+      // 2. Store number starts with the numeric query
+      if (rawNumericOnly) {
+        const aStartsWithNum = aStoreNumClean.startsWith(rawNumericOnly);
+        const bStartsWithNum = bStoreNumClean.startsWith(rawNumericOnly);
+        if (aStartsWithNum && !bStartsWithNum) return -1;
+        if (!aStartsWithNum && bStartsWithNum) return 1;
+      }
+
+      // 3. Name starts with search term
+      const aNameStarts = a.name.toLowerCase().startsWith(normalizedTerm);
+      const bNameStarts = b.name.toLowerCase().startsWith(normalizedTerm);
+      if (aNameStarts && !bNameStarts) return -1;
+      if (!aNameStarts && bNameStarts) return 1;
+
+      return 0;
+    });
+
+    // Deep scanning and multi-token matching for people
+    const matchedPeople = people.filter(p => {
+      const searchableText = [
+        p.name,
+        p.jobTitle,
+        p.department,
+        p.district || '',
+        p.workEmail,
+        p.reportsTo || '',
+      ].join(' ').toLowerCase();
+
+      const normalizedPhones = [
+        cleanPhone(p.workPhone),
+        cleanPhone(p.mobilePhone),
+      ].filter(Boolean);
+
+      return tokens.every(token => {
+        const cleanToken = token.replace(/[^a-z0-9]/g, '');
+        const numericToken = token.replace(/\D/g, '');
+
+        if (searchableText.includes(token) || (cleanToken && searchableText.includes(cleanToken))) {
+          return true;
+        }
+
+        if (numericToken.length >= 3 && normalizedPhones.some(ph => ph.includes(numericToken))) {
+          return true;
+        }
+
+        return false;
+      });
     });
 
     return { matchedLocations, matchedPeople };

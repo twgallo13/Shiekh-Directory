@@ -76,43 +76,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-5">
       {/* Welcome / Quick Search Bar Banner */}
-      <div className="bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-900 text-white p-5 sm:p-6 rounded-2xl shadow-md border border-neutral-800 relative overflow-hidden">
+      <div className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 sm:p-6 rounded-2xl shadow-xs border border-neutral-200 dark:border-neutral-800 relative overflow-hidden">
         <div className="relative z-10 max-w-2xl space-y-3">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full bg-red-600 text-white font-bold text-[11px] uppercase tracking-wider">
               Authoritative Source of Truth
             </span>
-            <span className="text-xs text-neutral-400">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
               Shiekh Shoes Retail & Corporate Directory
             </span>
           </div>
 
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
             Find Any Store, Manager, Phone or Hours
           </h1>
 
-          <p className="text-xs sm:text-sm text-neutral-300">
+          <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400">
             Canonical data repository for 100+ retail stores across CA, NV, WA, OR, TX with real-time hours, store manager assignments, and print-ready export sheets.
           </p>
 
           {/* Instant Search Bar Trigger */}
-          <div className="pt-2 flex flex-col sm:flex-row gap-2">
+          <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
             <button
               onClick={onOpenSearch}
-              className="flex-1 bg-white/10 hover:bg-white/15 border border-white/20 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-left text-neutral-300 flex items-center justify-between transition-colors backdrop-blur-xs"
+              className="flex-1 bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800/60 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-4 py-3 sm:py-2.5 text-xs sm:text-sm text-left text-neutral-600 dark:text-neutral-300 flex items-center justify-between transition-colors shadow-2xs cursor-pointer"
             >
-              <div className="flex items-center gap-2.5">
-                <Search className="w-4 h-4 text-red-400" />
-                <span>Quick search by store #, city, mall name, manager...</span>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Search className="w-4 h-4 text-red-600 dark:text-red-500 shrink-0" />
+                <span className="truncate">Quick search by store #, city, mall name, manager...</span>
               </div>
-              <kbd className="hidden sm:inline-block px-2 py-0.5 bg-white/10 rounded text-[10px] font-mono text-neutral-400">
+              <kbd className="hidden sm:inline-flex items-center px-2 py-0.5 bg-neutral-200/80 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 rounded text-[10px] font-mono shrink-0 ml-2">
                 ⌘K / Ctrl+K
               </kbd>
             </button>
 
             <button
               onClick={() => onNavigateToTab('print-sheet')}
-              className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-xs"
+              className="px-4 py-3 sm:py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               <span>1-Sheet PDF</span>

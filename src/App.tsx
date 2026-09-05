@@ -104,34 +104,40 @@ function DirectoryAppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col font-sans antialiased">
+    <div className="min-h-screen bg-neutral-100 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col font-sans antialiased print:bg-white print:text-black print:min-h-0">
       {/* Global Environment Isolation Banner (Sec 22) */}
-      <EnvironmentBanner />
+      <div className="print:hidden">
+        <EnvironmentBanner />
+      </div>
 
       {/* Top Header */}
-      <Header
-        onOpenSearch={() => setIsSearchOpen(true)}
-        onOpenRequests={() => setCurrentTab('requests')}
-        onOpenUatModal={() => setIsUatModalOpen(true)}
-        onOpenAuthModal={() => setIsAuthModalOpen(true)}
-        activeTab={currentTab}
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
-
-      {/* Main Workspace Body */}
-      <div className="flex-1 flex w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-6 py-4 gap-4 overflow-hidden">
-        {/* Sidebar */}
-        <Sidebar
-          currentTab={currentTab}
-          onTabChange={setCurrentTab}
-          onRequestUpdate={() => handleOpenNewRequest()}
+      <div className="print:hidden">
+        <Header
+          onOpenSearch={() => setIsSearchOpen(true)}
+          onOpenRequests={() => setCurrentTab('requests')}
+          onOpenUatModal={() => setIsUatModalOpen(true)}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          activeTab={currentTab}
           isMobileMenuOpen={isMobileMenuOpen}
           setIsMobileMenuOpen={setIsMobileMenuOpen}
         />
+      </div>
+
+      {/* Main Workspace Body */}
+      <div className="flex-1 flex w-full max-w-7xl mx-auto px-2 sm:px-4 md:px-6 py-4 gap-4 overflow-hidden print:max-w-none print:w-full print:p-0 print:m-0 print:gap-0 print:overflow-visible">
+        {/* Sidebar */}
+        <div className="print:hidden">
+          <Sidebar
+            currentTab={currentTab}
+            onTabChange={setCurrentTab}
+            onRequestUpdate={() => handleOpenNewRequest()}
+            isMobileMenuOpen={isMobileMenuOpen}
+            setIsMobileMenuOpen={setIsMobileMenuOpen}
+          />
+        </div>
 
         {/* Dynamic View Content */}
-        <main className="flex-1 min-w-0 pb-12 overflow-y-auto">
+        <main className="flex-1 min-w-0 pb-12 overflow-y-auto print:p-0 print:m-0 print:w-full print:overflow-visible">
           {currentTab === 'dashboard' && (
             <DashboardView
               onNavigateToTab={setCurrentTab}

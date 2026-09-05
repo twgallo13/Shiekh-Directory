@@ -24,15 +24,19 @@
 
 /* Print specific styles for exact one-sheet landscape directory */
 @media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   @page {
     size: landscape;
-    margin: 0.3in 0.3in 0.3in 0.3in;
+    margin: 0.25in;
   }
   body {
     background: white !important;
     color: black !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   .no-print {
     display: none !important;

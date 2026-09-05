@@ -426,7 +426,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
               <thead>
                 <tr className="bg-neutral-50 dark:bg-neutral-800/80 text-neutral-500 dark:text-neutral-400 font-semibold border-b border-neutral-200 dark:border-neutral-800">
                   {/* Bulk Checkbox Header */}
-                  <th className="py-2.5 px-3 w-8">
+                  <th className="py-1.5 px-2.5 w-8">
                     <button
                       type="button"
                       onClick={handleSelectAllFiltered}
@@ -440,23 +440,22 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                       )}
                     </button>
                   </th>
-                  <th className="py-2.5 px-3">Store #</th>
-                  <th className="py-2.5 px-3">Location Name & Address</th>
-                  <th className="py-2.5 px-3">City / State</th>
-                  <th className="py-2.5 px-3">Store Phone</th>
-                  <th className="py-2.5 px-3">District Manager</th>
-                  <th className="py-2.5 px-3">Store Manager</th>
-                  <th className="py-2.5 px-3">Status / Today's Hours</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
+                  <th className="py-1.5 px-2.5 w-16">Store #</th>
+                  <th className="py-1.5 px-2.5">Location Name & Address</th>
+                  <th className="py-1.5 px-2.5">City / State</th>
+                  <th className="py-1.5 px-2.5">Store Phone</th>
+                  <th className="py-1.5 px-2.5">District Manager</th>
+                  <th className="py-1.5 px-2.5">Store Manager</th>
+                  <th className="py-1.5 px-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800/60">
                 {filteredLocations.map(loc => {
-                  const hours = getTodayHoursForLocation(loc);
                   const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
                   const isManagementOnly = loc.storeManagerPhoneVisibility === 'Internal Management Only';
                   const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
                   const isSelected = selectedLocationIds.includes(loc.id);
+                  const isAbnormalStatus = loc.operationalStatus !== 'Open — Normal Operations' && loc.operationalStatus !== 'Open - Normal Operations';
 
                   return (
                     <tr
@@ -467,7 +466,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                       }`}
                     >
                       {/* Selection Checkbox */}
-                      <td className="py-2.5 px-3" onClick={e => e.stopPropagation()}>
+                      <td className="py-1.5 px-2.5" onClick={e => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => handleToggleSelect(loc.id)}
@@ -481,24 +480,30 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                         </button>
                       </td>
 
-                      <td className="py-2.5 px-3 font-bold text-neutral-900 dark:text-neutral-100">
+                      <td className="py-1.5 px-2.5 font-bold text-neutral-900 dark:text-neutral-100">
                         <span className="px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 font-mono text-xs">
                           #{loc.storeNumber}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3">
-                        <div className="font-semibold text-neutral-900 dark:text-neutral-100 group-hover:text-red-600 dark:group-hover:text-red-400">
-                          {loc.name}
+                      <td className="py-1.5 px-2.5">
+                        <div className="font-semibold text-neutral-900 dark:text-neutral-100 group-hover:text-red-600 dark:group-hover:text-red-400 flex items-center">
+                          <span>{loc.name}</span>
+                          {isAbnormalStatus && (
+                            <AlertTriangle 
+                              className="w-3.5 h-3.5 text-amber-500 inline ml-1.5 shrink-0" 
+                              title={`Status: ${loc.operationalStatus}`}
+                            />
+                          )}
                         </div>
                         <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-xs">
                           {loc.address}
                         </div>
                       </td>
-                      <td className="py-2.5 px-3">
+                      <td className="py-1.5 px-2.5">
                         <span className="text-neutral-800 dark:text-neutral-200">{loc.city}</span>
                         <span className="text-neutral-400 ml-1 font-bold">{loc.state}</span>
                       </td>
-                      <td className="py-2.5 px-3">
+                      <td className="py-1.5 px-2.5">
                         <a
                           href={`tel:${loc.phone}`}
                           onClick={e => e.stopPropagation()}
@@ -507,12 +512,12 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                           {loc.phone}
                         </a>
                       </td>
-                      <td className="py-2.5 px-3">
+                      <td className="py-1.5 px-2.5">
                         <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${getDistrictBadgeStyle(loc.districtManagerName)}`}>
                           {loc.districtManagerName || 'Unassigned'}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3">
+                      <td className="py-1.5 px-2.5">
                         <div className="font-medium text-neutral-900 dark:text-neutral-100">
                           {loc.storeManagerName || <span className="text-neutral-400 italic">Vacant</span>}
                         </div>
@@ -534,15 +539,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-3">
-                        <div className="space-y-1">
-                          <OperationalStatusBadge status={loc.operationalStatus} size="sm" />
-                          <div className="text-[10px] text-neutral-400 font-mono">
-                            {hours.hoursString}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 text-right" onClick={e => e.stopPropagation()}>
+                      <td className="py-1.5 px-2.5 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
                           {canEdit && (
                             <button

@@ -2840,24 +2840,42 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return result;
     };
 
+    // 1. Dynamic Header Mapping
+    const rawHeaders = parseCsvRow(lines[0]);
+    const headers = rawHeaders.map(h => h.toLowerCase().trim().replace(/[^a-z0-9 ]/g, ''));
+
+    // Locate column indices dynamically
+    const distMgrIdx = headers.findIndex(h => h.includes('district manager') || h.includes('district mgr') || h === 'dm');
+    const storeNumIdx = headers.findIndex(h => h === 'store' || h.includes('store number') || h === 'store' || h === 'store num' || h.includes('store '));
+    const storeMgrPhoneIdx = headers.findIndex(h => (h.includes('store manager') || h.includes('manager')) && h.includes('phone'));
+    const phoneIdx = headers.findIndex(h => h.includes('phone') && !h.includes('manager'));
+    const nameIdx = headers.findIndex(h => h.includes('location name') || h.includes('store name') || h.includes('location') || (h.includes('name') && !h.includes('manager')));
+    const addressIdx = headers.findIndex(h => h.includes('address') || h.includes('street'));
+    const cityIdx = headers.findIndex(h => h.includes('city'));
+    const stateIdx = headers.findIndex(h => h.includes('state') || h === 'st');
+    const zipIdx = headers.findIndex(h => h.includes('zip') || h.includes('postal'));
+    const managerIdx = headers.findIndex(h => (h === 'manager' || h.includes('store manager') || h === 'sm' || h.includes('mgr')) && !h.includes('district') && !h.includes('phone'));
+    const districtIdx = headers.findIndex(h => (h === 'district' || h.includes('district name')) && !h.includes('manager'));
+    const hoursIdx = headers.findIndex(h => h.includes('hour') || h.includes('schedule'));
+
     rows.forEach((line, index) => {
       const cols = parseCsvRow(line);
       const rowNum = index + 2;
       const validationMessages: string[] = [];
 
-      // Extract fields (matching canonical schema)
-      const rawStoreNum = (cols[0] || '').replace(/#/g, '').trim();
-      const storeName = cols[1] || `Store #${rawStoreNum}`;
-      const address = cols[2] || '';
-      const city = cols[3] || '';
-      const state = (cols[4] || '').toUpperCase().trim();
-      const zipCode = cols[5] || '';
-      const phone = cols[6] || '';
-      const district = cols[7] || '';
-      const districtManagerName = cols[8] || '';
-      const storeManagerName = cols[9] || '';
-      const storeManagerPhone = cols[10] || '';
-      const hoursSummary = cols[11] || 'Mon-Sat: 10am-9pm, Sun: 11am-7pm';
+      // Extract fields dynamically with safe fallbacks
+      const rawStoreNum = storeNumIdx >= 0 ? (cols[storeNumIdx] || '').replace(/#/g, '').trim() : '';
+      const storeName = nameIdx >= 0 && cols[nameIdx] ? cols[nameIdx] : `Store #${rawStoreNum}`;
+      const address = addressIdx >= 0 ? cols[addressIdx] || '' : '';
+      const city = cityIdx >= 0 ? cols[cityIdx] || '' : '';
+      const state = stateIdx >= 0 ? (cols[stateIdx] || '').toUpperCase().trim() : '';
+      const zipCode = zipIdx >= 0 ? cols[zipIdx] || '' : '';
+      const phone = phoneIdx >= 0 ? cols[phoneIdx] || '' : '';
+      const districtManagerName = distMgrIdx >= 0 ? cols[distMgrIdx] || '' : '';
+      const storeManagerName = managerIdx >= 0 ? cols[managerIdx] || '' : '';
+      const storeManagerPhone = storeMgrPhoneIdx >= 0 ? cols[storeMgrPhoneIdx] || '' : '';
+      const district = districtIdx >= 0 && cols[districtIdx] ? cols[districtIdx] : (districtManagerName ? `District (${districtManagerName})` : 'District 1 (Rudy Calderon)');
+      const hoursSummary = hoursIdx >= 0 && cols[hoursIdx] ? cols[hoursIdx] : 'Mon-Sat: 10am-9pm, Sun: 11am-7pm';
 
       let rowStatus: StagedLocationImport['status'] = 'Valid';
 

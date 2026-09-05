@@ -26,7 +26,7 @@ import { BackupRecoveryPanel } from './BackupRecoveryPanel';
 import { StewardVerificationPanel } from './StewardVerificationPanel';
 import { SopKnowledgeBasePanel } from './SopKnowledgeBasePanel';
 import { CutoverSignoffModal } from './CutoverSignoffModal';
-import { GbpSyncPanel } from './GbpSyncPanel';
+import { GbpManagementPanel } from './GbpManagementPanel';
 import { CloudInfrastructurePanel } from './CloudInfrastructurePanel';
 import { HoursTemplateManagerPanel } from './HoursTemplateManagerPanel';
 import { EmailTemplatesPanel } from './EmailTemplatesPanel';
@@ -260,7 +260,7 @@ export const AdminIntegrationsView: React.FC = () => {
           {activeTab === 'steward' && <StewardVerificationPanel />}
           {activeTab === 'templates' && <HoursTemplateManagerPanel />}
           {activeTab === 'email_templates' && <EmailTemplatesPanel />}
-          {activeTab === 'gbp' && <GbpSyncPanel />}
+          {activeTab === 'gbp' && <GbpManagementPanel />}
           {activeTab === 'sops' && <SopKnowledgeBasePanel />}
           {activeTab === 'audit' && <AuditRollbackPanel />}
           {activeTab === 'users' && <UserManagementPanel />}

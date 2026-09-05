@@ -1858,11 +1858,11 @@ export const INITIAL_AUDIT_LOGS: AuditEntry[] = [
 
 export const INITIAL_GBP_CONFIG: GbpConfig = {
   authMethod: 'service_account',
-  clientEmail: 'shiekh-gbp-sync@shiekh-shoes-master-sor.iam.gserviceaccount.com',
+  clientEmail: 'shiekh-gbp-sync-service@gen-lang-client-0801664258.iam.gserviceaccount.com',
   privateKeyId: '9f8e7d6c5b4a31029384756',
   privateKey: '-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC7V0h3w1ZgYf...\n-----END PRIVATE KEY-----',
-  accountId: 'accounts/1083921839281938',
-  accountName: 'Shiekh Shoes Retail Locations Master Portfolio',
+  accountId: 'accounts/5840371318',
+  accountName: 'Shiekh Retail Locations Master Portfolio',
   clientId: '1083921839281938-gbp-client.apps.googleusercontent.com',
   clientSecret: 'GOCSPX-9a8b7c6d5e4f3a2b1c0d9e8f',
   scope: 'https://www.googleapis.com/auth/business.manage',

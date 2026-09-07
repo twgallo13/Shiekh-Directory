@@ -1,347 +1,246 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
-  Bell, 
   ShieldCheck, 
-  Sun, 
+  QrCode, 
+  Bell, 
   Moon, 
-  Monitor,
-  ChevronDown,
-  CheckCircle2,
-  Menu,
-  X,
-  Play,
-  User,
-  Check,
-  Sparkles,
-  Cloud,
-  LogOut,
-  LogIn
+  Sun, 
+  Monitor, 
+  Check, 
+  Clock, 
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
-import { UserRole, ThemePreference } from '../../types';
 
 interface HeaderProps {
   onOpenSearch: () => void;
-  onOpenRequests?: () => void;
-  onOpenUatModal?: () => void;
-  onOpenAuthModal?: () => void;
-  activeTab: string;
-  isMobileMenuOpen: boolean;
-  setIsMobileMenuOpen: (open: boolean) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ 
-  onOpenSearch, 
-  onOpenRequests,
-  onOpenUatModal,
-  onOpenAuthModal,
-  activeTab,
-  isMobileMenuOpen,
-  setIsMobileMenuOpen
-}) => {
-  const { 
-    currentUser, 
-    switchRole, 
-    requests, 
-    themePreference, 
-    setThemePreference,
-    effectiveTheme,
-    cloudSyncStatus,
-    activeCloudUser,
-    logout,
-    isAuthenticated
-  } = useDirectory();
+type ThemeMode = 'light' | 'dark' | 'system';
 
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
-  const [showThemeMenu, setShowThemeMenu] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
+export const Header: React.FC<HeaderProps> = ({ onOpenSearch }) => {
+  const { currentUser, users, switchUser, requests } = useDirectory();
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('app-theme') as ThemeMode) || 'light';
+    }
+    return 'light';
+  });
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
-  const themeRef = useRef<HTMLDivElement>(null);
-  const roleRef = useRef<HTMLDivElement>(null);
-  const profileRef = useRef<HTMLDivElement>(null);
-
-  const pendingRequestsCount = requests.filter(r => r.status === 'Submitted' || r.status === 'Under Review').length;
-
-  // Close popovers on click outside
+  // Sync theme changes
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
-        setShowThemeMenu(false);
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else if (theme === 'light') {
+      root.classList.remove('dark');
+    } else {
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
       }
-      if (roleRef.current && !roleRef.current.contains(e.target as Node)) {
-        setShowRoleMenu(false);
-      }
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setShowProfileMenu(false);
+    }
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
+
+  // Close notifications on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (isNotificationsOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isNotificationsOpen]);
 
-  const themeOptions: { id: ThemePreference; label: string; icon: React.FC<{ className?: string }> }[] = [
-    { id: 'light', label: 'Light Mode', icon: Sun },
-    { id: 'dark', label: 'Dark Mode', icon: Moon },
-    { id: 'system', label: 'Use System Setting', icon: Monitor },
-  ];
+  const cycleTheme = () => {
+    setTheme(prev => {
+      if (prev === 'light') return 'dark';
+      if (prev === 'dark') return 'system';
+      return 'light';
+    });
+  };
+
+  // Compile active alerts/notifications
+  const pendingRequests = requests.filter(r => r.status === 'Pending');
+  
+  const systemAlerts = [
+    {
+      id: 'alert-pending-requests',
+      title: `${pendingRequests.length} Pending Review Requests`,
+      time: 'Requires steward sign-off',
+      severity: 'high',
+      isPendingReq: true
+    },
+    {
+      id: 'alert-holiday-sync',
+      title: 'Corporate Holiday Broadcast Ready',
+      time: '12 holidays configured for 2026 fleet',
+      severity: 'medium',
+      isPendingReq: false
+    },
+    {
+      id: 'alert-gbp-sync',
+      title: 'Google Business Profile Engine Active',
+      time: 'Automated 24h sync scheduled',
+      severity: 'low',
+      isPendingReq: false
+    }
+  ].filter(a => !dismissedAlerts.includes(a.id) && (a.id !== 'alert-pending-requests' || pendingRequests.length > 0));
+
+  const unreadCount = systemAlerts.length;
 
   return (
-    <header className="h-14 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-3 sm:px-4 md:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs">
-      {/* Left: Mobile Hamburger & Brand Identity */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* Mobile Hamburger Toggle */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden p-1.5 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors"
-          aria-label="Toggle Navigation Menu"
-        >
-          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
-
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-red-600 text-white flex items-center justify-center font-bold text-sm tracking-wider shadow-xs shrink-0">
-            SK
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <span className="font-bold text-sm md:text-base text-neutral-900 dark:text-neutral-100 tracking-tight">
-                SHIEKH
-              </span>
-              <span className="text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700">
-                DIRECTORY SoR
-              </span>
-            </div>
-            <p className="text-[10px] text-neutral-500 dark:text-neutral-400 hidden sm:block">
-              Authoritative Retail Location & Leadership Master
-            </p>
-          </div>
+    <header className="h-16 bg-white border-b border-neutral-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center text-white font-black shadow-md shadow-red-600/20">
+          <QrCode className="w-5 h-5" />
         </div>
-
-        <div className="hidden lg:flex items-center text-xs text-neutral-400 dark:text-neutral-500 pl-4 border-l border-neutral-200 dark:border-neutral-800">
-          <span className="capitalize">{activeTab.replace('-', ' ')}</span>
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="font-bold text-sm tracking-tight text-neutral-900">Shiekh Store Directory</h1>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-200">
+              STAGING
+            </span>
+          </div>
+          <p className="text-[11px] text-neutral-500">Dynamic QR & Retail Operations Platform</p>
         </div>
       </div>
 
-      {/* Center: Global Search Bar Trigger */}
-      <div className="flex-1 max-w-md mx-4 hidden md:block">
+      <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={onOpenSearch}
-          className="w-full flex items-center justify-between px-3 py-1.5 bg-neutral-50 dark:bg-neutral-800/80 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-md text-xs text-neutral-500 dark:text-neutral-400 transition-colors shadow-2xs"
+          className="flex items-center gap-2.5 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200/70 border border-neutral-200 rounded-lg text-xs text-neutral-500 hover:text-neutral-700 transition-colors cursor-pointer w-60 justify-between"
         >
           <div className="flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-neutral-400" />
-            <span>Search store #, mall, city, manager, district...</span>
+            <span>Search stores, personnel...</span>
           </div>
-          <kbd className="px-1.5 py-0.5 text-[10px] bg-white dark:bg-neutral-700 border border-neutral-200 dark:border-neutral-600 rounded text-neutral-400 font-mono">
+          <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-neutral-300 text-neutral-500 shadow-2xs">
             ⌘K
           </kbd>
         </button>
-      </div>
 
-      {/* Right Controls */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Mobile Search Button */}
+        {/* User Role Switcher Simulation */}
+        <div className="flex items-center gap-2 bg-neutral-50 p-1 rounded-lg border border-neutral-200 text-xs">
+          <div className="flex items-center gap-1.5 px-2 text-neutral-700">
+            <ShieldCheck className="w-3.5 h-3.5 text-red-600" />
+            <span className="font-medium">{currentUser.name}</span>
+          </div>
+          <select
+            value={currentUser.id}
+            onChange={(e) => switchUser(e.target.value)}
+            className="bg-white border border-neutral-300 rounded px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
+          >
+            {users.map(u => (
+              <option key={u.id} value={u.id}>
+                {u.role} ({u.name.split(' ')[0]})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Theme Selector Toggle */}
         <button
-          onClick={onOpenSearch}
-          className="md:hidden p-2 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md"
-          title="Search Directory"
+          type="button"
+          onClick={cycleTheme}
+          title={`Current theme: ${theme.toUpperCase()} (Click to cycle Light → Dark → System)`}
+          className="p-2 rounded-lg text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 border border-neutral-200 transition-colors cursor-pointer flex items-center justify-center relative"
+          aria-label="Toggle theme"
         >
-          <Search className="w-4 h-4" />
+          {theme === 'light' && <Sun className="w-4 h-4 text-amber-500" />}
+          {theme === 'dark' && <Moon className="w-4 h-4 text-indigo-500" />}
+          {theme === 'system' && <Monitor className="w-4 h-4 text-neutral-500" />}
         </button>
 
-        {/* Requests Notification Badge */}
-        {onOpenRequests && (
+        {/* Notifications Bell */}
+        <div className="relative" ref={notificationsRef}>
           <button
-            onClick={onOpenRequests}
-            className="relative p-2 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors"
-            title={`${pendingRequestsCount} Pending Change Requests`}
+            type="button"
+            onClick={() => setIsNotificationsOpen(prev => !prev)}
+            title="System notifications & alerts"
+            className="p-2 rounded-lg text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 border border-neutral-200 transition-colors cursor-pointer relative"
+            aria-label="Notifications"
           >
-            <Bell className="w-4 h-4" />
-            {pendingRequestsCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-amber-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center animate-pulse">
-                {pendingRequestsCount}
+            <Bell className="w-4 h-4 text-neutral-700" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white ring-2 ring-white animate-pulse">
+                {unreadCount}
               </span>
             )}
           </button>
-        )}
 
-        {/* UAT Test Suite Trigger Button */}
-        {onOpenUatModal && (
-          <button
-            onClick={onOpenUatModal}
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 rounded-md text-xs font-semibold transition-colors"
-            title="Launch UAT & Role Matrix Test Suite (DISPATCH-004)"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Run UAT</span>
-          </button>
-        )}
-
-        {/* Live Cloud Status Indicator */}
-        <div 
-          className="hidden md:flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300"
-          title={`Cloud Firestore Status: ${cloudSyncStatus.toUpperCase()}`}
-        >
-          <Cloud className="w-3.5 h-3.5 text-amber-500" />
-          <span className={`w-1.5 h-1.5 rounded-full ${cloudSyncStatus === 'synced' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`} />
-          <span className="hidden lg:inline text-[10px] font-mono">Firestore</span>
-        </div>
-
-        {/* Theme Engine Menu (Blueprint Sec 8A) */}
-        <div className="relative" ref={themeRef}>
-          <button
-            onClick={() => setShowThemeMenu(!showThemeMenu)}
-            className="p-2 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors flex items-center gap-1"
-            title={`Current Theme: ${themePreference} (Click to change)`}
-          >
-            {themePreference === 'light' && <Sun className="w-4 h-4 text-amber-500" />}
-            {themePreference === 'dark' && <Moon className="w-4 h-4 text-sky-400" />}
-            {themePreference === 'system' && <Monitor className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />}
-          </button>
-
-          {showThemeMenu && (
-            <div className="absolute right-0 mt-1.5 w-52 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-xl py-1.5 z-50 text-xs animate-fadeIn">
-              <div className="px-3 py-1 text-[10px] font-bold text-neutral-400 uppercase tracking-wider border-b border-neutral-100 dark:border-neutral-700 mb-1">
-                Appearance (Sec 8A)
-              </div>
-              {themeOptions.map((opt) => {
-                const Icon = opt.icon;
-                const isSelected = themePreference === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    onClick={() => {
-                      setThemePreference(opt.id);
-                      setShowThemeMenu(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors ${
-                      isSelected ? 'font-bold text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20' : 'text-neutral-700 dark:text-neutral-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icon className="w-3.5 h-3.5 shrink-0" />
-                      <span>{opt.label}</span>
-                    </div>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Role Switcher (Crucial for RBAC Testing) */}
-        <div className="relative" ref={roleRef}>
-          <button
-            onClick={() => setShowRoleMenu(!showRoleMenu)}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-700 rounded-md text-xs font-medium text-neutral-800 dark:text-neutral-200 transition-colors"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-            <span className="hidden sm:inline">{currentUser.role}</span>
-            <ChevronDown className="w-3 h-3 text-neutral-400" />
-          </button>
-
-          {showRoleMenu && (
-            <div className="absolute right-0 mt-1.5 w-64 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-xl py-1.5 z-50 text-xs animate-fadeIn">
-              <div className="px-3 py-1 text-[11px] font-semibold text-neutral-400 uppercase tracking-wider border-b border-neutral-100 dark:border-neutral-700 mb-1">
-                Role-Based Access (Blueprint Sec 9)
-              </div>
-              {(['Viewer', 'Directory Data Steward', 'Editor', 'System Administrator'] as UserRole[]).map((role) => (
-                <button
-                  key={role}
-                  onClick={() => {
-                    switchRole(role);
-                    setShowRoleMenu(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-neutral-50 dark:hover:bg-neutral-700/50 transition-colors ${
-                    currentUser.role === role ? 'font-semibold text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20' : 'text-neutral-700 dark:text-neutral-300'
-                  }`}
-                >
-                  <div>
-                    <div>{role}</div>
-                    <div className="text-[10px] text-neutral-400 font-normal">
-                      {role === 'Viewer' && 'Read-only, masked phone quarantine, submit requests'}
-                      {role === 'Directory Data Steward' && 'Approve requests, unmask/verify contacts, export PDF'}
-                      {role === 'Editor' && 'Draft scoped edits'}
-                      {role === 'System Administrator' && 'Full RBAC, API tokens, backups & disaster recovery'}
-                    </div>
-                  </div>
-                  {currentUser.role === role && <CheckCircle2 className="w-3.5 h-3.5 text-red-600 shrink-0" />}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* User Profile Popover */}
-        <div className="relative" ref={profileRef}>
-          <button
-            onClick={() => setShowProfileMenu(!showProfileMenu)}
-            className="flex items-center gap-2 pl-1 sm:pl-2 border-l border-neutral-200 dark:border-neutral-800"
-            title={`Signed in as ${currentUser.displayName} (${currentUser.email})`}
-          >
-            <div className="w-7 h-7 rounded-full bg-neutral-800 dark:bg-neutral-700 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-              {currentUser.displayName.charAt(0)}
-            </div>
-          </button>
-
-          {showProfileMenu && (
-            <div className="absolute right-0 mt-1.5 w-64 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-xl p-3 z-50 text-xs animate-fadeIn space-y-2.5">
-              <div className="pb-2 border-b border-neutral-100 dark:border-neutral-700">
-                <div className="font-bold text-neutral-900 dark:text-neutral-100">{currentUser.displayName}</div>
-                <div className="text-neutral-500 dark:text-neutral-400 text-[11px] truncate">{currentUser.email}</div>
-                <div className="mt-1 flex items-center gap-1.5">
-                  <span className="text-[10px] px-1.5 py-0.5 bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-bold rounded">
-                    {currentUser.role}
-                  </span>
-                  <span className="text-[10px] text-neutral-400">
-                    {currentUser.accessScope}
-                  </span>
+          {/* Notifications Popover */}
+          {isNotificationsOpen && (
+            <div className="absolute right-0 mt-2 w-80 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 overflow-hidden text-xs">
+              <div className="p-3 border-b border-neutral-100 bg-neutral-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-red-600" />
+                  <span className="font-bold text-neutral-900 text-xs">Notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="bg-red-50 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-red-200">
+                      {unreadCount} new
+                    </span>
+                  )}
                 </div>
+                {unreadCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDismissedAlerts(systemAlerts.map(a => a.id))}
+                    className="text-[11px] text-neutral-500 hover:text-neutral-900 hover:underline cursor-pointer"
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
 
-              {onOpenUatModal && (
-                <button
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    onOpenUatModal();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-700/50 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md font-semibold text-xs transition-colors"
-                >
-                  <Play className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Run UAT Readiness Matrix</span>
-                </button>
-              )}
+              <div className="max-h-72 overflow-y-auto divide-y divide-neutral-100">
+                {systemAlerts.length === 0 ? (
+                  <div className="p-6 text-center text-neutral-400 space-y-1">
+                    <Check className="w-6 h-6 text-emerald-500 mx-auto" />
+                    <p className="font-medium text-neutral-700">All caught up!</p>
+                    <p className="text-[11px]">No unread system alerts or pending reviews.</p>
+                  </div>
+                ) : (
+                  systemAlerts.map(alert => (
+                    <div key={alert.id} className="p-3 hover:bg-neutral-50/80 transition-colors flex items-start gap-2.5">
+                      <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                        alert.severity === 'high' ? 'bg-red-600 ring-2 ring-red-100' :
+                        alert.severity === 'medium' ? 'bg-amber-500' : 'bg-blue-500'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-neutral-800 leading-tight">{alert.title}</p>
+                        <p className="text-[11px] text-neutral-500 mt-0.5">{alert.time}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDismissedAlerts(prev => [...prev, alert.id])}
+                        className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
+                        title="Dismiss"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
 
-              {onOpenAuthModal && (
-                <button
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    onOpenAuthModal();
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-700/50 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md font-semibold text-xs transition-colors"
-                >
-                  <LogIn className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                  <span>Switch Account / Sign In</span>
-                </button>
-              )}
-
-              {/* Prominent Sign Out Action (DISPATCH-009) */}
-              <button
-                onClick={() => {
-                  logout();
-                  setShowProfileMenu(false);
-                  if (onOpenAuthModal) onOpenAuthModal();
-                }}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/80 rounded-md font-bold text-xs transition-colors"
-              >
-                <LogOut className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                <span>Sign Out of Session</span>
-              </button>
-
-              <div className="text-[10px] text-neutral-400 pt-1 border-t border-neutral-100 dark:border-neutral-700">
-                Auth Method: {currentUser.authMethod === 'google' ? 'Google SSO' : 'Directory Password'}
+              <div className="p-2 border-t border-neutral-100 bg-neutral-50/50 text-center">
+                <span className="text-[10px] text-neutral-400">
+                  Directory Operations Engine • v1.0.0
+                </span>
               </div>
             </div>
           )}

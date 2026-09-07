@@ -1,756 +1,1032 @@
 import React, { useState, useMemo } from 'react';
+import { useDirectory } from '../../context/DirectoryContext';
+import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
+import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
+import { OperationalStatusBadge } from '../common/StatusBadge';
 import { 
   Search, 
-  Filter, 
-  MapPin, 
-  Phone, 
-  Clock, 
-  User, 
-  ShieldCheck, 
   Plus, 
-  Download, 
-  Printer, 
-  Grid, 
-  List, 
-  Layers, 
-  CheckCircle2, 
-  AlertTriangle,
   ExternalLink,
-  ChevronDown,
-  Lock,
-  CheckSquare,
-  Square,
-  Sparkles,
-  Zap
+  ChevronRight,
+  Table,
+  Layers,
+  LayoutGrid,
+  SlidersHorizontal,
+  X,
+  Check,
+  Building,
+  Clock,
+  MapPin,
+  Phone,
+  Calendar,
+  AlertCircle
 } from 'lucide-react';
-import { useDirectory } from '../../context/DirectoryContext';
-import { LocationRecord } from '../../types';
-import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
-import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
-import { BulkUpdateModal } from './BulkUpdateModal';
 
 interface LocationsViewProps {
   onSelectLocation: (location: LocationRecord) => void;
+  onSelectPerson?: (person: PersonRecord) => void;
   onEditLocation: (location: LocationRecord) => void;
   onAddNewLocation: () => void;
   onRequestCorrection: (location: LocationRecord) => void;
-  onNavigateToPdf: () => void;
 }
+
+const locationTypes: LocationType[] = [
+  'Enclosed Mall',
+  'Strip Center / Shopping Center',
+  'Street / Standalone Location',
+  'Corporate Office',
+  'Warehouse / Distribution Center',
+  'Other Company Location'
+];
+
+const operationalStatuses: OperationalStatus[] = [
+  'Open — Normal Operations',
+  'Temporarily Modified Hours',
+  'Under Remodel / Renovation',
+  'Temporarily Closed — Emergency',
+  'Opening Soon — New Store',
+  'Permanently Closed'
+];
 
 export const LocationsView: React.FC<LocationsViewProps> = ({
   onSelectLocation,
+  onSelectPerson,
   onEditLocation,
   onAddNewLocation,
   onRequestCorrection,
-  onNavigateToPdf,
 }) => {
-  const { locations, currentUser } = useDirectory();
+  const { 
+    locations, 
+    people, 
+    currentUser, 
+    hoursTemplates, 
+    applyHoursTemplate, 
+    updateLocation 
+  } = useDirectory();
 
+  // State Restoration
+  const [viewMode, setViewMode] = useState<'table' | 'district' | 'cards'>('table');
+  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+
+  // Filter Ribbon States
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDistrict, setSelectedDistrict] = useState<string>('all');
-  const [selectedState, setSelectedState] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedType, setSelectedType] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'district-groups'>('table');
+  const [districtFilter, setDistrictFilter] = useState('all');
+  const [stateFilter, setStateFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [includeRetired, setIncludeRetired] = useState(false);
 
-  // Bulk Selection State (DISPATCH-012)
-  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
+  // Bulk Action Modal State
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<string>('');
+  const [bulkTemplateId, setBulkTemplateId] = useState<string>('');
+  const [bulkSuccessMsg, setBulkSuccessMsg] = useState<string | null>(null);
 
-  const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
-  const isViewer = currentUser.role === 'Viewer';
+  // Corporate Holiday / Temporary Exception State
+  const [exceptionName, setExceptionName] = useState<string>('');
+  const [exceptionStartDate, setExceptionStartDate] = useState<string>('');
+  const [exceptionEndDate, setExceptionEndDate] = useState<string>('');
+  const [exceptionOperatingStatus, setExceptionOperatingStatus] = useState<'Closed' | 'Modified Hours'>('Closed');
+  const [exceptionOpenTime, setExceptionOpenTime] = useState<string>('10:00');
+  const [exceptionCloseTime, setExceptionCloseTime] = useState<string>('18:00');
 
-  const filteredLocations = useMemo(() => {
-    return locations.filter(loc => {
-      // Search
-      const term = searchTerm.toLowerCase().trim();
-      const matchesSearch = !term || (
-        loc.storeNumber.toLowerCase().includes(term) ||
-        loc.name.toLowerCase().includes(term) ||
-        (loc.mallOrCenterName && loc.mallOrCenterName.toLowerCase().includes(term)) ||
-        loc.city.toLowerCase().includes(term) ||
-        loc.state.toLowerCase().includes(term) ||
-        loc.zipCode.includes(term) ||
-        loc.phone.includes(term) ||
-        (loc.storeManagerName && loc.storeManagerName.toLowerCase().includes(term)) ||
-        (loc.districtManagerName && loc.districtManagerName.toLowerCase().includes(term))
-      );
+  const canAdd = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
-      // District filter
-      const matchesDistrict = selectedDistrict === 'all' || loc.district === selectedDistrict || (selectedDistrict === 'rudy' && loc.districtManagerName?.includes('Rudy')) || (selectedDistrict === 'david' && loc.districtManagerName?.includes('David')) || (selectedDistrict === 'karlo' && loc.districtManagerName?.includes('Karlo'));
-
-      // State filter
-      const matchesState = selectedState === 'all' || loc.state === selectedState;
-
-      // Status filter
-      const matchesStatus = selectedStatus === 'all' || (
-        selectedStatus === 'open' ? loc.operationalStatus === 'Open — Normal Operations' : loc.operationalStatus !== 'Open — Normal Operations'
-      );
-
-      // Type filter
-      const matchesType = selectedType === 'all' || loc.type === selectedType;
-
-      return matchesSearch && matchesDistrict && matchesState && matchesStatus && matchesType;
-    });
-  }, [locations, searchTerm, selectedDistrict, selectedState, selectedStatus, selectedType]);
-
-  // Bulk selection helpers
-  const handleToggleSelect = (id: string) => {
-    setSelectedLocationIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
-
-  const handleSelectAllFiltered = () => {
-    if (selectedLocationIds.length === filteredLocations.length && filteredLocations.length > 0) {
-      setSelectedLocationIds([]);
-    } else {
-      setSelectedLocationIds(filteredLocations.map(l => l.id));
+  const handleOpenPerson = (e: React.MouseEvent, personId?: string, personName?: string) => {
+    e.stopPropagation();
+    if (!onSelectPerson) return;
+    let found = personId ? people.find(p => p.id === personId) : undefined;
+    if (!found && personName) {
+      found = people.find(p => p.fullName.toLowerCase() === personName.toLowerCase() || personName.toLowerCase().includes(p.fullName.toLowerCase()));
+    }
+    if (found) {
+      onSelectPerson(found);
     }
   };
 
-  const isAllFilteredSelected = filteredLocations.length > 0 && selectedLocationIds.length === filteredLocations.length;
+  const districts = useMemo(() => {
+    return Array.from(new Set(locations.map(l => l.district).filter(Boolean))).sort() as string[];
+  }, [locations]);
 
-  // Export CSV matching exact Blueprint Specification Section 13
-  const handleExportCsv = () => {
-    const headers = [
-      'location_id',
-      'store_number',
-      'location_name',
-      'location_type',
-      'mall_or_center_name',
-      'address_1',
-      'city',
-      'state',
-      'postal_code',
-      'phone',
-      'region',
-      'district',
-      'store_manager',
-      'store_manager_phone',
-      'district_manager',
-      'operational_status',
-      'last_updated'
-    ];
+  const states = useMemo(() => {
+    return Array.from(new Set(locations.map(l => l.state).filter(Boolean))).sort() as string[];
+  }, [locations]);
 
-    const rows = filteredLocations.map(loc => {
-      const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
-      const exportedManagerPhone = (isQuarantined && isViewer) ? '(•••) •••-••••' : (loc.storeManagerPhone || '');
+  const activeCount = locations.filter(l => l.recordStatus !== 'Retired').length;
+  const retiredCount = locations.filter(l => l.recordStatus === 'Retired').length;
 
-      return [
-        `"${loc.id}"`,
-        `"${loc.storeNumber}"`,
-        `"${loc.name.replace(/"/g, '""')}"`,
-        `"${loc.type}"`,
-        `"${loc.mallOrCenterName || ''}"`,
-        `"${loc.address.replace(/"/g, '""')}"`,
-        `"${loc.city}"`,
-        `"${loc.state}"`,
-        `"${loc.zipCode}"`,
-        `"${loc.phone}"`,
-        `"${loc.region || ''}"`,
-        `"${loc.district || ''}"`,
-        `"${loc.storeManagerName || ''}"`,
-        `"${exportedManagerPhone}"`,
-        `"${loc.districtManagerName || ''}"`,
-        `"${loc.operationalStatus}"`,
-        `"${loc.lastUpdated}"`
-      ];
+  const filtered = useMemo(() => {
+    return locations.filter(loc => {
+      if (!includeRetired && loc.recordStatus === 'Retired') return false;
+      if (districtFilter !== 'all' && loc.district !== districtFilter) return false;
+      if (stateFilter !== 'all' && loc.state !== stateFilter) return false;
+      if (statusFilter !== 'all' && loc.operationalStatus !== statusFilter) return false;
+      if (typeFilter !== 'all' && loc.type !== typeFilter) return false;
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        loc.storeNumber.includes(term) ||
+        loc.name.toLowerCase().includes(term) ||
+        loc.city.toLowerCase().includes(term) ||
+        loc.state.toLowerCase().includes(term) ||
+        loc.type.toLowerCase().includes(term) ||
+        loc.storeManagerName?.toLowerCase().includes(term) ||
+        loc.districtManagerName?.toLowerCase().includes(term)
+      );
     });
+  }, [locations, includeRetired, districtFilter, stateFilter, statusFilter, typeFilter, searchTerm]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `shiekh_store_directory_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // District Groups calculation
+  const districtGroups = useMemo(() => {
+    const map = new Map<string, LocationRecord[]>();
+    filtered.forEach(loc => {
+      const d = loc.district || 'Unassigned District';
+      if (!map.has(d)) map.set(d, []);
+      map.get(d)!.push(loc);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filtered]);
+
+  // Multi-select helpers
+  const isAllSelected = filtered.length > 0 && filtered.every(l => selectedStoreIds.includes(l.id));
+  const isIndeterminate = !isAllSelected && filtered.some(l => selectedStoreIds.includes(l.id));
+
+  const toggleSelectStore = (id: string) => {
+    setSelectedStoreIds(prev => 
+      prev.includes(id) ? prev.filter(sId => sId !== id) : [...prev, id]
+    );
   };
 
-  // Helper for district color styling (WCAG AA compliant contrast)
-  const getDistrictBadgeStyle = (dmName?: string) => {
-    if (dmName?.includes('Rudy')) return 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800';
-    if (dmName?.includes('David')) return 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-300 border-blue-300 dark:border-blue-800';
-    if (dmName?.includes('Karlo')) return 'bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-300 border-rose-300 dark:border-rose-800';
-    return 'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300 border-neutral-300 dark:border-neutral-700';
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const filteredIdSet = new Set(filtered.map(l => l.id));
+      setSelectedStoreIds(prev => prev.filter(id => !filteredIdSet.has(id)));
+    } else {
+      const merged = new Set([...selectedStoreIds, ...filtered.map(l => l.id)]);
+      setSelectedStoreIds(Array.from(merged));
+    }
+  };
+
+  const handleToggleDistrictSelect = (districtLocs: LocationRecord[]) => {
+    const distIds = districtLocs.map(l => l.id);
+    const allInDistSelected = distIds.every(id => selectedStoreIds.includes(id));
+    if (allInDistSelected) {
+      setSelectedStoreIds(prev => prev.filter(id => !distIds.includes(id)));
+    } else {
+      setSelectedStoreIds(prev => Array.from(new Set([...prev, ...distIds])));
+    }
+  };
+
+  const hasActiveFilters = 
+    districtFilter !== 'all' || 
+    stateFilter !== 'all' || 
+    statusFilter !== 'all' || 
+    typeFilter !== 'all' || 
+    searchTerm.trim() !== '';
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setDistrictFilter('all');
+    setStateFilter('all');
+    setStatusFilter('all');
+    setTypeFilter('all');
+  };
+
+  const handleApplyBulkUpdates = () => {
+    if (selectedStoreIds.length === 0) return;
+
+    selectedStoreIds.forEach(storeId => {
+      const loc = locations.find(l => l.id === storeId);
+      const updates: Partial<LocationRecord> & { holidayOverrides?: any[] } = {};
+
+      if (bulkTemplateId) {
+        applyHoursTemplate(storeId, bulkTemplateId);
+      }
+      if (bulkStatus) {
+        updates.operationalStatus = bulkStatus as OperationalStatus;
+      }
+
+      // Map Corporate Holiday / Temporary Exception
+      if (exceptionName.trim()) {
+        const isClosed = exceptionOperatingStatus === 'Closed';
+        const hoursDesc = isClosed 
+          ? 'Closed All Day' 
+          : `Modified Hours (${exceptionOpenTime} - ${exceptionCloseTime})`;
+
+        // 1. Map into activeNotice
+        updates.activeNotice = {
+          shortDescription: `${exceptionName.trim()}: ${hoursDesc}`,
+          effectiveDate: exceptionStartDate || new Date().toISOString().split('T')[0],
+          expectedResolutionDate: exceptionEndDate || exceptionStartDate || undefined,
+          displayUntilDate: exceptionEndDate || exceptionStartDate || undefined,
+        };
+
+        // 2. Map into holidayHours / holidayOverrides array
+        const newOverride = {
+          id: `hol-${Date.now()}-${storeId}`,
+          holidayName: exceptionName.trim(),
+          date: exceptionStartDate || new Date().toISOString().split('T')[0],
+          hours: {
+            open: isClosed ? '00:00' : exceptionOpenTime,
+            close: isClosed ? '00:00' : exceptionCloseTime,
+            isClosed: isClosed
+          }
+        };
+
+        const existingHolidays = loc?.holidayHours || [];
+        const filteredHolidays = existingHolidays.filter(
+          h => h.holidayName !== exceptionName.trim() || h.date !== newOverride.date
+        );
+        const combinedHolidays = [...filteredHolidays, newOverride];
+        updates.holidayHours = combinedHolidays;
+        updates.holidayOverrides = combinedHolidays;
+
+        // If operational status was not explicitly selected, set appropriate status
+        if (!bulkStatus) {
+          updates.operationalStatus = isClosed 
+            ? 'Temporarily Closed — Emergency' 
+            : 'Temporarily Modified Hours';
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        updateLocation(storeId, updates);
+      }
+    });
+
+    const count = selectedStoreIds.length;
+    setBulkSuccessMsg(`Successfully updated ${count} location${count > 1 ? 's' : ''}`);
+    setTimeout(() => setBulkSuccessMsg(null), 4000);
+    setSelectedStoreIds([]);
+    setIsBulkModalOpen(false);
+    setBulkStatus('');
+    setBulkTemplateId('');
+    setExceptionName('');
+    setExceptionStartDate('');
+    setExceptionEndDate('');
+    setExceptionOperatingStatus('Closed');
+    setExceptionOpenTime('10:00');
+    setExceptionCloseTime('18:00');
   };
 
   return (
     <div className="space-y-4">
-      {/* Top Header & Quick Actions */}
-      <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Header Bar */}
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
-              Retail Locations & Stores Master
-            </h1>
-            <span className="px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-xs font-bold text-neutral-700 dark:text-neutral-300">
-              {filteredLocations.length} locations
-            </span>
-          </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-            Authoritative source of truth for store contacts, addresses, hours, and leadership assignments.
+          <h2 className="text-lg font-bold text-neutral-900">Store Locations Directory</h2>
+          <p className="text-xs text-neutral-500">
+            {activeCount} active retail locations across CA, NV, WA, OR & TX {retiredCount > 0 && `(${retiredCount} retired in archive)`}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {canEdit && (
-            <button
-              onClick={() => {
-                if (selectedLocationIds.length === 0) {
-                  // If none selected, select all filtered and open
-                  setSelectedLocationIds(filteredLocations.map(l => l.id));
-                }
-                setIsBulkModalOpen(true);
-              }}
-              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:hover:bg-white text-white dark:text-neutral-900 rounded-md text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
-            >
-              <Zap className="w-3.5 h-3.5 text-amber-400 dark:text-amber-600" />
-              <span>Bulk Update Hours & Status</span>
-              {selectedLocationIds.length > 0 && (
-                <span className="px-1.5 py-0.2 bg-red-600 text-white rounded-full text-[10px]">
-                  {selectedLocationIds.length}
-                </span>
-              )}
-            </button>
-          )}
-
+        {canAdd && (
           <button
-            onClick={onNavigateToPdf}
-            className="px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
+            type="button"
+            onClick={onAddNewLocation}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors"
           >
-            <Printer className="w-3.5 h-3.5 text-neutral-500" />
-            <span>1-Sheet PDF</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Store Location</span>
           </button>
-
-          <button
-            onClick={handleExportCsv}
-            className="px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors"
-          >
-            <Download className="w-3.5 h-3.5 text-neutral-500" />
-            <span>Export CSV</span>
-          </button>
-
-          {canEdit && (
-            <button
-              onClick={onAddNewLocation}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Location</span>
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Floating Selection Banner when items are selected */}
-      {selectedLocationIds.length > 0 && (
-        <div className="p-3 bg-neutral-900 text-white rounded-xl shadow-lg flex items-center justify-between gap-3 animate-fadeIn">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="font-bold text-xs">
-              {selectedLocationIds.length} of {filteredLocations.length} stores selected
-            </span>
+      {/* Bulk Success Banner */}
+      {bulkSuccessMsg && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-medium">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <span>{bulkSuccessMsg}</span>
           </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSelectAllFiltered}
-              className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded text-xs font-medium"
-            >
-              {isAllFilteredSelected ? 'Deselect All' : `Select All (${filteredLocations.length})`}
-            </button>
-
-            {canEdit && (
-              <button
-                onClick={() => setIsBulkModalOpen(true)}
-                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold flex items-center gap-1.5 shadow-xs"
-              >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Configure Bulk Hours & Holiday Exception</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setSelectedLocationIds([])}
-              className="text-neutral-400 hover:text-white text-xs px-1"
-            >
-              Clear
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setBulkSuccessMsg(null)}
+            className="text-emerald-500 hover:text-emerald-800 p-1 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Search & Filter Toolbar */}
-      <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Search Box */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      {/* Filter Ribbon */}
+      <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-neutral-200 shadow-xs flex-wrap">
+        <div className="flex items-center gap-2.5 flex-1 min-w-[280px] flex-wrap">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              placeholder="Search store #, name, city, manager, district..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Search store number, mall name, city, address, manager name..."
-              className="w-full pl-9 pr-4 py-2 bg-neutral-50 dark:bg-neutral-800/80 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-red-500"
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-7 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-red-500 focus:bg-white"
             />
             {searchTerm && (
-              <button 
+              <button
+                type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400 hover:text-neutral-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
               >
-                Clear
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* View Switcher */}
-          <div className="flex items-center gap-1 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg self-start md:self-auto shrink-0">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                viewMode === 'table' 
-                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-2xs font-semibold' 
-                  : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
-              }`}
-            >
-              <List className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Table View</span>
-            </button>
-            <button
-              onClick={() => setViewMode('district-groups')}
-              className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                viewMode === 'district-groups' 
-                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-2xs font-semibold' 
-                  : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">District Groups</span>
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                viewMode === 'cards' 
-                  ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-2xs font-semibold' 
-                  : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
-              }`}
-            >
-              <Grid className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Cards View</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Row */}
-        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-neutral-100 dark:border-neutral-800">
-          <div className="flex items-center gap-1 text-xs text-neutral-500 font-semibold mr-1">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Filters:</span>
-          </div>
-
-          {/* District Filter */}
+          {/* All Districts Dropdown */}
           <select
-            value={selectedDistrict}
-            onChange={e => setSelectedDistrict(e.target.value)}
-            className="px-2 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs text-neutral-700 dark:text-neutral-300 font-medium"
+            value={districtFilter}
+            onChange={(e) => setDistrictFilter(e.target.value)}
+            className="bg-neutral-50 hover:bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
           >
-            <option value="all">All Districts (Enterprise-Wide)</option>
-            <option value="rudy">District 1 · Rudy Calderon (NorCal / NV / WA / OR / TX)</option>
-            <option value="david">District 2 · David Castro (Central Valley / LA Central)</option>
-            <option value="karlo">District 3 · Karlo Llovido (Inland Empire / South Bay / SD)</option>
+            <option value="all">All Districts</option>
+            {districts.map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
           </select>
 
-          {/* State Filter */}
+          {/* All States Dropdown */}
           <select
-            value={selectedState}
-            onChange={e => setSelectedState(e.target.value)}
-            className="px-2 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs text-neutral-700 dark:text-neutral-300"
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value)}
+            className="bg-neutral-50 hover:bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
           >
             <option value="all">All States</option>
-            <option value="CA">California (CA)</option>
-            <option value="NV">Nevada (NV)</option>
-            <option value="WA">Washington (WA)</option>
-            <option value="OR">Oregon (OR)</option>
-            <option value="TX">Texas (TX)</option>
+            {states.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
           </select>
 
-          {/* Status Filter */}
+          {/* All Statuses Dropdown */}
           <select
-            value={selectedStatus}
-            onChange={e => setSelectedStatus(e.target.value)}
-            className="px-2 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs text-neutral-700 dark:text-neutral-300"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-neutral-50 hover:bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
           >
             <option value="all">All Statuses</option>
-            <option value="open">Open (Normal Operations)</option>
-            <option value="alerts">Alerts / Modified / Remodel</option>
+            {operationalStatuses.map(st => (
+              <option key={st} value={st}>{st}</option>
+            ))}
           </select>
 
-          {/* Type Filter */}
+          {/* All Types Dropdown */}
           <select
-            value={selectedType}
-            onChange={e => setSelectedType(e.target.value)}
-            className="px-2 py-1 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs text-neutral-700 dark:text-neutral-300"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="bg-neutral-50 hover:bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
           >
             <option value="all">All Types</option>
-            <option value="Enclosed Mall">Enclosed Mall</option>
-            <option value="Strip Center / Shopping Center">Strip Center</option>
-            <option value="Street / Standalone Location">Street / Standalone</option>
-            <option value="Corporate Office">Corporate</option>
-            <option value="Warehouse / Distribution Center">Warehouse / DC</option>
+            {locationTypes.map(t => (
+              <option key={t} value={t}>{t}</option>
+            ))}
           </select>
 
-          {(selectedDistrict !== 'all' || selectedState !== 'all' || selectedStatus !== 'all' || selectedType !== 'all' || searchTerm) && (
+          {hasActiveFilters && (
             <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedDistrict('all');
-                setSelectedState('all');
-                setSelectedStatus('all');
-                setSelectedType('all');
-              }}
-              className="text-[11px] text-red-600 dark:text-red-400 hover:underline ml-auto font-medium"
+              type="button"
+              onClick={resetFilters}
+              className="text-[11px] font-semibold text-red-600 hover:text-red-700 hover:underline px-1 cursor-pointer"
             >
-              Reset Filters
+              Clear filters
             </button>
           )}
         </div>
+
+        {/* Include Retired Stores Toggle */}
+        <label className="flex items-center gap-2 text-xs font-semibold text-neutral-700 cursor-pointer select-none bg-neutral-50 hover:bg-neutral-100 px-2.5 py-1.5 rounded-lg border border-neutral-200 transition-colors">
+          <input
+            type="checkbox"
+            checked={includeRetired}
+            onChange={(e) => setIncludeRetired(e.target.checked)}
+            className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer"
+          />
+          <span>Include Retired Stores</span>
+          {retiredCount > 0 && (
+            <span className="text-[10px] bg-neutral-200 text-neutral-600 px-1.5 py-0.2 rounded-full">
+              {retiredCount}
+            </span>
+          )}
+        </label>
       </div>
 
-      {/* Main Content Render */}
+      {/* Secondary Action Bar & View Toggles */}
+      <div className="flex items-center justify-between gap-3 bg-white px-4 py-2.5 rounded-xl border border-neutral-200 shadow-xs flex-wrap">
+        {/* Left Side: Select All toggle and Bulk Update button */}
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs font-semibold text-neutral-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={isAllSelected}
+              ref={el => {
+                if (el) el.indeterminate = isIndeterminate;
+              }}
+              onChange={handleToggleSelectAll}
+              className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4"
+            />
+            <span>
+              Select All {selectedStoreIds.length > 0 && (
+                <span className="text-red-600 font-bold">({selectedStoreIds.length} selected)</span>
+              )}
+            </span>
+          </label>
+
+          <div className="h-4 w-px bg-neutral-200" />
+
+          <button
+            type="button"
+            disabled={selectedStoreIds.length === 0}
+            onClick={() => setIsBulkModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-2xs ${
+              selectedStoreIds.length > 0
+                ? 'bg-neutral-900 hover:bg-neutral-800 text-white cursor-pointer'
+                : 'bg-neutral-100 text-neutral-400 border border-neutral-200 cursor-not-allowed'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Configure Bulk Hours & Holiday Exception</span>
+          </button>
+
+          {selectedStoreIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedStoreIds([])}
+              className="text-[11px] text-neutral-500 hover:text-neutral-800 hover:underline cursor-pointer"
+            >
+              Deselect all
+            </button>
+          )}
+        </div>
+
+        {/* Right Side: Toggle Group mapping strictly to Table View, District Groups, and Cards View */}
+        <div className="flex items-center bg-neutral-100 p-0.5 rounded-lg border border-neutral-200 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+              viewMode === 'table'
+                ? 'bg-white text-neutral-900 shadow-2xs font-bold'
+                : 'text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            <Table className="w-3.5 h-3.5" />
+            <span>Table View</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('district')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+              viewMode === 'district'
+                ? 'bg-white text-neutral-900 shadow-2xs font-bold'
+                : 'text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>District Groups</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('cards')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+              viewMode === 'cards'
+                ? 'bg-white text-neutral-900 shadow-2xs font-bold'
+                : 'text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Cards View</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content Area: Table View */}
       {viewMode === 'table' && (
-        <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs overflow-hidden">
+        <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-neutral-50 dark:bg-neutral-800/80 text-neutral-500 dark:text-neutral-400 font-semibold border-b border-neutral-200 dark:border-neutral-800">
-                  {/* Bulk Checkbox Header */}
-                  <th className="py-1.5 px-2.5 w-8">
-                    <button
-                      type="button"
-                      onClick={handleSelectAllFiltered}
-                      className="text-neutral-400 hover:text-red-600"
-                      title={isAllFilteredSelected ? 'Deselect All' : 'Select All'}
-                    >
-                      {isAllFilteredSelected ? (
-                        <CheckSquare className="w-4 h-4 text-red-600" />
-                      ) : (
-                        <Square className="w-4 h-4" />
-                      )}
-                    </button>
+            <table className="w-full text-left text-xs text-neutral-700">
+              <thead className="bg-neutral-50 text-neutral-500 font-semibold border-b border-neutral-200 text-[11px] uppercase tracking-wider">
+                <tr>
+                  <th className="py-3 px-3.5 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      ref={el => {
+                        if (el) el.indeterminate = isIndeterminate;
+                      }}
+                      onChange={handleToggleSelectAll}
+                      className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4"
+                    />
                   </th>
-                  <th className="py-1.5 px-2.5 w-16">Store #</th>
-                  <th className="py-1.5 px-2.5">Location Name & Address</th>
-                  <th className="py-1.5 px-2.5">City / State</th>
-                  <th className="py-1.5 px-2.5">Store Phone</th>
-                  <th className="py-1.5 px-2.5">District Manager</th>
-                  <th className="py-1.5 px-2.5">Store Manager</th>
-                  <th className="py-1.5 px-2.5 text-right">Actions</th>
+                  <th className="py-3 px-4">Store</th>
+                  <th className="py-3 px-4">Address & City</th>
+                  <th className="py-3 px-4">Today's Hours</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">District Manager</th>
+                  <th className="py-3 px-4">Store Manager</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800/60">
-                {filteredLocations.map(loc => {
-                  const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
-                  const isManagementOnly = loc.storeManagerPhoneVisibility === 'Internal Management Only';
-                  const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
-                  const isSelected = selectedLocationIds.includes(loc.id);
-                  const isAbnormalStatus = loc.operationalStatus !== 'Open — Normal Operations' && loc.operationalStatus !== 'Open - Normal Operations';
+              <tbody className="divide-y divide-neutral-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-neutral-400">
+                      No store locations match the active search and filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map(loc => {
+                    const todayHours = getTodayHoursForLocation(loc);
+                    const isRetired = loc.recordStatus === 'Retired';
+                    const isSelected = selectedStoreIds.includes(loc.id);
 
-                  return (
-                    <tr
-                      key={loc.id}
-                      onClick={() => onSelectLocation(loc)}
-                      className={`hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer transition-colors group ${
-                        isSelected ? 'bg-red-50/40 dark:bg-red-950/20' : ''
-                      }`}
-                    >
-                      {/* Selection Checkbox */}
-                      <td className="py-1.5 px-2.5" onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSelect(loc.id)}
-                          className="text-neutral-400 hover:text-red-600 mt-0.5"
+                    return (
+                      <tr
+                        key={loc.id}
+                        onClick={() => onSelectLocation(loc)}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected 
+                            ? 'bg-red-50/70 hover:bg-red-50/90 font-medium' 
+                            : 'hover:bg-neutral-50/80'
+                        } ${isRetired ? 'bg-neutral-50/50 opacity-75' : ''}`}
+                      >
+                        <td 
+                          className="py-3 px-3.5 text-center" 
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {isSelected ? (
-                            <CheckSquare className="w-4 h-4 text-red-600" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                        </button>
-                      </td>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectStore(loc.id)}
+                            className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4"
+                          />
+                        </td>
 
-                      <td className="py-1.5 px-2.5 font-bold text-neutral-900 dark:text-neutral-100">
-                        <span className="px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 font-mono text-xs">
-                          #{loc.storeNumber}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-2.5">
-                        <div className="font-semibold text-neutral-900 dark:text-neutral-100 group-hover:text-red-600 dark:group-hover:text-red-400 flex items-center">
-                          <span>{loc.name}</span>
-                          {isAbnormalStatus && (
-                            <AlertTriangle 
-                              className="w-3.5 h-3.5 text-amber-500 inline ml-1.5 shrink-0" 
-                              title={`Status: ${loc.operationalStatus}`}
-                            />
-                          )}
-                        </div>
-                        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-xs">
-                          {loc.address}
-                        </div>
-                      </td>
-                      <td className="py-1.5 px-2.5">
-                        <span className="text-neutral-800 dark:text-neutral-200">{loc.city}</span>
-                        <span className="text-neutral-400 ml-1 font-bold">{loc.state}</span>
-                      </td>
-                      <td className="py-1.5 px-2.5">
-                        <a
-                          href={`tel:${loc.phone}`}
-                          onClick={e => e.stopPropagation()}
-                          className="font-medium text-neutral-700 dark:text-neutral-300 hover:text-red-600 hover:underline"
-                        >
-                          {loc.phone}
-                        </a>
-                      </td>
-                      <td className="py-1.5 px-2.5">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${getDistrictBadgeStyle(loc.districtManagerName)}`}>
-                          {loc.districtManagerName || 'Unassigned'}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-2.5">
-                        <div className="font-medium text-neutral-900 dark:text-neutral-100">
-                          {loc.storeManagerName || <span className="text-neutral-400 italic">Vacant</span>}
-                        </div>
-                        {loc.storeManagerPhone && (
-                          <div className="text-[10px] text-neutral-500 font-mono flex items-center gap-1 mt-0.5">
-                            {shouldMaskPhone ? (
-                              <span className="text-neutral-400 font-semibold tracking-wider flex items-center gap-1">
-                                <Lock className="w-2.5 h-2.5 text-amber-500" />
-                                (•••) •••-••••
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+                              #{loc.storeNumber}
+                            </span>
+                            <div className="font-semibold text-neutral-900">{loc.name}</div>
+                            {isRetired && (
+                              <span className="text-[10px] font-bold text-neutral-500 bg-neutral-200 px-1.5 py-0.5 rounded">
+                                Retired
                               </span>
-                            ) : (
-                              <span>{loc.storeManagerPhone}</span>
                             )}
-                            <PrivacyBadge 
-                              visibility={loc.storeManagerPhoneVisibility || (loc.isStoreManagerPhoneVerified === false ? 'Pending Review' : 'Directory Public')} 
-                              isVerified={loc.isStoreManagerPhoneVerified ?? true}
-                              size="sm"
-                            />
                           </div>
-                        )}
-                      </td>
-                      <td className="py-1.5 px-2.5 text-right" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          {canEdit && (
-                            <button
-                              onClick={() => onEditLocation(loc)}
-                              className="px-2 py-1 bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 hover:bg-red-100 rounded font-semibold text-[11px]"
-                              title="Edit Authoritative Record & Hours"
-                            >
-                              Edit
-                            </button>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="text-neutral-900 font-medium">{loc.city}, {loc.state}</div>
+                          <div className="text-[11px] text-neutral-500 truncate max-w-[180px]">{loc.address}</div>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="font-medium text-neutral-800">{todayHours.hoursString}</div>
+                          {todayHours.isHolidayOverride && (
+                            <span className="text-[10px] text-amber-600 font-medium">★ Holiday Override</span>
                           )}
-                          <button
-                            onClick={() => onRequestCorrection(loc)}
-                            className="p-1 text-neutral-400 hover:text-amber-600 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                            title="Request Correction"
-                          >
-                            <AlertTriangle className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => onSelectLocation(loc)}
-                            className="px-2 py-1 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded font-medium text-[11px]"
-                          >
-                            Details
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <OperationalStatusBadge status={loc.operationalStatus} />
+                        </td>
+
+                        <td className="py-3 px-4">
+                          {loc.districtManagerName ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenPerson(e, loc.districtManagerId, loc.districtManagerName)}
+                              className="hover:text-red-600 hover:underline text-left cursor-pointer flex items-center gap-1 font-medium text-neutral-800"
+                            >
+                              <span>{loc.districtManagerName}</span>
+                              <ExternalLink className="w-3 h-3 text-neutral-400" />
+                            </button>
+                          ) : (
+                            <span className="text-neutral-400 italic">Unassigned</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          {loc.storeManagerName ? (
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenPerson(e, loc.storeManagerId, loc.storeManagerName)}
+                              className="hover:text-red-600 hover:underline text-left cursor-pointer flex items-center gap-1 font-medium text-neutral-800"
+                            >
+                              <span>{loc.storeManagerName}</span>
+                              <ExternalLink className="w-3 h-3 text-neutral-400" />
+                            </button>
+                          ) : (
+                            <span className="text-neutral-400 italic">Position Vacant</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <ChevronRight className="w-4 h-4 text-neutral-400 inline-block" />
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* District Grouped View (Reflecting Reference Spreadsheet) */}
-      {viewMode === 'district-groups' && (
+      {/* Main Content Area: District Groups View */}
+      {viewMode === 'district' && (
         <div className="space-y-4">
-          {[
-            { dm: 'Rudy Calderon', title: 'District 1 · Rudy Calderon (NorCal, NV, WA, OR, TX)', color: 'border-emerald-300 bg-emerald-50/40 dark:bg-emerald-950/20' },
-            { dm: 'David Castro', title: 'District 2 · David Castro (Central Valley & LA Central)', color: 'border-blue-300 bg-blue-50/40 dark:bg-blue-950/20' },
-            { dm: 'Karlo Llovido', title: 'District 3 · Karlo Llovido (Inland Empire, South Bay, San Diego)', color: 'border-rose-300 bg-rose-50/40 dark:bg-rose-950/20' },
-            { dm: 'Corporate', title: 'Corporate Offices & Logistics Facilities', color: 'border-neutral-300 bg-neutral-50/60 dark:bg-neutral-900' }
-          ].map(grp => {
-            const grpStores = filteredLocations.filter(loc => {
-              if (grp.dm === 'Corporate') return loc.type === 'Corporate Office' || loc.type === 'Warehouse / Distribution Center';
-              return loc.districtManagerName?.includes(grp.dm);
-            });
+          {districtGroups.length === 0 ? (
+            <div className="bg-white border border-neutral-200 rounded-xl p-8 text-center text-neutral-400">
+              No districts match the active filter criteria.
+            </div>
+          ) : (
+            districtGroups.map(([districtName, distLocs]) => {
+              const allInDistSelected = distLocs.every(l => selectedStoreIds.includes(l.id));
+              const someInDistSelected = !allInDistSelected && distLocs.some(l => selectedStoreIds.includes(l.id));
+              const dmName = distLocs.find(l => l.districtManagerName)?.districtManagerName;
+              const dmId = distLocs.find(l => l.districtManagerId)?.districtManagerId;
 
-            if (grpStores.length === 0) return null;
+              return (
+                <div key={districtName} className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-xs">
+                  {/* District Header */}
+                  <div className="bg-neutral-50 px-4 py-3 border-b border-neutral-200 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={allInDistSelected}
+                        ref={el => {
+                          if (el) el.indeterminate = someInDistSelected;
+                        }}
+                        onChange={() => handleToggleDistrictSelect(distLocs)}
+                        className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4"
+                        title="Select all stores in this district"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Building className="w-4 h-4 text-neutral-500" />
+                        <h3 className="font-bold text-neutral-900 text-sm">{districtName}</h3>
+                        <span className="bg-neutral-200 text-neutral-700 text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
+                          {distLocs.length} store{distLocs.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
 
-            return (
-              <div key={grp.dm} className={`rounded-xl border p-4 ${grp.color} space-y-3`}>
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-sm text-neutral-900 dark:text-neutral-100">
-                    {grp.title} ({grpStores.length} locations)
-                  </h3>
-                </div>
+                    <div className="text-xs text-neutral-600 flex items-center gap-1.5">
+                      <span className="text-neutral-400">District Manager:</span>
+                      {dmName ? (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenPerson(e, dmId, dmName)}
+                          className="font-semibold text-neutral-800 hover:text-red-600 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>{dmName}</span>
+                          <ExternalLink className="w-3 h-3 text-neutral-400" />
+                        </button>
+                      ) : (
+                        <span className="italic text-neutral-400">Unassigned</span>
+                      )}
+                    </div>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {grpStores.map(loc => {
-                    const hours = getTodayHoursForLocation(loc);
-                    const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
-                    const isManagementOnly = loc.storeManagerPhoneVisibility === 'Internal Management Only';
-                    const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
-                    const isSelected = selectedLocationIds.includes(loc.id);
+                  {/* District Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-neutral-700">
+                      <tbody className="divide-y divide-neutral-100">
+                        {distLocs.map(loc => {
+                          const todayHours = getTodayHoursForLocation(loc);
+                          const isSelected = selectedStoreIds.includes(loc.id);
 
-                    return (
-                      <div
-                        key={`${grp.dm}-${loc.id}`}
-                        onClick={() => onSelectLocation(loc)}
-                        className={`p-3 bg-white dark:bg-neutral-800 rounded-lg border shadow-2xs hover:shadow-xs hover:border-red-500 cursor-pointer transition-all space-y-2 ${
-                          isSelected ? 'border-red-500 ring-2 ring-red-500/20' : 'border-neutral-200 dark:border-neutral-700'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                handleToggleSelect(loc.id);
-                              }}
-                              className="text-neutral-400 hover:text-red-600"
+                          return (
+                            <tr
+                              key={loc.id}
+                              onClick={() => onSelectLocation(loc)}
+                              className={`cursor-pointer transition-colors ${
+                                isSelected ? 'bg-red-50/70 hover:bg-red-50/90 font-medium' : 'hover:bg-neutral-50/80'
+                              }`}
                             >
-                              {isSelected ? <CheckSquare className="w-4 h-4 text-red-600" /> : <Square className="w-4 h-4" />}
-                            </button>
-                            <div>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-neutral-900 text-white font-mono">
-                                #{loc.storeNumber}
-                              </span>
-                              <h4 className="font-bold text-xs text-neutral-900 dark:text-neutral-100 mt-0.5">
-                                {loc.name}
-                              </h4>
-                            </div>
-                          </div>
-                          <OperationalStatusBadge status={loc.operationalStatus} size="sm" />
-                        </div>
+                              <td className="py-2.5 px-3.5 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectStore(loc.id)}
+                                  className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4"
+                                />
+                              </td>
+                              <td className="py-2.5 px-4 w-60">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+                                    #{loc.storeNumber}
+                                  </span>
+                                  <span className="font-semibold text-neutral-900">{loc.name}</span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <span className="text-neutral-800">{loc.city}, {loc.state}</span>
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <span className="font-medium text-neutral-700">{todayHours.hoursString}</span>
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <OperationalStatusBadge status={loc.operationalStatus} />
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <span className="text-neutral-600">{loc.storeManagerName || 'Vacant'}</span>
+                              </td>
+                              <td className="py-2.5 px-4 text-right">
+                                <ChevronRight className="w-4 h-4 text-neutral-400 inline-block" />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
-                        <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                          {loc.city}, {loc.state} • <a href={`tel:${loc.phone}`} className="font-semibold text-neutral-700 dark:text-neutral-300 hover:text-red-600">{loc.phone}</a>
-                        </div>
+      {/* Main Content Area: Cards View */}
+      {viewMode === 'cards' && (
+        <div>
+          {filtered.length === 0 ? (
+            <div className="bg-white border border-neutral-200 rounded-xl p-8 text-center text-neutral-400">
+              No store locations match the active search and filter criteria.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map(loc => {
+                const isSelected = selectedStoreIds.includes(loc.id);
+                const todayHours = getTodayHoursForLocation(loc);
+                const isRetired = loc.recordStatus === 'Retired';
 
-                        <div className="text-[11px] pt-1.5 border-t border-neutral-100 dark:border-neutral-700/60 flex items-center justify-between text-neutral-600 dark:text-neutral-300">
-                          <span>SM: <strong className="text-neutral-900 dark:text-neutral-100">{loc.storeManagerName || 'Vacant'}</strong></span>
-                          <span className="text-[10px] text-neutral-400 font-mono">
-                            {shouldMaskPhone ? '(•••) •••-••••' : loc.storeManagerPhone}
-                          </span>
+                return (
+                  <div
+                    key={loc.id}
+                    onClick={() => onSelectLocation(loc)}
+                    className={`bg-white rounded-xl border p-4 hover:shadow-md transition-all cursor-pointer relative space-y-3 ${
+                      isSelected
+                        ? 'border-red-500 ring-2 ring-red-500/20 bg-red-50/25'
+                        : 'border-neutral-200 hover:border-neutral-300 shadow-xs'
+                    }`}
+                  >
+                    {/* Card Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          onClick={(e) => e.stopPropagation()} 
+                          className="pt-0.5"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectStore(loc.id)}
+                            className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4"
+                          />
+                        </div>
+                        <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-xs">
+                          #{loc.storeNumber}
+                        </span>
+                        <div>
+                          <h4 className="font-bold text-neutral-900 text-sm leading-tight">{loc.name}</h4>
+                          <span className="text-[10px] text-neutral-400">{loc.type}</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+                      <OperationalStatusBadge status={loc.operationalStatus} />
+                    </div>
+
+                    {/* Card Details */}
+                    <div className="space-y-1.5 text-xs text-neutral-600 border-t border-neutral-100 pt-2.5">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                        <span className="truncate">{loc.address}, {loc.city}, {loc.state} {loc.zipCode}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                        <span className="font-medium text-neutral-800">{todayHours.hoursString}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                        <span>{loc.phone}</span>
+                      </div>
+                    </div>
+
+                    {/* Card Footer: District & Manager */}
+                    <div className="border-t border-neutral-100 pt-2 flex items-center justify-between text-[11px] text-neutral-500">
+                      <span className="truncate max-w-[140px]">{loc.district || 'Unassigned District'}</span>
+                      <span className="font-medium text-neutral-700 truncate max-w-[130px]">
+                        {loc.storeManagerName ? `Mgr: ${loc.storeManagerName}` : 'Vacant'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Cards View */}
-      {viewMode === 'cards' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {filteredLocations.map(loc => {
-            const hours = getTodayHoursForLocation(loc);
-            const isQuarantined = loc.storeManagerPhoneVisibility === 'Pending Review' || loc.isStoreManagerPhoneVerified === false;
-            const isManagementOnly = loc.storeManagerPhoneVisibility === 'Internal Management Only';
-            const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
-            const isSelected = selectedLocationIds.includes(loc.id);
-
-            return (
-              <div
-                key={loc.id}
-                onClick={() => onSelectLocation(loc)}
-                className={`bg-white dark:bg-neutral-900 p-4 rounded-xl border shadow-2xs hover:shadow-md hover:border-red-500 cursor-pointer transition-all flex flex-col justify-between ${
-                  isSelected ? 'border-red-500 ring-2 ring-red-500/20' : 'border-neutral-200 dark:border-neutral-800'
-                }`}
+      {/* Bulk Update Hours & Status Modal */}
+      {isBulkModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-neutral-200 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <div>
+                <h3 className="font-bold text-neutral-900 text-base">Bulk Update Fleet Locations</h3>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Applying batch modifications to <strong className="text-neutral-800">{selectedStoreIds.length}</strong> selected store{selectedStoreIds.length > 1 ? 's' : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBulkModalOpen(false)}
+                className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
               >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1.5">
+                  Update Operational Status
+                </label>
+                <select
+                  value={bulkStatus}
+                  onChange={(e) => setBulkStatus(e.target.value)}
+                  className="w-full bg-neutral-50 border border-neutral-200 rounded-lg p-2 text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer"
+                >
+                  <option value="">-- Keep Current Status (No Change) --</option>
+                  {operationalStatuses.map(st => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-neutral-400 mt-1">
+                  Will instantly adjust status across Google Business Profile and customer directory.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-neutral-700 mb-1.5">
+                  Apply Standard Hours Template
+                </label>
+                <select
+                  value={bulkTemplateId}
+                  onChange={(e) => setBulkTemplateId(e.target.value)}
+                  className="w-full bg-neutral-50 border border-neutral-200 rounded-lg p-2 text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer"
+                >
+                  <option value="">-- Keep Current Hours (No Change) --</option>
+                  {hoursTemplates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} {t.description ? `(${t.description})` : ''}</option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-neutral-400 mt-1">
+                  Replaces regular weekly schedules with the selected operating template.
+                </p>
+              </div>
+
+              {/* Corporate Holiday / Temporary Exception Section */}
+              <div className="border border-neutral-200 bg-neutral-50/80 rounded-xl p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-neutral-800 text-xs">
+                    <Calendar className="w-3.5 h-3.5 text-red-600" />
+                    <span>Corporate Holiday / Temporary Exception</span>
+                  </div>
+                  <span className="text-[10px] text-neutral-500 font-medium">Optional Override</span>
+                </div>
+                
+                <div className="space-y-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
+                      Exception Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Thanksgiving, Christmas Eve, Special Inventory"
+                      value={exceptionName}
+                      onChange={(e) => setExceptionName(e.target.value)}
+                      className="w-full bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
+                        Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={exceptionStartDate}
+                        onChange={(e) => setExceptionStartDate(e.target.value)}
+                        className="w-full bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
+                        End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={exceptionEndDate}
+                        onChange={(e) => setExceptionEndDate(e.target.value)}
+                        className="w-full bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
+                      Operating Status
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={e => {
-                          e.stopPropagation();
-                          handleToggleSelect(loc.id);
-                        }}
-                        className="text-neutral-400 hover:text-red-600"
+                        onClick={() => setExceptionOperatingStatus('Closed')}
+                        className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          exceptionOperatingStatus === 'Closed'
+                            ? 'bg-red-50 border-red-300 text-red-700'
+                            : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                        }`}
                       >
-                        {isSelected ? <CheckSquare className="w-4 h-4 text-red-600" /> : <Square className="w-4 h-4" />}
+                        Closed (All Day)
                       </button>
-                      <span className="px-2 py-0.5 bg-neutral-900 text-white rounded text-xs font-bold font-mono">
-                        STORE #{loc.storeNumber}
-                      </span>
-                    </div>
-                    <OperationalStatusBadge status={loc.operationalStatus} size="sm" />
-                  </div>
-
-                  <h3 className="font-bold text-sm text-neutral-900 dark:text-neutral-100">
-                    {loc.name}
-                  </h3>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                    {loc.address}, {loc.city}, {loc.state} {loc.zipCode}
-                  </p>
-
-                  <div className="mt-2.5 space-y-1 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-400">Phone:</span>
-                      <a href={`tel:${loc.phone}`} className="font-bold text-red-600 dark:text-red-400">{loc.phone}</a>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-400">Store Manager:</span>
-                      <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                        {loc.storeManagerName || 'Vacant'} {shouldMaskPhone ? '(•••) •••-••••' : (loc.storeManagerPhone ? `(${loc.storeManagerPhone})` : '')}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-neutral-400">District:</span>
-                      <span className="text-[11px] font-medium">{loc.districtManagerName || 'N/A'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-2.5 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-xs text-neutral-400">
-                  <span>ID: {loc.id}</span>
-                  <div className="flex items-center gap-2">
-                    {canEdit && (
                       <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          onEditLocation(loc);
-                        }}
-                        className="text-red-600 font-semibold hover:underline"
+                        type="button"
+                        onClick={() => setExceptionOperatingStatus('Modified Hours')}
+                        className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                          exceptionOperatingStatus === 'Modified Hours'
+                            ? 'bg-red-50 border-red-300 text-red-700'
+                            : 'bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-100'
+                        }`}
                       >
-                        Edit
+                        Modified Hours
                       </button>
-                    )}
-                    <span className="text-neutral-600 dark:text-neutral-300 font-semibold hover:underline">Details →</span>
+                    </div>
                   </div>
+
+                  {exceptionOperatingStatus === 'Modified Hours' && (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-neutral-500 mb-1">
+                          Open Time
+                        </label>
+                        <input
+                          type="time"
+                          value={exceptionOpenTime}
+                          onChange={(e) => setExceptionOpenTime(e.target.value)}
+                          className="w-full bg-white border border-neutral-300 rounded-lg px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-red-500 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-neutral-500 mb-1">
+                          Close Time
+                        </label>
+                        <input
+                          type="time"
+                          value={exceptionCloseTime}
+                          onChange={(e) => setExceptionCloseTime(e.target.value)}
+                          className="w-full bg-white border border-neutral-300 rounded-lg px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-red-500 font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-neutral-500">
+                    Will inject schedule overrides into Google Maps and public store directory active notices.
+                  </p>
                 </div>
               </div>
-            );
-          })}
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 text-[11px]">
+                ⚠️ Warning: Bulk operations will immediately update all {selectedStoreIds.length} stores in staging state. Ensure you have confirmed hours schedules with district management before applying.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-100">
+              <button
+                type="button"
+                onClick={() => setIsBulkModalOpen(false)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-neutral-600 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200/80 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!bulkStatus && !bulkTemplateId && !exceptionName.trim()}
+                onClick={handleApplyBulkUpdates}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-xs ${
+                  bulkStatus || bulkTemplateId || exceptionName.trim()
+                    ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                    : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'
+                }`}
+              >
+                Apply Updates to {selectedStoreIds.length} Stores
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Bulk Update Modal (DISPATCH-012) */}
-      <BulkUpdateModal
-        selectedLocationIds={selectedLocationIds}
-        isOpen={isBulkModalOpen}
-        onClose={() => setIsBulkModalOpen(false)}
-        onClearSelection={() => setSelectedLocationIds([])}
-      />
     </div>
   );
 };

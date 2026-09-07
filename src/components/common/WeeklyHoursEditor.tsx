@@ -1,312 +1,101 @@
 import React from 'react';
-import { Clock, Copy, Sparkles, Check } from 'lucide-react';
-import { WeeklySchedule, DayHours, HoursTemplate } from '../../types';
+import { WeeklySchedule, DayHours } from '../../types';
 
-export const TIME_OPTIONS: string[] = [
-  '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM',
-  '08:00 AM', '08:30 AM', '09:00 AM', '09:30 AM',
-  '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
-  '12:00 PM', '12:30 PM', '01:00 PM', '01:30 PM',
-  '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
-  '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM',
-  '06:00 PM', '06:30 PM', '07:00 PM', '07:30 PM',
-  '08:00 PM', '08:30 PM', '09:00 PM', '09:30 PM',
-  '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM',
-  '12:00 AM'
-];
-
-export const DAYS_OF_WEEK: Array<{ key: keyof WeeklySchedule; label: string; short: string }> = [
-  { key: 'monday', label: 'Monday', short: 'Mon' },
-  { key: 'tuesday', label: 'Tuesday', short: 'Tue' },
-  { key: 'wednesday', label: 'Wednesday', short: 'Wed' },
-  { key: 'thursday', label: 'Thursday', short: 'Thu' },
-  { key: 'friday', label: 'Friday', short: 'Fri' },
-  { key: 'saturday', label: 'Saturday', short: 'Sat' },
-  { key: 'sunday', label: 'Sunday', short: 'Sun' },
-];
-
-export interface WeeklyHoursEditorProps {
-  value: WeeklySchedule;
+interface WeeklyHoursEditorProps {
+  schedule: WeeklySchedule;
   onChange: (schedule: WeeklySchedule) => void;
-  templates?: HoursTemplate[];
   disabled?: boolean;
-  selectedTemplateId?: string;
-  onTemplateSelect?: (templateId: string, templateName: string) => void;
 }
 
-// Helper to check if two schedules are structurally equivalent
-export function isScheduleEquivalent(s1?: WeeklySchedule, s2?: WeeklySchedule): boolean {
-  if (!s1 || !s2) return false;
-  const days: Array<keyof WeeklySchedule> = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  return days.every(day => {
-    const d1 = s1[day];
-    const d2 = s2[day];
-    if (!d1 || !d2) return false;
-    const closed1 = Boolean(d1.isClosed || d1.open === 'Closed');
-    const closed2 = Boolean(d2.isClosed || d2.open === 'Closed');
-    if (closed1 && closed2) return true;
-    if (closed1 !== closed2) return false;
-    return d1.open === d2.open && d1.close === d2.close;
-  });
-}
+const DAYS: { key: keyof WeeklySchedule; label: string }[] = [
+  { key: 'monday', label: 'Monday' },
+  { key: 'tuesday', label: 'Tuesday' },
+  { key: 'wednesday', label: 'Wednesday' },
+  { key: 'thursday', label: 'Thursday' },
+  { key: 'friday', label: 'Friday' },
+  { key: 'saturday', label: 'Saturday' },
+  { key: 'sunday', label: 'Sunday' },
+];
 
 export const WeeklyHoursEditor: React.FC<WeeklyHoursEditorProps> = ({
-  value,
+  schedule,
   onChange,
-  templates = [],
   disabled = false,
-  selectedTemplateId,
-  onTemplateSelect,
 }) => {
-  const schedule = value || {
-    monday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
-    tuesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
-    wednesday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
-    thursday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
-    friday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
-    saturday: { open: '10:00 AM', close: '09:00 PM', isClosed: false },
-    sunday: { open: '11:00 AM', close: '07:00 PM', isClosed: false },
-  };
-
-  // Detect matching template from value if none explicitly supplied
-  const [activeTemplateId, setActiveTemplateId] = React.useState<string>(() => {
-    if (selectedTemplateId) return selectedTemplateId;
-    const match = templates.find(t => isScheduleEquivalent(t.schedule, schedule));
-    return match ? match.id : '';
-  });
-
-  React.useEffect(() => {
-    if (selectedTemplateId !== undefined) {
-      setActiveTemplateId(selectedTemplateId);
-    } else {
-      const match = templates.find(t => isScheduleEquivalent(t.schedule, schedule));
-      setActiveTemplateId(match ? match.id : '');
-    }
-  }, [selectedTemplateId, schedule, templates]);
-
-  const handleDayChange = (day: keyof WeeklySchedule, updates: Partial<DayHours>) => {
-    if (disabled) return;
-    const currentDay = schedule[day] || { open: '10:00 AM', close: '09:00 PM', isClosed: false };
-    const updatedDay: DayHours = {
-      ...currentDay,
-      ...updates,
-    };
-
-    if (updatedDay.isClosed) {
-      updatedDay.open = 'Closed';
-      updatedDay.close = 'Closed';
-    } else if (updatedDay.open === 'Closed' || !updatedDay.open) {
-      updatedDay.open = '10:00 AM';
-      updatedDay.close = '09:00 PM';
-    }
-
-    const nextSchedule = {
+  const handleDayChange = (dayKey: keyof WeeklySchedule, updates: Partial<DayHours>) => {
+    onChange({
       ...schedule,
-      [day]: updatedDay,
-    };
-
-    // Check if new schedule still matches a template
-    const match = templates.find(t => isScheduleEquivalent(t.schedule, nextSchedule));
-    const nextTmplId = match ? match.id : '';
-    setActiveTemplateId(nextTmplId);
-    onTemplateSelect?.(nextTmplId, match ? match.name : 'Custom Hours');
-
-    onChange(nextSchedule);
+      [dayKey]: {
+        ...schedule[dayKey],
+        ...updates,
+      },
+    });
   };
 
-  // Shortcut 1: Copy Monday to Monday-Friday
-  const handleCopyMonToWeekdays = () => {
-    if (disabled) return;
-    const mon = schedule.monday || { open: '10:00 AM', close: '09:00 PM', isClosed: false };
-    const nextSchedule = {
-      ...schedule,
-      tuesday: { ...mon },
-      wednesday: { ...mon },
-      thursday: { ...mon },
-      friday: { ...mon },
-    };
-    const match = templates.find(t => isScheduleEquivalent(t.schedule, nextSchedule));
-    const nextTmplId = match ? match.id : '';
-    setActiveTemplateId(nextTmplId);
-    onTemplateSelect?.(nextTmplId, match ? match.name : 'Custom Hours');
-    onChange(nextSchedule);
+  const copyToAllWeekdays = (fromDay: keyof WeeklySchedule) => {
+    const source = schedule[fromDay];
+    const weekdays: (keyof WeeklySchedule)[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    const newSchedule = { ...schedule };
+    weekdays.forEach(d => {
+      newSchedule[d] = { ...source };
+    });
+    onChange(newSchedule);
   };
-
-  // Shortcut 2: Copy Monday to All 7 Days
-  const handleCopyMonToAll = () => {
-    if (disabled) return;
-    const mon = schedule.monday || { open: '10:00 AM', close: '09:00 PM', isClosed: false };
-    const nextSchedule = {
-      monday: { ...mon },
-      tuesday: { ...mon },
-      wednesday: { ...mon },
-      thursday: { ...mon },
-      friday: { ...mon },
-      saturday: { ...mon },
-      sunday: { ...mon },
-    };
-    const match = templates.find(t => isScheduleEquivalent(t.schedule, nextSchedule));
-    const nextTmplId = match ? match.id : '';
-    setActiveTemplateId(nextTmplId);
-    onTemplateSelect?.(nextTmplId, match ? match.name : 'Custom Hours');
-    onChange(nextSchedule);
-  };
-
-  // Apply Template Shortcut & Bind Dropdown (DISPATCH-013 Requirement 1)
-  const handleSelectTemplate = (templateId: string) => {
-    if (disabled) return;
-    if (!templateId) {
-      setActiveTemplateId('');
-      onTemplateSelect?.('', 'Custom Hours');
-      return;
-    }
-    const tmpl = templates.find(t => t.id === templateId);
-    if (tmpl && tmpl.schedule) {
-      setActiveTemplateId(tmpl.id);
-      onTemplateSelect?.(tmpl.id, tmpl.name);
-      onChange(JSON.parse(JSON.stringify(tmpl.schedule)));
-    }
-  };
-
-  const activeTemplate = templates.find(t => t.id === activeTemplateId);
 
   return (
-    <div className="space-y-3">
-      {/* Action shortcuts bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-neutral-100 dark:bg-neutral-800/80 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs">
-        <div className="flex items-center gap-2">
-          <Clock className="w-3.5 h-3.5 text-neutral-500" />
-          <span className="font-semibold text-neutral-800 dark:text-neutral-200">7-Day Weekly Grid</span>
-          {activeTemplate ? (
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
-              <Sparkles className="w-2.5 h-2.5" />
-              <span>{activeTemplate.name}</span>
-            </span>
-          ) : (
-            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400">
-              Custom Hours
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {templates.length > 0 && (
-            <div className="flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-500" />
-              <select
-                value={activeTemplateId || ''}
-                onChange={e => handleSelectTemplate(e.target.value)}
-                disabled={disabled}
-                className="px-2.5 py-1 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded text-[11px] font-medium text-neutral-800 dark:text-neutral-200 cursor-pointer shadow-2xs focus:ring-1 focus:ring-amber-500 focus:outline-none"
-                title="Select and apply pre-configured hours template"
-              >
-                <option value="">Custom Hours (No Template)</option>
-                {templates.map(tmpl => (
-                  <option key={tmpl.id} value={tmpl.id}>
-                    Template: {tmpl.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
+    <div className="space-y-2 bg-neutral-50 p-3 rounded-lg border border-neutral-200">
+      <div className="flex items-center justify-between text-xs text-neutral-500 pb-2 border-b border-neutral-200">
+        <span className="font-semibold text-neutral-800">Standard Weekly Hours</span>
+        {!disabled && (
           <button
             type="button"
-            onClick={handleCopyMonToWeekdays}
-            disabled={disabled}
-            className="px-2 py-1 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-[11px] font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1 shadow-2xs transition-colors disabled:opacity-50"
-            title="Copy Monday's open/close times to Tue, Wed, Thu, and Fri"
+            onClick={() => copyToAllWeekdays('monday')}
+            className="text-[11px] text-red-600 hover:text-red-700 underline cursor-pointer font-medium"
           >
-            <Copy className="w-3 h-3 text-neutral-500" />
-            <span>Copy Mon to Mon–Fri</span>
+            Copy Mon to Mon–Fri
           </button>
-
-          <button
-            type="button"
-            onClick={handleCopyMonToAll}
-            disabled={disabled}
-            className="px-2 py-1 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-[11px] font-medium text-neutral-700 dark:text-neutral-300 flex items-center gap-1 shadow-2xs transition-colors disabled:opacity-50"
-            title="Copy Monday's open/close times to all 7 days"
-          >
-            <Copy className="w-3 h-3 text-neutral-500" />
-            <span>Copy Mon to All</span>
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* 7-Day Visual Grid */}
-      <div className="bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden divide-y divide-neutral-200 dark:divide-neutral-800">
-        {DAYS_OF_WEEK.map(({ key, label, short }) => {
-          const day = schedule[key] || { open: '10:00 AM', close: '09:00 PM', isClosed: false };
-          const isClosed = Boolean(day.isClosed || day.open === 'Closed');
-
+      <div className="divide-y divide-neutral-200">
+        {DAYS.map(({ key, label }) => {
+          const day = schedule[key] || { open: '10:00', close: '20:00', isClosed: false };
           return (
-            <div
-              key={key}
-              className={`p-2.5 sm:px-4 sm:py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition-colors ${
-                isClosed
-                  ? 'bg-neutral-50/70 dark:bg-neutral-900/40 text-neutral-400'
-                  : 'hover:bg-neutral-50/50 dark:hover:bg-neutral-800/30'
-              }`}
-            >
-              {/* Day Name & Status indicator */}
-              <div className="flex items-center justify-between sm:justify-start gap-3 w-36 shrink-0">
-                <span className={`font-semibold text-xs ${isClosed ? 'text-neutral-400 dark:text-neutral-500 line-through' : 'text-neutral-900 dark:text-neutral-100'}`}>
-                  {label}
-                </span>
-
-                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none text-[11px]">
+            <div key={key} className="py-2 flex items-center justify-between gap-3 text-xs">
+              <span className="w-24 font-medium text-neutral-800">{label}</span>
+              
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 cursor-pointer text-neutral-600">
                   <input
                     type="checkbox"
-                    checked={isClosed}
+                    checked={day.isClosed}
                     disabled={disabled}
-                    onChange={e => handleDayChange(key, { isClosed: e.target.checked })}
-                    className="rounded border-neutral-300 dark:border-neutral-700 text-red-600 focus:ring-red-500 w-3.5 h-3.5"
+                    onChange={(e) => handleDayChange(key, { isClosed: e.target.checked })}
+                    className="rounded border-neutral-300 bg-white text-red-600 focus:ring-0 cursor-pointer"
                   />
-                  <span className={isClosed ? 'font-bold text-red-600 dark:text-red-400' : 'text-neutral-500 dark:text-neutral-400'}>
-                    Closed
-                  </span>
+                  <span>Closed</span>
                 </label>
-              </div>
 
-              {/* Time Pickers or Closed State */}
-              <div className="flex items-center gap-2 flex-1 justify-end">
-                {isClosed ? (
-                  <div className="px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 rounded border border-neutral-200 dark:border-neutral-700 text-neutral-400 dark:text-neutral-500 font-mono text-[11px] italic w-full sm:w-auto text-center sm:text-right">
-                    Closed all day
+                {!day.isClosed ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="time"
+                      value={day.open}
+                      disabled={disabled}
+                      onChange={(e) => handleDayChange(key, { open: e.target.value })}
+                      className="px-2 py-1 bg-white border border-neutral-300 rounded text-neutral-800 text-xs focus:outline-none focus:border-red-500"
+                    />
+                    <span className="text-neutral-400">to</span>
+                    <input
+                      type="time"
+                      value={day.close}
+                      disabled={disabled}
+                      onChange={(e) => handleDayChange(key, { close: e.target.value })}
+                      className="px-2 py-1 bg-white border border-neutral-300 rounded text-neutral-800 text-xs focus:outline-none focus:border-red-500"
+                    />
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <div className="flex items-center gap-1 flex-1 sm:flex-initial">
-                      <span className="text-[10px] text-neutral-400 uppercase font-medium">Open</span>
-                      <select
-                        value={day.open || '10:00 AM'}
-                        disabled={disabled}
-                        onChange={e => handleDayChange(key, { open: e.target.value })}
-                        className="w-full sm:w-32 px-2 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-                      >
-                        {TIME_OPTIONS.map(time => (
-                          <option key={`open-${time}`} value={time}>{time}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <span className="text-neutral-400 font-bold">to</span>
-
-                    <div className="flex items-center gap-1 flex-1 sm:flex-initial">
-                      <span className="text-[10px] text-neutral-400 uppercase font-medium">Close</span>
-                      <select
-                        value={day.close || '09:00 PM'}
-                        disabled={disabled}
-                        onChange={e => handleDayChange(key, { close: e.target.value })}
-                        className="w-full sm:w-32 px-2 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-xs font-mono text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-red-500"
-                      >
-                        {TIME_OPTIONS.map(time => (
-                          <option key={`close-${time}`} value={time}>{time}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                  <span className="text-neutral-400 italic px-2 py-1">Closed all day</span>
                 )}
               </div>
             </div>

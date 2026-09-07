@@ -1,253 +1,134 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  User, 
-  Phone, 
-  Mail, 
-  Building, 
-  MapPin, 
-  Shield, 
-  Edit3, 
-  CheckCircle2, 
-  Copy, 
-  Check,
-  Briefcase,
-  Lock,
-  Eye,
-  EyeOff
-} from 'lucide-react';
+import React from 'react';
 import { PersonRecord, LocationRecord, ContactPrivacyLevel } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
+import { X, Mail, Phone, MapPin, Building, Shield } from 'lucide-react';
 import { PrivacyBadge } from '../common/StatusBadge';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
   onClose: () => void;
-  onSelectLocationById: (locId: string) => void;
+  onSelectLocation?: (location: LocationRecord) => void;
 }
 
 export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   person,
   onClose,
-  onSelectLocationById,
+  onSelectLocation,
 }) => {
   const { locations, currentUser, togglePersonPhonePrivacy } = useDirectory();
-  const [copied, setCopied] = useState(false);
-
-  // Escape key accessibility sweep
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 
   if (!person) return null;
 
-  const isViewer = currentUser.role === 'Viewer';
-  const canDirectEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
-
-  const isQuarantined = person.phoneVisibility === 'Pending Review' || person.isPhoneVerified === false;
-  const isManagementOnly = person.phoneVisibility === 'Internal Management Only';
-  const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
-
-  // Find stores overseen by this person if DM or Manager
-  const storesOverseen = locations.filter(l => 
-    l.districtManagerId === person.id || 
-    (l.districtManagerName && l.districtManagerName.includes(person.name)) ||
-    l.storeManagerId === person.id ||
-    l.storeManagerName === person.name
+  const assignedLocs = locations.filter(l => 
+    l.storeManagerId === person.id || 
+    l.districtManagerId === person.id ||
+    l.storeManagerName?.toLowerCase() === person.fullName?.toLowerCase() ||
+    l.districtManagerName?.toLowerCase() === person.fullName?.toLowerCase()
   );
 
-  const handleCopy = () => {
-    const phoneStr = shouldMaskPhone ? '(•••) •••-•••• (Pending Review)' : person.workPhone;
-    const text = `${person.name} - ${person.jobTitle}\nDepartment: ${person.department}\nPhone: ${phoneStr}\nEmail: ${person.workEmail}`;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const canEditPrivacy = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-6 animate-fadeIn">
-      <div 
-        className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[85vh]"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="p-5 bg-neutral-900 text-white flex items-start justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
-              {person.name.charAt(0)}
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white border border-neutral-200 rounded-xl max-w-lg w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+        <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-red-50 border border-red-200 text-red-600 flex items-center justify-center font-bold text-sm">
+              {person.fullName?.[0] || 'P'}
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-lg text-white">{person.name}</h3>
-                {person.isTemporary && (
-                  <span className="text-[10px] px-1.5 py-0.2 bg-amber-500 text-white rounded font-bold">
-                    Temp Assignment
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-neutral-300 font-medium">{person.jobTitle}</p>
-              <p className="text-[11px] text-neutral-400">{person.department}</p>
+              <h2 className="text-base font-bold text-neutral-900">{person.fullName}</h2>
+              <p className="text-xs text-neutral-500">{person.jobTitle || person.role || 'Team Member'}</p>
             </div>
           </div>
-          <button 
-            onClick={onClose} 
-            aria-label="Close personnel details"
-            className="p-1.5 text-neutral-400 hover:text-white rounded-md transition-colors"
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer rounded-lg hover:bg-neutral-100 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-5 overflow-y-auto space-y-4 text-xs sm:text-sm">
-          {/* Work Contact Card with Privacy Controls */}
-          <div className="p-3.5 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg border border-neutral-200 dark:border-neutral-700/60 space-y-2.5">
-            <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider flex items-center justify-between">
-              <span>Work Directory Contact</span>
-              <button onClick={handleCopy} className="flex items-center gap-1 text-red-600 dark:text-red-400 lowercase font-medium">
-                {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                <span>{copied ? 'Copied' : 'Copy'}</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                    <Phone className="w-3.5 h-3.5" />
-                    <span className="text-[10px] uppercase font-bold">Work Phone</span>
-                  </div>
-                  <PrivacyBadge 
-                    visibility={person.phoneVisibility || (person.isPhoneVerified === false ? 'Pending Review' : 'Directory Public')} 
-                    isVerified={person.isPhoneVerified ?? true}
-                    size="sm"
-                  />
-                </div>
-
-                {shouldMaskPhone ? (
-                  <div className="font-mono text-neutral-400 font-semibold tracking-wider pt-0.5">
-                    (•••) •••-••••
-                  </div>
-                ) : (
-                  <a href={`tel:${person.workPhone}`} className="font-bold text-neutral-900 dark:text-neutral-100 hover:text-red-600 block pt-0.5">
-                    {person.workPhone}
-                  </a>
-                )}
-
-                {shouldMaskPhone && (
-                  <div className="text-[10px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1">
-                    <Lock className="w-3 h-3 shrink-0" />
-                    <span>Quarantined contact pending steward review.</span>
-                  </div>
-                )}
+        <div className="p-5 space-y-4 text-xs">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
+              <div className="text-neutral-500 text-[10px] font-semibold uppercase flex items-center gap-1">
+                <Phone className="w-3 h-3 text-neutral-400" /> Direct Phone
               </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400">
-                    <Mail className="w-3.5 h-3.5" />
-                    <span className="text-[10px] uppercase font-bold">Work Email</span>
-                  </div>
-                  <PrivacyBadge 
-                    visibility={person.emailVisibility || 'Directory Public'} 
-                    isVerified={true}
-                    size="sm"
-                  />
-                </div>
-
-                <a href={`mailto:${person.workEmail}`} className="font-medium text-neutral-900 dark:text-neutral-100 hover:text-red-600 truncate block pt-0.5 max-w-[200px]">
-                  {person.workEmail}
-                </a>
+              <div className="font-mono text-neutral-900 font-medium">{person.phone || person.workPhone || 'N/A'}</div>
+              <div className="pt-1 flex items-center justify-between">
+                <PrivacyBadge level={person.phonePrivacy} />
+                {canEditPrivacy && (
+                  <select
+                    value={person.phonePrivacy || 'Public'}
+                    onChange={(e) => togglePersonPhonePrivacy(person.id, e.target.value as ContactPrivacyLevel)}
+                    className="bg-white border border-neutral-300 text-[10px] rounded px-1.5 py-0.5 text-neutral-700 cursor-pointer"
+                  >
+                    <option value="Public">Public</option>
+                    <option value="Internal">Internal</option>
+                    <option value="Restricted">Restricted</option>
+                  </select>
+                )}
               </div>
             </div>
 
-            {/* Data Steward Privacy Controls */}
-            {canDirectEdit && (
-              <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700/60 flex items-center justify-between gap-2 flex-wrap text-xs">
-                <span className="text-neutral-500 text-[11px]">Contact Privacy Governance:</span>
-                <select
-                  value={person.phoneVisibility || 'Directory Public'}
-                  onChange={(e) => togglePersonPhonePrivacy(person.id, e.target.value as ContactPrivacyLevel)}
-                  className="text-[11px] bg-white dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 rounded px-2 py-0.5 text-neutral-800 dark:text-neutral-200 font-medium"
-                >
-                  <option value="Directory Public">Directory Public</option>
-                  <option value="Internal Management Only">Management Only</option>
-                  <option value="Pending Review">Pending Review</option>
-                </select>
+            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
+              <div className="text-neutral-500 text-[10px] font-semibold uppercase flex items-center gap-1">
+                <Mail className="w-3 h-3 text-neutral-400" /> Email Address
               </div>
-            )}
+              <div className="text-neutral-900 font-medium truncate">{person.email || person.workEmail || 'N/A'}</div>
+              <div className="text-neutral-400 text-[10px] pt-1">Company Workspace</div>
+            </div>
           </div>
 
-          {/* Organizational Scope */}
-          <div className="p-3.5 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg border border-neutral-200 dark:border-neutral-700/60 space-y-2">
-            <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-              Organizational Scope
+          {person.district && (
+            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+                <span className="text-neutral-600">Territory / District:</span>
+              </div>
+              <span className="font-semibold text-neutral-900">{person.district}</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-neutral-400">Department:</span>
-                <div className="font-semibold text-neutral-800 dark:text-neutral-200">{person.department}</div>
-              </div>
-              <div>
-                <span className="text-neutral-400">District / Region:</span>
-                <div className="font-semibold text-neutral-800 dark:text-neutral-200">{person.district || 'Company-wide'}</div>
-              </div>
-              {person.assignedLocationName && (
-                <div className="col-span-2">
-                  <span className="text-neutral-400">Primary Assigned Base:</span>
-                  <div className="font-semibold text-neutral-800 dark:text-neutral-200">{person.assignedLocationName}</div>
+          )}
+
+          <div className="space-y-2">
+            <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">
+              Assigned Retail Stores ({assignedLocs.length})
+            </div>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {assignedLocs.map(loc => (
+                <div
+                  key={loc.id}
+                  onClick={() => {
+                    if (onSelectLocation) {
+                      onSelectLocation(loc);
+                      onClose();
+                    }
+                  }}
+                  className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg flex items-center justify-between cursor-pointer transition-colors"
+                >
+                  <div>
+                    <span className="font-bold text-red-600 mr-2">#{loc.storeNumber}</span>
+                    <span className="font-medium text-neutral-900">{loc.name}</span>
+                  </div>
+                  <span className="text-[11px] text-neutral-500">{loc.city}, {loc.state}</span>
+                </div>
+              ))}
+              {assignedLocs.length === 0 && (
+                <div className="text-neutral-500 text-xs italic p-3 bg-neutral-50 rounded border border-neutral-200 text-center">
+                  No directly assigned retail stores in directory index.
                 </div>
               )}
             </div>
           </div>
-
-          {/* Assigned / Overseen Locations Roster */}
-          {storesOverseen.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider flex items-center justify-between">
-                <span>Associated Retail Locations ({storesOverseen.length})</span>
-                <span className="text-[10px] lowercase text-neutral-400">Click to view store record</span>
-              </div>
-
-              <div className="max-h-48 overflow-y-auto space-y-1.5 divide-y divide-neutral-100 dark:divide-neutral-800">
-                {storesOverseen.map(loc => (
-                  <div
-                    key={loc.id}
-                    onClick={() => {
-                      onClose();
-                      onSelectLocationById(loc.id);
-                    }}
-                    className="p-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer flex items-center justify-between transition-colors"
-                  >
-                    <div>
-                      <div className="font-semibold text-xs text-neutral-900 dark:text-neutral-100">
-                        #{loc.storeNumber} · {loc.name}
-                      </div>
-                      <div className="text-[11px] text-neutral-400">
-                        {loc.city}, {loc.state} • Phone: {loc.phone}
-                      </div>
-                    </div>
-                    <span className="text-xs text-red-600 dark:text-red-400 font-semibold">
-                      View →
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Footer (Dead-End Prevention) */}
-        <div className="p-3 bg-neutral-50 dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 flex justify-end">
+        <div className="p-4 bg-neutral-50 border-t border-neutral-200 flex justify-end">
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-1.5 bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-800 dark:text-neutral-200 rounded-md text-xs font-medium"
+            className="px-4 py-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
           >
             Close
           </button>

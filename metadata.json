@@ -1,8 +1,6 @@
 {
-  "name": "Shiekh Location & Company Directory",
-  "description": "Authoritative Retail Location & Company Directory, Leadership Assignments, Operating Hours, and Multi-Channel Data Source for Shiekh Shoes.",
+  "name": "Dynamic QR Code Manager",
+  "description": "Multi-location retail directory, dynamic QR code management, canonical personnel directory, and store operational hours platform.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

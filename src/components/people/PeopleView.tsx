@@ -1,115 +1,81 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  Search, 
-  Users, 
-  Phone, 
-  Mail, 
-  Building, 
-  Briefcase, 
-  ShieldCheck, 
-  UserCheck, 
-  Plus, 
-  ExternalLink,
-  ChevronRight,
-  Lock
-} from 'lucide-react';
+import React, { useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
-import { PersonRecord } from '../../types';
+import { Person } from '../../types';
+import { Search, Plus, User, Phone, Mail, MapPin } from 'lucide-react';
 import { PrivacyBadge } from '../common/StatusBadge';
 
 interface PeopleViewProps {
-  onSelectPerson: (person: PersonRecord) => void;
-  onSelectLocationById: (locId: string) => void;
+  onSelectPerson: (person: Person) => void;
 }
 
-export const PeopleView: React.FC<PeopleViewProps> = ({
-  onSelectPerson,
-  onSelectLocationById,
-}) => {
-  const { people, locations, currentUser, addPerson } = useDirectory();
+export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
+  const { people, currentUser, addPerson } = useDirectory();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDept, setSelectedDept] = useState<string>('all');
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [isAddingPerson, setIsAddingPerson] = useState(false);
 
-  // New Person state
+  // New person form state
   const [newName, setNewName] = useState('');
   const [newTitle, setNewTitle] = useState('Store Manager');
-  const [newDept, setNewDept] = useState('Store Operations');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newDistrict, setNewDistrict] = useState('District 1 (Rudy Calderon)');
+  const [newDistrict, setNewDistrict] = useState('');
 
-  const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
-  const isViewer = currentUser.role === 'Viewer';
+  const canAdd = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
-  const departments = useMemo(() => {
-    const set = new Set(people.map(p => p.department));
-    return Array.from(set);
-  }, [people]);
-
-  const filteredPeople = useMemo(() => {
-    return people.filter(p => {
-      const term = searchTerm.toLowerCase().trim();
-      const matchesSearch = !term || (
-        p.name.toLowerCase().includes(term) ||
-        p.jobTitle.toLowerCase().includes(term) ||
-        p.department.toLowerCase().includes(term) ||
-        (p.district && p.district.toLowerCase().includes(term)) ||
-        p.workPhone.includes(term) ||
-        p.workEmail.toLowerCase().includes(term)
-      );
-
-      const matchesDept = selectedDept === 'all' || p.department === selectedDept;
-
-      return matchesSearch && matchesDept;
-    });
-  }, [people, searchTerm, selectedDept]);
+  const filtered = people.filter(p => {
+    if (roleFilter !== 'all' && p.jobTitle !== roleFilter && p.role !== roleFilter) {
+      return false;
+    }
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      p.fullName?.toLowerCase().includes(term) ||
+      p.phone?.toLowerCase().includes(term) ||
+      p.email?.toLowerCase().includes(term) ||
+      p.district?.toLowerCase().includes(term)
+    );
+  });
 
   const handleCreatePerson = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !newPhone.trim()) return;
+    if (!newName.trim()) return;
 
     addPerson({
-      id: `per-${Date.now().toString(36)}`,
+      fullName: newName.trim(),
       name: newName.trim(),
       jobTitle: newTitle,
-      department: newDept,
+      role: newTitle,
+      phone: newPhone.trim(),
       workPhone: newPhone.trim(),
-      workEmail: newEmail.trim() || `${newName.toLowerCase().replace(/\s+/g, '.')}@shiekhshoes.com`,
-      district: newDistrict,
-      phoneVisibility: 'Directory Public',
-      isPhoneVerified: true,
+      email: newEmail.trim(),
+      workEmail: newEmail.trim(),
+      district: newDistrict.trim() || undefined,
+      status: 'Active',
       activeStatus: true,
+      phonePrivacy: 'Internal'
     });
 
     setNewName('');
     setNewPhone('');
     setNewEmail('');
-    setShowAddModal(false);
+    setNewDistrict('');
+    setIsAddingPerson(false);
   };
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
-              Company People & Leadership Directory
-            </h1>
-            <span className="px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-xs font-bold text-neutral-700 dark:text-neutral-300">
-              {filteredPeople.length} contacts
-            </span>
-          </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-            Store Managers, Assistant Managers, Field Leadership, and Corporate Support Contacts.
-          </p>
+          <h2 className="text-lg font-bold text-neutral-900">Canonical Personnel Directory</h2>
+          <p className="text-xs text-neutral-500">Manage field leadership, store managers, and corporate contacts</p>
         </div>
 
-        {canEdit && (
+        {canAdd && (
           <button
-            onClick={() => setShowAddModal(true)}
-            className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-md text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+            type="button"
+            onClick={() => setIsAddingPerson(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Person</span>
@@ -117,205 +83,149 @@ export const PeopleView: React.FC<PeopleViewProps> = ({
         )}
       </div>
 
-      {/* Search & Filter Toolbar */}
-      <div className="bg-white dark:bg-neutral-900 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Search by person name, job title, department, work phone, email..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-md text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-hidden focus:border-red-500"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <select
-              value={selectedDept}
-              onChange={e => setSelectedDept(e.target.value)}
-              className="w-full sm:w-auto px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-md text-xs text-neutral-700 dark:text-neutral-300"
-            >
-              <option value="all">All Departments ({people.length})</option>
-              {departments.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
+      <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-neutral-200 shadow-xs">
+        <div className="flex-1 relative">
+          <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search by name, role, phone, or email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-red-500 focus:bg-white"
+          />
         </div>
+
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs text-neutral-800 focus:outline-none cursor-pointer"
+        >
+          <option value="all">All Roles</option>
+          <option value="District Manager">District Managers</option>
+          <option value="Store Manager">Store Managers</option>
+          <option value="Store Operations Leadership">Operations Leadership</option>
+        </select>
       </div>
 
-      {/* People Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {filteredPeople.map(person => {
-          const storeCount = locations.filter(l => 
-            l.districtManagerName?.includes(person.name) || 
-            l.storeManagerName === person.name
-          ).length;
-
-          const isQuarantined = person.phoneVisibility === 'Pending Review' || person.isPhoneVerified === false;
-          const isManagementOnly = person.phoneVisibility === 'Internal Management Only';
-          const shouldMaskPhone = (isQuarantined || isManagementOnly) && isViewer;
-
-          return (
-            <div
-              key={person.id}
-              onClick={() => onSelectPerson(person)}
-              className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-red-500 cursor-pointer transition-all flex flex-col justify-between group"
-            >
-              <div>
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 flex items-center justify-center font-bold text-sm shrink-0">
-                    {person.name.charAt(0)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <h3 className="font-bold text-sm text-neutral-900 dark:text-neutral-100 truncate group-hover:text-red-600 dark:group-hover:text-red-400">
-                        {person.name}
-                      </h3>
-                      {person.isTemporary && (
-                        <span className="text-[9px] px-1 py-0.2 bg-amber-500 text-white rounded font-semibold">
-                          Temp
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-neutral-600 dark:text-neutral-400 font-medium truncate">
-                      {person.jobTitle}
-                    </div>
-                    <div className="text-[11px] text-neutral-400 truncate">
-                      {person.department}
-                    </div>
-                  </div>
+      {/* Grid of People */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {filtered.map(person => (
+          <div
+            key={person.id}
+            onClick={() => onSelectPerson(person)}
+            className="p-4 bg-white border border-neutral-200 rounded-xl hover:border-neutral-300 cursor-pointer transition-all hover:shadow-sm space-y-3 shadow-xs"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-red-50 text-red-600 border border-red-200 flex items-center justify-center font-bold text-xs">
+                  {person.fullName?.[0] || 'P'}
                 </div>
-
-                {/* Direct Contacts with Privacy Level Badges */}
-                <div className="mt-3.5 pt-2.5 border-t border-neutral-100 dark:border-neutral-800 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400 flex items-center gap-1">
-                      Phone:
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {shouldMaskPhone ? (
-                        <span className="font-mono text-neutral-400 font-semibold tracking-wider flex items-center gap-1">
-                          <Lock className="w-2.5 h-2.5 text-amber-500" />
-                          (•••) •••-••••
-                        </span>
-                      ) : (
-                        <a
-                          href={`tel:${person.workPhone}`}
-                          onClick={e => e.stopPropagation()}
-                          className="font-bold text-neutral-800 dark:text-neutral-200 hover:text-red-600"
-                        >
-                          {person.workPhone}
-                        </a>
-                      )}
-                      <PrivacyBadge 
-                        visibility={person.phoneVisibility || (person.isPhoneVerified === false ? 'Pending Review' : 'Directory Public')} 
-                        isVerified={person.isPhoneVerified ?? true}
-                        size="sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400">Email:</span>
-                    <a
-                      href={`mailto:${person.workEmail}`}
-                      onClick={e => e.stopPropagation()}
-                      className="text-neutral-600 dark:text-neutral-400 hover:text-red-600 truncate max-w-[170px]"
-                    >
-                      {person.workEmail}
-                    </a>
-                  </div>
+                <div>
+                  <h3 className="font-bold text-neutral-900 text-sm">{person.fullName}</h3>
+                  <p className="text-xs text-neutral-500">{person.jobTitle || person.role}</p>
                 </div>
               </div>
-
-              <div className="mt-3 pt-2 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-[11px] text-neutral-400">
-                <span>{storeCount > 0 ? `${storeCount} Assigned Store${storeCount > 1 ? 's' : ''}` : (person.district || 'Corporate')}</span>
-                <span className="text-red-600 dark:text-red-400 font-semibold group-hover:underline">
-                  Profile →
-                </span>
-              </div>
+              <PrivacyBadge level={person.phonePrivacy} />
             </div>
-          );
-        })}
+
+            <div className="space-y-1.5 text-xs pt-2 border-t border-neutral-100">
+              <div className="flex items-center gap-2 text-neutral-500">
+                <Phone className="w-3.5 h-3.5 text-neutral-400" />
+                <span className="font-mono text-neutral-700">{person.phone || person.workPhone || 'No direct phone'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-neutral-500">
+                <Mail className="w-3.5 h-3.5 text-neutral-400" />
+                <span className="text-neutral-700 truncate">{person.email || person.workEmail || 'No email'}</span>
+              </div>
+              {person.district && (
+                <div className="flex items-center gap-2 text-neutral-500">
+                  <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+                  <span className="text-neutral-700 font-medium">{person.district}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Add Person Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
-            <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">
-              Add New Person to Directory
-            </h3>
+      {/* Modal to Add Person */}
+      {isAddingPerson && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-neutral-200 rounded-xl max-w-md w-full p-5 shadow-xl">
+            <h3 className="text-base font-bold text-neutral-900 mb-3">Add Personnel to Directory</h3>
             <form onSubmit={handleCreatePerson} className="space-y-3 text-xs">
               <div>
-                <label className="block text-neutral-500 mb-1">Full Name *</label>
+                <label className="block text-neutral-700 font-semibold mb-1">Full Name *</label>
                 <input
                   type="text"
                   required
-                  value={newName || ''}
-                  onChange={e => setNewName(e.target.value)}
-                  placeholder="e.g. Jane Doe"
-                  className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-neutral-500 mb-1">Job Title</label>
-                  <input
-                    type="text"
-                    value={newTitle || ''}
-                    onChange={e => setNewTitle(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"
-                  />
-                </div>
-                <div>
-                  <label className="block text-neutral-500 mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={newDept || ''}
-                    onChange={e => setNewDept(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-neutral-500 mb-1">Work Directory Phone *</label>
-                <input
-                  type="text"
-                  required
-                  value={newPhone || ''}
-                  onChange={e => setNewPhone(e.target.value)}
-                  placeholder="(555) 000-0000"
-                  className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded font-mono text-neutral-900 dark:text-neutral-100"
-                />
-              </div>
-              <div>
-                <label className="block text-neutral-500 mb-1">Work Email</label>
-                <input
-                  type="email"
-                  value={newEmail || ''}
-                  onChange={e => setNewEmail(e.target.value)}
-                  placeholder="name@shiekhshoes.com"
-                  className="w-full px-2.5 py-1.5 bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded text-neutral-900 dark:text-neutral-100"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Rudy Calderon"
+                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 text-xs focus:outline-none focus:border-red-500 focus:bg-white"
                 />
               </div>
 
-              <div className="pt-3 border-t border-neutral-200 dark:border-neutral-700 flex justify-end gap-2">
+              <div>
+                <label className="block text-neutral-700 font-semibold mb-1">Job Title / Role</label>
+                <select
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 text-xs focus:outline-none focus:border-red-500 cursor-pointer"
+                >
+                  <option value="Store Manager">Store Manager</option>
+                  <option value="District Manager">District Manager</option>
+                  <option value="Store Operations Leadership">Store Operations Leadership</option>
+                  <option value="Assistant Store Manager">Assistant Store Manager</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-neutral-700 font-semibold mb-1">Work Phone Number</label>
+                <input
+                  type="text"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="(555) 000-0000"
+                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 text-xs font-mono focus:outline-none focus:border-red-500 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-neutral-700 font-semibold mb-1">Work Email</label>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="name@shiekhshoes.com"
+                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 text-xs focus:outline-none focus:border-red-500 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-neutral-700 font-semibold mb-1">Assigned Territory / District (Optional)</label>
+                <input
+                  type="text"
+                  value={newDistrict}
+                  onChange={(e) => setNewDistrict(e.target.value)}
+                  placeholder="e.g. Inland Empire & Desert"
+                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 text-xs focus:outline-none focus:border-red-500 focus:bg-white"
+                />
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 rounded font-medium text-neutral-700 dark:text-neutral-300"
+                  onClick={() => setIsAddingPerson(false)}
+                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 rounded-lg text-neutral-700 font-semibold cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-red-600 text-white rounded font-bold hover:bg-red-700"
+                  className="px-4 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold cursor-pointer shadow-xs transition-colors"
                 >
-                  Save Person Record
+                  Save Record
                 </button>
               </div>
             </form>

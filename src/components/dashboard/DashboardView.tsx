@@ -1,337 +1,387 @@
-import React from 'react';
-import { 
-  Building, 
-  Users, 
-  Clock, 
-  AlertTriangle, 
-  GitPullRequest, 
-  ShieldCheck, 
-  Search, 
-  Printer, 
-  ArrowRight, 
-  Phone, 
-  Plus, 
-  CheckCircle2, 
-  Zap,
-  ExternalLink,
-  MapPin
-} from 'lucide-react';
+import React, { useState, useMemo } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord } from '../../types';
-import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
+import { OperationalStatusBadge } from '../common/StatusBadge';
+import { 
+  Store, 
+  Users, 
+  GitPullRequest, 
+  ShieldCheck, 
+  AlertTriangle, 
+  ExternalLink,
+  ChevronRight,
+  Search,
+  MapPin,
+  Phone,
+  Clock,
+  AlertCircle,
+  Building,
+  CheckCircle2,
+  X
+} from 'lucide-react';
 
 interface DashboardViewProps {
-  onNavigateToTab: (tab: 'dashboard' | 'locations' | 'people' | 'requests' | 'print-sheet' | 'admin') => void;
-  onSelectLocation: (location: LocationRecord) => void;
+  onSelectLocation: (loc: LocationRecord) => void;
   onSelectPerson: (person: PersonRecord) => void;
-  onOpenSearch: () => void;
-  onOpenNewRequest: (location?: LocationRecord) => void;
-  onAddNewLocation: () => void;
+  onNavigateToRequests: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
-  onNavigateToTab,
   onSelectLocation,
   onSelectPerson,
-  onOpenSearch,
-  onOpenNewRequest,
-  onAddNewLocation,
+  onNavigateToRequests,
 }) => {
-  const { locations, people, requests, currentUser } = useDirectory();
+  const { locations, people, requests } = useDirectory();
 
-  const activeStores = locations.filter(l => l.recordStatus === 'Active');
-  const storesWithNotices = locations.filter(l => l.operationalStatus !== 'Open — Normal Operations' || l.activeNotice);
-  const pendingRequests = requests.filter(r => r.status === 'Submitted');
+  // Quick Reference Search & District Filter
+  const [quickSearch, setQuickSearch] = useState('');
+  const [selectedDistrict, setSelectedDistrict] = useState<string>('all');
 
-  // District statistics
-  const districts = [
-    { 
-      id: 'd1', 
-      name: 'District 1', 
-      dm: 'Rudy Calderon', 
-      region: 'NorCal, NV, WA, OR, TX',
-      stores: locations.filter(l => l.districtManagerName?.includes('Rudy')),
-      color: 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-300'
-    },
-    { 
-      id: 'd2', 
-      name: 'District 2', 
-      dm: 'David Castro', 
-      region: 'Central Valley & LA Central',
-      stores: locations.filter(l => l.districtManagerName?.includes('David')),
-      color: 'border-blue-500 bg-blue-50/40 dark:bg-blue-950/20 text-blue-900 dark:text-blue-300'
-    },
-    { 
-      id: 'd3', 
-      name: 'District 3', 
-      dm: 'Karlo Llovido', 
-      region: 'Inland Empire, South Bay, San Diego',
-      stores: locations.filter(l => l.districtManagerName?.includes('Karlo')),
-      color: 'border-rose-500 bg-rose-50/40 dark:bg-rose-950/20 text-rose-900 dark:text-rose-300'
-    },
-  ];
+  const pendingRequests = requests.filter(r => r.status === 'Pending');
+  
+  // Stores with Active Operational Notices (modified hours, remodel, emergency, or temporary notices)
+  const storesWithNotices = useMemo(() => {
+    return locations.filter(l => 
+      l.operationalStatus !== 'Open — Normal Operations' || 
+      (l.activeNotice && l.activeNotice.shortDescription)
+    );
+  }, [locations]);
 
-  const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
+  const verifiedStores = locations.filter(l => l.lastVerifiedAt);
+
+  // Group all locations by district for Quick Reference Roster
+  const districtMap = useMemo(() => {
+    const map = new Map<string, { dm?: string; stores: LocationRecord[] }>();
+    locations.forEach(l => {
+      const dist = l.district || 'Unassigned District';
+      if (!map.has(dist)) {
+        map.set(dist, { dm: l.districtManagerName, stores: [] });
+      }
+      map.get(dist)!.stores.push(l);
+    });
+    return map;
+  }, [locations]);
+
+  // Unique list of districts for filter selector
+  const districtList = useMemo(() => {
+    return Array.from(districtMap.keys()).sort();
+  }, [districtMap]);
+
+  // Filtered store list for Quick Reference panel
+  const quickRefStores = useMemo(() => {
+    return locations.filter(l => {
+      const matchesDistrict = selectedDistrict === 'all' || (l.district || 'Unassigned District') === selectedDistrict;
+      if (!matchesDistrict) return false;
+
+      if (!quickSearch.trim()) return true;
+      const q = quickSearch.toLowerCase().trim();
+      return (
+        l.storeNumber.toLowerCase().includes(q) ||
+        l.name.toLowerCase().includes(q) ||
+        l.city.toLowerCase().includes(q) ||
+        l.state.toLowerCase().includes(q) ||
+        (l.storeManagerName && l.storeManagerName.toLowerCase().includes(q)) ||
+        (l.district && l.district.toLowerCase().includes(q)) ||
+        (l.districtManagerName && l.districtManagerName.toLowerCase().includes(q))
+      );
+    });
+  }, [locations, selectedDistrict, quickSearch]);
 
   return (
-    <div className="space-y-5">
-      {/* Welcome / Quick Search Bar Banner */}
-      <div className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 p-5 sm:p-6 rounded-2xl shadow-xs border border-neutral-200 dark:border-neutral-800 relative overflow-hidden">
-        <div className="relative z-10 max-w-2xl space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-red-600 text-white font-bold text-[11px] uppercase tracking-wider">
-              Authoritative Source of Truth
-            </span>
-            <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
-              Shiekh Shoes Retail & Corporate Directory
-            </span>
-          </div>
-
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
-            Find Any Store, Manager, Phone or Hours
-          </h1>
-
-          <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400">
-            Canonical data repository for 100+ retail stores across CA, NV, WA, OR, TX with real-time hours, store manager assignments, and print-ready export sheets.
-          </p>
-
-          {/* Instant Search Bar Trigger */}
-          <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
-            <button
-              onClick={onOpenSearch}
-              className="flex-1 bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800/60 dark:hover:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-4 py-3 sm:py-2.5 text-xs sm:text-sm text-left text-neutral-600 dark:text-neutral-300 flex items-center justify-between transition-colors shadow-2xs cursor-pointer"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Search className="w-4 h-4 text-red-600 dark:text-red-500 shrink-0" />
-                <span className="truncate">Quick search by store #, city, mall name, manager...</span>
-              </div>
-              <kbd className="hidden sm:inline-flex items-center px-2 py-0.5 bg-neutral-200/80 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300 rounded text-[10px] font-mono shrink-0 ml-2">
-                ⌘K / Ctrl+K
-              </kbd>
-            </button>
-
-            <button
-              onClick={() => onNavigateToTab('print-sheet')}
-              className="px-4 py-3 sm:py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-xs shrink-0 cursor-pointer"
-            >
-              <Printer className="w-4 h-4" />
-              <span>1-Sheet PDF</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div 
-          onClick={() => onNavigateToTab('locations')}
-          className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-red-500 cursor-pointer transition-all space-y-1"
-        >
-          <div className="flex items-center justify-between text-neutral-400">
+    <div className="space-y-6">
+      
+      {/* Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs">
+          <div className="flex items-center justify-between text-neutral-500">
             <span className="text-xs font-semibold">Total Retail Stores</span>
-            <Building className="w-4 h-4 text-red-600" />
+            <Store className="w-4 h-4 text-red-600" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-            {locations.length}
-          </div>
-          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-medium">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>{activeStores.length} active in directory</span>
-          </div>
+          <div className="text-2xl font-bold text-neutral-900">{locations.length}</div>
+          <div className="text-[11px] text-neutral-500">Active retail footprints</div>
         </div>
 
-        <div 
-          onClick={() => onNavigateToTab('people')}
-          className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-red-500 cursor-pointer transition-all space-y-1"
-        >
-          <div className="flex items-center justify-between text-neutral-400">
-            <span className="text-xs font-semibold">Personnel & Managers</span>
+        <div className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs">
+          <div className="flex items-center justify-between text-neutral-500">
+            <span className="text-xs font-semibold">Field Leadership Roster</span>
             <Users className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-            {people.length}
-          </div>
-          <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-            Store Managers & Field Leadership
-          </div>
+          <div className="text-2xl font-bold text-neutral-900">{people.length}</div>
+          <div className="text-[11px] text-neutral-500">DMs, SMs & Support leads</div>
         </div>
 
         <div 
-          onClick={() => onNavigateToTab('requests')}
-          className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-amber-500 cursor-pointer transition-all space-y-1"
+          onClick={onNavigateToRequests}
+          className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs hover:border-amber-300 hover:shadow-sm cursor-pointer transition-all"
         >
-          <div className="flex items-center justify-between text-neutral-400">
-            <span className="text-xs font-semibold">Update Requests</span>
-            <GitPullRequest className="w-4 h-4 text-amber-500" />
+          <div className="flex items-center justify-between text-neutral-500">
+            <span className="text-xs font-semibold">Pending Requests</span>
+            <GitPullRequest className="w-4 h-4 text-amber-600" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-            {pendingRequests.length}
-          </div>
-          <div className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
-            {pendingRequests.length > 0 ? 'Pending Data Steward review' : 'All updates synced'}
-          </div>
+          <div className="text-2xl font-bold text-amber-700">{pendingRequests.length}</div>
+          <div className="text-[11px] text-neutral-500">Awaiting steward review</div>
         </div>
 
-        <div 
-          onClick={() => onNavigateToTab('admin')}
-          className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:shadow-xs hover:border-emerald-500 cursor-pointer transition-all space-y-1"
-        >
-          <div className="flex items-center justify-between text-neutral-400">
-            <span className="text-xs font-semibold">Downstream Sync</span>
+        <div className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs">
+          <div className="flex items-center justify-between text-neutral-500">
+            <span className="text-xs font-semibold">Steward Verified</span>
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-            100%
+          <div className="text-2xl font-bold text-emerald-700">
+            {locations.length > 0 ? Math.round((verifiedStores.length / locations.length) * 100) : 0}%
           </div>
-          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-            Store Locator & POS healthy
-          </div>
+          <div className="text-[11px] text-neutral-500">{verifiedStores.length} of {locations.length} verified</div>
         </div>
       </div>
 
-      {/* Operational Notices & Alerts Bar (if any stores have non-standard status) */}
-      {storesWithNotices.length > 0 && (
-        <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-300 dark:border-amber-800/80 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 text-xs font-bold uppercase tracking-wider">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <span>Active Operational Status Notices ({storesWithNotices.length})</span>
-            </div>
-            <button
-              onClick={() => onNavigateToTab('locations')}
-              className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline"
-            >
-              Filter in Directory →
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {storesWithNotices.slice(0, 3).map(store => (
-              <div
-                key={store.id}
-                onClick={() => onSelectLocation(store)}
-                className="p-3 bg-white dark:bg-neutral-900 rounded-xl border border-amber-200 dark:border-amber-900/60 cursor-pointer hover:border-amber-400 transition-colors text-xs space-y-1.5"
-              >
-                <div className="flex items-center justify-between font-bold text-neutral-900 dark:text-neutral-100">
-                  <span>Store #{store.storeNumber} · {store.name}</span>
-                  <span className="text-[10px] px-1.5 py-0.2 bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 rounded font-semibold">
-                    {store.operationalStatus}
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-600 dark:text-neutral-300 font-medium">
-                  {store.activeNotice?.shortDescription || `${store.city}, ${store.state}`}
-                </p>
-                {store.activeNotice?.expectedResolutionDate && (
-                  <div className="text-[10px] text-amber-700 dark:text-amber-400 font-mono font-bold flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-amber-600" />
-                    <span>Expected Resolution: {store.activeNotice.expectedResolutionDate}</span>
-                  </div>
-                )}
+      {/* Dual-Column Layout: Left (Active Operational Notices Feed) & Right (Quick Reference Store List / District Roster) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Left Column: Stores with Active Operational Notices */}
+        <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs flex flex-col">
+          <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-amber-50 text-amber-600 border border-amber-200">
+                <AlertTriangle className="w-4 h-4" />
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* District Leadership Cards Grid */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-            <span>Retail Field Organization by District</span>
-          </h2>
-          <button
-            onClick={() => onNavigateToTab('locations')}
-            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:underline flex items-center gap-1"
-          >
-            <span>View All Stores</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {districts.map(dist => (
-            <div
-              key={dist.id}
-              className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 p-4 shadow-2xs hover:shadow-xs transition-all space-y-3 flex flex-col justify-between"
-            >
               <div>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                      {dist.name}
-                    </span>
-                    <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">
-                      {dist.dm}
-                    </h3>
-                  </div>
-                  <span className="px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded text-xs font-bold font-mono">
-                    {dist.stores.length} Stores
-                  </span>
-                </div>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                  {dist.region}
+                <h3 className="font-bold text-neutral-900 text-sm">Stores with Active Operational Notices</h3>
+                <p className="text-[11px] text-neutral-500">
+                  Live alerts for stores under modified hours, remodel, or temporary closures
                 </p>
               </div>
+            </div>
+            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+              {storesWithNotices.length} active alert{storesWithNotices.length !== 1 ? 's' : ''}
+            </span>
+          </div>
 
-              {/* Sample store chips in this district */}
-              <div className="space-y-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
-                <div className="text-[11px] font-semibold text-neutral-400 uppercase">
-                  Representative Stores
-                </div>
-                <div className="space-y-1">
-                  {dist.stores.slice(0, 3).map(st => (
-                    <div
-                      key={st.id}
-                      onClick={() => onSelectLocation(st)}
-                      className="p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer flex items-center justify-between text-xs transition-colors"
-                    >
-                      <span className="font-medium truncate max-w-[170px]">
-                        #{st.storeNumber} {st.name}
+          <div className="space-y-3 flex-1 overflow-y-auto max-h-[580px] pr-1">
+            {storesWithNotices.map(loc => {
+              const isRemodel = loc.operationalStatus === 'Under Remodel / Renovation';
+              const isEmergency = loc.operationalStatus === 'Temporarily Closed — Emergency';
+              const isModified = loc.operationalStatus === 'Temporarily Modified Hours';
+
+              return (
+                <div
+                  key={loc.id}
+                  onClick={() => onSelectLocation(loc)}
+                  className="p-3.5 bg-neutral-50 hover:bg-neutral-100/80 border border-neutral-200 rounded-xl cursor-pointer transition-all hover:border-neutral-300 shadow-2xs space-y-2.5 group"
+                >
+                  {/* Top Bar: Store Number & Status */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 text-xs font-mono font-bold">
+                        STORE #{loc.storeNumber}
                       </span>
-                      <span className="text-[11px] text-neutral-400 font-mono">
-                        {st.city}
+                      <span className="font-bold text-neutral-900 group-hover:text-red-700 transition-colors text-xs">
+                        {loc.name}
                       </span>
                     </div>
-                  ))}
+                    <OperationalStatusBadge status={loc.operationalStatus} />
+                  </div>
+
+                  {/* Active Notice Banner */}
+                  {loc.activeNotice && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-lg text-xs space-y-1">
+                      <div className="flex items-start gap-1.5 text-amber-900 font-semibold">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                        <span>{loc.activeNotice.shortDescription}</span>
+                      </div>
+                      {(loc.activeNotice.effectiveDate || loc.activeNotice.expectedResolutionDate) && (
+                        <div className="text-[10px] text-amber-700 pl-5">
+                          {loc.activeNotice.effectiveDate && <span>Effective: {loc.activeNotice.effectiveDate}</span>}
+                          {loc.activeNotice.expectedResolutionDate && (
+                            <span className="ml-2 font-medium">Through: {loc.activeNotice.expectedResolutionDate}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Status Banner when no activeNotice string is present but status is abnormal */}
+                  {!loc.activeNotice && (
+                    <div className={`p-2 rounded-lg text-xs flex items-center gap-2 ${
+                      isEmergency
+                        ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                        : isRemodel
+                        ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200'
+                    }`}>
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      <span className="text-[11px] font-medium">
+                        {isRemodel && 'Facility actively under renovation — standard customer operations suspended.'}
+                        {isEmergency && 'Emergency closure in effect — customer entry prohibited.'}
+                        {isModified && 'Operating on non-standard temporary schedule.'}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Footer details: Address & Manager */}
+                  <div className="flex items-center justify-between text-[11px] text-neutral-500 pt-1 border-t border-neutral-200/70">
+                    <div className="flex items-center gap-1 truncate max-w-[240px]">
+                      <MapPin className="w-3 h-3 text-neutral-400 shrink-0" />
+                      <span className="truncate">{loc.city}, {loc.state}</span>
+                    </div>
+                    <div className="flex items-center gap-1 font-medium text-neutral-700">
+                      <span>{loc.storeManagerName ? `Mgr: ${loc.storeManagerName}` : 'Mgr Vacant'}</span>
+                      <ChevronRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {storesWithNotices.length === 0 && (
+              <div className="p-8 text-center bg-neutral-50 rounded-xl border border-neutral-200 text-neutral-500 space-y-2">
+                <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-600 stroke-1" />
+                <p className="text-xs font-bold text-neutral-800">All Stores Operating Normally</p>
+                <p className="text-[11px] text-neutral-400">
+                  No active operational notices, modified hours schedules, or emergency closures across the fleet.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Quick Reference Store List / District Roster */}
+        <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs flex flex-col">
+          <div className="border-b border-neutral-100 pb-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-red-50 text-red-600 border border-red-200">
+                  <Building className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-neutral-900 text-sm">Quick Reference Store List / District Roster</h3>
+                  <p className="text-[11px] text-neutral-500">
+                    Instant access to store cards & district field leadership
+                  </p>
                 </div>
               </div>
-
-              <button
-                onClick={() => onNavigateToTab('locations')}
-                className="w-full mt-2 py-1.5 bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded text-xs font-semibold text-center transition-colors"
-              >
-                Inspect District Stores →
-              </button>
+              <span className="text-xs text-neutral-500 font-medium">
+                {quickRefStores.length} stores
+              </span>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Bottom Row: Quick Action Launchpad */}
-      <div className="bg-white dark:bg-neutral-900 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-neutral-500 dark:text-neutral-400">
-          Logged in as: <strong className="text-neutral-800 dark:text-neutral-200">{currentUser.displayName}</strong> ({currentUser.role})
+            {/* Quick Search & District Filter Controls */}
+            <div className="flex items-center gap-2 pt-1">
+              <div className="flex-1 relative">
+                <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Quick find store #, name, city, DM..."
+                  value={quickSearch}
+                  onChange={(e) => setQuickSearch(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-red-500 focus:bg-white"
+                />
+                {quickSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setQuickSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={selectedDistrict}
+                onChange={(e) => setSelectedDistrict(e.target.value)}
+                className="bg-neutral-50 border border-neutral-200 rounded-lg py-1.5 px-2.5 text-xs text-neutral-800 font-medium focus:outline-none focus:border-red-500 cursor-pointer max-w-[170px]"
+              >
+                <option value="all">All Districts ({districtList.length})</option>
+                {districtList.map(dist => (
+                  <option key={dist} value={dist}>{dist}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Quick Reference Store Cards List */}
+          <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[580px] pr-1">
+            {quickRefStores.map(loc => {
+              const dmPerson = people.find(p => p.district === loc.district || p.fullName === loc.districtManagerName);
+
+              return (
+                <div
+                  key={loc.id}
+                  onClick={() => onSelectLocation(loc)}
+                  className="p-3 bg-neutral-50 hover:bg-neutral-100/80 border border-neutral-200 rounded-xl cursor-pointer transition-all hover:border-neutral-300 shadow-2xs group"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-red-600 text-xs">
+                          #{loc.storeNumber}
+                        </span>
+                        <span className="font-bold text-neutral-900 group-hover:text-red-700 transition-colors text-xs truncate">
+                          {loc.name}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 text-[11px] text-neutral-500 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-neutral-400 shrink-0" />
+                          <span>{loc.city}, {loc.state}</span>
+                        </div>
+                        <div className="flex items-center gap-1 font-mono">
+                          <Phone className="w-3 h-3 text-neutral-400 shrink-0" />
+                          <span>{loc.phone}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <OperationalStatusBadge status={loc.operationalStatus} />
+                    </div>
+                  </div>
+
+                  {/* Leadership & District Ribbon */}
+                  <div className="mt-2 pt-2 border-t border-neutral-200/70 flex items-center justify-between text-[10px] text-neutral-500">
+                    <div className="flex items-center gap-1">
+                      <span className="text-neutral-400">District:</span>
+                      <span className="font-semibold text-neutral-700 truncate max-w-[130px]">
+                        {loc.district || 'Unassigned'}
+                      </span>
+                      {dmPerson && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectPerson(dmPerson);
+                          }}
+                          className="text-neutral-500 hover:text-red-600 hover:underline flex items-center gap-0.5 ml-1 cursor-pointer"
+                          title="View District Manager"
+                        >
+                          <span>(DM: {dmPerson.fullName})</span>
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 font-medium text-neutral-700">
+                      <span>{loc.storeManagerName ? `Mgr: ${loc.storeManagerName}` : 'Mgr Vacant'}</span>
+                      <ChevronRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {quickRefStores.length === 0 && (
+              <div className="p-8 text-center bg-neutral-50 rounded-xl border border-neutral-200 text-neutral-400 space-y-1">
+                <Search className="w-6 h-6 mx-auto text-neutral-300" />
+                <p className="text-xs font-medium text-neutral-600">No stores match your search</p>
+                <p className="text-[11px] text-neutral-400">
+                  Try adjusting the district filter or clearing the search query.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => onOpenNewRequest()}
-            className="px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded text-xs font-medium flex items-center gap-1.5"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-            <span>Submit Correction</span>
-          </button>
-
-          {canEdit && (
-            <button
-              onClick={onAddNewLocation}
-              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-bold flex items-center gap-1.5 shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Authoritative Store</span>
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );

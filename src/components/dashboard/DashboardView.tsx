@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord } from '../../types';
 import { OperationalStatusBadge } from '../common/StatusBadge';
+import { EmptyState } from '../common/EmptyState';
+import { PageHeader } from '../common/PageHeader';
 import { 
   Store, 
   Users, 
@@ -89,6 +91,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Operations Dashboard"
+        description="Current store coverage, directory health, and items requiring attention"
+      />
       
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -110,9 +116,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="text-[11px] text-neutral-500">DMs, SMs & Support leads</div>
         </div>
 
-        <div 
+        <button
+          type="button"
           onClick={onNavigateToRequests}
-          className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs hover:border-amber-300 hover:shadow-sm cursor-pointer transition-all"
+          className="min-w-0 space-y-2 rounded-lg border border-neutral-200 bg-white p-4 text-left shadow-xs transition-all hover:border-amber-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
         >
           <div className="flex items-center justify-between text-neutral-500">
             <span className="text-xs font-semibold">Pending Requests</span>
@@ -120,7 +127,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
           <div className="text-2xl font-bold text-amber-700">{pendingRequests.length}</div>
           <div className="text-[11px] text-neutral-500">Awaiting steward review</div>
-        </div>
+        </button>
 
         <div className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-neutral-500">
@@ -163,10 +170,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               const isModified = loc.operationalStatus === 'Temporarily Modified Hours';
 
               return (
-                <div
+                <button
+                  type="button"
                   key={loc.id}
                   onClick={() => onSelectLocation(loc)}
-                  className="p-3.5 bg-neutral-50 hover:bg-neutral-100/80 border border-neutral-200 rounded-xl cursor-pointer transition-all hover:border-neutral-300 shadow-2xs space-y-2.5 group"
+                  className="group w-full space-y-2.5 rounded-lg border border-neutral-200 bg-neutral-50 p-3.5 text-left shadow-2xs transition-all hover:border-neutral-300 hover:bg-neutral-100/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
                 >
                   {/* Top Bar: Store Number & Status */}
                   <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -228,18 +236,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <ChevronRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
 
             {storesWithNotices.length === 0 && (
-              <div className="p-8 text-center bg-neutral-50 rounded-xl border border-neutral-200 text-neutral-500 space-y-2">
-                <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-600 stroke-1" />
-                <p className="text-xs font-bold text-neutral-800">All Stores Operating Normally</p>
-                <p className="text-[11px] text-neutral-400">
-                  No active operational notices, modified hours schedules, or emergency closures across the fleet.
-                </p>
-              </div>
+              <EmptyState
+                icon={CheckCircle2}
+                title="All stores operating normally"
+                description="No active operational notices, modified hours schedules, or emergency closures across the fleet."
+                compact
+              />
             )}
           </div>
         </div>
@@ -280,6 +287,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     type="button"
                     onClick={() => setQuickSearch('')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 cursor-pointer"
+                    aria-label="Clear store search"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -305,12 +313,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               const dmPerson = people.find(p => p.district === loc.district || p.fullName === loc.districtManagerName);
 
               return (
-                <div
-                  key={loc.id}
-                  onClick={() => onSelectLocation(loc)}
-                  className="p-3 bg-neutral-50 hover:bg-neutral-100/80 border border-neutral-200 rounded-xl cursor-pointer transition-all hover:border-neutral-300 shadow-2xs group"
-                >
-                  <div className="flex items-start justify-between gap-2">
+                <div key={loc.id} className="group rounded-lg border border-neutral-200 bg-neutral-50 p-3 shadow-2xs transition-all hover:border-neutral-300 hover:bg-neutral-100/80">
+                  <button
+                    type="button"
+                    onClick={() => onSelectLocation(loc)}
+                    className="flex w-full items-start justify-between gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+                  >
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-red-600 text-xs">
@@ -336,7 +344,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="text-right shrink-0">
                       <OperationalStatusBadge status={loc.operationalStatus} />
                     </div>
-                  </div>
+                  </button>
 
                   {/* Leadership & District Ribbon */}
                   <div className="mt-2 pt-2 border-t border-neutral-200/70 flex items-center justify-between text-[10px] text-neutral-500">
@@ -361,23 +369,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1 font-medium text-neutral-700">
+                    <button
+                      type="button"
+                      onClick={() => onSelectLocation(loc)}
+                      className="flex items-center gap-1 rounded font-medium text-neutral-700 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+                      aria-label={`View store ${loc.storeNumber}`}
+                    >
                       <span>{loc.storeManagerName ? `Mgr: ${loc.storeManagerName}` : 'Mgr Vacant'}</span>
                       <ChevronRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
-                    </div>
+                    </button>
                   </div>
                 </div>
               );
             })}
 
             {quickRefStores.length === 0 && (
-              <div className="p-8 text-center bg-neutral-50 rounded-xl border border-neutral-200 text-neutral-400 space-y-1">
-                <Search className="w-6 h-6 mx-auto text-neutral-300" />
-                <p className="text-xs font-medium text-neutral-600">No stores match your search</p>
-                <p className="text-[11px] text-neutral-400">
-                  Try adjusting the district filter or clearing the search query.
-                </p>
-              </div>
+              <EmptyState
+                icon={Search}
+                title="No stores match your search"
+                description="Try adjusting the district filter or clearing the search query."
+                compact
+              />
             )}
           </div>
         </div>

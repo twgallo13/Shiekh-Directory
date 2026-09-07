@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { UpdateRequest } from '../../types';
-import { GitPullRequest, Check, X, Clock, AlertCircle, ShieldCheck } from 'lucide-react';
+import { GitPullRequest, Check, X, Clock, Plus } from 'lucide-react';
+import { Button } from '../common/Button';
+import { EmptyState } from '../common/EmptyState';
+import { PageHeader } from '../common/PageHeader';
 
 interface RequestsViewProps {
   onOpenNewRequest: () => void;
@@ -128,22 +131,16 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-neutral-900">Store Change & Correction Requests</h2>
-          <p className="text-xs text-neutral-500">
-            Governance workflow for phone numbers, manager changes, and operating status
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={onOpenNewRequest}
-          className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-        >
-          Submit New Request
-        </button>
-      </div>
+      <PageHeader
+        title="Store Change & Correction Requests"
+        description="Governance workflow for phone numbers, manager changes, and operating status"
+        actions={(
+          <Button variant="primary" size="sm" onClick={onOpenNewRequest}>
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Submit New Request
+          </Button>
+        )}
+      />
 
       <div className="flex items-center gap-2 border-b border-neutral-200 pb-2">
         {(['All', 'Pending', 'Approved', 'Rejected'] as const).map(tab => (
@@ -301,9 +298,17 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
         })}
 
         {filtered.length === 0 && (
-          <div className="p-8 text-center bg-white border border-neutral-200 rounded-xl text-neutral-500 text-xs shadow-xs">
-            No change requests match this filter.
-          </div>
+          <EmptyState
+            icon={GitPullRequest}
+            title="No matching change requests"
+            description="Choose another status filter or submit a new correction request."
+            action={(
+              <Button variant="primary" size="sm" onClick={onOpenNewRequest}>
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Submit Request
+              </Button>
+            )}
+          />
         )}
       </div>
     </div>

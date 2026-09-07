@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { 
   BookOpen, 
@@ -14,6 +14,8 @@ import {
   Tag
 } from 'lucide-react';
 import { SopRunbook } from '../../types';
+import { ConfirmDialog } from '../common/ConfirmDialog';
+import { useDialogFocus } from '../common/useDialogFocus';
 
 export const SopRunbooksPanel: React.FC = () => {
   const { 
@@ -31,6 +33,9 @@ export const SopRunbooksPanel: React.FC = () => {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRunbook, setEditingRunbook] = useState<SopRunbook | null>(null);
+  const [runbookToDelete, setRunbookToDelete] = useState<SopRunbook | null>(null);
+  const runbookDialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(isModalOpen, () => setIsModalOpen(false), runbookDialogRef);
   const [formState, setFormState] = useState({
     title: '',
     category: 'Store Operations',
@@ -217,9 +222,10 @@ export const SopRunbooksPanel: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => deleteSopRunbook(activeRunbook.id)}
+                    onClick={() => setRunbookToDelete(activeRunbook)}
                     className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-200 cursor-pointer transition-colors"
                     title="Delete Runbook"
+                    aria-label={`Delete runbook ${activeRunbook.title}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -274,8 +280,8 @@ export const SopRunbooksPanel: React.FC = () => {
       {/* MODAL: SOP Runbook Editor */}
       {/* ======================================================== */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsModalOpen(false)}>
+          <div ref={runbookDialogRef} role="dialog" aria-modal="true" aria-label={editingRunbook ? `Edit runbook ${editingRunbook.title}` : 'Create SOP runbook'} tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">
                 {editingRunbook ? `Edit Runbook: ${editingRunbook.title}` : 'Create SOP Runbook'}
@@ -360,6 +366,21 @@ export const SopRunbooksPanel: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={runbookToDelete !== null}
+        title="Delete SOP runbook?"
+        description={`“${runbookToDelete?.title || ''}” will be permanently deleted. This action cannot be undone.`}
+        confirmLabel="Delete runbook"
+        onConfirm={() => {
+          if (runbookToDelete) {
+            deleteSopRunbook(runbookToDelete.id);
+            if (selectedRunbookId === runbookToDelete.id) setSelectedRunbookId('');
+          }
+          setRunbookToDelete(null);
+        }}
+        onCancel={() => setRunbookToDelete(null)}
+      />
     </div>
   );
 };

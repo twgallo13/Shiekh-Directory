@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { LocationRecord, PersonRecord } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
 import { AuditLogView } from '../common/AuditLogView';
+import { useDialogFocus } from '../common/useDialogFocus';
 import { 
   X, 
   MapPin, 
@@ -45,6 +46,8 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   // Tabbed Navigation State
   const [activeTab, setActiveTab] = useState<LocationDetailTab>('overview');
   const [copied, setCopied] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(Boolean(location), onClose, dialogRef);
 
   // Filter audit logs specifically for this location
   const locationAuditLogs = useMemo(() => {
@@ -125,8 +128,20 @@ Operating Status: ${location.operationalStatus}`;
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-neutral-200 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="location-detail-title"
+        tabIndex={-1}
+        className="bg-white border border-neutral-200 rounded-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+      >
         
         {/* Dark Modal Header */}
         <div className="bg-neutral-900 text-white p-4">
@@ -140,30 +155,11 @@ Operating Status: ${location.operationalStatus}`;
                 <span className="text-xs text-neutral-400 font-medium">
                   {location.type}
                 </span>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 ${
-                  location.operationalStatus?.includes('Open')
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : location.operationalStatus?.includes('Closed')
-                    ? 'bg-rose-100 text-rose-800'
-                    : 'bg-amber-100 text-amber-800'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    location.operationalStatus?.includes('Open')
-                      ? 'bg-emerald-600'
-                      : location.operationalStatus?.includes('Closed')
-                      ? 'bg-rose-600'
-                      : 'bg-amber-600'
-                  }`} />
-                  {location.operationalStatus?.includes('Open')
-                    ? 'Open'
-                    : location.operationalStatus?.includes('Closed')
-                    ? 'Closed'
-                    : location.operationalStatus || 'Open'}
-                </span>
+                <OperationalStatusBadge status={location.operationalStatus} surface="dark" />
               </div>
 
               {/* Title: Bold white text */}
-              <h2 className="text-xl font-bold text-white tracking-tight">
+              <h2 id="location-detail-title" className="text-xl font-bold text-white tracking-tight">
                 {location.name}
               </h2>
 
@@ -177,6 +173,7 @@ Operating Status: ${location.operationalStatus}`;
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close location details"
               className="p-1.5 text-neutral-400 hover:text-white cursor-pointer rounded-lg hover:bg-neutral-800 transition-colors shrink-0"
               title="Close modal"
             >

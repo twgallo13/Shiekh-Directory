@@ -1,6 +1,6 @@
 {
-  "name": "Dynamic QR Code Manager",
-  "description": "Multi-location retail directory, dynamic QR code management, canonical personnel directory, and store operational hours platform.",
+  "name": "Shiekh Store Directory",
+  "description": "Shiekh store operations and personnel directory.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

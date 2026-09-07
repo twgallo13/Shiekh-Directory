@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord } from '../../types';
 import { Search, Store, User, X, ArrowRight } from 'lucide-react';
+import { useDialogFocus } from '../common/useDialogFocus';
 
 interface UniversalSearchModalProps {
   isOpen: boolean;
@@ -18,15 +19,14 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
 }) => {
   const { locations, people } = useDirectory();
   const [query, setQuery] = useState('');
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  useDialogFocus(isOpen, onClose, dialogRef);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         if (isOpen) onClose();
-      }
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -55,8 +55,20 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
     : [];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-start justify-center pt-20 p-4">
-      <div className="bg-white border border-neutral-200 rounded-xl max-w-xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+    <div
+      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-start justify-center pt-20 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search directory"
+        tabIndex={-1}
+        className="bg-white border border-neutral-200 rounded-xl max-w-xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+      >
         <div className="p-3.5 border-b border-neutral-200 flex items-center gap-3">
           <Search className="w-4 h-4 text-neutral-400 ml-2" />
           <input
@@ -70,6 +82,7 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close directory search"
             className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer rounded-lg hover:bg-neutral-100 transition-colors"
           >
             <X className="w-4 h-4" />

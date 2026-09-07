@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { 
   Mail, 
@@ -22,6 +22,8 @@ import {
   Code
 } from 'lucide-react';
 import { SmtpConfig, EmailTemplate } from '../../types';
+import { ConfirmDialog } from '../common/ConfirmDialog';
+import { useDialogFocus } from '../common/useDialogFocus';
 
 interface SmtpCommunicationsPanelProps {
   activeSection?: 'all' | 'smtp-relay' | 'email-templates' | 'notification-rules' | 'outbox-logs';
@@ -72,6 +74,9 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
   // Email Template Modal State
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
+  const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null);
+  const templateDialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(isTemplateModalOpen, () => setIsTemplateModalOpen(false), templateDialogRef);
   const [templateForm, setTemplateForm] = useState<{
     name: string;
     subject: string;
@@ -525,9 +530,10 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
                   </button>
                   <button
                     type="button"
-                    onClick={() => deleteEmailTemplate(tmpl.id)}
+                    onClick={() => setTemplateToDelete(tmpl)}
                     className="p-1 text-rose-600 hover:text-rose-800 rounded hover:bg-rose-50 cursor-pointer transition-colors"
                     title="Delete Template"
+                    aria-label={`Delete email template ${tmpl.name}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -648,8 +654,8 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
       {/* MODAL: Email Template Editor / Live HTML Preview */}
       {/* ======================================================== */}
       {isTemplateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsTemplateModalOpen(false)}>
+          <div ref={templateDialogRef} role="dialog" aria-modal="true" aria-label={editingTemplate ? `Edit email template ${editingTemplate.name}` : 'Create email template'} tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">
                 {editingTemplate ? `Edit Template: ${editingTemplate.name}` : 'Create Email Template'}
@@ -788,6 +794,18 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={templateToDelete !== null}
+        title="Delete email template?"
+        description={`“${templateToDelete?.name || ''}” will be permanently deleted. Notification rules that refer to it may stop sending expected messages.`}
+        confirmLabel="Delete template"
+        onConfirm={() => {
+          if (templateToDelete) deleteEmailTemplate(templateToDelete.id);
+          setTemplateToDelete(null);
+        }}
+        onCancel={() => setTemplateToDelete(null)}
+      />
     </div>
   );
 };

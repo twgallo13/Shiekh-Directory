@@ -93,7 +93,7 @@ export const INITIAL_EMAIL_TEMPLATES: EmailTemplate[] = [
       <p style="margin: 0; font-weight: bold; color: #065f46;">Approved Update Details:</p>
       <p style="margin: 4px 0 0 0; color: #047857; font-size: 13px;">{{change_details}}</p>
     </div>
-    <p style="font-size: 13px; color: #4b5563;">The changes are now active across public directory endpoints, Google Business Profile feeds, and Dynamic QR resolvers.</p>
+    <p style="font-size: 13px; color: #4b5563;">The changes are now active across public directory endpoints and Google Business Profile feeds.</p>
   </div>
 </div>`
   },
@@ -225,9 +225,9 @@ Establishes canonical data verification requirements for provisioning a new reta
 4. **Google Business Profile (GBP) Ingestion**:
    - Input canonical Google Review URL and store webpage link.
    - Trigger GBP Fleet Sync to verify place ID linkage on Google Maps.
-5. **Dynamic QR Code Generation**:
-   - Generate production storefront QR code resolving to \`https://shiekhshoes.com/qr/store/{storeNumber}\`.
-   - Deliver vector SVG to visual merchandising for storefront decal printing.`
+5. **Publication Verification**:
+  - Confirm the location appears in the public directory with the correct operating status.
+  - Verify the store webpage and Google Business Profile links resolve successfully.`
   },
   {
     id: 'sop-02',
@@ -272,9 +272,9 @@ Ensures store leadership changes are promptly reflected in directory feeds and e
 export const INITIAL_API_KEYS: ApiKeyRecord[] = [
   {
     id: 'key-01',
-    name: 'Production E-Commerce & Storefront Resolver',
+    name: 'Production Store Directory Client',
     key: 'shk_live_9f823a4b7c1e5d6a8b2c4e6f',
-    role: 'Read / Dynamic QR Resolver',
+    role: 'Read / Directory API',
     createdAt: '2026-01-15T08:00:00Z',
     expiresAt: '2027-01-15T08:00:00Z',
     status: 'Active',

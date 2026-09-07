@@ -3,6 +3,8 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { OperationalStatusBadge } from '../common/StatusBadge';
+import { Button } from '../common/Button';
+import { PageHeader } from '../common/PageHeader';
 import { 
   Search, 
   Plus, 
@@ -271,26 +273,16 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Header Bar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-neutral-900">Store Locations Directory</h2>
-          <p className="text-xs text-neutral-500">
-            {activeCount} active retail locations across CA, NV, WA, OR & TX {retiredCount > 0 && `(${retiredCount} retired in archive)`}
-          </p>
-        </div>
-
-        {canAdd && (
-          <button
-            type="button"
-            onClick={onAddNewLocation}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Store Location</span>
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Store Locations Directory"
+        description={`${activeCount} active location${activeCount === 1 ? '' : 's'}${states.length > 0 ? ` across ${states.join(', ')}` : ''}${retiredCount > 0 ? ` (${retiredCount} retired in archive)` : ''}`}
+        actions={canAdd ? (
+          <Button variant="primary" size="sm" onClick={onAddNewLocation}>
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Add Store Location
+          </Button>
+        ) : undefined}
+      />
 
       {/* Bulk Success Banner */}
       {bulkSuccessMsg && (

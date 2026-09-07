@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
-import { Printer, AlertTriangle, Filter, Search, FileText } from 'lucide-react';
+import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
+import { Button } from '../common/Button';
+import { PageHeader } from '../common/PageHeader';
 
 export const PrintSheetView: React.FC = () => {
   const { locations, people } = useDirectory();
@@ -67,27 +69,23 @@ export const PrintSheetView: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Print Controls / Action Bar - Hidden in Print Mode */}
-      <div className="flex items-center justify-between print:hidden bg-white p-4 rounded-xl border border-neutral-200 shadow-xs">
-        <div>
-          <h2 className="text-base font-bold text-neutral-900 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-red-600" />
-            1-Sheet Retail Directory PDF
-          </h2>
-          <p className="text-xs text-neutral-500">
-            Compact single-sheet landscape export grouped by District Manager ({filteredLocations.length} stores displayed)
-          </p>
-        </div>
+      <div className="print:hidden">
+        <PageHeader
+          title="1-Sheet Retail Directory PDF"
+          description={`Compact landscape export grouped by District Manager (${filteredLocations.length} stores displayed)`}
+        />
+      </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
+      {/* Print Controls / Action Bar - Hidden in Print Mode */}
+      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-xs print:hidden sm:flex-row sm:items-center sm:justify-end">
+          <div className="relative flex-1 sm:max-w-56">
             <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Filter table..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 pr-3 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs text-neutral-800 focus:outline-none focus:border-red-500 w-44"
+              className="w-full rounded-md border border-neutral-200 bg-neutral-50 py-1.5 pl-8 pr-3 text-xs text-neutral-800 focus:border-red-500 focus:outline-none"
             />
           </div>
 
@@ -105,15 +103,14 @@ export const PrintSheetView: React.FC = () => {
             </select>
           </div>
 
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={handlePrint}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors"
           >
-            <Printer className="w-4 h-4" />
+            <Printer className="h-4 w-4" aria-hidden="true" />
             <span>Print 1-Sheet Directory</span>
-          </button>
-        </div>
+          </Button>
       </div>
 
       {/* Printable Sheet Container */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { 
   FileSpreadsheet, 
@@ -43,6 +43,9 @@ import {
 } from 'lucide-react';
 import { WeeklySchedule, HoursTemplate, CorporateHoliday, UserProfile, UserRole, LocationRecord } from '../../types';
 import { WeeklyHoursEditor } from '../common/WeeklyHoursEditor';
+import { ConfirmDialog } from '../common/ConfirmDialog';
+import { PageHeader } from '../common/PageHeader';
+import { useDialogFocus } from '../common/useDialogFocus';
 import { DEFAULT_WEEKLY_HOURS } from '../../data/initialData';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
@@ -62,6 +65,12 @@ type AdminTab =
   | 'notification-rules' 
   | 'outbox-logs' 
   | 'sop';
+
+type PendingAdminAction = {
+  kind: 'hours-template' | 'holiday' | 'api-key' | 'user';
+  id: string;
+  name: string;
+};
 
 export const AdminIntegrationsView: React.FC = () => {
   const { 
@@ -95,6 +104,28 @@ export const AdminIntegrationsView: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<AdminTab>('hours');
   const [rollbackAlert, setRollbackAlert] = useState<{ success: boolean; message: string } | null>(null);
+  const [pendingAdminAction, setPendingAdminAction] = useState<PendingAdminAction | null>(null);
+
+  const handleConfirmAdminAction = () => {
+    if (!pendingAdminAction) return;
+
+    switch (pendingAdminAction.kind) {
+      case 'hours-template':
+        deleteHoursTemplate(pendingAdminAction.id);
+        break;
+      case 'holiday':
+        deleteCorporateHoliday(pendingAdminAction.id);
+        break;
+      case 'api-key':
+        revokeApiKey(pendingAdminAction.id);
+        break;
+      case 'user':
+        deleteUserAccount(pendingAdminAction.id);
+        break;
+    }
+
+    setPendingAdminAction(null);
+  };
 
   // Sub-Nav Filter & Accordion State
   const [searchQuery, setSearchQuery] = useState('');
@@ -149,7 +180,7 @@ export const AdminIntegrationsView: React.FC = () => {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [newKeyForm, setNewKeyForm] = useState({
     name: '',
-    role: 'Read / Dynamic QR Resolver',
+    role: 'Read / Directory API',
     expirationDays: 365
   });
   const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
@@ -185,6 +216,16 @@ export const AdminIntegrationsView: React.FC = () => {
 
   // Governance & Users Tab State
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const templateDialogRef = useRef<HTMLDivElement>(null);
+  const holidayDialogRef = useRef<HTMLDivElement>(null);
+  const apiKeyDialogRef = useRef<HTMLDivElement>(null);
+  const userDialogRef = useRef<HTMLDivElement>(null);
+  const addStoreDialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(isTemplateModalOpen, () => setIsTemplateModalOpen(false), templateDialogRef);
+  useDialogFocus(isHolidayModalOpen, () => setIsHolidayModalOpen(false), holidayDialogRef);
+  useDialogFocus(isApiKeyModalOpen, () => setIsApiKeyModalOpen(false), apiKeyDialogRef);
+  useDialogFocus(isUserModalOpen, () => setIsUserModalOpen(false), userDialogRef);
+  useDialogFocus(isAddStoreOpen, () => setIsAddStoreOpen(false), addStoreDialogRef);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [userForm, setUserForm] = useState<Omit<UserProfile, 'id'>>({
     name: '',
@@ -318,7 +359,7 @@ export const AdminIntegrationsView: React.FC = () => {
     if (!newKeyForm.name) return;
     generateApiKey(newKeyForm.name, newKeyForm.role, newKeyForm.expirationDays);
     setIsApiKeyModalOpen(false);
-    setNewKeyForm({ name: '', role: 'Read / Dynamic QR Resolver', expirationDays: 365 });
+    setNewKeyForm({ name: '', role: 'Read / Directory API', expirationDays: 365 });
   };
 
   // Webhook Test Ping
@@ -621,23 +662,15 @@ export const AdminIntegrationsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-neutral-900 flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-red-600" />
-            Admin & Integrations Console
-          </h2>
-          <p className="text-xs text-neutral-500">
-            System configuration, hours templates, corporate holidays, GBP connectors, developer API keys, and RBAC governance
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Admin & Integrations Console"
+        description="System configuration, hours templates, corporate holidays, external connectors, API keys, and access governance"
+      />
 
       {/* Dual-Pane Flex Architecture */}
-      <div className="flex items-start gap-4">
+      <div className="flex flex-col items-start gap-4 lg:flex-row">
         {/* Left Sub-Nav Sidebar */}
-        <aside className="w-72 shrink-0 h-[calc(100vh-7rem)] overflow-y-auto sticky top-20 pr-2 scrollbar-thin space-y-3">
+        <aside className="max-h-72 w-full shrink-0 overflow-y-auto pr-2 scrollbar-thin space-y-3 lg:sticky lg:top-20 lg:h-[calc(100vh-7rem)] lg:max-h-none lg:w-72">
           {/* Sticky Search Filter */}
           <div className="sticky top-0 bg-neutral-50/95 backdrop-blur-xs pb-2.5 pt-0.5 z-10">
             <div className="relative">
@@ -810,9 +843,10 @@ export const AdminIntegrationsView: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => deleteHoursTemplate(t.id)}
+                      onClick={() => setPendingAdminAction({ kind: 'hours-template', id: t.id, name: t.name })}
                       className="p-1 text-red-600 hover:text-red-800 rounded hover:bg-red-50 cursor-pointer transition-colors"
                       title="Delete Template"
+                      aria-label={`Delete hours template ${t.name}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -878,8 +912,10 @@ export const AdminIntegrationsView: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteCorporateHoliday(hol.id)}
+                          onClick={() => setPendingAdminAction({ kind: 'holiday', id: hol.id, name: hol.name })}
                           className="p-1 text-red-500 hover:text-red-700 rounded hover:bg-red-50"
+                          title="Delete holiday"
+                          aria-label={`Delete holiday ${hol.name}`}
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -1057,7 +1093,7 @@ export const AdminIntegrationsView: React.FC = () => {
                 <div>
                   <h3 className="text-sm font-bold text-neutral-900">Developer API Keys & Scoped Tokens</h3>
                   <p className="text-xs text-neutral-500">
-                    Service credentials for Point of Sale synchronization, mobile apps, and Dynamic QR resolvers
+                    Service credentials for Point of Sale synchronization, mobile apps, and directory consumers
                   </p>
                 </div>
               </div>
@@ -1072,20 +1108,20 @@ export const AdminIntegrationsView: React.FC = () => {
               </button>
             </div>
 
-            {/* Dynamic QR Routing Banner */}
+            {/* Directory API Banner */}
             <div className="p-4 bg-neutral-50 border border-neutral-200 rounded-xl space-y-2">
               <div className="text-xs font-bold text-neutral-900 flex items-center justify-between">
-                <span>Dynamic QR Redirection Resolver Pattern:</span>
+                <span>Directory Location Endpoint:</span>
                 <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-mono font-bold">
-                  HTTPS RESOLVER
+                  READ API
                 </span>
               </div>
               <div className="font-mono text-xs bg-white p-2.5 rounded-lg border border-neutral-300 text-neutral-800 flex items-center justify-between">
-                <span>https://api.shiekh.com/v1/qr/{'{store_number}'}</span>
-                <span className="text-[10px] text-neutral-500 font-sans">Resolves to active store landing</span>
+                <span>https://api.shiekh.com/v1/locations/{'{store_number}'}</span>
+                <span className="text-[10px] text-neutral-500 font-sans">Returns the active directory record</span>
               </div>
               <p className="text-[11px] text-neutral-500">
-                Printed physical QR codes on storefronts resolve dynamically without requiring reprint when store managers or hours change.
+                Read-only clients receive the current store profile, operating status, leadership assignments, and published hours.
               </p>
             </div>
 
@@ -1143,7 +1179,7 @@ export const AdminIntegrationsView: React.FC = () => {
                             {k.status === 'Active' && (
                               <button
                                 type="button"
-                                onClick={() => revokeApiKey(k.id)}
+                                onClick={() => setPendingAdminAction({ kind: 'api-key', id: k.id, name: k.name })}
                                 className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[11px] font-semibold cursor-pointer"
                               >
                                 Revoke
@@ -1435,9 +1471,10 @@ export const AdminIntegrationsView: React.FC = () => {
                     {u.id !== currentUser.id && (
                       <button
                         type="button"
-                        onClick={() => deleteUserAccount(u.id)}
+                        onClick={() => setPendingAdminAction({ kind: 'user', id: u.id, name: u.name })}
                         className="p-1 text-rose-600 hover:text-rose-800 rounded hover:bg-rose-50 cursor-pointer"
                         title="Delete / Revoke User"
+                        aria-label={`Delete user ${u.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1566,8 +1603,8 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* MODAL: Hours Template Builder (CUD) */}
       {/* ======================================================== */}
       {isTemplateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsTemplateModalOpen(false)}>
+          <div ref={templateDialogRef} role="dialog" aria-modal="true" aria-label={editingTemplate ? `Edit template ${editingTemplate.name}` : 'Create schedule template'} tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">
                 {editingTemplate ? `Edit Template: ${editingTemplate.name}` : 'Create Schedule Template'}
@@ -1638,8 +1675,8 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* MODAL: Corporate Holiday Override Builder (CUD) */}
       {/* ======================================================== */}
       {isHolidayModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-md w-full shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsHolidayModalOpen(false)}>
+          <div ref={holidayDialogRef} role="dialog" aria-modal="true" aria-label={editingHoliday ? `Edit holiday ${editingHoliday.name}` : 'Add corporate holiday'} tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-md w-full shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">
                 {editingHoliday ? `Edit Holiday: ${editingHoliday.name}` : 'Add Corporate Holiday'}
@@ -1727,8 +1764,8 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* MODAL: Generate API Key (CUD) */}
       {/* ======================================================== */}
       {isApiKeyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-md w-full shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsApiKeyModalOpen(false)}>
+          <div ref={apiKeyDialogRef} role="dialog" aria-modal="true" aria-label="Generate scoped API key" tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-md w-full shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">Generate Scoped API Key</h3>
               <button
@@ -1760,7 +1797,7 @@ export const AdminIntegrationsView: React.FC = () => {
                   onChange={(e) => setNewKeyForm({ ...newKeyForm, role: e.target.value })}
                   className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
                 >
-                  <option value="Read / Dynamic QR Resolver">Read / Dynamic QR Resolver</option>
+                  <option value="Read / Directory API">Read / Directory API</option>
                   <option value="Read / Hours Sync">Read / Hours Sync</option>
                   <option value="POS Fleet Roster Integration">POS Fleet Roster Integration</option>
                   <option value="Full Administrative Service">Full Administrative Service</option>
@@ -1806,8 +1843,8 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* MODAL: Add / Edit User (CUD) */}
       {/* ======================================================== */}
       {isUserModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-md w-full shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsUserModalOpen(false)}>
+          <div ref={userDialogRef} role="dialog" aria-modal="true" aria-label={editingUser ? `Edit account ${editingUser.name}` : 'Add user account'} tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-md w-full shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">
                 {editingUser ? `Edit Account: ${editingUser.name}` : 'Add User Account'}
@@ -1914,8 +1951,8 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* MODAL: + Add Store Location (CUD) */}
       {/* ======================================================== */}
       {isAddStoreOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsAddStoreOpen(false)}>
+          <div ref={addStoreDialogRef} role="dialog" aria-modal="true" aria-label="Add new store location" tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">Add New Store Location</h3>
               <button
@@ -2046,6 +2083,17 @@ export const AdminIntegrationsView: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={pendingAdminAction !== null}
+        title={pendingAdminAction?.kind === 'api-key' ? 'Revoke API key?' : `Delete ${pendingAdminAction?.kind === 'user' ? 'user account' : pendingAdminAction?.kind === 'holiday' ? 'holiday' : 'hours template'}?`}
+        description={pendingAdminAction?.kind === 'api-key'
+          ? `“${pendingAdminAction.name}” will stop working immediately. This action cannot be undone.`
+          : `“${pendingAdminAction?.name || ''}” will be permanently deleted. This action cannot be undone.`}
+        confirmLabel={pendingAdminAction?.kind === 'api-key' ? 'Revoke key' : 'Delete'}
+        onConfirm={handleConfirmAdminAction}
+        onCancel={() => setPendingAdminAction(null)}
+      />
     </div>
   );
 };

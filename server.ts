@@ -131,7 +131,7 @@ async function startServer() {
             </table>
           </div>
           <p style="color: #9ca3af; font-size: 12px; margin: 0; border-top: 1px solid #f3f4f6; padding-top: 12px;">
-            Dynamic QR Code Manager & Directory Service
+            Shiekh Store Directory Service
           </p>
         </div>
       `;

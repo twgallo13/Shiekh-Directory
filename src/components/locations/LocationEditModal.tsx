@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { LocationRecord, OperationalStatus, LocationType, HolidayHoursOverride, WeeklySchedule, DayHours } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
+import { ConfirmDialog } from '../common/ConfirmDialog';
+import { OperationalStatusBadge } from '../common/StatusBadge';
+import { useDialogFocus } from '../common/useDialogFocus';
 import { 
   X, 
   Save, 
@@ -21,7 +24,9 @@ import {
 
 interface LocationEditModalProps {
   location: LocationRecord | null;
+  mode?: 'create' | 'edit';
   onClose: () => void;
+  onSaved?: (message: string) => void;
 }
 
 export type EditModalTab = 'details' | 'hours' | 'holidays';
@@ -36,29 +41,55 @@ const DAYS: { key: keyof WeeklySchedule; label: string }[] = [
   { key: 'sunday', label: 'Sunday' },
 ];
 
-export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, onClose }) => {
+const normalizeLocation = (location: LocationRecord): LocationRecord => ({
+  ...location,
+  assistantStoreManagerNames: location.assistantStoreManagerNames || [],
+  keyHolderNames: location.keyHolderNames || [],
+  holidayHours: location.holidayHours || [],
+});
+
+export const LocationEditModal: React.FC<LocationEditModalProps> = ({
+  location,
+  mode = 'edit',
+  onClose,
+  onSaved,
+}) => {
   const { 
     updateLocation, 
-    retireLocation, 
-    reactivateLocation, 
+    createLocation,
     hoursTemplates, 
     corporateHolidays,
     people 
   } = useDirectory();
 
-  const [formData, setFormData] = useState<LocationRecord | null>(location);
+  const [formData, setFormData] = useState<LocationRecord | null>(() => location ? normalizeLocation(location) : null);
   const [activeTab, setActiveTab] = useState<EditModalTab>('details');
+  const [confirmation, setConfirmation] = useState<'discard' | 'retire' | 'reactivate' | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const isCreating = mode === 'create';
 
   useEffect(() => {
     if (location) {
-      setFormData({
-        ...location,
-        assistantStoreManagerNames: location.assistantStoreManagerNames || [],
-        keyHolderNames: location.keyHolderNames || [],
-        holidayHours: location.holidayHours || []
-      });
+      setFormData(normalizeLocation(location));
+      setActiveTab('details');
+      setConfirmation(null);
     }
   }, [location]);
+
+  const isDirty = useMemo(() => {
+    if (!location || !formData) return false;
+    return JSON.stringify(formData) !== JSON.stringify(normalizeLocation(location));
+  }, [formData, location]);
+
+  const requestClose = useCallback(() => {
+    if (isDirty) {
+      setConfirmation('discard');
+      return;
+    }
+    onClose();
+  }, [isDirty, onClose]);
+
+  useDialogFocus(Boolean(location) && confirmation === null, requestClose, dialogRef);
 
   // Extract District Managers and Store Managers for dropdowns
   const districtManagers = useMemo(() => {
@@ -97,7 +128,14 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
       holidayHours: (formData.holidayHours || []).filter(h => h.holidayName.trim().length > 0 || h.date.trim().length > 0)
     };
 
-    updateLocation(location.id, sanitizedData);
+    if (isCreating) {
+      const { id: _draftId, ...newLocationData } = sanitizedData;
+      createLocation(newLocationData);
+      onSaved?.(`Store #${sanitizedData.storeNumber} was created.`);
+    } else {
+      updateLocation(location.id, sanitizedData);
+      onSaved?.(`Store #${sanitizedData.storeNumber} was saved.`);
+    }
     onClose();
   };
 
@@ -163,23 +201,32 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
   };
 
   const handleToggleRetire = () => {
-    if (formData.recordStatus === 'Retired') {
-      const updated: LocationRecord = {
-        ...formData,
-        recordStatus: 'Active',
-        operationalStatus: 'Open — Normal Operations'
-      };
-      setFormData(updated);
-      reactivateLocation(location.id);
-    } else {
-      const updated: LocationRecord = {
-        ...formData,
-        recordStatus: 'Retired',
-        operationalStatus: 'Permanently Closed'
-      };
-      setFormData(updated);
-      retireLocation(location.id);
+    setConfirmation(formData.recordStatus === 'Retired' ? 'reactivate' : 'retire');
+  };
+
+  const handleConfirm = () => {
+    if (confirmation === 'discard') {
+      onClose();
+      return;
     }
+
+    if (confirmation === 'reactivate') {
+      setFormData(prev => prev ? ({
+        ...prev,
+        recordStatus: 'Active',
+        operationalStatus: 'Open — Normal Operations',
+      }) : null);
+    }
+
+    if (confirmation === 'retire') {
+      setFormData(prev => prev ? ({
+        ...prev,
+        recordStatus: 'Retired',
+        operationalStatus: 'Permanently Closed',
+      }) : null);
+    }
+
+    setConfirmation(null);
   };
 
   // Assistant Manager dynamic list handlers
@@ -310,9 +357,21 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
     '';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) requestClose();
+      }}
+    >
       {/* Modal Container: Wide, spacious chassis with clean white background and minimal borders */}
-      <div className="bg-white border border-neutral-200 rounded-2xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="location-editor-title"
+        tabIndex={-1}
+        className="bg-white border border-neutral-200 rounded-2xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative"
+      >
         
         {/* Premium Dark Header (Parity with Detail Modal) */}
         <div className="sticky top-0 z-20 bg-neutral-900 text-white p-6 border-b border-neutral-800 shrink-0 shadow-md">
@@ -326,38 +385,19 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
                 <span className="text-xs text-neutral-400 font-medium">
                   {formData.type || location.type}
                 </span>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 ${
-                  (formData.operationalStatus || location.operationalStatus)?.includes('Open')
-                    ? 'bg-emerald-500/20 text-emerald-300'
-                    : (formData.operationalStatus || location.operationalStatus)?.includes('Closed')
-                    ? 'bg-rose-500/20 text-rose-300'
-                    : 'bg-amber-500/20 text-amber-300'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    (formData.operationalStatus || location.operationalStatus)?.includes('Open')
-                      ? 'bg-emerald-400'
-                      : (formData.operationalStatus || location.operationalStatus)?.includes('Closed')
-                      ? 'bg-rose-400'
-                      : 'bg-amber-400'
-                  }`} />
-                  {(formData.operationalStatus || location.operationalStatus)?.includes('Open')
-                    ? 'Open'
-                    : (formData.operationalStatus || location.operationalStatus)?.includes('Closed')
-                    ? 'Closed'
-                    : (formData.operationalStatus || location.operationalStatus || 'Open')}
-                </span>
+                <OperationalStatusBadge status={formData.operationalStatus} surface="dark" />
               </div>
 
               {/* Title: Large, bold white text */}
-              <h2 className="text-2xl font-bold text-white tracking-tight truncate">
-                {formData.name || location.name}
+              <h2 id="location-editor-title" className="text-2xl font-bold text-white tracking-tight truncate">
+                {formData.name || (isCreating ? 'New Store Location' : location.name)}
               </h2>
 
               {/* Subtitle: Muted city/state and ID string below the title */}
               <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-normal">
                 <MapPin className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
                 <span>
-                  {location.city}, {location.state} • ID: {location.id}
+                  {formData.city || 'City'}, {formData.state || 'State'} {isCreating ? '• New directory record' : `• ID: ${location.id}`}
                 </span>
               </div>
             </div>
@@ -365,11 +405,11 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
             {/* Right Header Action / Close */}
             <div className="flex items-center gap-3 shrink-0">
               <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider bg-neutral-800 border border-neutral-700 px-3 py-1 rounded-md hidden sm:inline-block">
-                Edit Store Record
+                {isCreating ? 'Create Store Record' : 'Edit Store Record'}
               </span>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={requestClose}
                 aria-label="Close modal"
                 className="p-1.5 text-neutral-400 hover:text-white cursor-pointer rounded-lg hover:bg-neutral-800 transition-colors"
                 title="Close modal"
@@ -429,7 +469,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
           </div>
 
           <div className="text-xs text-neutral-400 font-mono hidden md:block">
-            Location Entity: {location.id}
+            {isCreating ? 'New Location Entity' : `Location Entity: ${location.id}`}
           </div>
         </div>
 
@@ -664,7 +704,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
 
                   <div className="md:col-span-2">
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                      Google Review Intent URL (QR Code Linked)
+                      Google Review URL
                     </label>
                     <div className="relative">
                       <Star className="w-4 h-4 text-amber-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1157,7 +1197,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
                   </h4>
                 </div>
                 <p className="text-xs text-neutral-500">
-                  Broadcasts a temporary notification on customer-facing QR pages and internal store cards.
+                    Broadcasts a temporary notification on public directory pages and internal store cards.
                 </p>
 
                 <div className="space-y-3">
@@ -1232,7 +1272,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
         {/* Sticky Action Footer */}
         <div className="sticky bottom-0 z-20 bg-white border-t border-neutral-200 p-4 flex items-center justify-between shrink-0 shadow-sm">
           <div>
-            {formData.recordStatus === 'Active' ? (
+            {!isCreating && formData.recordStatus === 'Active' ? (
               <button
                 type="button"
                 onClick={handleToggleRetire}
@@ -1241,7 +1281,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
                 <Archive className="w-3.5 h-3.5 text-neutral-500" />
                 <span>Retire Store</span>
               </button>
-            ) : (
+            ) : !isCreating ? (
               <button
                 type="button"
                 onClick={handleToggleRetire}
@@ -1250,14 +1290,14 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
                 <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Reactivate Store</span>
               </button>
-            )}
+            ) : <div />}
           </div>
 
           {/* Flex right-aligned buttons */}
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="px-4 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 cursor-pointer transition-colors"
             >
               Cancel
@@ -1268,12 +1308,34 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({ location, 
               className="bg-red-700 hover:bg-red-800 text-white shadow-sm rounded-md px-5 py-2 text-sm font-semibold flex items-center gap-2 cursor-pointer transition-colors"
             >
               <Save className="w-4 h-4" />
-              <span>Save Authoritative Record</span>
+              <span>{isCreating ? 'Create Location' : 'Save Authoritative Record'}</span>
             </button>
           </div>
         </div>
 
       </div>
+
+      <ConfirmDialog
+        isOpen={confirmation !== null}
+        title={confirmation === 'discard'
+          ? 'Discard unsaved changes?'
+          : confirmation === 'retire'
+          ? 'Retire this store?'
+          : 'Reactivate this store?'}
+        description={confirmation === 'discard'
+          ? 'Your changes have not been saved and will be permanently discarded.'
+          : confirmation === 'retire'
+          ? 'The store will be marked permanently closed and hidden from the active directory after you save the record.'
+          : 'The store will return to the active directory with normal operating status after you save the record.'}
+        confirmLabel={confirmation === 'discard'
+          ? 'Discard changes'
+          : confirmation === 'retire'
+          ? 'Retire store'
+          : 'Reactivate store'}
+        tone={confirmation === 'reactivate' ? 'primary' : 'danger'}
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmation(null)}
+      />
     </div>
   );
 };

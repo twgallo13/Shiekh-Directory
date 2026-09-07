@@ -1,8 +1,11 @@
 import React from 'react';
 import { PersonRecord, LocationRecord, ContactPrivacyLevel } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
-import { X, Mail, Phone, MapPin, Building, Shield } from 'lucide-react';
+import { Mail, Phone, MapPin, Store } from 'lucide-react';
 import { PrivacyBadge } from '../common/StatusBadge';
+import { Button } from '../common/Button';
+import { EmptyState } from '../common/EmptyState';
+import { Modal } from '../common/Modal';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -29,28 +32,20 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   const canEditPrivacy = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-neutral-200 rounded-xl max-w-lg w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-        <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-red-50 border border-red-200 text-red-600 flex items-center justify-center font-bold text-sm">
-              {person.fullName?.[0] || 'P'}
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-neutral-900">{person.fullName}</h2>
-              <p className="text-xs text-neutral-500">{person.jobTitle || person.role || 'Team Member'}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer rounded-lg hover:bg-neutral-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+    <Modal
+      isOpen={Boolean(person)}
+      title={person.fullName}
+      description={person.jobTitle || person.role || 'Team Member'}
+      size="md"
+      onClose={onClose}
+      icon={(
+        <div className="flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-sm font-bold text-red-700">
+          {person.fullName?.[0] || 'P'}
         </div>
-
-        <div className="p-5 space-y-4 text-xs">
+      )}
+      footer={<div className="flex justify-end"><Button size="sm" onClick={onClose}>Close</Button></div>}
+    >
+        <div className="space-y-4 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
               <div className="text-neutral-500 text-[10px] font-semibold uppercase flex items-center gap-1">
@@ -98,7 +93,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
             </div>
             <div className="space-y-1.5 max-h-48 overflow-y-auto">
               {assignedLocs.map(loc => (
-                <div
+                <button
+                  type="button"
                   key={loc.id}
                   onClick={() => {
                     if (onSelectLocation) {
@@ -106,34 +102,26 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                       onClose();
                     }
                   }}
-                  className="p-2.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg flex items-center justify-between cursor-pointer transition-colors"
+                  className="flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 p-2.5 text-left transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                 >
                   <div>
                     <span className="font-bold text-red-600 mr-2">#{loc.storeNumber}</span>
                     <span className="font-medium text-neutral-900">{loc.name}</span>
                   </div>
                   <span className="text-[11px] text-neutral-500">{loc.city}, {loc.state}</span>
-                </div>
+                </button>
               ))}
               {assignedLocs.length === 0 && (
-                <div className="text-neutral-500 text-xs italic p-3 bg-neutral-50 rounded border border-neutral-200 text-center">
-                  No directly assigned retail stores in directory index.
-                </div>
+                <EmptyState
+                  icon={Store}
+                  title="No assigned stores"
+                  description="This person is not directly assigned to a store in the directory."
+                  compact
+                />
               )}
             </div>
           </div>
         </div>
-
-        <div className="p-4 bg-neutral-50 border-t border-neutral-200 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

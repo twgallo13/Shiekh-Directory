@@ -4,7 +4,11 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { PersonSelector } from '../people/PersonSelector';
 import { WeeklyHoursEditor } from '../common/WeeklyHoursEditor';
 import { DEFAULT_WEEKLY_HOURS } from '../../data/initialData';
-import { X, Send, AlertCircle } from 'lucide-react';
+import { Send, AlertCircle } from 'lucide-react';
+import { Button } from '../common/Button';
+import { ConfirmDialog } from '../common/ConfirmDialog';
+import { FormLabel } from '../common/FormLabel';
+import { Modal } from '../common/Modal';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -24,8 +28,27 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   const [newStatus, setNewStatus] = useState('Open — Normal Operations');
   const [noticeText, setNoticeText] = useState('');
   const [newHours, setNewHours] = useState(location?.standardHours || DEFAULT_WEEKLY_HOURS);
+  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   const targetLoc = locations.find(l => l.id === selectedLocId);
+  const initialLocationId = location?.id || locations[0]?.id || '';
+  const hasRequestDraft = Boolean(
+    selectedLocId !== initialLocationId ||
+    changeType !== 'Phone Number Correction' ||
+    reason.trim() ||
+    newPhone.trim() ||
+    newManager ||
+    newStatus !== 'Open — Normal Operations' ||
+    noticeText.trim()
+  );
+
+  const requestClose = () => {
+    if (hasRequestDraft) {
+      setIsDiscardConfirmOpen(true);
+      return;
+    }
+    onClose();
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,25 +101,18 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white border border-neutral-200 rounded-xl max-w-lg w-full p-5 shadow-2xl">
-        <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600" />
-            <h3 className="font-bold text-neutral-900 text-sm">Submit Store Correction Request</h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer rounded-lg hover:bg-neutral-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-3.5 pt-3 text-xs">
+    <>
+      <Modal
+        isOpen={!isDiscardConfirmOpen}
+        title="Submit Store Correction Request"
+        description="Send a proposed directory change for steward review."
+        icon={<AlertCircle className="h-5 w-5 text-amber-600" aria-hidden="true" />}
+        size="md"
+        onClose={requestClose}
+      >
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
           <div>
-            <label className="block text-neutral-700 font-semibold mb-1">Target Location</label>
+            <FormLabel>Target Location</FormLabel>
             <select
               value={selectedLocId}
               onChange={(e) => {
@@ -118,7 +134,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
           </div>
 
           <div>
-            <label className="block text-neutral-700 font-semibold mb-1">Change Category</label>
+            <FormLabel>Change Category</FormLabel>
             <select
               value={changeType}
               onChange={(e) => setChangeType(e.target.value as RequestChangeType)}
@@ -134,7 +150,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
           {/* Conditional change inputs */}
           {changeType === 'Phone Number Correction' && (
             <div>
-              <label className="block text-neutral-700 font-semibold mb-1">New Customer Direct Phone *</label>
+              <FormLabel required>New Customer Direct Phone</FormLabel>
               <input
                 type="text"
                 required
@@ -160,7 +176,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
           {changeType === 'Operational Status Change' && (
             <div className="space-y-2">
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">New Status</label>
+                <FormLabel>New Status</FormLabel>
                 <select
                   value={newStatus}
                   onChange={(e) => setNewStatus(e.target.value)}
@@ -173,7 +189,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
                 </select>
               </div>
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Notice Description</label>
+                <FormLabel>Notice Description</FormLabel>
                 <input
                   type="text"
                   placeholder="e.g. Power outage or HVAC maintenance"
@@ -187,7 +203,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
 
           {changeType === 'Standard Hours Adjustment' && (
             <div>
-              <label className="block text-neutral-700 font-semibold mb-1">Proposed Weekly Operating Hours</label>
+              <FormLabel>Proposed Weekly Operating Hours</FormLabel>
               <WeeklyHoursEditor
                 schedule={newHours}
                 onChange={setNewHours}
@@ -196,7 +212,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
           )}
 
           <div>
-            <label className="block text-neutral-700 font-semibold mb-1">Reason for Request / Notes</label>
+            <FormLabel>Reason for Request / Notes</FormLabel>
             <textarea
               rows={2}
               value={reason}
@@ -207,23 +223,29 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
           </div>
 
           <div className="pt-3 flex items-center justify-end gap-2 border-t border-neutral-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3.5 py-2 bg-white hover:bg-neutral-100 border border-neutral-200 rounded-lg text-neutral-700 font-semibold cursor-pointer shadow-xs transition-colors"
-            >
+            <Button size="sm" onClick={requestClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              size="sm"
+              variant="primary"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Submit for Approval</span>
-            </button>
+            </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={isDiscardConfirmOpen}
+        title="Discard correction request?"
+        description="The proposed changes and reviewer context in this request will be permanently discarded."
+        confirmLabel="Discard request"
+        onConfirm={onClose}
+        onCancel={() => setIsDiscardConfirmOpen(false)}
+      />
+    </>
   );
 };

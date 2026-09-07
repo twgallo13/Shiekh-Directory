@@ -1,8 +1,14 @@
 import React, { useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
-import { Search, Plus, User, Phone, Mail, MapPin } from 'lucide-react';
+import { Search, Plus, UserRoundSearch, Phone, Mail, MapPin } from 'lucide-react';
 import { PrivacyBadge } from '../common/StatusBadge';
+import { Button } from '../common/Button';
+import { EmptyState } from '../common/EmptyState';
+import { FormLabel } from '../common/FormLabel';
+import { PageHeader } from '../common/PageHeader';
+import { Modal } from '../common/Modal';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 interface PeopleViewProps {
   onSelectPerson: (person: Person) => void;
@@ -20,8 +26,32 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newDistrict, setNewDistrict] = useState('');
+  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   const canAdd = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
+  const hasPersonDraft = Boolean(
+    newName.trim() ||
+    newPhone.trim() ||
+    newEmail.trim() ||
+    newDistrict.trim() ||
+    newTitle !== 'Store Manager'
+  );
+
+  const resetPersonDraft = () => {
+    setNewName('');
+    setNewTitle('Store Manager');
+    setNewPhone('');
+    setNewEmail('');
+    setNewDistrict('');
+  };
+
+  const requestClosePersonModal = () => {
+    if (hasPersonDraft) {
+      setIsDiscardConfirmOpen(true);
+      return;
+    }
+    setIsAddingPerson(false);
+  };
 
   const filtered = people.filter(p => {
     if (roleFilter !== 'all' && p.jobTitle !== roleFilter && p.role !== roleFilter) {
@@ -56,32 +86,22 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
       phonePrivacy: 'Internal'
     });
 
-    setNewName('');
-    setNewPhone('');
-    setNewEmail('');
-    setNewDistrict('');
+    resetPersonDraft();
     setIsAddingPerson(false);
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-neutral-900">Canonical Personnel Directory</h2>
-          <p className="text-xs text-neutral-500">Manage field leadership, store managers, and corporate contacts</p>
-        </div>
-
-        {canAdd && (
-          <button
-            type="button"
-            onClick={() => setIsAddingPerson(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs cursor-pointer transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Person</span>
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Personnel Directory"
+        description="Manage field leadership, store managers, and corporate contacts"
+        actions={canAdd ? (
+          <Button variant="primary" size="sm" onClick={() => setIsAddingPerson(true)}>
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Add Person
+          </Button>
+        ) : undefined}
+      />
 
       <div className="flex items-center gap-3 bg-white p-3 rounded-xl border border-neutral-200 shadow-xs">
         <div className="flex-1 relative">
@@ -108,12 +128,14 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
       </div>
 
       {/* Grid of People */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      {filtered.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {filtered.map(person => (
-          <div
+          <button
+            type="button"
             key={person.id}
             onClick={() => onSelectPerson(person)}
-            className="p-4 bg-white border border-neutral-200 rounded-xl hover:border-neutral-300 cursor-pointer transition-all hover:shadow-sm space-y-3 shadow-xs"
+            className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4 text-left shadow-xs transition-all hover:border-neutral-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2.5">
@@ -144,18 +166,27 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
                 </div>
               )}
             </div>
-          </div>
+          </button>
         ))}
-      </div>
+        </div>
+      ) : (
+        <EmptyState
+          icon={UserRoundSearch}
+          title="No personnel found"
+          description="Try another name, role, phone number, or clear the current filters."
+        />
+      )}
 
-      {/* Modal to Add Person */}
-      {isAddingPerson && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-neutral-200 rounded-xl max-w-md w-full p-5 shadow-xl">
-            <h3 className="text-base font-bold text-neutral-900 mb-3">Add Personnel to Directory</h3>
-            <form onSubmit={handleCreatePerson} className="space-y-3 text-xs">
+      <Modal
+        isOpen={isAddingPerson && !isDiscardConfirmOpen}
+        title="Add Person"
+        description="Create a personnel record for the directory."
+        size="sm"
+        onClose={requestClosePersonModal}
+      >
+        <form onSubmit={handleCreatePerson} className="space-y-3 text-xs">
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Full Name *</label>
+                <FormLabel required>Full Name</FormLabel>
                 <input
                   type="text"
                   required
@@ -167,7 +198,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
               </div>
 
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Job Title / Role</label>
+                <FormLabel>Job Title / Role</FormLabel>
                 <select
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
@@ -181,7 +212,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
               </div>
 
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Work Phone Number</label>
+                <FormLabel>Work Phone Number</FormLabel>
                 <input
                   type="text"
                   value={newPhone}
@@ -192,7 +223,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
               </div>
 
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Work Email</label>
+                <FormLabel>Work Email</FormLabel>
                 <input
                   type="email"
                   value={newEmail}
@@ -203,7 +234,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
               </div>
 
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Assigned Territory / District (Optional)</label>
+                <FormLabel>Assigned Territory / District (Optional)</FormLabel>
                 <input
                   type="text"
                   value={newDistrict}
@@ -214,24 +245,35 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
               </div>
 
               <div className="pt-3 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddingPerson(false)}
-                  className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 rounded-lg text-neutral-700 font-semibold cursor-pointer transition-colors"
+                <Button
+                  size="sm"
+                  onClick={requestClosePersonModal}
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  className="px-4 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-white font-semibold cursor-pointer shadow-xs transition-colors"
+                  size="sm"
+                  variant="primary"
                 >
                   Save Record
-                </button>
+                </Button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={isDiscardConfirmOpen}
+        title="Discard new person?"
+        description="The information entered for this personnel record will be permanently discarded."
+        confirmLabel="Discard draft"
+        onConfirm={() => {
+          resetPersonDraft();
+          setIsDiscardConfirmOpen(false);
+          setIsAddingPerson(false);
+        }}
+        onCancel={() => setIsDiscardConfirmOpen(false)}
+      />
     </div>
   );
 };

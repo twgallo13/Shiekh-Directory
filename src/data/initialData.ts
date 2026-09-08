@@ -5,7 +5,6 @@ import {
   HoursTemplate, 
   WeeklySchedule, 
   CorporateHoliday,
-  SmtpConfig,
   EmailTemplate,
   NotificationRule,
   OutboxLogEntry,
@@ -13,18 +12,6 @@ import {
 } from '../types';
 import { DEFAULT_WEEKLY_HOURS } from '../lib/defaultHours';
 export { DEFAULT_WEEKLY_HOURS } from '../lib/defaultHours';
-
-export const INITIAL_SMTP_CONFIG: SmtpConfig = {
-  smtpHost: 'smtp.sendgrid.net',
-  smtpPort: 587,
-  smtpUser: 'apikey',
-  smtpPassword: '',
-  fromName: 'Shiekh Directory Steward Team',
-  fromEmail: 'directory-steward@shiekhshoes.com',
-  replyToEmail: 'support@shiekhshoes.org',
-  stewardAlertRecipient: 'theo@shiekhshoes.org',
-  enforceTls: true
-};
 
 export const INITIAL_EMAIL_TEMPLATES: EmailTemplate[] = [
   {

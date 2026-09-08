@@ -218,3 +218,47 @@ test("operational events resolve recipients and content on the server after role
     assert.equal((await viewer.request("event", { event: "request-submitted", entityId: "req-1" })).status, 200);
   } finally { await viewer.close(); }
 });
+
+test("administrators can persist non-secret settings that immediately control delivery", async () => {
+  let saved = null as import("../server/mailApi").MailSettings | null;
+  const deliveredWith: unknown[] = [];
+  const settings = {
+    smtpHost: "smtp.changed.test", smtpPort: 465 as const, smtpUser: "changed-user", fromName: "Changed Directory",
+    fromEmail: "changed@example.test", replyToEmail: "replies@example.test", stewardAlertRecipient: "steward@example.test",
+    diagnosticRecipients: ["new-recipient@example.test"],
+  };
+  const app = await harness({
+    settings: { read: async () => saved, write: async value => { saved = value; } },
+    send: async (message, active) => { app.sent.push(message); deliveredWith.push(active); return true; },
+  });
+  try {
+    const initial = await fetch(`${app.origin}/api/mail/settings`, { headers: { Authorization: "Bearer test-firebase-token" } });
+    assert.equal(initial.status, 200);
+    assert.equal(JSON.stringify(await initial.json()).includes(configuration.password), false);
+
+    const savedResponse = await fetch(`${app.origin}/api/mail/settings`, {
+      method: "PUT", headers: { Authorization: "Bearer test-firebase-token", "Content-Type": "application/json" }, body: JSON.stringify(settings),
+    });
+    assert.equal(savedResponse.status, 200);
+    assert.deepEqual(saved, settings);
+    assert.equal((await app.request("dispatch", { recipient: "new-recipient@example.test", templateId: DIAGNOSTIC_TEMPLATE })).status, 200);
+    assert.deepEqual(deliveredWith[0], { host: settings.smtpHost, port: settings.smtpPort, user: settings.smtpUser, password: configuration.password, from: settings.fromEmail, recipients: settings.diagnosticRecipients, fromName: settings.fromName, replyTo: settings.replyToEmail, steward: settings.stewardAlertRecipient });
+    assert.equal(app.sent[0].from, "Changed Directory <changed@example.test>");
+    assert.equal(app.sent[0].replyTo, settings.replyToEmail);
+  } finally { await app.close(); }
+});
+
+test("mail settings reject non-administrators, passwords, and invalid transport values", async () => {
+  const store = { read: async () => null, write: async () => { throw new Error("must not write"); } };
+  const viewer = await harness({ authenticate: async () => ({ uid: "viewer", role: "Directory Data Steward" }), settings: store });
+  try {
+    assert.equal((await fetch(`${viewer.origin}/api/mail/settings`, { method: "PUT", headers: { Authorization: "Bearer test-firebase-token", "Content-Type": "application/json" }, body: JSON.stringify({}) })).status, 403);
+  } finally { await viewer.close(); }
+  const admin = await harness({ settings: store });
+  try {
+    for (const body of [{ password: "browser-secret" }, { smtpHost: "smtp.test", smtpPort: 25 }]) {
+      const response = await fetch(`${admin.origin}/api/mail/settings`, { method: "PUT", headers: { Authorization: "Bearer test-firebase-token", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      assert.equal(response.status, 400);
+    }
+  } finally { await admin.close(); }
+});

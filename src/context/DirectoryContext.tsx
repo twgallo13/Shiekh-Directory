@@ -9,7 +9,6 @@ import {
   AuditLogEntry, 
   ContactPrivacyLevel,
   OperationalStatus,
-  SmtpConfig,
   EmailTemplate,
   NotificationRule,
   OutboxLogEntry,
@@ -30,7 +29,6 @@ interface DirectoryContextType {
   corporateHolidays: CorporateHoliday[];
   requests: UpdateRequest[];
   auditLogs: AuditLogEntry[];
-  smtpConfig: SmtpConfig;
   emailTemplates: EmailTemplate[];
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
@@ -62,7 +60,6 @@ interface DirectoryContextType {
   updateCorporateHoliday: (id: string, updates: Partial<CorporateHoliday>) => void;
   deleteCorporateHoliday: (id: string) => void;
   broadcastHolidaysToFleet: () => void;
-  updateSmtpConfig: (config: Partial<SmtpConfig>) => void;
   createEmailTemplate: (template: Omit<EmailTemplate, 'id' | 'updatedAt'>) => EmailTemplate;
   updateEmailTemplate: (id: string, updates: Partial<EmailTemplate>) => void;
   deleteEmailTemplate: (id: string) => void;
@@ -75,8 +72,6 @@ interface DirectoryContextType {
 }
 
 const DirectoryContext = createContext<DirectoryContextType | null>(null);
-
-const INITIAL_SMTP_CONFIG: SmtpConfig = { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPassword: '', fromName: '', fromEmail: '', replyToEmail: '', stewardAlertRecipient: '', enforceTls: true };
 
 export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: DirectorySeed }> = ({ children, seed }) => {
   const { account, user } = useAuth();
@@ -91,7 +86,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const [users, setUsers] = useState<UserProfile[]>(seed.users);
   const [hoursTemplates, setHoursTemplates] = useState<HoursTemplate[]>(initialDirectory.templates);
   const [corporateHolidays, setCorporateHolidays] = useState<CorporateHoliday[]>(seed.corporateHolidays);
-  const [smtpConfig, setSmtpConfig] = useState<SmtpConfig>(INITIAL_SMTP_CONFIG);
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(seed.emailTemplates);
   const [notificationRules, setNotificationRules] = useState<NotificationRule[]>(seed.notificationRules);
   const [outboxLogs, setOutboxLogs] = useState<OutboxLogEntry[]>(seed.outboxLogs);
@@ -458,18 +452,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     persist(updatedLocations.map(location => ({ collection: 'locations', id: location.id, operation: 'set', data: location as unknown as Record<string, unknown> })), { action: 'Holiday Broadcast', entityType: 'Setting', entityId: 'fleet-holidays', entityName: 'Fleet Holiday Broadcast', details: `Broadcasted ${corporateHolidays.length} holiday schedule overrides across ${locations.length} stores.` });
   };
 
-  // SMTP & Communications CUD
-  const updateSmtpConfig = (updates: Partial<SmtpConfig>) => {
-    setSmtpConfig(prev => {
-      const next = { ...prev, ...updates };
-      const { smtpPassword: prevPass, ...safePrev } = prev;
-      const { smtpPassword: nextPass, ...safeNext } = next;
-      const safeUpdatedKeys = Object.keys(updates).filter(k => k !== 'smtpPassword');
-      addAuditLog('SMTP Config Updated', 'Setting', 'smtp-cfg', 'SMTP Relay Settings', `Updated SMTP parameters: ${safeUpdatedKeys.join(', ')}`, safePrev, safeNext);
-      return next;
-    });
-  };
-
   const createEmailTemplate = (templateData: Omit<EmailTemplate, 'id' | 'updatedAt'>): EmailTemplate => {
     const newTmpl: EmailTemplate = {
       ...templateData,
@@ -626,20 +608,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       return { success: true, message: `Successfully reverted ${targetLog.entityName} to prior state.` };
     }
 
-    if (targetLog.entityType === 'Setting' && targetLog.entityId === 'smtp-cfg') {
-      setSmtpConfig(prev);
-      addAuditLog(
-        'Audit Rollback Executed',
-        'Setting',
-        'smtp-cfg',
-        'SMTP Relay Settings',
-        `Reverted SMTP configuration to prior snapshot.`,
-        targetLog.newState,
-        prev
-      );
-      return { success: true, message: 'Successfully reverted SMTP settings to prior state.' };
-    }
-
     if (targetLog.entityType === 'Communication') {
       const exists = emailTemplates.some(t => t.id === targetLog.entityId);
       if (exists) {
@@ -704,7 +672,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         corporateHolidays,
         requests,
         auditLogs,
-        smtpConfig,
         emailTemplates,
         notificationRules,
         outboxLogs,
@@ -736,7 +703,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         updateCorporateHoliday,
         deleteCorporateHoliday,
         broadcastHolidaysToFleet,
-        updateSmtpConfig,
         createEmailTemplate,
         updateEmailTemplate,
         deleteEmailTemplate,

@@ -29,7 +29,12 @@ async function prepare(page: Page, role = "Viewer") {
     expect(route.request().headers().authorization).toBe("Bearer synthetic-token");
     await route.fulfill({ json: { uid: "synthetic-uid", email: "user@example.test", emailVerified: true, name: "Synthetic User", role, status: "Active", accessScope: "Company-wide", personId: null, authenticationMethod: "password" } });
   });
-  await page.route("**/api/mail/**", route => route.fulfill({ status: 403, json: { error: { message: "No delivery in browser tests" } } }));
+  await page.route("**/api/mail/**", route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/mail/settings" && route.request().method() === "GET") return route.fulfill({ json: { settings: { smtpHost: "smtp.example.test", smtpPort: 587, smtpUser: "mail-user@example.test", fromName: "Directory Mail", fromEmail: "mail@example.test", replyToEmail: "replies@example.test", stewardAlertRecipient: "steward@example.test", diagnosticRecipients: ["user@example.test"] }, passwordConfigured: true } });
+    if (path === "/api/mail/status") return route.fulfill({ json: { configured: true } });
+    return route.fulfill({ status: 403, json: { error: { message: "No delivery in browser tests" } } });
+  });
   await page.route("**/api/auth/bootstrap", route => route.fulfill({ json: { locations: [], people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [] } }));
 }
 async function restore(page: Page, signedIn: boolean) {
@@ -118,9 +123,30 @@ test("diagnostic mail uses the account session without separate sign-in controls
   await page.getByRole("button", { name: /SMTP Relay/ }).click();
   await expect(page.getByRole("heading", { name: "Secure Mail", exact: true })).toBeVisible();
   await expect(page.getByText("user@example.test", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("SMTP host")).toHaveValue("smtp.example.test");
+  await expect(page.getByText("Secret Manager connected")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save settings" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Sign In With Google|Continue with Google/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send Diagnostic" })).toBeVisible();
   expect(await page.evaluate(() => (window as any).__authCalls.length)).toBe(0);
+});
+
+test("administrators can save non-secret mail settings without a password field", async ({ page }) => {
+  await prepare(page, "System Administrator");
+  let submitted: Record<string, unknown> | null = null;
+  await page.route("**/api/mail/settings", async route => {
+    const settings = { smtpHost: "smtp.example.test", smtpPort: 587, smtpUser: "mail-user@example.test", fromName: "Directory Mail", fromEmail: "mail@example.test", replyToEmail: "replies@example.test", stewardAlertRecipient: "steward@example.test", diagnosticRecipients: ["user@example.test"] };
+    if (route.request().method() === "PUT") submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { settings: submitted || settings, passwordConfigured: true } });
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole("button", { name: /SMTP Relay/ }).click();
+  await page.getByLabel("From name").fill("Shiekh Directory Operations");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByRole("status")).toHaveText("Mail settings saved.");
+  expect(submitted?.fromName).toBe("Shiekh Directory Operations");
+  expect(Object.hasOwn(submitted || {}, "password")).toBe(false);
+  await expect(page.getByLabel(/password/i)).toHaveCount(0);
 });
 
 for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {

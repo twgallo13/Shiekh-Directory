@@ -192,18 +192,6 @@ export interface CorporateHoliday {
   notes?: string;
 }
 
-export interface SmtpConfig {
-  smtpHost: string;
-  smtpPort: number;
-  smtpUser: string;
-  smtpPassword: string;
-  fromName: string;
-  fromEmail: string;
-  replyToEmail: string;
-  stewardAlertRecipient: string;
-  enforceTls: boolean;
-}
-
 export interface EmailTemplate {
   id: string;
   name: string;

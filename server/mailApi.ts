@@ -10,6 +10,7 @@ export const DIAGNOSTIC_TEMPLATE = "tmpl-diagnostic-test";
 export interface MailIdentity {
   uid: string;
   role?: unknown;
+  name?: unknown;
 }
 
 export { AuthenticationUnavailable as MailAuthenticationUnavailable } from "./authAuthority";
@@ -21,10 +22,30 @@ export interface MailConfiguration {
   password: string;
   from: string;
   recipients: string[];
+  fromName?: string;
+  replyTo?: string;
+  steward?: string;
+}
+
+export interface MailSettings {
+  smtpHost: string;
+  smtpPort: 465 | 587;
+  smtpUser: string;
+  fromName: string;
+  fromEmail: string;
+  replyToEmail: string;
+  stewardAlertRecipient: string;
+  diagnosticRecipients: string[];
+}
+
+export interface MailSettingsStore {
+  read(): Promise<MailSettings | null>;
+  write(settings: MailSettings, identity: MailIdentity): Promise<void>;
 }
 
 export interface MailMessage {
   from: string;
+  replyTo?: string;
   to: string;
   subject: string;
   text: string;
@@ -32,12 +53,13 @@ export interface MailMessage {
   disableUrlAccess: true;
 }
 export type MailEvent = "user-invitation" | "request-submitted" | "request-approved" | "request-rejected";
-export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity) => Promise<Omit<MailMessage, "from" | "disableFileAccess" | "disableUrlAccess">>;
+export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">>;
 
 export interface MailApiOptions {
   authenticate: ((token: string) => Promise<MailIdentity>) | null;
   configuration: MailConfiguration | null;
-  send: ((message: MailMessage) => Promise<boolean>) | null;
+  send: ((message: MailMessage, configuration?: MailConfiguration) => Promise<boolean>) | null;
+  settings?: MailSettingsStore;
   resolveEvent?: ResolveMailEvent;
   audit?: (event: Record<string, string>) => void;
 }
@@ -54,7 +76,29 @@ export function loadMailConfiguration(environment: NodeJS.ProcessEnv = process.e
   if (!host || !/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(host)
     || (port !== "465" && port !== "587") || !user || /[\r\n]/.test(user) || !password
     || !mailbox(from) || !recipients.length || !recipients.every(mailbox)) return null;
-  return { host, port: Number(port) as 465 | 587, user, password, from, recipients };
+  const fromName = safeHeader(environment.SMTP_FROM_NAME || "");
+  const replyTo = mailbox(environment.SMTP_REPLY_TO) ? environment.SMTP_REPLY_TO.toLowerCase() : undefined;
+  const steward = mailbox(environment.DIRECTORY_STEWARD_EMAIL) ? environment.DIRECTORY_STEWARD_EMAIL.toLowerCase() : undefined;
+  return { host, port: Number(port) as 465 | 587, user, password, from, recipients, ...(fromName ? { fromName } : {}), ...(replyTo ? { replyTo } : {}), ...(steward ? { steward } : {}) };
+}
+
+export function parseMailSettings(value: unknown): MailSettings | null {
+  if (!plainObject(value) || Object.keys(value).some(field => !["smtpHost", "smtpPort", "smtpUser", "fromName", "fromEmail", "replyToEmail", "stewardAlertRecipient", "diagnosticRecipients"].includes(field))) return null;
+  const smtpHost = typeof value.smtpHost === "string" ? value.smtpHost.trim().toLowerCase() : "";
+  const smtpPort = Number(value.smtpPort);
+  const smtpUser = safeHeader(value.smtpUser);
+  const fromName = safeHeader(value.fromName);
+  const fromEmail = typeof value.fromEmail === "string" ? value.fromEmail.trim().toLowerCase() : "";
+  const replyToEmail = typeof value.replyToEmail === "string" ? value.replyToEmail.trim().toLowerCase() : "";
+  const stewardAlertRecipient = typeof value.stewardAlertRecipient === "string" ? value.stewardAlertRecipient.trim().toLowerCase() : "";
+  const diagnosticRecipients = Array.isArray(value.diagnosticRecipients)
+    ? [...new Set(value.diagnosticRecipients.map(recipient => typeof recipient === "string" ? recipient.trim().toLowerCase() : ""))]
+    : [];
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(smtpHost) || ![465, 587].includes(smtpPort)
+    || !smtpUser || smtpUser.length > 254 || !fromName || fromName.length > 100 || !mailbox(fromEmail)
+    || (replyToEmail && !mailbox(replyToEmail)) || !mailbox(stewardAlertRecipient)
+    || !diagnosticRecipients.length || diagnosticRecipients.length > 20 || !diagnosticRecipients.every(mailbox)) return null;
+  return { smtpHost, smtpPort: smtpPort as 465 | 587, smtpUser, fromName, fromEmail, replyToEmail, stewardAlertRecipient, diagnosticRecipients };
 }
 
 export function smtpTransportOptions(configuration: MailConfiguration) {
@@ -123,9 +167,30 @@ export function createMailRouter(options: MailApiOptions): Router {
     response.locals.mailIdentity = identity;
     next();
   });
-  router.get("/status", (_request, response) => {
+  router.get("/status", async (_request, response) => {
     if (!hasMailRole(response.locals.mailIdentity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
-    response.json({ configured: Boolean(options.configuration && options.send) });
+    try { response.json({ configured: Boolean(await activeConfiguration(options) && options.send) }); }
+    catch { mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
+  });
+  router.get("/settings", async (_request, response) => {
+    if (!hasMailRole(response.locals.mailIdentity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
+    try {
+      const saved = await options.settings?.read();
+      const settings = saved || (options.configuration ? settingsFromConfiguration(options.configuration) : null);
+      if (!settings) return mailError(response, 503, "mail_not_configured", "Mail delivery is not configured.");
+      response.json({ settings, passwordConfigured: Boolean(options.configuration?.password) });
+    } catch { mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
+  });
+  router.put("/settings", json({ limit: "4kb", strict: true, inflate: false }), async (request, response) => {
+    const identity = response.locals.mailIdentity as MailIdentity;
+    if (identity.role !== "System Administrator") return mailError(response, 403, "mail_role_required", "System Administrator access is required.");
+    const settings = parseMailSettings(request.body);
+    if (!settings) return mailError(response, 400, "invalid_mail_settings", "The mail settings are invalid.");
+    if (!options.settings) return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration storage is unavailable.");
+    try {
+      await options.settings.write(settings, identity);
+      response.json({ settings, passwordConfigured: Boolean(options.configuration?.password) });
+    } catch { mailError(response, 503, "mail_configuration_unavailable", "Mail configuration could not be saved."); }
   });
   router.post("/dispatch",
     limiter(10, 10 * 60_000, () => "mail-dispatch-global"),
@@ -147,7 +212,9 @@ export function createMailRouter(options: MailApiOptions): Router {
         || !mailbox(body.recipient) || body.templateId !== DIAGNOSTIC_TEMPLATE) {
         return mailError(response, 400, "invalid_mail_request", "Only an approved recipient and templateId are accepted.");
       }
-      const configuration = options.configuration;
+      let configuration: MailConfiguration | null;
+      try { configuration = await activeConfiguration(options); }
+      catch { return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
       if (!configuration || !options.send) return mailError(response, 503, "mail_not_configured", "Mail delivery is not configured.");
       const recipient = body.recipient.toLowerCase();
       if (!configuration.recipients.includes(recipient)) {
@@ -155,11 +222,11 @@ export function createMailRouter(options: MailApiOptions): Router {
       }
       try {
         const accepted = await options.send({
-          from: configuration.from, to: recipient,
+          from: formattedSender(configuration), ...(configuration.replyTo ? { replyTo: configuration.replyTo } : {}), to: recipient,
           subject: "Shiekh Directory SMTP Relay Verification",
           text: "This diagnostic message confirms that the Shiekh Directory mail relay accepted a message requested by an authorized administrator.",
           disableFileAccess: true, disableUrlAccess: true,
-        });
+        }, configuration);
         if (!accepted) throw new Error("Not accepted");
         response.locals.mailOutcome = "accepted";
         response.json({ success: true, status: "accepted", requestId: response.locals.requestId });
@@ -181,11 +248,14 @@ export function createMailRouter(options: MailApiOptions): Router {
       const identity = response.locals.mailIdentity as MailIdentity;
       if (body.event === "user-invitation" && identity.role !== "System Administrator") return mailError(response, 403, "mail_role_required", "System Administrator access is required.");
       if (body.event !== "request-submitted" && body.event !== "user-invitation" && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
-      if (!options.configuration || !options.send || !options.resolveEvent) return mailError(response, 503, "mail_not_configured", "Mail delivery is not configured.");
+      let configuration: MailConfiguration | null;
+      try { configuration = await activeConfiguration(options); }
+      catch { return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
+      if (!configuration || !options.send || !options.resolveEvent) return mailError(response, 503, "mail_not_configured", "Mail delivery is not configured.");
       try {
-        const resolved = await options.resolveEvent(body.event, body.entityId, identity);
+        const resolved = await options.resolveEvent(body.event, body.entityId, identity, configuration);
         if (!mailbox(resolved.to)) throw new Error("Invalid resolved recipient");
-        const accepted = await options.send({ ...resolved, from: options.configuration.from, disableFileAccess: true, disableUrlAccess: true });
+        const accepted = await options.send({ ...resolved, from: formattedSender(configuration), ...(configuration.replyTo ? { replyTo: configuration.replyTo } : {}), disableFileAccess: true, disableUrlAccess: true }, configuration);
         if (!accepted) throw new Error("Not accepted");
         response.locals.mailOutcome = "accepted";
         response.json({ success: true, status: "accepted", requestId: response.locals.requestId });
@@ -206,6 +276,48 @@ export function createMailRouter(options: MailApiOptions): Router {
 
 function hasMailRole(identity: MailIdentity | undefined) {
   return Boolean(identity && MAIL_ROLES.some(role => role === identity.role));
+}
+
+async function activeConfiguration(options: MailApiOptions): Promise<MailConfiguration | null> {
+  if (!options.configuration) return null;
+  const settings = await options.settings?.read();
+  if (!settings) return options.configuration;
+  return {
+    host: settings.smtpHost,
+    port: settings.smtpPort,
+    user: settings.smtpUser,
+    password: options.configuration.password,
+    from: settings.fromEmail,
+    recipients: settings.diagnosticRecipients,
+    fromName: settings.fromName,
+    ...(settings.replyToEmail ? { replyTo: settings.replyToEmail } : {}),
+    steward: settings.stewardAlertRecipient,
+  };
+}
+
+function settingsFromConfiguration(configuration: MailConfiguration): MailSettings {
+  return {
+    smtpHost: configuration.host,
+    smtpPort: configuration.port,
+    smtpUser: configuration.user,
+    fromName: configuration.fromName || "Shiekh Directory",
+    fromEmail: configuration.from,
+    replyToEmail: configuration.replyTo || "",
+    stewardAlertRecipient: configuration.steward || configuration.from,
+    diagnosticRecipients: configuration.recipients,
+  };
+}
+
+function formattedSender(configuration: MailConfiguration) {
+  return configuration.fromName ? `${configuration.fromName} <${configuration.from}>` : configuration.from;
+}
+
+function safeHeader(value: unknown) {
+  return typeof value === "string" && !/[\r\n]/.test(value) ? value.trim() : "";
+}
+
+function plainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function mailError(response: Response, status: number, code: string, message: string) {

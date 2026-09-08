@@ -9,7 +9,7 @@ import {
 } from "./server/directoryApi";
 import { createFirestoreLocationRepository } from "./server/firestoreLocations";
 import { createMailRouter, createMailSender, loadMailConfiguration } from "./server/mailApi";
-import { createFirestoreMailEventResolver } from "./server/firestoreMail";
+import { createFirestoreMailEventResolver, createFirestoreMailSettingsStore } from "./server/firestoreMail";
 import { createAuthRouter, createFirebaseAuthenticator } from "./server/authAuthority";
 import { createFirestoreDirectoryStore } from "./server/firestoreDirectory";
 import { createDirectoryDataRouter } from "./server/directoryDataApi";
@@ -28,13 +28,15 @@ async function startServer() {
   const PORT = Number(process.env.PORT || 3000);
 
   const mailConfiguration = loadMailConfiguration();
+  const mailSettings = createFirestoreMailSettingsStore();
   const authenticate = createFirebaseAuthenticator();
   const directory = createFirestoreDirectoryStore();
   app.use("/api/auth", createAuthRouter(authenticate, () => directory.read()));
   app.use("/api/mail", createMailRouter({
     authenticate,
     configuration: mailConfiguration,
-    send: mailConfiguration ? createMailSender(mailConfiguration) : null,
+    send: mailConfiguration ? (message, configuration = mailConfiguration) => createMailSender(configuration)!(message) : null,
+    settings: mailSettings,
     resolveEvent: createFirestoreMailEventResolver(),
   }));
   app.use(express.json());

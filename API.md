@@ -136,7 +136,9 @@ Successful SMTP acceptance returns `200 { "success": true, "status": "accepted",
 
 ### Server Configuration
 
-All configuration comes from server environment values: `SMTP_HOST`, `SMTP_PORT` (465 or 587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_ALLOWED_RECIPIENTS` (comma-separated exact mailboxes), and `DIRECTORY_STEWARD_EMAIL`. There is no sender fallback, anonymous transport fallback, or caller override. Port 465 uses implicit TLS; port 587 requires STARTTLS. Both require certificate verification and TLS 1.2 or newer. Attachment/file/URL access and transport debug logging are disabled, and connection/socket timeouts are bounded.
+The SMTP password comes only from the server-side `SMTP_PASSWORD` environment value or its Secret Manager reference. Initial non-secret defaults come from `SMTP_HOST`, `SMTP_PORT` (465 or 587), `SMTP_USER`, `SMTP_FROM_NAME`, `SMTP_FROM_EMAIL`, `SMTP_REPLY_TO`, `SMTP_ALLOWED_RECIPIENTS` (comma-separated exact mailboxes), and `DIRECTORY_STEWARD_EMAIL`. A System Administrator can replace those non-secret values through `PUT /api/mail/settings`; validated settings are stored in the named Firestore database and take effect on the next message without a deployment. Administrators and Directory Data Stewards can read them through `GET /api/mail/settings`. Neither route accepts, stores, or returns the password.
+
+There is no anonymous transport fallback or caller-controlled message override. Port 465 uses implicit TLS; port 587 requires STARTTLS. Both require certificate verification and TLS 1.2 or newer. Attachment/file/URL access and transport debug logging are disabled, and connection/socket timeouts are bounded.
 
 Authenticated workflows use `POST /api/mail/event` with only a fixed `event` and an entity ID. User invitations, correction submissions, approvals, and rejections resolve recipients and message content from current Firestore records on the server. The browser cannot provide a recipient, sender, subject, body, or transport override. Mail delivery occurs only after the associated directory transaction succeeds; a mail failure does not roll back an already-committed directory change.
 

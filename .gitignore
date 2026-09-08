@@ -8,3 +8,6 @@ dist/
 *.log
 .DS_Store
 .vscode/
+
+# Internal migration snapshots may contain employee contact information.
+reference-data/*.csv

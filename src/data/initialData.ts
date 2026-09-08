@@ -4,7 +4,6 @@ import {
   UserProfile, 
   HoursTemplate, 
   WeeklySchedule, 
-  ApiKeyRecord, 
   CorporateHoliday,
   SmtpConfig,
   EmailTemplate,
@@ -12,12 +11,14 @@ import {
   OutboxLogEntry,
   SopRunbook
 } from '../types';
+import { DEFAULT_WEEKLY_HOURS } from '../lib/defaultHours';
+export { DEFAULT_WEEKLY_HOURS } from '../lib/defaultHours';
 
 export const INITIAL_SMTP_CONFIG: SmtpConfig = {
   smtpHost: 'smtp.sendgrid.net',
   smtpPort: 587,
   smtpUser: 'apikey',
-  smtpPassword: 'SG.e9f28a3b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0',
+  smtpPassword: '',
   fromName: 'Shiekh Directory Steward Team',
   fromEmail: 'directory-steward@shiekhshoes.com',
   replyToEmail: 'support@shiekhshoes.org',
@@ -269,29 +270,6 @@ Ensures store leadership changes are promptly reflected in directory feeds and e
   }
 ];
 
-export const INITIAL_API_KEYS: ApiKeyRecord[] = [
-  {
-    id: 'key-01',
-    name: 'Production Store Directory Client',
-    key: 'shk_live_9f823a4b7c1e5d6a8b2c4e6f',
-    role: 'Read / Directory API',
-    createdAt: '2026-01-15T08:00:00Z',
-    expiresAt: '2027-01-15T08:00:00Z',
-    status: 'Active',
-    lastUsedAt: '2026-09-07T02:15:00Z'
-  },
-  {
-    id: 'key-02',
-    name: 'POS Fleet Roster Sync Key',
-    key: 'shk_live_7c4d2e1a9b5f8e3c6a0b4d2e',
-    role: 'Read / Hours Sync',
-    createdAt: '2026-03-01T10:00:00Z',
-    expiresAt: '2027-03-01T10:00:00Z',
-    status: 'Active',
-    lastUsedAt: '2026-09-06T23:45:00Z'
-  }
-];
-
 export const INITIAL_CORPORATE_HOLIDAYS: CorporateHoliday[] = [
   {
     id: 'hol-01',
@@ -360,16 +338,6 @@ export const INITIAL_USERS: UserProfile[] = [
     role: 'Customer Support Lead',
   }
 ];
-
-export const DEFAULT_WEEKLY_HOURS: WeeklySchedule = {
-  monday: { open: '10:00', close: '20:00', isClosed: false },
-  tuesday: { open: '10:00', close: '20:00', isClosed: false },
-  wednesday: { open: '10:00', close: '20:00', isClosed: false },
-  thursday: { open: '10:00', close: '20:00', isClosed: false },
-  friday: { open: '10:00', close: '21:00', isClosed: false },
-  saturday: { open: '10:00', close: '21:00', isClosed: false },
-  sunday: { open: '11:00', close: '18:00', isClosed: false },
-};
 
 export const INITIAL_HOURS_TEMPLATES: HoursTemplate[] = [
   {

@@ -1,0 +1,1 @@
+export { firebaseAuthenticator as firebaseMailAuthenticator, createFirebaseAuthenticator as createFirebaseMailAuthenticator } from "./authAuthority";

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Search, 
-  ShieldCheck, 
+  UserRound,
+  LogOut,
   Store,
   Bell, 
   Check, 
@@ -13,6 +14,9 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import { Link } from 'react-router-dom';
 
 interface HeaderProps {
   onOpenSearch: () => void;
@@ -22,8 +26,6 @@ interface HeaderProps {
   showBackButton: boolean;
 }
 
-type ThemeMode = 'light' | 'dark' | 'system';
-
 export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
   onToggleNavigation,
@@ -31,31 +33,15 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateBack,
   showBackButton,
 }) => {
-  const { currentUser, users, switchUser, requests } = useDirectory();
+  const { currentUser, requests } = useDirectory();
+  const { signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    const savedTheme = localStorage.getItem('app-theme');
-    return savedTheme === 'dark' || savedTheme === 'system' ? savedTheme : 'light';
-  });
   const notificationsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const applyTheme = () => {
-      const shouldUseDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
-      document.documentElement.classList.toggle('dark', shouldUseDark);
-      document.documentElement.style.colorScheme = shouldUseDark ? 'dark' : 'light';
-    };
-
-    applyTheme();
-    localStorage.setItem('app-theme', theme);
-    mediaQuery.addEventListener('change', applyTheme);
-    return () => mediaQuery.removeEventListener('change', applyTheme);
-  }, [theme]);
-
   const cycleTheme = () => {
-    setTheme(currentTheme => currentTheme === 'light' ? 'dark' : currentTheme === 'dark' ? 'system' : 'light');
+    setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
   };
 
   // Close notifications on outside click
@@ -100,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Menu className="h-4 w-4" aria-hidden="true" />
           </button>
-          <div className="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center text-white font-black shadow-md shadow-red-600/20">
+          <div className="hidden w-9 h-9 shrink-0 rounded-lg bg-red-600 sm:flex items-center justify-center text-white font-black shadow-md shadow-red-600/20">
             <Store className="w-5 h-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
@@ -109,7 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           {showBackButton && (
             <button
               type="button"
@@ -136,24 +122,15 @@ export const Header: React.FC<HeaderProps> = ({
             </kbd>
           </button>
 
-        {/* User Role Switcher Simulation */}
-        <div className="hidden items-center gap-2 bg-neutral-50 p-1 rounded-lg border border-neutral-200 text-xs md:flex">
-          <div className="hidden items-center gap-1.5 px-2 text-neutral-700 xl:flex">
-            <ShieldCheck className="w-3.5 h-3.5 text-red-600" />
-            <span className="font-medium">{currentUser.name}</span>
+        <details className="relative text-sm">
+          <summary aria-label="Account menu" title="Account menu" className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-neutral-200 text-neutral-600"><UserRound className="h-4 w-4" /></summary>
+          <div className="absolute right-0 mt-2 w-60 max-w-[calc(100vw-2rem)] space-y-2 rounded-lg border border-neutral-200 bg-white p-3 shadow-lg">
+            <p className="break-words font-semibold">{currentUser.name}</p>
+            <p className="text-xs text-neutral-500">{currentUser.role}</p>
+            <Link to="/account" onClick={event => event.currentTarget.closest('details')?.removeAttribute('open')} className="flex items-center gap-2 rounded-md p-2 hover:bg-neutral-100"><UserRound className="h-4 w-4" />My Profile / Account</Link>
+            <button type="button" onClick={() => void signOut()} className="flex w-full items-center gap-2 rounded-md p-2 text-left hover:bg-neutral-100"><LogOut className="h-4 w-4" />Sign out</button>
           </div>
-          <select
-            value={currentUser.id}
-            onChange={(e) => switchUser(e.target.value)}
-            className="bg-white border border-neutral-300 rounded px-2 py-1 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
-          >
-            {users.map(u => (
-              <option key={u.id} value={u.id}>
-                {u.role} ({u.name.split(' ')[0]})
-              </option>
-            ))}
-          </select>
-        </div>
+        </details>
 
         <button
           type="button"

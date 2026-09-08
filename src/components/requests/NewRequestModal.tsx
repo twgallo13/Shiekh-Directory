@@ -3,7 +3,7 @@ import { LocationRecord, RequestChangeType, Person } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { PersonSelector } from '../people/PersonSelector';
 import { WeeklyHoursEditor } from '../common/WeeklyHoursEditor';
-import { DEFAULT_WEEKLY_HOURS } from '../../data/initialData';
+import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
 import { Send, AlertCircle } from 'lucide-react';
 import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';

@@ -1,6 +1,6 @@
 import type { LocationRecord, PersonRecord } from '../types';
 
-export type NavigationTab = 'dashboard' | 'locations' | 'people' | 'requests' | 'print' | 'admin';
+export type NavigationTab = 'dashboard' | 'locations' | 'people' | 'requests' | 'print' | 'admin' | 'account';
 
 export const TAB_PATHS: Record<NavigationTab, string> = {
   dashboard: '/',
@@ -9,6 +9,7 @@ export const TAB_PATHS: Record<NavigationTab, string> = {
   requests: '/requests',
   print: '/print',
   admin: '/admin',
+  account: '/account',
 };
 
 export const TAB_TITLES: Record<NavigationTab, string> = {
@@ -18,9 +19,11 @@ export const TAB_TITLES: Record<NavigationTab, string> = {
   requests: 'Change Requests',
   print: 'Directory PDF',
   admin: 'Admin & Integrations',
+  account: 'My Profile',
 };
 
 export const getTabForPath = (pathname: string): NavigationTab => {
+  if (pathname.startsWith('/account')) return 'account';
   if (pathname.startsWith('/locations')) return 'locations';
   if (pathname.startsWith('/people')) return 'people';
   if (pathname.startsWith('/requests')) return 'requests';

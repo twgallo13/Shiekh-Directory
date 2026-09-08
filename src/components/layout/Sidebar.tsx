@@ -5,7 +5,8 @@ import {
   Users, 
   GitPullRequest, 
   Printer, 
-  Sliders
+  Sliders,
+  UserRound
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import type { NavigationTab } from '../../lib/navigation';
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
       badgeColor: 'bg-red-600 text-white'
     },
     { id: 'print' as const, label: '1-Sheet Directory PDF', icon: Printer },
+    { id: 'account' as const, label: 'My Profile', icon: UserRound },
     ...(isAdminOrSteward ? [
       { id: 'admin' as const, label: 'Admin & Integrations', icon: Sliders }
     ] : [])

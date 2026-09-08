@@ -11,7 +11,6 @@ import {
   RefreshCw, 
   CheckCircle2, 
   AlertCircle, 
-  Copy, 
   Key, 
   Users, 
   History,
@@ -24,7 +23,6 @@ import {
   Send,
   Cloud,
   Edit2,
-  Check,
   X,
   Radio,
   Star,
@@ -46,7 +44,7 @@ import { WeeklyHoursEditor } from '../common/WeeklyHoursEditor';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PageHeader } from '../common/PageHeader';
 import { useDialogFocus } from '../common/useDialogFocus';
-import { DEFAULT_WEEKLY_HOURS } from '../../data/initialData';
+import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
 
@@ -67,7 +65,7 @@ type AdminTab =
   | 'sop';
 
 type PendingAdminAction = {
-  kind: 'hours-template' | 'holiday' | 'api-key' | 'user';
+  kind: 'hours-template' | 'holiday' | 'user';
   id: string;
   name: string;
 };
@@ -80,7 +78,6 @@ export const AdminIntegrationsView: React.FC = () => {
     auditLogs, 
     currentUser, 
     hoursTemplates,
-    apiKeys,
     corporateHolidays,
     emailTemplates,
     notificationRules,
@@ -93,8 +90,6 @@ export const AdminIntegrationsView: React.FC = () => {
     createUserAccount,
     updateUserAccount,
     deleteUserAccount,
-    generateApiKey,
-    revokeApiKey,
     addCorporateHoliday,
     updateCorporateHoliday,
     deleteCorporateHoliday,
@@ -115,9 +110,6 @@ export const AdminIntegrationsView: React.FC = () => {
         break;
       case 'holiday':
         deleteCorporateHoliday(pendingAdminAction.id);
-        break;
-      case 'api-key':
-        revokeApiKey(pendingAdminAction.id);
         break;
       case 'user':
         deleteUserAccount(pendingAdminAction.id);
@@ -176,18 +168,6 @@ export const AdminIntegrationsView: React.FC = () => {
     storePages: true
   });
 
-  // Developer API Tab State
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const [newKeyForm, setNewKeyForm] = useState({
-    name: '',
-    role: 'Read / Directory API',
-    expirationDays: 365
-  });
-  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
-  const [webhookUrl, setWebhookUrl] = useState('https://integrations.shiekhshoes.com/v1/webhooks/fleet-events');
-  const [isTestingWebhook, setIsTestingWebhook] = useState(false);
-  const [webhookTestResult, setWebhookTestResult] = useState<{ status: number; latency: number; timestamp: string } | null>(null);
-
   // Hours & Holidays Tab State
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<HoursTemplate | null>(null);
@@ -208,22 +188,14 @@ export const AdminIntegrationsView: React.FC = () => {
   });
   const [broadcastSuccess, setBroadcastSuccess] = useState<string | null>(null);
 
-  // Cloud & Firebase Tab State
-  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
-  const [cloudSyncMessage, setCloudSyncMessage] = useState<string | null>(null);
-  const [isPingingHeartbeat, setIsPingingHeartbeat] = useState(false);
-  const [heartbeatLatency, setHeartbeatLatency] = useState<number | null>(null);
-
   // Governance & Users Tab State
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const templateDialogRef = useRef<HTMLDivElement>(null);
   const holidayDialogRef = useRef<HTMLDivElement>(null);
-  const apiKeyDialogRef = useRef<HTMLDivElement>(null);
   const userDialogRef = useRef<HTMLDivElement>(null);
   const addStoreDialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(isTemplateModalOpen, () => setIsTemplateModalOpen(false), templateDialogRef);
   useDialogFocus(isHolidayModalOpen, () => setIsHolidayModalOpen(false), holidayDialogRef);
-  useDialogFocus(isApiKeyModalOpen, () => setIsApiKeyModalOpen(false), apiKeyDialogRef);
   useDialogFocus(isUserModalOpen, () => setIsUserModalOpen(false), userDialogRef);
   useDialogFocus(isAddStoreOpen, () => setIsAddStoreOpen(false), addStoreDialogRef);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
@@ -346,36 +318,6 @@ export const AdminIntegrationsView: React.FC = () => {
     }, 1400);
   };
 
-  // API Key copy
-  const handleCopyKey = (key: string, id: string) => {
-    navigator.clipboard.writeText(key);
-    setCopiedKeyId(id);
-    setTimeout(() => setCopiedKeyId(null), 2000);
-  };
-
-  // API Key create
-  const handleGenerateKeySubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newKeyForm.name) return;
-    generateApiKey(newKeyForm.name, newKeyForm.role, newKeyForm.expirationDays);
-    setIsApiKeyModalOpen(false);
-    setNewKeyForm({ name: '', role: 'Read / Directory API', expirationDays: 365 });
-  };
-
-  // Webhook Test Ping
-  const handleTestWebhookPing = () => {
-    setIsTestingWebhook(true);
-    setTimeout(() => {
-      setIsTestingWebhook(false);
-      const simulatedLatency = Math.floor(25 + Math.random() * 35);
-      setWebhookTestResult({
-        status: 200,
-        latency: simulatedLatency,
-        timestamp: new Date().toLocaleTimeString()
-      });
-    }, 700);
-  };
-
   // Hours Template CUD Handlers
   const handleOpenNewTemplate = () => {
     setEditingTemplate(null);
@@ -456,24 +398,6 @@ export const AdminIntegrationsView: React.FC = () => {
     broadcastHolidaysToFleet();
     setBroadcastSuccess(`Broadcasted ${corporateHolidays.length} corporate holiday schedules across all ${locations.length} stores.`);
     setTimeout(() => setBroadcastSuccess(null), 4500);
-  };
-
-  // Cloud & Firebase simulation
-  const handlePushCloud = () => {
-    setIsCloudSyncing(true);
-    setTimeout(() => {
-      setIsCloudSyncing(false);
-      setCloudSyncMessage(`Pushed ${locations.length} locations, ${people.length} personnel, and ${hoursTemplates.length} templates to Cloud Firestore.`);
-      setTimeout(() => setCloudSyncMessage(null), 4000);
-    }, 1200);
-  };
-
-  const handlePingHeartbeat = () => {
-    setIsPingingHeartbeat(true);
-    setTimeout(() => {
-      setIsPingingHeartbeat(false);
-      setHeartbeatLatency(Math.floor(18 + Math.random() * 20));
-    }, 500);
   };
 
   // User CUD Handlers
@@ -645,9 +569,8 @@ export const AdminIntegrationsView: React.FC = () => {
       items: [
         {
           id: 'api' as AdminTab,
-          label: 'API Keys',
+          label: 'Directory API',
           icon: Key,
-          badge: apiKeys.length,
           keywords: ['api', 'keys', 'developer', 'tokens', 'webhooks', 'endpoints']
         },
         {
@@ -782,7 +705,7 @@ export const AdminIntegrationsView: React.FC = () => {
         <div className="space-y-6">
           {/* Hours Templates Card */}
           <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs">
-            <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-lg bg-amber-50 text-amber-600 border border-amber-200">
                   <Clock className="w-4 h-4" />
@@ -1091,21 +1014,12 @@ export const AdminIntegrationsView: React.FC = () => {
                   <Key className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-neutral-900">Developer API Keys & Scoped Tokens</h3>
+                  <h3 className="text-sm font-bold text-neutral-900">Directory API Access</h3>
                   <p className="text-xs text-neutral-500">
-                    Service credentials for Point of Sale synchronization, mobile apps, and directory consumers
+                    Read-only location synchronization for trusted server clients
                   </p>
                 </div>
               </div>
-
-              <button
-                type="button"
-                onClick={() => setIsApiKeyModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Generate API Key</span>
-              </button>
             </div>
 
             {/* Directory API Banner */}
@@ -1117,80 +1031,26 @@ export const AdminIntegrationsView: React.FC = () => {
                 </span>
               </div>
               <div className="font-mono text-xs bg-white p-2.5 rounded-lg border border-neutral-300 text-neutral-800 flex items-center justify-between">
-                <span>https://api.shiekh.com/v1/locations/{'{store_number}'}</span>
+                <span>/api/v1/locations/{'{store_number}'}</span>
                 <span className="text-[10px] text-neutral-500 font-sans">Returns the active directory record</span>
               </div>
               <p className="text-[11px] text-neutral-500">
-                Read-only clients receive the current store profile, operating status, leadership assignments, and published hours.
+                Responses contain public store details and published hours. Personnel contact fields are excluded.
               </p>
             </div>
 
-            {/* Active API Keys Table */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-neutral-800">Active Service API Keys</label>
-              <div className="overflow-x-auto border border-neutral-200 rounded-lg">
-                <table className="w-full text-left text-xs text-neutral-700">
-                  <thead className="bg-neutral-50 text-neutral-500 font-semibold border-b border-neutral-200 text-[11px]">
-                    <tr>
-                      <th className="p-3">Key Name</th>
-                      <th className="p-3">Role / Scope</th>
-                      <th className="p-3">API Token</th>
-                      <th className="p-3">Expires</th>
-                      <th className="p-3">Status</th>
-                      <th className="p-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {apiKeys.map(k => (
-                      <tr key={k.id} className="hover:bg-neutral-50">
-                        <td className="p-3 font-semibold text-neutral-900">{k.name}</td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 bg-neutral-100 text-neutral-700 text-[10px] font-medium rounded border border-neutral-200">
-                            {k.role}
-                          </span>
-                        </td>
-                        <td className="p-3 font-mono text-[11px] text-neutral-600">
-                          {k.status === 'Active' ? `${k.key.substring(0, 16)}••••••••` : '••••••••••••••••••••••••'}
-                        </td>
-                        <td className="p-3 text-neutral-500 text-[11px]">
-                          {new Date(k.expiresAt).toLocaleDateString()}
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
-                            k.status === 'Active' 
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
-                              : 'bg-rose-50 text-rose-700 border border-rose-200'
-                          }`}>
-                            {k.status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {k.status === 'Active' && (
-                              <button
-                                type="button"
-                                onClick={() => handleCopyKey(k.key, k.id)}
-                                className="px-2 py-1 bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-300 rounded text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
-                              >
-                                {copiedKeyId === k.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                                <span>{copiedKeyId === k.id ? 'Copied' : 'Copy'}</span>
-                              </button>
-                            )}
-                            {k.status === 'Active' && (
-                              <button
-                                type="button"
-                                onClick={() => setPendingAdminAction({ kind: 'api-key', id: k.id, name: k.name })}
-                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[11px] font-semibold cursor-pointer"
-                              >
-                                Revoke
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="border border-neutral-200 rounded-lg p-3">
+                <div className="text-neutral-500 text-[11px]">Credential authority</div>
+                <div className="font-semibold text-neutral-900 mt-1">Server runtime</div>
+              </div>
+              <div className="border border-neutral-200 rounded-lg p-3">
+                <div className="text-neutral-500 text-[11px]">Browser token storage</div>
+                <div className="font-semibold text-emerald-700 mt-1">Disabled</div>
+              </div>
+              <div className="border border-neutral-200 rounded-lg p-3">
+                <div className="text-neutral-500 text-[11px]">Required scope</div>
+                <div className="font-mono font-semibold text-neutral-900 mt-1">locations:read</div>
               </div>
             </div>
 
@@ -1199,39 +1059,29 @@ export const AdminIntegrationsView: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-bold text-xs text-neutral-900">Webhook Dispatch Integration</h4>
-                  <p className="text-[11px] text-neutral-500">Real-time webhook events triggered on location edits, store hours updates, and emergency closures</p>
+                  <p className="text-[11px] text-neutral-500">Unavailable: webhook dispatch is not implemented.</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <input
                   type="url"
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  disabled
+                  aria-label="Webhook endpoint unavailable"
+                  placeholder="Not configured"
                   className="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-xs font-mono text-neutral-900 focus:outline-none focus:border-purple-500 focus:bg-white"
                 />
                 <button
                   type="button"
-                  disabled={isTestingWebhook}
-                  onClick={handleTestWebhookPing}
+                  disabled
+                  title="Unavailable until server-side webhook dispatch is implemented"
                   className="flex items-center gap-1.5 px-3.5 py-2 bg-neutral-800 hover:bg-neutral-900 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors shrink-0"
                 >
-                  <Send className={`w-3.5 h-3.5 ${isTestingWebhook ? 'animate-pulse' : ''}`} />
-                  <span>{isTestingWebhook ? 'Pinging...' : 'Test Webhook Ping'}</span>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Webhook Unavailable</span>
                 </button>
               </div>
 
-              {webhookTestResult && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>HTTP 200 OK — Webhook dispatch received successfully by endpoint.</span>
-                  </div>
-                  <div className="font-mono text-[11px] text-emerald-700">
-                    Latency: {webhookTestResult.latency}ms • {webhookTestResult.timestamp}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -1250,67 +1100,53 @@ export const AdminIntegrationsView: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-neutral-900">Cloud Firestore & Persistence Engine</h3>
-                  <p className="text-xs text-neutral-500">Live database synchronization, schema validation, and health checks</p>
+                  <p className="text-xs text-neutral-500">Cloud writes and health checks unavailable. Counts below are browser-local, not Firestore.</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={isPingingHeartbeat}
-                  onClick={handlePingHeartbeat}
+                  disabled
+                  title="No server health-check integration"
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-300 rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
                 >
-                  <Radio className={`w-3.5 h-3.5 text-cyan-600 ${isPingingHeartbeat ? 'animate-ping' : ''}`} />
-                  <span>Heartbeat Ping</span>
+                  <Radio className="w-3.5 h-3.5 text-cyan-600" />
+                  <span>Health Check Unavailable</span>
                 </button>
                 <button
                   type="button"
-                  disabled={isCloudSyncing}
-                  onClick={handlePushCloud}
+                  disabled
+                  title="Cloud writes are not implemented; local edits do not update the API"
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
-                  <span>Push Local to Cloud</span>
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Cloud Push Unavailable</span>
                 </button>
               </div>
             </div>
-
-            {cloudSyncMessage && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center gap-2 animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{cloudSyncMessage}</span>
-              </div>
-            )}
-
-            {heartbeatLatency !== null && (
-              <div className="p-3 bg-cyan-50 border border-cyan-200 text-cyan-800 rounded-lg text-xs flex items-center justify-between">
-                <span>Firestore Cloud Connection: <strong>Healthy & Connected</strong></span>
-                <span className="font-mono text-cyan-700">Ping: {heartbeatLatency}ms (us-west1)</span>
-              </div>
-            )}
 
             {/* Collection Inspector */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
               <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl">
                 <div className="text-[11px] text-neutral-500 font-medium">locations</div>
                 <div className="text-base font-bold text-neutral-900 mt-1">{locations.length} Documents</div>
-                <div className="text-[10px] text-emerald-600 font-semibold mt-1">● Synced & Validated</div>
+                <div className="text-[10px] text-neutral-500 font-semibold mt-1">Local only</div>
               </div>
               <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl">
                 <div className="text-[11px] text-neutral-500 font-medium">personnel</div>
                 <div className="text-base font-bold text-neutral-900 mt-1">{people.length} Documents</div>
-                <div className="text-[10px] text-emerald-600 font-semibold mt-1">● Synced & Validated</div>
+                <div className="text-[10px] text-neutral-500 font-semibold mt-1">Local only</div>
               </div>
               <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl">
                 <div className="text-[11px] text-neutral-500 font-medium">hours_templates</div>
                 <div className="text-base font-bold text-neutral-900 mt-1">{hoursTemplates.length} Documents</div>
-                <div className="text-[10px] text-emerald-600 font-semibold mt-1">● Synced & Validated</div>
+                <div className="text-[10px] text-neutral-500 font-semibold mt-1">Local only</div>
               </div>
               <div className="p-3 bg-neutral-50 border border-neutral-200 rounded-xl">
                 <div className="text-[11px] text-neutral-500 font-medium">audit_logs</div>
                 <div className="text-base font-bold text-neutral-900 mt-1">{auditLogs.length} Records</div>
-                <div className="text-[10px] text-emerald-600 font-semibold mt-1">● Immutable Log Active</div>
+                <div className="text-[10px] text-neutral-500 font-semibold mt-1">Local only</div>
               </div>
             </div>
           </div>
@@ -1414,6 +1250,7 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* ======================================================== */}
       {(activeTab === 'governance' || activeTab === 'rbac') && (
         <div className="space-y-6">
+          <p role="status" className="text-sm text-neutral-600">Account management and invitations are unavailable pending the secure access-management phase.</p>
           {/* User Roles Card */}
           <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1422,9 +1259,10 @@ export const AdminIntegrationsView: React.FC = () => {
                 <h3 className="text-sm font-bold text-neutral-900">User Accounts & Role Permissions</h3>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-neutral-500">{users.length} authorized accounts</span>
+                <span className="text-xs text-neutral-500">Server-managed access</span>
                 <button
                   type="button"
+                  disabled
                   onClick={handleOpenNewUser}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
                 >
@@ -1761,85 +1599,6 @@ export const AdminIntegrationsView: React.FC = () => {
       )}
 
       {/* ======================================================== */}
-      {/* MODAL: Generate API Key (CUD) */}
-      {/* ======================================================== */}
-      {isApiKeyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsApiKeyModalOpen(false)}>
-          <div ref={apiKeyDialogRef} role="dialog" aria-modal="true" aria-label="Generate scoped API key" tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-md w-full shadow-2xl">
-            <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-neutral-900">Generate Scoped API Key</h3>
-              <button
-                type="button"
-                onClick={() => setIsApiKeyModalOpen(false)}
-                className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleGenerateKeySubmit} className="p-5 space-y-4 text-xs">
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Key Name / Client ID *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Mobile App Store Locator Key"
-                  value={newKeyForm.name}
-                  onChange={(e) => setNewKeyForm({ ...newKeyForm, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-purple-500 focus:bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Scoped Role</label>
-                <select
-                  value={newKeyForm.role}
-                  onChange={(e) => setNewKeyForm({ ...newKeyForm, role: e.target.value })}
-                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
-                >
-                  <option value="Read / Directory API">Read / Directory API</option>
-                  <option value="Read / Hours Sync">Read / Hours Sync</option>
-                  <option value="POS Fleet Roster Integration">POS Fleet Roster Integration</option>
-                  <option value="Full Administrative Service">Full Administrative Service</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Expiration Period</label>
-                <select
-                  value={newKeyForm.expirationDays}
-                  onChange={(e) => setNewKeyForm({ ...newKeyForm, expirationDays: Number(e.target.value) })}
-                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
-                >
-                  <option value={30}>30 Days</option>
-                  <option value={90}>90 Days</option>
-                  <option value={180}>180 Days</option>
-                  <option value={365}>1 Year (Recommended)</option>
-                </select>
-              </div>
-
-              <div className="p-4 bg-neutral-50 -mx-5 -mb-5 mt-5 border-t border-neutral-200 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsApiKeyModalOpen(false)}
-                  className="px-4 py-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-lg font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  <span>Generate Key</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
       {/* MODAL: Add / Edit User (CUD) */}
       {/* ======================================================== */}
       {isUserModalOpen && (
@@ -2086,11 +1845,9 @@ export const AdminIntegrationsView: React.FC = () => {
 
       <ConfirmDialog
         isOpen={pendingAdminAction !== null}
-        title={pendingAdminAction?.kind === 'api-key' ? 'Revoke API key?' : `Delete ${pendingAdminAction?.kind === 'user' ? 'user account' : pendingAdminAction?.kind === 'holiday' ? 'holiday' : 'hours template'}?`}
-        description={pendingAdminAction?.kind === 'api-key'
-          ? `“${pendingAdminAction.name}” will stop working immediately. This action cannot be undone.`
-          : `“${pendingAdminAction?.name || ''}” will be permanently deleted. This action cannot be undone.`}
-        confirmLabel={pendingAdminAction?.kind === 'api-key' ? 'Revoke key' : 'Delete'}
+        title={`Delete ${pendingAdminAction?.kind === 'user' ? 'user account' : pendingAdminAction?.kind === 'holiday' ? 'holiday' : 'hours template'}?`}
+        description={`“${pendingAdminAction?.name || ''}” will be permanently deleted. This action cannot be undone.`}
+        confirmLabel="Delete"
         onConfirm={handleConfirmAdminAction}
         onCancel={() => setPendingAdminAction(null)}
       />

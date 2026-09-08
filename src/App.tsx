@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom';
-import { DirectoryProvider, useDirectory } from './context/DirectoryContext';
+import { useDirectory } from './context/DirectoryContext';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { Toast } from './components/common/Toast';
@@ -13,6 +13,11 @@ import {
   type NavigationTab,
 } from './lib/navigation';
 import { LocationRecord, PersonRecord } from './types';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { AuthGate } from './components/auth/AuthGate';
+import { AccountView } from './components/auth/AccountView';
+import { DirectoryBootstrap } from './components/auth/DirectoryBootstrap';
 
 const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then(module => ({ default: module.DashboardView })));
 const LocationsView = lazy(() => import('./components/locations/LocationsView').then(module => ({ default: module.LocationsView })));
@@ -200,6 +205,7 @@ function AppContent() {
                 <Route path="/requests" element={requestsView} />
                 <Route path="/requests/new" element={requestsView} />
                 <Route path="/print" element={<PrintSheetView />} />
+                <Route path="/account" element={<AccountView />} />
                 <Route
                   path="/admin"
                   element={isAdminOrSteward ? <AdminIntegrationsView /> : <Navigate to="/" replace />}
@@ -223,7 +229,7 @@ function AppContent() {
           />
         )}
 
-        {editingLocation && (
+        {editingLocation && isAdminOrSteward && (
           <LocationEditModal
             location={editingLocation}
             mode={isCreatingLocation ? 'create' : 'edit'}
@@ -264,10 +270,16 @@ function AppContent() {
   );
 }
 
-export default function App() {
+function AuthorizedDirectory() {
+  const { account } = useAuth();
+  if (!account) return null;
   return (
-    <DirectoryProvider>
+    <DirectoryBootstrap key={account.uid}>
       <AppContent />
-    </DirectoryProvider>
+    </DirectoryBootstrap>
   );
+}
+
+export default function App() {
+  return <ThemeProvider><AuthProvider><AuthGate><AuthorizedDirectory /></AuthGate></AuthProvider></ThemeProvider>;
 }

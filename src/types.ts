@@ -19,6 +19,8 @@ export type RecordStatus = 'Active' | 'Retired' | 'Draft';
 export type ContactPrivacyLevel = 'Public' | 'Internal' | 'Restricted';
 
 export type UserRole = 
+  | 'Viewer'
+  | 'Editor'
   | 'Directory Data Steward' 
   | 'Store Operations Leadership' 
   | 'Store Manager' 
@@ -31,6 +33,8 @@ export interface UserProfile {
   email: string;
   role: UserRole;
   storeNumber?: string;
+  accessScope?: string;
+  personId?: string;
   status?: 'Active' | 'Revoked' | 'Suspended';
 }
 
@@ -177,17 +181,6 @@ export interface HoursTemplate {
   schedule: WeeklySchedule;
   defaultForTypes?: LocationType[];
   isDefault?: boolean;
-}
-
-export interface ApiKeyRecord {
-  id: string;
-  name: string;
-  key: string;
-  role: string;
-  createdAt: string;
-  expiresAt: string;
-  status: 'Active' | 'Revoked';
-  lastUsedAt?: string;
 }
 
 export interface CorporateHoliday {

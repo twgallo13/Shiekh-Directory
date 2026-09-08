@@ -5,7 +5,6 @@ import {
   UserProfile, 
   UpdateRequest, 
   HoursTemplate, 
-  ApiKeyRecord,
   CorporateHoliday,
   AuditLogEntry, 
   ContactPrivacyLevel,
@@ -16,20 +15,11 @@ import {
   OutboxLogEntry,
   SopRunbook
 } from '../types';
-import { 
-  INITIAL_LOCATIONS, 
-  INITIAL_PEOPLE, 
-  INITIAL_USERS, 
-  INITIAL_HOURS_TEMPLATES,
-  INITIAL_API_KEYS,
-  INITIAL_CORPORATE_HOLIDAYS,
-  INITIAL_SMTP_CONFIG,
-  INITIAL_EMAIL_TEMPLATES,
-  INITIAL_NOTIFICATION_RULES,
-  INITIAL_OUTBOX_LOGS,
-  INITIAL_SOP_RUNBOOKS
-} from '../data/initialData';
+import type { DirectorySeed } from '../lib/directorySeed';
 import { mergeHoursTemplates, migrateDirectoryRelationships } from '../lib/directoryMigration';
+import { mailRequest } from '../lib/mailClient';
+import { useAuth } from './AuthContext';
+import { serializeLocalDraft } from '../lib/authSession';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -37,7 +27,6 @@ interface DirectoryContextType {
   users: UserProfile[];
   currentUser: UserProfile;
   hoursTemplates: HoursTemplate[];
-  apiKeys: ApiKeyRecord[];
   corporateHolidays: CorporateHoliday[];
   requests: UpdateRequest[];
   auditLogs: AuditLogEntry[];
@@ -46,7 +35,6 @@ interface DirectoryContextType {
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
   sopRunbooks: SopRunbook[];
-  switchUser: (userId: string) => void;
   updateLocation: (id: string, updates: Partial<LocationRecord>) => void;
   createLocation: (location: Omit<LocationRecord, 'id'>) => LocationRecord;
   deleteLocation: (id: string) => void;
@@ -68,8 +56,6 @@ interface DirectoryContextType {
   createUserAccount: (user: Omit<UserProfile, 'id'>) => UserProfile;
   updateUserAccount: (id: string, updates: Partial<UserProfile>) => void;
   deleteUserAccount: (id: string) => void;
-  generateApiKey: (name: string, role: string, expirationDays?: number) => ApiKeyRecord;
-  revokeApiKey: (id: string) => void;
   addCorporateHoliday: (holiday: Omit<CorporateHoliday, 'id'>) => CorporateHoliday;
   updateCorporateHoliday: (id: string, updates: Partial<CorporateHoliday>) => void;
   deleteCorporateHoliday: (id: string) => void;
@@ -92,7 +78,7 @@ const LOCATIONS_STORAGE_KEY = 'shiekh_locations_v3';
 const PEOPLE_STORAGE_KEY = 'shiekh_people_v3';
 const USERS_STORAGE_KEY = 'shiekh_users_v3';
 const HOURS_TEMPLATES_STORAGE_KEY = 'shiekh_hours_templates_v3';
-const API_KEYS_STORAGE_KEY = 'shiekh_api_keys_v3';
+const LEGACY_API_KEYS_STORAGE_KEY = 'shiekh_api_keys_v3';
 const CORPORATE_HOLIDAYS_STORAGE_KEY = 'shiekh_corporate_holidays_v3';
 const REQUESTS_STORAGE_KEY = 'shiekh_requests_v3';
 const AUDIT_STORAGE_KEY = 'shiekh_audit_v3';
@@ -101,6 +87,7 @@ const EMAIL_TEMPLATES_STORAGE_KEY = 'shiekh_email_templates_v3';
 const NOTIFICATION_RULES_STORAGE_KEY = 'shiekh_notification_rules_v3';
 const OUTBOX_LOGS_STORAGE_KEY = 'shiekh_outbox_logs_v3';
 const SOP_RUNBOOKS_STORAGE_KEY = 'shiekh_sop_runbooks_v3';
+const INITIAL_SMTP_CONFIG: SmtpConfig = { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPassword: '', fromName: '', fromEmail: '', replyToEmail: '', stewardAlertRecipient: '', enforceTls: true };
 
 const readStoredArray = <T,>(key: string, fallback: T[]): T[] => {
   const saved = localStorage.getItem(key);
@@ -113,7 +100,11 @@ const readStoredArray = <T,>(key: string, fallback: T[]): T[] => {
   }
 };
 
-export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: DirectorySeed }> = ({ children, seed }) => {
+  const { locations: INITIAL_LOCATIONS, people: INITIAL_PEOPLE, hoursTemplates: INITIAL_HOURS_TEMPLATES, corporateHolidays: INITIAL_CORPORATE_HOLIDAYS, emailTemplates: INITIAL_EMAIL_TEMPLATES, notificationRules: INITIAL_NOTIFICATION_RULES, outboxLogs: INITIAL_OUTBOX_LOGS, sopRunbooks: INITIAL_SOP_RUNBOOKS } = seed;
+  const { account } = useAuth();
+  if (!account) throw new Error('Authorized directory account required.');
+  const currentUser: UserProfile = { id: account.uid, name: account.name, email: account.email || '', role: account.role, status: 'Active', accessScope: account.accessScope, personId: account.personId || undefined };
   const [initialDirectory] = useState(() => {
     const templates = mergeHoursTemplates(
       readStoredArray(HOURS_TEMPLATES_STORAGE_KEY, INITIAL_HOURS_TEMPLATES),
@@ -129,21 +120,9 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [locations, setLocations] = useState<LocationRecord[]>(initialDirectory.locations);
   const [people, setPeople] = useState<Person[]>(initialDirectory.people);
 
-  const [users, setUsers] = useState<UserProfile[]>(() => {
-    const saved = localStorage.getItem(USERS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
-  });
-
-  const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
-    return users[0] || INITIAL_USERS[0];
-  });
+  const [users, setUsers] = useState<UserProfile[]>([]);
 
   const [hoursTemplates, setHoursTemplates] = useState<HoursTemplate[]>(initialDirectory.templates);
-
-  const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>(() => {
-    const saved = localStorage.getItem(API_KEYS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_API_KEYS;
-  });
 
   const [corporateHolidays, setCorporateHolidays] = useState<CorporateHoliday[]>(() => {
     const saved = localStorage.getItem(CORPORATE_HOLIDAYS_STORAGE_KEY);
@@ -221,7 +200,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
     const saved = localStorage.getItem(AUDIT_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [
+    const initialLogs: AuditLogEntry[] = saved ? JSON.parse(saved) : [
       {
         id: 'aud-01',
         timestamp: new Date().toISOString(),
@@ -234,6 +213,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         details: 'Loaded directory records into active memory.'
       }
     ];
+    return initialLogs.map(scrubLegacyApiKeyAuditEntry);
   });
 
   useEffect(() => {
@@ -245,16 +225,16 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [people]);
 
   useEffect(() => {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-  }, [users]);
+    localStorage.removeItem(USERS_STORAGE_KEY);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(HOURS_TEMPLATES_STORAGE_KEY, JSON.stringify(hoursTemplates));
   }, [hoursTemplates]);
 
   useEffect(() => {
-    localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(apiKeys));
-  }, [apiKeys]);
+    localStorage.removeItem(LEGACY_API_KEYS_STORAGE_KEY);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(CORPORATE_HOLIDAYS_STORAGE_KEY, JSON.stringify(corporateHolidays));
@@ -283,11 +263,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [sopRunbooks]);
 
   useEffect(() => {
-    localStorage.setItem(REQUESTS_STORAGE_KEY, JSON.stringify(requests));
+    localStorage.setItem(REQUESTS_STORAGE_KEY, serializeLocalDraft(requests));
   }, [requests]);
 
   useEffect(() => {
-    localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(auditLogs));
+    localStorage.setItem(AUDIT_STORAGE_KEY, serializeLocalDraft(auditLogs));
   }, [auditLogs]);
 
   const addAuditLog = (
@@ -313,14 +293,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       newState
     };
     setAuditLogs(prev => [log, ...prev].slice(0, 200));
-  };
-
-  const switchUser = (userId: string) => {
-    const found = users.find(u => u.id === userId);
-    if (found) {
-      setCurrentUser(found);
-      addAuditLog('User Switched', 'User', found.id, found.name, `Active session switched to ${found.name} (${found.role})`);
-    }
   };
 
   const updateLocation = (id: string, updates: Partial<LocationRecord>) => {
@@ -570,66 +542,18 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   // User Accounts CUD
-  const createUserAccount = (userData: Omit<UserProfile, 'id'>): UserProfile => {
-    const newUser: UserProfile = {
-      ...userData,
-      id: `usr-${Date.now()}`,
-      status: userData.status || 'Active'
-    };
-    setUsers(prev => [...prev, newUser]);
-    addAuditLog('User Account Created', 'User', newUser.id, newUser.name, `Created user account for ${newUser.name} with role ${newUser.role}`, undefined, newUser);
-    return newUser;
+  const createUserAccount = (_userData: Omit<UserProfile, 'id'>): UserProfile => {
+    throw new Error('Account provisioning is not available in this phase.');
   };
 
-  const updateUserAccount = (id: string, updates: Partial<UserProfile>) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id === id) {
-        const updated = { ...u, ...updates };
-        addAuditLog('User Account Updated', 'User', u.id, u.name, `Updated user account ${u.name}: ${Object.keys(updates).join(', ')}`, u, updated);
-        return updated;
-      }
-      return u;
-    }));
+  const updateUserAccount = (_id: string, _updates: Partial<UserProfile>) => {
+    throw new Error('Role and scope changes require the server-owned access workflow.');
   };
 
-  const deleteUserAccount = (id: string) => {
-    const target = users.find(u => u.id === id);
-    if (target) {
-      setUsers(prev => prev.filter(u => u.id !== id));
-      addAuditLog('User Account Deleted', 'User', target.id, target.name, `Revoked/Deleted user account for ${target.name}`, target, undefined);
-    }
+  const deleteUserAccount = (_id: string) => {
+    throw new Error('Account lifecycle changes are not available in this phase.');
   };
 
-  // API Key Management
-  const generateApiKey = (name: string, role: string, expirationDays: number = 365): ApiKeyRecord => {
-    const randomHex = Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    const newKey: ApiKeyRecord = {
-      id: `key-${Date.now()}`,
-      name,
-      key: `shk_live_${randomHex}`,
-      role,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + expirationDays * 86400000).toISOString(),
-      status: 'Active',
-      lastUsedAt: new Date().toISOString()
-    };
-    setApiKeys(prev => [newKey, ...prev]);
-    addAuditLog('API Key Generated', 'Setting', newKey.id, newKey.name, `Generated new ${role} API token: ${newKey.name}`, undefined, newKey);
-    return newKey;
-  };
-
-  const revokeApiKey = (id: string) => {
-    setApiKeys(prev => prev.map(k => {
-      if (k.id === id) {
-        const updated = { ...k, status: 'Revoked' as const };
-        addAuditLog('API Key Revoked', 'Setting', k.id, k.name, `Revoked API token ${k.name}`, k, updated);
-        return updated;
-      }
-      return k;
-    }));
-  };
-
-  // Corporate Holiday Overrides
   const addCorporateHoliday = (holidayData: Omit<CorporateHoliday, 'id'>): CorporateHoliday => {
     const newHoliday: CorporateHoliday = {
       ...holidayData,
@@ -735,38 +659,22 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     templateId?: string
   ): Promise<{ success: boolean; latencyMs: number; messageId: string; message: string; errorMessage?: string }> => {
     const startTime = performance.now();
-    const effectiveSubject = customSubject || '[Diagnostic Ping] Shiekh Directory SMTP Relay Verification';
-    const effectiveTemplateId = templateId || 'tmpl-diagnostic-test';
+    const effectiveSubject = 'Shiekh Directory SMTP Relay Verification';
+    const effectiveTemplateId = 'tmpl-diagnostic-test';
 
     try {
-      const response = await fetch('/api/mail/dispatch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          recipient,
-          subject: effectiveSubject,
-          templateId: effectiveTemplateId,
-          ...smtpConfig,
-          smtpConfig
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData?.error || response.statusText || `Relay dispatch failed with HTTP ${response.status}`);
+      if (customSubject || (templateId && templateId !== effectiveTemplateId)) {
+        throw new Error('Mail subjects and templates are controlled by the server.');
       }
-
-      const responseData = await response.json().catch(() => ({}));
-      const messageId = responseData?.messageId || '';
+      await mailRequest('dispatch', recipient);
+      const messageId = '';
 
       const newLog: OutboxLogEntry = {
         id: `out-${Date.now()}`,
         timestamp: new Date().toISOString(),
         recipient,
         subject: effectiveSubject,
-        status: 'Delivered',
+        status: 'Queued',
         templateId: effectiveTemplateId
       };
 
@@ -776,14 +684,14 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         'Communication', 
         newLog.id, 
         `Relay Ping to ${recipient}`, 
-        `Dispatched live diagnostic email ping to ${recipient} via ${smtpConfig.smtpHost}:${smtpConfig.smtpPort} (TLS: ${smtpConfig.enforceTls ? 'Enforced' : 'Opportunistic'}).`
+        'The server mail relay accepted the approved diagnostic message.'
       );
 
       return { 
         success: true, 
         latencyMs: Math.round(performance.now() - startTime), 
         messageId, 
-        message: `Diagnostic test email transmitted successfully to ${recipient}${messageId ? ` (ID: ${messageId})` : ''}` 
+        message: 'Diagnostic message accepted by the mail relay. Inbox delivery is not yet confirmed.'
       };
     } catch (err: any) {
       const errorMessage = err?.message || 'Failed to dispatch email';
@@ -804,7 +712,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         'Communication',
         failedLog.id,
         `Relay Ping Failed to ${recipient}`,
-        `Failed diagnostic email ping to ${recipient} via ${smtpConfig.smtpHost}:${smtpConfig.smtpPort}: ${errorMessage}`
+        `Diagnostic mail request failed: ${errorMessage}`
       );
 
       throw err;
@@ -814,6 +722,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Rollback Engine
   const rollbackAuditChange = (auditLogId: string): { success: boolean; message: string } => {
     const targetLog = auditLogs.find(a => a.id === auditLogId);
+    if (targetLog?.entityType === 'User') return { success: false, message: 'Account access cannot be changed through local audit rollback.' };
     if (!targetLog) {
       return { success: false, message: 'Audit entry not found.' };
     }
@@ -940,7 +849,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         users,
         currentUser,
         hoursTemplates,
-        apiKeys,
         corporateHolidays,
         requests,
         auditLogs,
@@ -949,7 +857,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         notificationRules,
         outboxLogs,
         sopRunbooks,
-        switchUser,
         updateLocation,
         createLocation,
         deleteLocation,
@@ -971,8 +878,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         createUserAccount,
         updateUserAccount,
         deleteUserAccount,
-        generateApiKey,
-        revokeApiKey,
         addCorporateHoliday,
         updateCorporateHoliday,
         deleteCorporateHoliday,
@@ -1001,4 +906,20 @@ export const useDirectory = () => {
   }
   return context;
 };
+
+function scrubLegacyApiKeyAuditEntry(entry: AuditLogEntry): AuditLogEntry {
+  if (!entry.action.startsWith('API Key')) return entry;
+
+  return {
+    ...entry,
+    previousState: removeCredentialValue(entry.previousState),
+    newState: removeCredentialValue(entry.newState),
+  };
+}
+
+function removeCredentialValue(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const { key: _key, ...safeValue } = value as Record<string, unknown>;
+  return safeValue;
+}
 

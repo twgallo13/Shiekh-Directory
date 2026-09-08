@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Two synthetic API fixtures and one legacy storage-key identifier; no files excluded"
+regexTarget = "secret"
+regexes = ['''^test_no_scope_b68967b47438475fb2df7d0e$''', '''^test_revoked_4650082cf18547c9a33c1f05$''', '''^shiekh_corporate_holidays_v3$''']

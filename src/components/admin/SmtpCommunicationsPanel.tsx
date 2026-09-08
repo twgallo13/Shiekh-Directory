@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { 
   Mail, 
@@ -21,7 +21,8 @@ import {
   X,
   Code
 } from 'lucide-react';
-import { SmtpConfig, EmailTemplate } from '../../types';
+import { EmailTemplate } from '../../types';
+import { SecureMailPanel } from './SecureMailPanel';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { useDialogFocus } from '../common/useDialogFocus';
 
@@ -33,43 +34,14 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
   activeSection = 'all' 
 }) => {
   const { 
-    smtpConfig, 
-    updateSmtpConfig, 
     emailTemplates, 
     createEmailTemplate, 
     updateEmailTemplate, 
     deleteEmailTemplate, 
     notificationRules, 
     updateNotificationRule, 
-    outboxLogs, 
-    sendDiagnosticTestEmail 
+    outboxLogs,
   } = useDirectory();
-
-  // Local form state for SMTP settings
-  const [smtpForm, setSmtpForm] = useState<SmtpConfig>({ ...smtpConfig });
-  const [smtpSaveSuccess, setSmtpSaveSuccess] = useState(false);
-  const [showSmtpPassword, setShowSmtpPassword] = useState(false);
-  const [serverStatus, setServerStatus] = useState<{
-    hasServerPassword: boolean;
-    serverHost?: string | null;
-    serverPort?: number | null;
-    serverUser?: string | null;
-  } | null>(null);
-
-  // Check server environment status on mount
-  useEffect(() => {
-    fetch('/api/mail/status')
-      .then(res => res.json())
-      .then(data => setServerStatus(data))
-      .catch(() => setServerStatus(null));
-  }, []);
-
-  // Diagnostic Test Email State
-  const [testEmailRecipient, setTestEmailRecipient] = useState(smtpConfig.stewardAlertRecipient || 'theo@shiekhshoes.org');
-  const [testSubject, setTestSubject] = useState('Diagnostic Relay Test — Shiekh Store Directory System');
-  const [selectedTemplateForTest, setSelectedTemplateForTest] = useState<string>('tmpl-req-approved');
-  const [isSendingTest, setIsSendingTest] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; timestamp?: string } | null>(null);
 
   // Email Template Modal State
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
@@ -91,47 +63,6 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
     variables: ['{{store_number}}', '{{store_name}}', '{{requester_name}}']
   });
   const [activePreviewMode, setActivePreviewMode] = useState<'edit' | 'preview'>('edit');
-
-  // Handle saving SMTP configuration
-  const handleSaveSmtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateSmtpConfig(smtpForm);
-    setSmtpSaveSuccess(true);
-    setTimeout(() => setSmtpSaveSuccess(false), 4000);
-  };
-
-  // Handle Diagnostic Test Email
-  const handleSendTestEmail = async () => {
-    if (!testEmailRecipient || !testEmailRecipient.includes('@')) {
-      setTestResult({
-        success: false,
-        message: 'Please provide a valid recipient email address.'
-      });
-      return;
-    }
-
-    setIsSendingTest(true);
-    setTestResult(null);
-
-    try {
-      const result = await sendDiagnosticTestEmail(testEmailRecipient, testSubject, selectedTemplateForTest);
-      setIsSendingTest(false);
-      setTestResult({
-        success: result.success,
-        message: result.message,
-        timestamp: new Date().toLocaleTimeString()
-      });
-    } catch (err: any) {
-      setIsSendingTest(false);
-      setTestResult({
-        success: false,
-        message: err?.message || 'Failed to dispatch diagnostic test email.',
-        timestamp: new Date().toLocaleTimeString()
-      });
-    } finally {
-      setTimeout(() => setTestResult(null), 6000);
-    }
-  };
 
   // Template Modal Handlers
   const handleOpenNewTemplate = () => {
@@ -214,255 +145,7 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
 
   return (
     <div className="space-y-6">
-      {/* 1. SMTP Relay Engine Configuration */}
-      {showRelay && (
-        <>
-          <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-red-50 text-red-600 border border-red-200">
-              <Server className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-neutral-900">SMTP Relay Engine & Outbound Gateway</h3>
-              <p className="text-xs text-neutral-500">Corporate mail server configuration for transactional receipts and steward alerts</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Relay Online
-            </span>
-          </div>
-        </div>
-
-        {smtpSaveSuccess && (
-          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center gap-2 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>SMTP Gateway configuration successfully updated and saved to persistent storage.</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSaveSmtp} className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1 text-xs">
-          <div>
-            <label className="block text-neutral-700 font-semibold mb-1">SMTP Host / Server *</label>
-            <input
-              type="text"
-              required
-              value={smtpForm.smtpHost}
-              onChange={(e) => setSmtpForm({ ...smtpForm, smtpHost: e.target.value })}
-              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-neutral-700 font-semibold mb-1">Port *</label>
-            <input
-              type="number"
-              required
-              value={smtpForm.smtpPort}
-              onChange={(e) => setSmtpForm({ ...smtpForm, smtpPort: parseInt(e.target.value) || 587 })}
-              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-neutral-700 font-semibold mb-1">SMTP Username / Auth User *</label>
-            <input
-              type="text"
-              required
-              value={smtpForm.smtpUser}
-              onChange={(e) => setSmtpForm({ ...smtpForm, smtpUser: e.target.value })}
-              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-neutral-700 font-semibold">SMTP Password / Google App Password</label>
-              {serverStatus?.hasServerPassword ? (
-                <span className="inline-flex items-center text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  <ShieldCheck className="w-3 h-3 mr-1" />
-                  Server Secret Active (SMTP_PASSWORD)
-                </span>
-              ) : (
-                <span className="inline-flex items-center text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                  <Lock className="w-3 h-3 mr-1" />
-                  Set in Server Env or Session
-                </span>
-              )}
-            </div>
-            <div className="relative">
-              <input
-                type={showSmtpPassword ? "text" : "password"}
-                required={!serverStatus?.hasServerPassword && !smtpForm.smtpPassword}
-                placeholder={serverStatus?.hasServerPassword ? "•••••••••••••••• (Active in Server Environment)" : "Enter 16-character App Password"}
-                value={smtpForm.smtpPassword || ''}
-                onChange={(e) => setSmtpForm({ ...smtpForm, smtpPassword: e.target.value })}
-                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-red-500 pr-9"
-              />
-              <button
-                type="button"
-                onClick={() => setShowSmtpPassword(!showSmtpPassword)}
-                className="absolute right-2.5 top-2.5 text-neutral-400 hover:text-neutral-600 focus:outline-none"
-                title={showSmtpPassword ? "Hide password" : "Show password"}
-              >
-                {showSmtpPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="text-[10px] text-neutral-500 mt-1">
-              {serverStatus?.hasServerPassword 
-                ? "Server environment variable SMTP_PASSWORD is armed and securing transmissions. Leaving this field blank uses the server secret." 
-                : "Credentials entered here are used in-session only and never stored in browser localStorage or audit logs."}
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-neutral-700 font-semibold mb-1">From Name *</label>
-            <input
-              type="text"
-              required
-              value={smtpForm.fromName}
-              onChange={(e) => setSmtpForm({ ...smtpForm, fromName: e.target.value })}
-              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:bg-white focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-neutral-700 font-semibold mb-1">From Email Address *</label>
-            <input
-              type="email"
-              required
-              value={smtpForm.fromEmail}
-              onChange={(e) => setSmtpForm({ ...smtpForm, fromEmail: e.target.value })}
-              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-neutral-700 font-semibold mb-1">Reply-To Address</label>
-            <input
-              type="email"
-              value={smtpForm.replyToEmail}
-              onChange={(e) => setSmtpForm({ ...smtpForm, replyToEmail: e.target.value })}
-              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-neutral-700 font-semibold mb-1">Steward Alert Recipient *</label>
-            <input
-              type="email"
-              required
-              value={smtpForm.stewardAlertRecipient}
-              onChange={(e) => setSmtpForm({ ...smtpForm, stewardAlertRecipient: e.target.value })}
-              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-red-500"
-            />
-          </div>
-
-          <div className="flex flex-col justify-end">
-            <label className="flex items-center gap-2 cursor-pointer bg-neutral-50 p-2.5 rounded-lg border border-neutral-200">
-              <input
-                type="checkbox"
-                checked={smtpForm.enforceTls}
-                onChange={(e) => setSmtpForm({ ...smtpForm, enforceTls: e.target.checked })}
-                className="rounded text-red-600 focus:ring-red-500"
-              />
-              <span className="font-semibold text-neutral-800">Enforce TLS / STARTTLS Encryption</span>
-            </label>
-          </div>
-
-          <div className="col-span-1 md:col-span-3 flex justify-end pt-2">
-            <button
-              type="submit"
-              className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold cursor-pointer shadow-xs transition-colors"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save SMTP Configuration</span>
-            </button>
-          </div>
-        </form>
-      </div>
-
-          {/* 2. Live Diagnostic Testing Tool */}
-          <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-blue-50 text-blue-600 border border-blue-200">
-                <Send className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-neutral-900">Live Diagnostic Mail Tool</h3>
-                <p className="text-xs text-neutral-500">Dispatch live test payloads through the SMTP gateway to verify delivery and templates</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Target Test Recipient</label>
-                <input
-                  type="email"
-                  value={testEmailRecipient}
-                  onChange={(e) => setTestEmailRecipient(e.target.value)}
-                  placeholder="e.g. theo@shiekhshoes.org"
-                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:bg-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Sample Subject Line</label>
-                <input
-                  type="text"
-                  value={testSubject}
-                  onChange={(e) => setTestSubject(e.target.value)}
-                  className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Template Payload</label>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={selectedTemplateForTest}
-                    onChange={(e) => setSelectedTemplateForTest(e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:bg-white focus:outline-none focus:border-blue-500"
-                  >
-                    {emailTemplates.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={isSendingTest}
-                    onClick={handleSendTestEmail}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold cursor-pointer shadow-xs transition-colors shrink-0"
-                  >
-                    <Send className={`w-3.5 h-3.5 ${isSendingTest ? 'animate-pulse' : ''}`} />
-                    <span>{isSendingTest ? 'Dispatching...' : 'Send Test'}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {testResult && (
-              <div className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
-                testResult.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
-              }`}>
-                {testResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                )}
-                <div className="flex-1">
-                  <span>{testResult.message}</span>
-                  {testResult.timestamp && (
-                    <span className="ml-2 font-mono text-[10px] text-neutral-500">[{testResult.timestamp}]</span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+      {showRelay && <SecureMailPanel />}
 
       {/* 3. Transactional Email Template Builder */}
       {showTemplates && (
@@ -474,7 +157,7 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
               </div>
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">Transactional Email Template Builder</h3>
-                <p className="text-xs text-neutral-500">Manage interactive HTML email bodies, variable injection tags, and automated triggers</p>
+                <p className="text-xs text-neutral-500">Local template drafts. Not connected to server-approved mail delivery.</p>
               </div>
             </div>
 

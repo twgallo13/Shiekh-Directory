@@ -21,6 +21,7 @@ try {
 
 async function startServer() {
   const app = express();
+  if (process.env.K_SERVICE) app.set("trust proxy", 1);
   const httpServer = createHttpServer(app);
   const PORT = Number(process.env.PORT || 3000);
 

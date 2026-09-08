@@ -138,7 +138,7 @@ Successful SMTP acceptance returns `200 { "success": true, "status": "accepted",
 
 All configuration comes from server environment values: `SMTP_HOST`, `SMTP_PORT` (465 or 587), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, and `SMTP_ALLOWED_RECIPIENTS` (comma-separated exact mailboxes). There is no sender fallback, anonymous transport fallback, or caller override. Port 465 uses implicit TLS; port 587 requires STARTTLS. Both require certificate verification and TLS 1.2 or newer. Attachment/file/URL access and transport debug logging are disabled, and connection/socket timeouts are bounded.
 
-Mail has separate limits: 20 requests/minute/IP and 60/minute/process before authentication; dispatch additionally allows 3 requests/10 minutes/Firebase UID and 10/10 minutes/process. Failed dispatch attempts also consume capacity. Responses include rate-limit and retry headers. These stores are local to one process; an approved shared store and trusted proxy policy are still required for coordinated multi-instance limits. No forwarded-IP trust or CORS allowlist is enabled here.
+Mail has separate limits: 20 requests/minute/IP and 60/minute/process before authentication; dispatch additionally allows 3 requests/10 minutes/Firebase UID and 10/10 minutes/process. Failed dispatch attempts also consume capacity. Responses include rate-limit and retry headers. On Cloud Run, Express trusts exactly one proxy hop so the platform-forwarded client address can key IP limits; direct/local deployments trust no proxy. These stores are local to one process, so an approved shared store is still required for coordinated multi-instance limits. No CORS allowlist is enabled here.
 
 Structured mail audit events contain request ID, a hashed UID (when authorized), and a fixed outcome code only. They exclude ID tokens, request bodies, recipients, SMTP configuration, and raw exceptions. Protect and retain runtime logs under the approved operational policy; this is not a Firestore audit-log writer.
 
@@ -206,7 +206,7 @@ Retirements/deletions after the snapshot are deliberately deferred to the next f
 
 ## Deployment Follow-up
 
-Before deployment, provision credentials in Secret Manager, create a least-privilege runtime service account with read-only named-database access, configure trusted proxy handling and a shared rate-limit store if multiple instances are used, choose the production request limit, and route logs using request IDs without authorization headers or response bodies. Resolve location conflicts first. No deployment configuration, IAM, cloud resources, or Firestore data is changed by this review revision.
+Before production deployment, provision credentials in Secret Manager, create a least-privilege runtime service account with read-only named-database access, configure a shared rate-limit store if multiple instances are used, choose the production request limit, and route logs using request IDs without authorization headers or response bodies. Cloud Run's single proxy hop is trusted only when its `K_SERVICE` marker is present. Resolve location conflicts first.
 
 ## Canonical Generation Decision
 

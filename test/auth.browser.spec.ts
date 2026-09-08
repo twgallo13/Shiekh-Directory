@@ -149,7 +149,7 @@ test("administrators can save non-secret mail settings without a password field"
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
 });
 
-test("Add User commits the account and sends onboarding before reporting success", async ({ page }) => {
+test("Add User commits the account and reports SMTP relay acceptance without claiming delivery", async ({ page }) => {
   await prepare(page, "System Administrator");
   let commit: any = null;
   let event: any = null;
@@ -162,11 +162,46 @@ test("Add User commits the account and sends onboarding before reporting success
   await page.getByLabel("Email Address *").fill("new.user@example.test");
   await page.getByLabel("Role / Permissions *").selectOption("Editor");
   await page.getByRole("button", { name: "Save Account" }).click();
-  await expect(page.getByRole("status")).toContainText("sent the onboarding email");
+  await expect(page.getByRole("status")).toContainText("Gmail accepted the secure sign-in email for relay");
+  await expect(page.getByRole("status")).toContainText("inbox delivery can still be affected");
   expect(commit.writes[0].collection).toBe("users");
   expect(commit.writes[0].data.email).toBe("new.user@example.test");
   expect(event.event).toBe("user-invitation");
   expect(event.entityId).toBe(commit.writes[0].id);
+});
+
+test("Add User supports copy-link and access-only onboarding without sending mail", async ({ page, context }) => {
+  await prepare(page, "System Administrator");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+  const commits: any[] = [];
+  const linkRequests: any[] = [];
+  let mailEvents = 0;
+  await page.route("**/api/directory/commit", async route => { commits.push(route.request().postDataJSON()); await route.fulfill({ status: 204, body: "" }); });
+  await page.route("**/api/mail/invitation-link", async route => { linkRequests.push(route.request().postDataJSON()); await route.fulfill({ json: { success: true, activationLink: "https://secure.example.test/firebase-action-code" } }); });
+  await page.route("**/api/mail/event", async route => { mailEvents++; await route.fulfill({ json: { success: true, status: "accepted" } }); });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole("button", { name: "User RBAC" }).click();
+  await page.getByRole("button", { name: "Add User" }).click();
+  await page.getByLabel("Full Name *").fill("Copied Link User");
+  await page.getByLabel("Email Address *").fill("copied.link@example.test");
+  await page.getByLabel("Role / Permissions *").selectOption("Editor");
+  await page.getByRole("radio", { name: /Copy secure sign-in link/ }).check();
+  await page.getByRole("button", { name: "Save Account" }).click();
+  await expect(page.getByRole("status")).toContainText("copied a fresh secure sign-in link");
+  expect(linkRequests[0].entityId).toBe(commits[0].writes[0].id);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("https://secure.example.test/firebase-action-code");
+  expect(mailEvents).toBe(0);
+
+  await page.getByRole("button", { name: "Add User" }).click();
+  await page.getByLabel("Full Name *").fill("Access Only User");
+  await page.getByLabel("Email Address *").fill("access.only@example.test");
+  await page.getByLabel("Role / Permissions *").selectOption("Editor");
+  await page.getByRole("radio", { name: /Grant access without email/ }).check();
+  await page.getByRole("button", { name: "Save Account" }).click();
+  await expect(page.getByRole("status")).toContainText("No onboarding email was submitted");
+  expect(commits).toHaveLength(2);
+  expect(linkRequests).toHaveLength(1);
+  expect(mailEvents).toBe(0);
 });
 
 for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {

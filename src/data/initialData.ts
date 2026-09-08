@@ -19,7 +19,7 @@ export const INITIAL_EMAIL_TEMPLATES: EmailTemplate[] = [
     name: 'Account Invitation & Role Provisioning',
     subject: 'Welcome to Shiekh Dynamic Directory — Access Provisioned for Store #{{store_number}}',
     triggerEvent: 'User Account Created',
-    variables: ['recipient_name', 'role', 'store_number', 'store_name'],
+    variables: ['recipient_name', 'role', 'store_number', 'store_name', 'activation_link'],
     updatedAt: '2026-09-01T10:00:00Z',
     bodyHtml: `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
   <div style="background-color: #dc2626; color: white; padding: 18px 24px;">
@@ -29,9 +29,9 @@ export const INITIAL_EMAIL_TEMPLATES: EmailTemplate[] = [
     <p>Hello <strong>{{recipient_name}}</strong>,</p>
     <p>You have been granted access to the Shiekh Shoes Dynamic Directory & QR Management console with the role: <span style="background-color: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 4px; font-weight: bold;">{{role}}</span>.</p>
     <p><strong>Assigned Store Location:</strong> Store #{{store_number}} ({{store_name}})</p>
-    <p>Please log in using your corporate Google Workspace SSO credentials to verify store contact details and operating hours.</p>
+    <p>Use the secure sign-in link below with <strong>the email address that received this invitation</strong>. The link is issued by Firebase and expires automatically.</p>
     <div style="margin: 24px 0;">
-      <a href="https://directory.shiekhshoes.com/auth/login" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Access Directory Dashboard</a>
+      <a href="{{activation_link}}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Secure sign in</a>
     </div>
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
     <p style="font-size: 11px; color: #6b7280; margin: 0;">This is an automated administrative invitation dispatched by the Shiekh Directory Relay.</p>

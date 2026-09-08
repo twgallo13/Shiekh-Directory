@@ -112,6 +112,10 @@ function toRecord(snapshot: QueryDocumentSnapshot, collection: DirectoryCollecti
     accessScope: data.accessScope,
     personId: data.personId,
     storeNumber: data.storeNumber || data.assignedStoreId,
+    identityLinked: Boolean(data.firebaseUid),
+    invitationStatus: data.invitationStatus,
+    invitedAt: data.invitedAt,
+    lastLogin: data.lastLogin,
   };
   return { ...data, id: snapshot.id };
 }

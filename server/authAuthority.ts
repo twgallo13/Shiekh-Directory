@@ -94,7 +94,7 @@ export function createFirebaseAuthenticator(): Authenticate | null {
           if (!current.exists || !conflicts.empty) throw new Error("Access record changed.");
           const currentUid = current.data()?.firebaseUid;
           if (currentUid && currentUid !== uid) throw new Error("Access record already bound.");
-          transaction.set(reference, { firebaseUid: uid, lastLogin: new Date().toISOString() }, { merge: true });
+          transaction.set(reference, { firebaseUid: uid, lastLogin: new Date().toISOString(), invitationStatus: "Accepted" }, { merge: true });
         });
       },
     });

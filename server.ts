@@ -9,7 +9,7 @@ import {
 } from "./server/directoryApi";
 import { createFirestoreLocationRepository } from "./server/firestoreLocations";
 import { createMailRouter, createMailSender, loadMailConfiguration } from "./server/mailApi";
-import { createFirestoreDiagnosticResolver, createFirestoreMailEventResolver, createFirestoreMailSettingsStore } from "./server/firestoreMail";
+import { createFirestoreDiagnosticResolver, createFirestoreInvitationLinkResolver, createFirestoreMailEventResolver, createFirestoreMailSettingsStore } from "./server/firestoreMail";
 import { createAuthRouter, createFirebaseAuthenticator } from "./server/authAuthority";
 import { createFirestoreDirectoryStore } from "./server/firestoreDirectory";
 import { createDirectoryDataRouter } from "./server/directoryDataApi";
@@ -39,6 +39,7 @@ async function startServer() {
     settings: mailSettings,
     resolveEvent: createFirestoreMailEventResolver(),
     resolveDiagnostic: createFirestoreDiagnosticResolver(),
+    resolveInvitationLink: createFirestoreInvitationLinkResolver(),
   }));
   app.use(express.json());
   app.use("/api/directory", createDirectoryDataRouter(authenticate, directory));

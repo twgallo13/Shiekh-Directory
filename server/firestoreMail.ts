@@ -1,12 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { Firestore } from "@google-cloud/firestore";
+import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { AccessDenied } from "./authAuthority";
-import { parseMailSettings, type MailConfiguration, type MailEvent, type MailIdentity, type MailSettingsStore, type ResolveDiagnosticTemplate, type ResolveMailEvent } from "./mailApi";
+import { parseMailSettings, type MailConfiguration, type MailEvent, type MailIdentity, type MailSettingsStore, type ResolveDiagnosticTemplate, type ResolveInvitationLink, type ResolveMailEvent } from "./mailApi";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 export function createFirestoreMailEventResolver(): ResolveMailEvent {
   const firestore = createFirestore();
-  return async (event, entityId, identity, configuration) => resolveEvent(firestore, event, entityId, identity, configuration);
+  const generateLink = createFirebaseSignInLinkGenerator();
+  return async (event, entityId, identity, configuration) => resolveEvent(firestore, event, entityId, identity, configuration, generateLink);
+}
+
+export function createFirestoreInvitationLinkResolver(): ResolveInvitationLink {
+  const firestore = createFirestore();
+  const generateLink = createFirebaseSignInLinkGenerator();
+  return (entityId, identity) => resolveInvitationLink(firestore, entityId, identity, generateLink);
 }
 
 export function createFirestoreDiagnosticResolver(): ResolveDiagnosticTemplate {
@@ -54,11 +63,10 @@ export function createFirestoreMailSettingsStore(): MailSettingsStore {
   };
 }
 
-export async function resolveEvent(firestore: Firestore, event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) {
+export async function resolveEvent(firestore: Firestore, event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration, generateLink?: (email: string) => Promise<string>) {
   if (event === "user-invitation") {
-    const snapshot = await firestore.collection("users").doc(entityId).get();
-    const user = snapshot.data();
-    if (!snapshot.exists || !mailbox(user?.email) || user?.status !== "Active") throw new AccessDenied();
+    if (!generateLink) throw new Error("Invitation link generation is unavailable.");
+    const { user, activationLink } = await invitationForUser(firestore, entityId, identity, generateLink);
     const storeNumber = safeText(user.storeNumber || String(user.accessScope || "").replace(/^Store\s+/i, "") || "Company-wide");
     const location = storeNumber === "Company-wide" ? null : await firestore.collection("locations").where("storeNumber", "==", storeNumber).limit(1).get();
     const content = await resolveTemplate(firestore, "tmpl-account-invite", {
@@ -66,8 +74,12 @@ export async function resolveEvent(firestore: Firestore, event: MailEvent, entit
       role: user.role,
       store_number: storeNumber,
       store_name: location?.docs[0]?.data()?.name || (storeNumber === "Company-wide" ? "All locations" : "Assigned location"),
+      activation_link: activationLink,
     });
-    return { to: user.email.toLowerCase(), ...content };
+    const encodedLink = escapeHtml(activationLink);
+    const migratedHtml = content.html.replace(/https:\/\/directory\.shiekhshoes\.com\/auth\/login/g, encodedLink);
+    const html = migratedHtml.includes(encodedLink) ? migratedHtml : `${migratedHtml}<p style="margin:24px 0"><a href="${encodedLink}" style="background:#b91c1c;color:#fff;padding:12px 18px;text-decoration:none;border-radius:6px;font-weight:700">Secure sign in</a></p>`;
+    return { to: user.email.toLowerCase(), ...content, html, text: `${content.text}\n\nSecure sign-in link:\n${activationLink}` };
   }
 
   const snapshot = await firestore.collection("requests").doc(entityId).get();
@@ -86,6 +98,20 @@ export async function resolveEvent(firestore: Firestore, event: MailEvent, entit
   const templateId = event === "request-approved" ? "tmpl-request-approved" : "tmpl-request-rejected";
   const content = await resolveTemplate(firestore, templateId, requestVariables(request, identity));
   return { to: requester.email.toLowerCase(), ...content };
+}
+
+export async function resolveInvitationLink(firestore: Firestore, entityId: string, identity: MailIdentity, generateLink: (email: string) => Promise<string>) {
+  return (await invitationForUser(firestore, entityId, identity, generateLink)).activationLink;
+}
+
+async function invitationForUser(firestore: Firestore, entityId: string, identity: MailIdentity, generateLink: (email: string) => Promise<string>) {
+  const reference = firestore.collection("users").doc(entityId);
+  const snapshot = await reference.get();
+  const user = snapshot.data();
+  if (!snapshot.exists || !mailbox(user?.email) || user?.status !== "Active") throw new AccessDenied();
+  const activationLink = await generateLink(user.email.toLowerCase());
+  await reference.set({ invitationStatus: "Pending", invitedAt: new Date().toISOString(), invitedBy: identity.uid }, { merge: true });
+  return { user, activationLink };
 }
 
 export async function resolveTemplate(firestore: Firestore, templateId: string, variables: Record<string, unknown>) {
@@ -133,6 +159,14 @@ function createFirestore() {
     projectId: process.env.GOOGLE_CLOUD_PROJECT || DEFAULT_GOOGLE_CLOUD_PROJECT,
     databaseId: process.env.FIRESTORE_DATABASE_ID || DEFAULT_FIRESTORE_DATABASE,
   });
+}
+
+function createFirebaseSignInLinkGenerator() {
+  const app = getApps().find(candidate => candidate.name === "directory-invitations")
+    ?? initializeApp({ projectId: DEFAULT_GOOGLE_CLOUD_PROJECT, credential: applicationDefault() }, "directory-invitations");
+  const auth = getAuth(app);
+  const appUrl = (process.env.DIRECTORY_APP_URL || "https://shiekh-dir.ai.studio").replace(/\/$/, "");
+  return (email: string) => auth.generateSignInWithEmailLink(email, { url: `${appUrl}/auth/email-link`, handleCodeInApp: true });
 }
 
 function safeText(value: unknown) {

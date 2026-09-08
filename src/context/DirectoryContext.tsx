@@ -3,6 +3,7 @@ import {
   LocationRecord, 
   Person, 
   UserProfile, 
+  UserOnboardingChoice,
   UpdateRequest, 
   HoursTemplate, 
   CorporateHoliday,
@@ -17,7 +18,7 @@ import {
 import type { DirectorySeed } from '../lib/directorySeed';
 import { migrateDirectoryRelationships } from '../lib/directoryMigration';
 import { commitDirectory, type DirectoryAudit, type DirectoryWrite } from '../lib/directoryClient';
-import { mailRequest, sendMailEvent } from '../lib/mailClient';
+import { createInvitationLink, mailRequest, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
 
 interface DirectoryContextType {
@@ -53,7 +54,9 @@ interface DirectoryContextType {
   createHoursTemplate: (template: Omit<HoursTemplate, 'id'>) => HoursTemplate;
   updateHoursTemplate: (id: string, updates: Partial<HoursTemplate>) => void;
   deleteHoursTemplate: (id: string) => void;
-  createUserAccount: (user: Omit<UserProfile, 'id'>) => Promise<{ user: UserProfile; invitationSent: boolean }>;
+  createUserAccount: (user: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice) => Promise<{ user: UserProfile; outcome: 'relay-accepted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }>;
+  sendUserInvitation: (id: string) => Promise<void>;
+  createUserInvitationLink: (id: string) => Promise<string>;
   updateUserAccount: (id: string, updates: Partial<UserProfile>) => void;
   deleteUserAccount: (id: string) => void;
   addCorporateHoliday: (holiday: Omit<CorporateHoliday, 'id'>) => CorporateHoliday;
@@ -378,7 +381,23 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   // User Accounts CUD
-  const createUserAccount = async (userData: Omit<UserProfile, 'id'>): Promise<{ user: UserProfile; invitationSent: boolean }> => {
+  const markInvitationIssued = (id: string) => {
+    const invitedAt = new Date().toISOString();
+    setUsers(previous => previous.map(item => item.id === id ? { ...item, invitationStatus: 'Pending', invitedAt } : item));
+  };
+
+  const sendUserInvitation = async (id: string) => {
+    await sendMailEvent('user-invitation', id);
+    markInvitationIssued(id);
+  };
+
+  const createUserInvitationLink = async (id: string) => {
+    const activationLink = await createInvitationLink(id);
+    markInvitationIssued(id);
+    return activationLink;
+  };
+
+  const createUserAccount = async (userData: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice): Promise<{ user: UserProfile; outcome: 'relay-accepted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }> => {
     const id = `usr-${Date.now()}`;
     const next = { ...userData, id, accessScope: userData.accessScope || (userData.storeNumber ? `Store ${userData.storeNumber}` : 'Company-wide') };
     setUsers(previous => [...previous, next]);
@@ -389,13 +408,20 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       setUsers(previous => previous.filter(item => item.id !== id));
       throw error;
     }
-    let invitationSent = true;
-    try { await sendMailEvent('user-invitation', id); }
-    catch (error) {
-      invitationSent = false;
-      setPersistenceError(`Account created, but its onboarding email was not sent: ${error instanceof Error ? error.message : 'Mail delivery failed.'}`);
+    if (onboarding === 'access-only') return { user: next, outcome: 'access-only' };
+    try {
+      if (onboarding === 'copy') {
+        const activationLink = await createUserInvitationLink(id);
+        return { user: { ...next, invitationStatus: 'Pending' }, outcome: 'link-generated', activationLink };
+      }
+      await sendUserInvitation(id);
+      return { user: { ...next, invitationStatus: 'Pending' }, outcome: 'relay-accepted' };
     }
-    return { user: next, invitationSent };
+    catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'The onboarding action failed.';
+      setPersistenceError(`Account created, but onboarding was not completed: ${errorMessage}`);
+      return { user: next, outcome: 'failed', errorMessage };
+    }
   };
 
   const updateUserAccount = (id: string, updates: Partial<UserProfile>) => {
@@ -709,6 +735,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         deleteHoursTemplate,
         createUserAccount,
         updateUserAccount,
+        sendUserInvitation,
+        createUserInvitationLink,
         deleteUserAccount,
         addCorporateHoliday,
         updateCorporateHoliday,

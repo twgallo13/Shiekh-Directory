@@ -29,9 +29,10 @@ test("Firestore mail templates replace escaped variables and produce text altern
 
 test("user invitation resolves the onboarding template with account and store data", async () => {
   const requestedDocuments: string[] = [];
+  const metadataWrites: Record<string, unknown>[] = [];
   const records: Record<string, Record<string, unknown>> = {
     "users/usr-new": { email: "new.user@example.test", status: "Active", displayName: "New User", role: "Viewer", storeNumber: "07", accessScope: "Store 07" },
-    "email_templates/tmpl-account-invite": { subject: "Welcome {{recipient_name}}", bodyHtml: "<p>{{role}} at {{store_number}} - {{store_name}}</p>" },
+    "email_templates/tmpl-account-invite": { subject: "Welcome {{recipient_name}}", bodyHtml: '<p>{{role}} at {{store_number}} - {{store_name}}</p><a href="https://directory.shiekhshoes.com/auth/login">Access dashboard</a>' },
   };
   const firestore = {
     collection(name: string) {
@@ -39,7 +40,10 @@ test("user invitation resolves the onboarding template with account and store da
         doc(id: string) {
           requestedDocuments.push(`${name}/${id}`);
           const data = records[`${name}/${id}`];
-          return { get: async () => ({ exists: Boolean(data), data: () => data }) };
+          return {
+            get: async () => ({ exists: Boolean(data), data: () => data }),
+            set: async (value: Record<string, unknown>) => { metadataWrites.push(value); },
+          };
         },
         where(field: string, operator: string, value: string) {
           assert.deepEqual([name, field, operator, value], ["locations", "storeNumber", "==", "07"]);
@@ -49,9 +53,17 @@ test("user invitation resolves the onboarding template with account and store da
     },
   } as unknown as Firestore;
   const configuration = { host: "smtp.test", port: 587, user: "user", password: "password", from: "sender@example.test", recipients: ["sender@example.test"] } as MailConfiguration;
-  const message = await resolveEvent(firestore, "user-invitation", "usr-new", { uid: "admin", role: "System Administrator" }, configuration);
+  const message = await resolveEvent(firestore, "user-invitation", "usr-new", { uid: "admin", role: "System Administrator" }, configuration, async email => {
+    assert.equal(email, "new.user@example.test");
+    return "https://secure.example.test/firebase-action-code";
+  });
   assert.equal(message.to, "new.user@example.test");
   assert.equal(message.subject, "Welcome New User");
   assert.match(message.html || "", /Viewer at 07 - Test Store/);
+  assert.match(message.html || "", /https:\/\/secure\.example\.test\/firebase-action-code/);
+  assert.doesNotMatch(message.html || "", /directory\.shiekhshoes\.com\/auth\/login/);
+  assert.match(message.text || "", /Secure sign-in link/);
+  assert.deepEqual(metadataWrites, [{ invitationStatus: "Pending", invitedAt: metadataWrites[0].invitedAt, invitedBy: "admin" }]);
+  assert.equal(JSON.stringify(metadataWrites).includes("firebase-action-code"), false);
   assert.ok(requestedDocuments.includes("email_templates/tmpl-account-invite"));
 });

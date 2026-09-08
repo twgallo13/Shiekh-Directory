@@ -37,9 +37,10 @@ import {
   Search,
   Server,
   Bell,
-  FileText
+  FileText,
+  Copy
 } from 'lucide-react';
-import { WeeklySchedule, HoursTemplate, CorporateHoliday, UserProfile, UserRole, LocationRecord } from '../../types';
+import { WeeklySchedule, HoursTemplate, CorporateHoliday, UserProfile, UserRole, LocationRecord, UserOnboardingChoice } from '../../types';
 import { WeeklyHoursEditor } from '../common/WeeklyHoursEditor';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PageHeader } from '../common/PageHeader';
@@ -89,7 +90,8 @@ export const AdminIntegrationsView: React.FC = () => {
     deleteHoursTemplate,
     createUserAccount,
     updateUserAccount,
-    deleteUserAccount,
+    sendUserInvitation,
+    createUserInvitationLink,
     addCorporateHoliday,
     updateCorporateHoliday,
     deleteCorporateHoliday,
@@ -112,7 +114,7 @@ export const AdminIntegrationsView: React.FC = () => {
         deleteCorporateHoliday(pendingAdminAction.id);
         break;
       case 'user':
-        deleteUserAccount(pendingAdminAction.id);
+        updateUserAccount(pendingAdminAction.id, { status: 'Revoked' });
         break;
     }
 
@@ -202,6 +204,8 @@ export const AdminIntegrationsView: React.FC = () => {
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [userSaveError, setUserSaveError] = useState('');
   const [userSaveNotice, setUserSaveNotice] = useState('');
+  const [onboardingChoice, setOnboardingChoice] = useState<UserOnboardingChoice>('send');
+  const [userActionId, setUserActionId] = useState('');
   const [userForm, setUserForm] = useState<Omit<UserProfile, 'id'>>({
     name: '',
     email: '',
@@ -407,6 +411,7 @@ export const AdminIntegrationsView: React.FC = () => {
   const handleOpenNewUser = () => {
     setUserSaveError('');
     setEditingUser(null);
+    setOnboardingChoice('send');
     setUserForm({
       name: '',
       email: '',
@@ -458,16 +463,46 @@ export const AdminIntegrationsView: React.FC = () => {
         updateUserAccount(editingUser.id, payload);
         setUserSaveNotice(`Updated ${payload.name}.`);
       } else {
-        const result = await createUserAccount(payload);
-        setUserSaveNotice(result.invitationSent
-          ? `Created ${payload.name} and sent the onboarding email.`
-          : `Created ${payload.name}, but the onboarding email was not sent.`);
+        const result = await createUserAccount(payload, onboardingChoice);
+        if (result.outcome === 'relay-accepted') {
+          setUserSaveNotice(`Created ${payload.name}. Gmail accepted the secure sign-in email for relay; inbox delivery can still be affected by routing, quarantine, or spam filtering.`);
+        } else if (result.outcome === 'link-generated' && result.activationLink) {
+          try {
+            await navigator.clipboard.writeText(result.activationLink);
+            setUserSaveNotice(`Created ${payload.name} and copied a fresh secure sign-in link.`);
+          } catch {
+            setUserSaveNotice(`Created ${payload.name} and generated a secure link, but the browser could not copy it. Use Copy secure sign-in link on the account.`);
+          }
+        } else if (result.outcome === 'access-only') {
+          setUserSaveNotice(`Created ${payload.name} with directory access. No onboarding email was submitted.`);
+        } else {
+          setUserSaveNotice(`Created ${payload.name}, but onboarding was not completed: ${result.errorMessage || 'The secure link could not be issued.'}`);
+        }
       }
       setIsUserModalOpen(false);
     } catch (error) {
       setUserSaveError(error instanceof Error ? error.message : 'The account could not be saved.');
     } finally {
       setIsSavingUser(false);
+    }
+  };
+
+  const handleUserInvitation = async (account: UserProfile, action: 'send' | 'copy') => {
+    setUserActionId(`${account.id}:${action}`);
+    setUserSaveNotice('');
+    try {
+      if (action === 'send') {
+        await sendUserInvitation(account.id);
+        setUserSaveNotice(`Gmail accepted the secure sign-in email for ${account.name}. This confirms relay acceptance, not final inbox delivery.`);
+      } else {
+        const activationLink = await createUserInvitationLink(account.id);
+        await navigator.clipboard.writeText(activationLink);
+        setUserSaveNotice(`Copied a fresh secure sign-in link for ${account.name}.`);
+      }
+    } catch (error) {
+      setUserSaveNotice(error instanceof Error ? error.message : `The ${action} action could not be completed.`);
+    } finally {
+      setUserActionId('');
     }
   };
 
@@ -1295,26 +1330,32 @@ export const AdminIntegrationsView: React.FC = () => {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-neutral-900">{u.name}</span>
-                      {u.id === currentUser.id ? (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-bold border border-red-200">
-                          Active Session
-                        </span>
-                      ) : (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                          u.status === 'Revoked' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
-                        }`}>
-                          {u.status || 'Active'}
-                        </span>
-                      )}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        u.status === 'Revoked' ? 'bg-rose-50 text-rose-700' : u.status === 'Suspended' ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'
+                      }`}>Access: {u.status || 'Active'}</span>
                     </div>
                     <div className="text-neutral-500 font-mono text-[11px]">{u.email}</div>
                     <div className="text-neutral-600 text-[11px] pt-1 border-t border-neutral-200">
                       Role: <strong className="text-neutral-900">{u.role}</strong>
                       {u.storeNumber && <span className="ml-1 text-neutral-500">(Store #{u.storeNumber})</span>}
                     </div>
+                    <div className="text-[11px] text-neutral-600">
+                      Sign-in: <strong className="text-neutral-900">{u.identityLinked ? (u.lastLogin ? `Last used ${new Date(u.lastLogin).toLocaleDateString()}` : 'Linked') : 'Not yet linked'}</strong>
+                    </div>
+                    <div className="text-[11px] text-neutral-600">
+                      Invitation: <strong className="text-neutral-900">{u.invitationStatus === 'Accepted' || u.identityLinked ? 'Accepted' : u.invitationStatus === 'Pending' ? `Secure link issued${u.invitedAt ? ` ${new Date(u.invitedAt).toLocaleDateString()}` : ''}` : 'Not sent'}</strong>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-neutral-200">
+                    {u.status === 'Active' && u.id !== currentUser.id && <>
+                      <button type="button" disabled={Boolean(userActionId)} onClick={() => void handleUserInvitation(u, 'send')} className="p-1 text-neutral-600 hover:text-red-700 rounded hover:bg-red-50 disabled:opacity-40" title={u.invitationStatus ? 'Resend secure sign-in link' : 'Send secure sign-in link'} aria-label={`${u.invitationStatus ? 'Resend' : 'Send'} secure sign-in link for ${u.name}`}>
+                        <Mail className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" disabled={Boolean(userActionId)} onClick={() => void handleUserInvitation(u, 'copy')} className="p-1 text-neutral-600 hover:text-neutral-900 rounded hover:bg-neutral-200 disabled:opacity-40" title="Copy fresh secure sign-in link" aria-label={`Copy secure sign-in link for ${u.name}`}>
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </>}
                     <button
                       type="button"
                       onClick={() => handleOpenEditUser(u)}
@@ -1324,12 +1365,17 @@ export const AdminIntegrationsView: React.FC = () => {
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
                     {u.id !== currentUser.id && (
+                      <button type="button" onClick={() => updateUserAccount(u.id, { status: u.status === 'Suspended' || u.status === 'Revoked' ? 'Active' : 'Suspended' })} className="p-1 text-amber-700 hover:bg-amber-50 rounded" title={u.status === 'Active' || !u.status ? 'Suspend access' : 'Restore access'} aria-label={`${u.status === 'Active' || !u.status ? 'Suspend' : 'Restore'} access for ${u.name}`}>
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {u.id !== currentUser.id && u.status !== 'Revoked' && (
                       <button
                         type="button"
                         onClick={() => setPendingAdminAction({ kind: 'user', id: u.id, name: u.name })}
                         className="p-1 text-rose-600 hover:text-rose-800 rounded hover:bg-rose-50 cursor-pointer"
-                        title="Delete / Revoke User"
-                        aria-label={`Delete user ${u.name}`}
+                        title="Revoke access"
+                        aria-label={`Revoke access for ${u.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1692,6 +1738,18 @@ export const AdminIntegrationsView: React.FC = () => {
                 </div>
               )}
 
+              {!editingUser && <fieldset className="space-y-2">
+                <legend className="font-semibold text-neutral-700">Onboarding *</legend>
+                {([
+                  ['send', 'Send secure sign-in link', 'Submit an email through the configured Gmail relay.'],
+                  ['copy', 'Copy secure sign-in link', 'Create a fresh Firebase link without sending email.'],
+                  ['access-only', 'Grant access without email', 'Create authorization now; onboarding can happen later.'],
+                ] as const).map(([value, label, description]) => <label key={value} className="flex cursor-pointer gap-2 border-t border-neutral-200 py-2 first:border-t-0">
+                  <input type="radio" name="onboarding" value={value} checked={onboardingChoice === value} onChange={() => setOnboardingChoice(value)} className="mt-0.5 accent-red-600" />
+                  <span><span className="block font-semibold text-neutral-900">{label}</span><span className="block text-[11px] text-neutral-500">{description}</span></span>
+                </label>)}
+              </fieldset>}
+
               {editingUser && (
                 <div>
                   <label htmlFor="user-status" className="block text-neutral-700 font-semibold mb-1">Account Status</label>
@@ -1872,9 +1930,9 @@ export const AdminIntegrationsView: React.FC = () => {
 
       <ConfirmDialog
         isOpen={pendingAdminAction !== null}
-        title={`Delete ${pendingAdminAction?.kind === 'user' ? 'user account' : pendingAdminAction?.kind === 'holiday' ? 'holiday' : 'hours template'}?`}
-        description={`“${pendingAdminAction?.name || ''}” will be permanently deleted. This action cannot be undone.`}
-        confirmLabel="Delete"
+        title={pendingAdminAction?.kind === 'user' ? 'Revoke user access?' : `Delete ${pendingAdminAction?.kind === 'holiday' ? 'holiday' : 'hours template'}?`}
+        description={pendingAdminAction?.kind === 'user' ? `“${pendingAdminAction.name}” will no longer be authorized to use the directory.` : `“${pendingAdminAction?.name || ''}” will be permanently deleted. This action cannot be undone.`}
+        confirmLabel={pendingAdminAction?.kind === 'user' ? 'Revoke access' : 'Delete'}
         onConfirm={handleConfirmAdminAction}
         onCancel={() => setPendingAdminAction(null)}
       />

@@ -231,6 +231,28 @@ test("operational events resolve recipients and content on the server after role
   } finally { await viewer.close(); }
 });
 
+test("secure invitation links are freshly resolved for administrators and never sent by the copy endpoint", async () => {
+  const requested: unknown[] = [];
+  const app = await harness({ resolveInvitationLink: async (entityId, identity) => {
+    requested.push([entityId, identity.uid]);
+    return "https://secure.example.test/firebase-action-code";
+  } });
+  try {
+    const response = await app.request("invitation-link", { entityId: "usr-1" });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { success: true, activationLink: "https://secure.example.test/firebase-action-code" });
+    assert.deepEqual(requested, [["usr-1", "test-admin"]]);
+    assert.equal(app.sent.length, 0);
+  } finally { await app.close(); }
+
+  const viewer = await harness({
+    authenticate: async () => ({ uid: "viewer", role: "Viewer" }),
+    resolveInvitationLink: async () => { throw new Error("must not resolve"); },
+  });
+  try { assert.equal((await viewer.request("invitation-link", { entityId: "usr-1" })).status, 403); }
+  finally { await viewer.close(); }
+});
+
 test("administrators can persist non-secret settings that immediately control delivery", async () => {
   let saved = null as import("../server/mailApi").MailSettings | null;
   const deliveredWith: unknown[] = [];

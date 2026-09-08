@@ -56,6 +56,7 @@ export interface MailMessage {
 export type MailEvent = "user-invitation" | "request-submitted" | "request-approved" | "request-rejected";
 export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">>;
 export type ResolveDiagnosticTemplate = (configuration: MailConfiguration) => Promise<Pick<MailMessage, "subject" | "text" | "html">>;
+export type ResolveInvitationLink = (entityId: string, identity: MailIdentity) => Promise<string>;
 
 export interface MailApiOptions {
   authenticate: ((token: string) => Promise<MailIdentity>) | null;
@@ -64,6 +65,7 @@ export interface MailApiOptions {
   settings?: MailSettingsStore;
   resolveEvent?: ResolveMailEvent;
   resolveDiagnostic?: ResolveDiagnosticTemplate;
+  resolveInvitationLink?: ResolveInvitationLink;
   audit?: (event: Record<string, string>) => void;
 }
 
@@ -270,6 +272,28 @@ export function createMailRouter(options: MailApiOptions): Router {
       } catch (error) {
         if (error instanceof AccessDenied) return mailError(response, 403, "mail_event_not_allowed", "The requested mail event is not allowed.");
         mailError(response, 502, "mail_delivery_failed", "The mail relay could not accept the message.");
+      }
+    },
+  );
+  router.post("/invitation-link",
+    limiter(10, 10 * 60_000, () => "mail-invitation-link-global"),
+    json({ limit: "1kb", strict: true, inflate: false }),
+    async (request, response) => {
+      const identity = response.locals.mailIdentity as MailIdentity;
+      if (identity.role !== "System Administrator") return mailError(response, 403, "mail_role_required", "System Administrator access is required.");
+      const body = request.body;
+      if (!plainObject(body) || Object.keys(body).some(field => field !== "entityId")
+        || typeof body.entityId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.entityId)) {
+        return mailError(response, 400, "invalid_invitation_request", "A valid user entityId is required.");
+      }
+      if (!options.resolveInvitationLink) return mailError(response, 503, "invitation_unavailable", "Secure invitation links are unavailable.");
+      try {
+        const activationLink = await options.resolveInvitationLink(body.entityId, identity);
+        response.locals.mailOutcome = "invitation_link_generated";
+        response.json({ success: true, activationLink });
+      } catch (error) {
+        if (error instanceof AccessDenied) return mailError(response, 403, "invitation_not_allowed", "A secure invitation link cannot be issued for this account.");
+        mailError(response, 503, "invitation_unavailable", "A secure invitation link could not be generated.");
       }
     },
   );

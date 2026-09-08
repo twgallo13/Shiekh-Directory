@@ -36,7 +36,13 @@ export interface UserProfile {
   accessScope?: string;
   personId?: string;
   status?: 'Active' | 'Revoked' | 'Suspended';
+  identityLinked?: boolean;
+  invitationStatus?: 'Pending' | 'Accepted';
+  invitedAt?: string;
+  lastLogin?: string;
 }
+
+export type UserOnboardingChoice = 'send' | 'copy' | 'access-only';
 
 export interface DayHours {
   open: string;

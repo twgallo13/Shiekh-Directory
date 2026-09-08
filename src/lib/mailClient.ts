@@ -40,6 +40,20 @@ export async function sendMailEvent(event: "user-invitation" | "request-submitte
   return body;
 }
 
+export async function createInvitationLink(entityId: string): Promise<string> {
+  const auth = getSharedAuth();
+  if (!auth.currentUser) throw new Error("Sign in with your authorized directory account to create an invitation link.");
+  const response = await fetch('/api/mail/invitation-link', {
+    method: 'POST',
+    redirect: 'error',
+    headers: { Authorization: `Bearer ${await auth.currentUser.getIdToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entityId }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || typeof body.activationLink !== 'string') throw new Error(body.error?.message || 'A secure sign-in link could not be generated.');
+  return body.activationLink;
+}
+
 export async function getMailSettings(): Promise<{ settings: MailSettings; passwordConfigured: boolean }> {
   return mailSettingsRequest("GET");
 }

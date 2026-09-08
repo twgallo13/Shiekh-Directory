@@ -72,6 +72,7 @@ export async function resolveEvent(firestore: Firestore, event: MailEvent, entit
     const content = await resolveTemplate(firestore, "tmpl-account-invite", {
       recipient_name: user.displayName || user.name || "there",
       role: user.role,
+      authorized_email: user.email.toLowerCase(),
       store_number: storeNumber,
       store_name: location?.docs[0]?.data()?.name || (storeNumber === "Company-wide" ? "All locations" : "Assigned location"),
       activation_link: activationLink,

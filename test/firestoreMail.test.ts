@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { Firestore } from "@google-cloud/firestore";
 import { resolveEvent, resolveTemplate } from "../server/firestoreMail";
 import type { MailConfiguration } from "../server/mailApi";
+import { INITIAL_EMAIL_TEMPLATES } from "../src/data/initialData";
 
 test("Firestore mail templates replace escaped variables and produce text alternatives", async () => {
   const firestore = {
@@ -66,4 +67,14 @@ test("user invitation resolves the onboarding template with account and store da
   assert.deepEqual(metadataWrites, [{ invitationStatus: "Pending", invitedAt: metadataWrites[0].invitedAt, invitedBy: "admin" }]);
   assert.equal(JSON.stringify(metadataWrites).includes("firebase-action-code"), false);
   assert.ok(requestedDocuments.includes("email_templates/tmpl-account-invite"));
+});
+
+test("seeded onboarding copy explains passwordless sign-in and optional password setup", () => {
+  const template = INITIAL_EMAIL_TEMPLATES.find(item => item.id === "tmpl-account-invite");
+  assert.ok(template);
+  assert.equal(template.subject, "Your Shiekh Directory secure sign-in link");
+  assert.ok(template.variables.includes("authorized_email"));
+  assert.match(template.bodyHtml, /you do not need a password/i);
+  assert.match(template.bodyHtml, /Set or change password/);
+  assert.match(template.bodyHtml, /Spam and your company quarantine/);
 });

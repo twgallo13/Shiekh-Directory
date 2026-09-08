@@ -17,22 +17,24 @@ export const INITIAL_EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     id: 'tmpl-account-invite',
     name: 'Account Invitation & Role Provisioning',
-    subject: 'Welcome to Shiekh Dynamic Directory — Access Provisioned for Store #{{store_number}}',
+    subject: 'Your Shiekh Directory secure sign-in link',
     triggerEvent: 'User Account Created',
-    variables: ['recipient_name', 'role', 'store_number', 'store_name', 'activation_link'],
-    updatedAt: '2026-09-01T10:00:00Z',
+    variables: ['recipient_name', 'authorized_email', 'role', 'store_number', 'store_name', 'activation_link'],
+    updatedAt: '2026-09-08T09:00:00Z',
     bodyHtml: `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
   <div style="background-color: #dc2626; color: white; padding: 18px 24px;">
     <h2 style="margin: 0; font-size: 20px;">Welcome to Shiekh Shoes Dynamic Directory</h2>
   </div>
   <div style="padding: 24px; background: white;">
     <p>Hello <strong>{{recipient_name}}</strong>,</p>
-    <p>You have been granted access to the Shiekh Shoes Dynamic Directory & QR Management console with the role: <span style="background-color: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 4px; font-weight: bold;">{{role}}</span>.</p>
-    <p><strong>Assigned Store Location:</strong> Store #{{store_number}} ({{store_name}})</p>
-    <p>Use the secure sign-in link below with <strong>the email address that received this invitation</strong>. The link is issued by Firebase and expires automatically.</p>
+    <p>An administrator granted <strong>{{authorized_email}}</strong> access to the Shiekh Directory.</p>
+    <p><strong>Role:</strong> {{role}}<br /><strong>Access:</strong> Store #{{store_number}} ({{store_name}})</p>
+    <p>Click the button below, then enter <strong>{{authorized_email}}</strong> when prompted. This link signs you in directly; you do not need a password.</p>
     <div style="margin: 24px 0;">
-      <a href="{{activation_link}}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Secure sign in</a>
+      <a href="{{activation_link}}" style="background-color: #b91c1c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Sign in to Shiekh Directory</a>
     </div>
+    <p>If you want to use a password later, sign in first, open <strong>My Profile / Account</strong>, and choose <strong>Set or change password</strong>. That sends a separate password email.</p>
+    <p style="font-size: 12px; color: #4b5563;">This secure link expires automatically. If it has expired, ask a directory administrator for a new link. If you cannot find this message, check Spam and your company quarantine.</p>
     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
     <p style="font-size: 11px; color: #6b7280; margin: 0;">This is an automated administrative invitation dispatched by the Shiekh Directory Relay.</p>
   </div>

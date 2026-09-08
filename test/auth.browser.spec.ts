@@ -65,10 +65,10 @@ test("loading gate, password errors, reset and Google share one session", async 
 test("passwordless send and completion scrub URL and require email confirmation", async ({ page }) => {
   await prepare(page);
   await page.goto(`${origin}/sign-in`); await restore(page, false);
-  await page.getByRole("tab", { name: "Email link", exact: true }).click();
+  await page.getByRole("tab", { name: "Email link (no password)", exact: true }).click();
   await page.getByLabel("Email", { exact: true }).fill("user@example.test");
   await page.getByRole("button", { name: "Send sign-in link" }).click();
-  await expect(page.getByRole("status")).toContainText("Check your email");
+  await expect(page.getByRole("status")).toContainText("Check Spam or company quarantine");
   const sent = await page.evaluate(() => (window as any).__authCalls.at(-1));
   expect(sent.args[1]).toEqual({ url: `${origin}/auth/email-link`, handleCodeInApp: true });
   await page.goto(`${origin}/auth/email-link?mode=signIn&oobCode=synthetic-code&apiKey=test-key`);
@@ -97,7 +97,7 @@ test("password sign-in and sign-out failure keep protected content cleared", asy
   await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "Sign in with password" }).click();
   await expect(page.getByRole("heading", { name: "My Profile / Account" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send password reset" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Set or change password" })).toBeVisible();
   await page.evaluate(() => { (window as any).__authFailure = "auth/network-request-failed"; });
   await page.getByRole("button", { name: "Sign out", exact: true }).last().click();
   await expect(page.getByRole("alert")).toContainText("Sign-out could not finish");

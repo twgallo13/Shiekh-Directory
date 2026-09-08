@@ -27,8 +27,10 @@ export function SignInView() {
       <h2 className="text-lg font-semibold">{complete ? "Complete email sign-in" : mode === "reset" ? "Reset password" : "Sign in"}</h2>
       {!complete && <button type="button" disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 bg-white px-4 py-3 text-sm disabled:opacity-50" onClick={() => void run(() => authActions().google())}><LogIn className="h-4 w-4" />Continue with Google</button>}
       {!complete && <div className="flex border-b border-neutral-300" role="tablist" aria-label="Email sign-in method">
-        {([['password', 'Password'], ['link', 'Email link']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={busy} onClick={() => { setMode(value); setError(""); setMessage(""); }} className={`flex-1 border-b-2 px-3 py-2 text-sm ${mode === value ? 'border-red-600 font-semibold' : 'border-transparent'}`}>{label}</button>)}
+        {([['password', 'Password'], ['link', 'Email link (no password)']] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={mode === value} disabled={busy} onClick={() => { setMode(value); setError(""); setMessage(""); }} className={`flex-1 border-b-2 px-3 py-2 text-sm ${mode === value ? 'border-red-600 font-semibold' : 'border-transparent'}`}>{label}</button>)}
       </div>}
+      {!complete && mode === "link" && <p className="text-sm text-neutral-600">Use this after an administrator grants you access. The email signs you in without a password and may appear in Spam or company quarantine.</p>}
+      {complete && <p className="text-sm text-neutral-600">Enter the exact email address that received this secure link. No password is required.</p>}
       <form className="space-y-4" onSubmit={event => {
         event.preventDefault();
         void run(async () => {
@@ -36,7 +38,7 @@ export function SignInView() {
           if (emailLink) { await actions.completeLink(email, emailLink); clearEmailLink(); navigate("/", { replace: true }); }
           else if (mode === "password") await actions.password(email, password);
           else if (mode === "reset") { await actions.reset(email); setMessage("If this account is eligible, a password-reset email will arrive shortly."); }
-          else { await actions.sendLink(email); setMessage("Check your email for a sign-in link. Use the same email address to complete sign-in."); }
+          else { await actions.sendLink(email); setMessage("Firebase submitted a passwordless sign-in email. Check Spam or company quarantine, then use the same email address to complete sign-in."); }
         });
       }}>
         <label className="block text-sm font-medium">Email<input type="email" name="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2" /></label>

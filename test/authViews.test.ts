@@ -17,7 +17,7 @@ test("loading, signed-out and denied deep routes never render protected content"
   for (const status of ["loading", "signed-out", "denied"] as const) {
     const html = gated({ status }); assert.equal(html.includes("PROTECTED_DIRECTORY"), false);
     if (status === "loading") assert.match(html, /Restoring secure session/);
-    if (status === "signed-out") { assert.match(html, /Continue with Google/); assert.match(html, /type="password"/); assert.match(html, /Forgot password/); assert.match(html, /Email link/); }
+    if (status === "signed-out") { assert.match(html, /Continue with Google/); assert.match(html, /type="password"/); assert.match(html, /Forgot password/); assert.match(html, /Email link \(no password\)/); }
     if (status === "denied") assert.match(html, /Sign out/);
   }
   assert.match(gated({ status: "authorized", account }), /PROTECTED_DIRECTORY/);
@@ -25,7 +25,7 @@ test("loading, signed-out and denied deep routes never render protected content"
 });
 test("email link completion requests the email again without exposing action codes", () => {
   const html = gated({ status: "signed-out", emailLink: "https://directory.example.test/auth/email-link?oobCode=synthetic-secret" });
-  assert.match(html, /Complete email sign-in/); assert.match(html, /type="email"/); assert.doesNotMatch(html, /synthetic-secret|type="password"|PROTECTED_DIRECTORY/);
+  assert.match(html, /Complete email sign-in/); assert.match(html, /No password is required/); assert.match(html, /type="email"/); assert.doesNotMatch(html, /synthetic-secret|type="password"|PROTECTED_DIRECTORY/);
 });
 test("profile renders server identity, verification, role, scope, method and linked person read-only", () => {
   const html = renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(AccountDetails, { account, person: { id: "person-test", fullName: "Synthetic Person" } })));

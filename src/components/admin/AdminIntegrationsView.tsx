@@ -1741,8 +1741,8 @@ export const AdminIntegrationsView: React.FC = () => {
               {!editingUser && <fieldset className="space-y-2">
                 <legend className="font-semibold text-neutral-700">Onboarding *</legend>
                 {([
-                  ['send', 'Send secure sign-in link', 'Submit an email through the configured Gmail relay.'],
-                  ['copy', 'Copy secure sign-in link', 'Create a fresh Firebase link without sending email.'],
+                  ['send', 'Send secure sign-in link', 'Submit through Gmail. The recipient may need to check Spam or company quarantine.'],
+                  ['copy', 'Copy secure sign-in link', 'Create a fresh Firebase link to share directly when email is delayed or filtered.'],
                   ['access-only', 'Grant access without email', 'Create authorization now; onboarding can happen later.'],
                 ] as const).map(([value, label, description]) => <label key={value} className="flex cursor-pointer gap-2 border-t border-neutral-200 py-2 first:border-t-0">
                   <input type="radio" name="onboarding" value={value} checked={onboardingChoice === value} onChange={() => setOnboardingChoice(value)} className="mt-0.5 accent-red-600" />

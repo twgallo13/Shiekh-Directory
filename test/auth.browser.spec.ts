@@ -42,6 +42,95 @@ async function restore(page: Page, signedIn: boolean) {
   await page.evaluate(value => (window as any).__restore(value), signedIn);
 }
 
+async function prepareCustomFields(page: Page, role = 'System Administrator') {
+  await prepare(page, role);
+  const field = { id: 'capacity', label: 'Capacity', type: 'number', helpText: '', options: [], order: 1, apiVisible: false, retired: false };
+  const seed: any = { locations: [{ id: 'loc-custom', storeNumber: '07', name: 'Metadata Test Store', type: 'Strip Center / Shopping Center', address: '700 Test Avenue', city: 'Los Angeles', state: 'CA', zipCode: '90001', phone: '555-555-0107', timeZone: 'America/Los_Angeles', operationalStatus: 'Open — Normal Operations', recordStatus: 'Active', standardHours: Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, { open: '10:00', close: '20:00', isClosed: false }])), customMetadata: {} }], people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [], customFieldDefinitions: [field, { ...field, id: 'pickup', label: 'Pickup available', type: 'boolean' }, { ...field, id: 'platform', label: 'Platform', type: 'select', options: ['Yelp', 'Apple Maps'] }, { ...field, id: 'reference', label: 'Platform reference', type: 'text' }] };
+  const commits: any[] = [];
+  let fail = false;
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); commits.push(body);
+    if (fail) return route.fulfill({ status: 409, json: { error: { message: 'Custom metadata changed. Reload the directory before saving.' } } });
+    for (const write of body.writes) {
+      const key = write.collection === 'custom_field_definitions' ? 'customFieldDefinitions' : 'locations';
+      seed[key] = [...seed[key].filter((record: any) => record.id !== write.id), { ...write.data, id: write.id }];
+    }
+    await route.fulfill({ status: 204, body: '' });
+  });
+  return { seed, commits, failWrites: () => { fail = true; } };
+}
+
+for (const width of [1440, 390]) {
+  test(`Custom Fields create, save, reload and retire at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const fixture = await prepareCustomFields(page);
+    await page.goto(`${origin}/admin`); await restore(page, true);
+    await page.getByRole('button', { name: 'Custom Fields', exact: true }).click();
+    await page.getByRole('button', { name: 'Add field', exact: true }).click();
+    await page.getByLabel('Field label', { exact: true }).fill('Yelp profile');
+    await page.getByLabel('Permanent field key').fill('yelpUrl');
+    await page.getByLabel('Help text').fill('Public listing');
+    await page.getByLabel('Expose in read-only API').check();
+    await page.getByRole('button', { name: 'Save field', exact: true }).click();
+    await expect(page.getByRole('status')).toHaveText('Yelp profile saved.');
+    expect(fixture.commits[0].writes[0].expectedDefinition).toBeNull();
+    expect(fixture.seed.customFieldDefinitions.find((field: any) => field.id === 'yelpUrl').apiVisible).toBe(true);
+    await page.getByRole('heading', { name: 'Custom Fields', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`custom-fields-${width}.png`), fullPage: true });
+    await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+    await page.getByLabel('Yelp profile', { exact: true }).fill('https://example.test/yelp');
+    await page.getByLabel('Capacity', { exact: true }).fill('0');
+    await page.getByLabel('Pickup available', { exact: true }).check();
+    await page.getByLabel('Pickup available', { exact: true }).uncheck();
+    await page.getByLabel('Platform', { exact: true }).selectOption('Apple Maps');
+    await page.getByLabel('Platform reference', { exact: true }).fill('Store 07 listing');
+    await page.getByRole('region', { name: 'Custom Metadata', exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`custom-metadata-${width}.png`), fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole('button', { name: /Save.*Record/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(fixture.seed.locations[0].customMetadata).toEqual({ yelpUrl: 'https://example.test/yelp', capacity: 0, pickup: false, platform: 'Apple Maps', reference: 'Store 07 listing' });
+    await page.goto(`${origin}/locations/loc-custom`); await restore(page, true);
+    await expect(page.getByRole('link', { name: 'https://example.test/yelp' })).toBeVisible();
+    await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+    await expect(page.getByLabel('Yelp profile', { exact: true })).toHaveValue('https://example.test/yelp');
+    await page.goto(`${origin}/admin`); await restore(page, true);
+    await page.getByRole('button', { name: 'Custom Fields', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit Yelp profile', exact: true }).click();
+    await expect(page.getByLabel('Permanent field key')).toBeDisabled();
+    await expect(page.getByLabel('Field type', { exact: true })).toBeDisabled();
+    await page.getByLabel('Retired', { exact: true }).check();
+    await page.getByRole('button', { name: 'Save field', exact: true }).click();
+    await expect(page.getByRole('status')).toHaveText('Yelp profile saved.');
+    await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+    await expect(page.getByLabel('Capacity', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Yelp profile', { exact: true })).toHaveCount(0);
+    expect(fixture.seed.locations[0].customMetadata.yelpUrl).toBe('https://example.test/yelp');
+  });
+}
+
+test('Custom Fields failed saves preserve the location draft and never report success', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const fixture = await prepareCustomFields(page); fixture.failWrites();
+  await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+  await page.getByLabel('Capacity', { exact: true }).fill('12');
+  await page.getByRole('button', { name: /Save.*Record/ }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Custom metadata changed');
+  await expect(page.getByLabel('Capacity', { exact: true })).toHaveValue('12');
+  expect(fixture.seed.locations[0].customMetadata).toEqual({});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('Custom Fields definitions are read-only for data stewards', async ({ page }) => {
+  await prepareCustomFields(page, 'Directory Data Steward');
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Custom Fields', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Capacity', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add field', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Edit Capacity', exact: true })).toHaveCount(0);
+});
+
 test("loading gate, password errors, reset and Google share one session", async ({ page }) => {
   await prepare(page);
   await page.goto(`${origin}/account`);

@@ -12,4 +12,5 @@ export interface DirectorySeed {
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
   sopRunbooks: SopRunbook[];
+  customFieldDefinitions?: import('./customFields').CustomFieldDefinition[];
 }

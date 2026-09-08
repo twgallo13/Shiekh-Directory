@@ -4,6 +4,8 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { useDialogFocus } from '../common/useDialogFocus';
+import { CustomMetadataFields } from './CustomMetadataFields';
+import { validateCustomMetadata } from '../../lib/customFields';
 import { 
   X, 
   Save, 
@@ -57,8 +59,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   onSaved,
 }) => {
   const { 
-    updateLocation, 
-    createLocation,
+    saveLocationRecord,
+    customFieldDefinitions,
     hoursTemplates, 
     corporateHolidays,
     people 
@@ -67,6 +69,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const [formData, setFormData] = useState<LocationRecord | null>(() => location ? normalizeLocation(location) : null);
   const [activeTab, setActiveTab] = useState<EditModalTab>('details');
   const [confirmation, setConfirmation] = useState<'discard' | 'retire' | 'reactivate' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
   const isCreating = mode === 'create';
 
@@ -75,6 +79,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       setFormData(normalizeLocation(location));
       setActiveTab('details');
       setConfirmation(null);
+      setSaveError('');
     }
   }, [location]);
 
@@ -84,12 +89,13 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   }, [formData, location]);
 
   const requestClose = useCallback(() => {
+    if (saving) return;
     if (isDirty) {
       setConfirmation('discard');
       return;
     }
     onClose();
-  }, [isDirty, onClose]);
+  }, [isDirty, onClose, saving]);
 
   useDialogFocus(Boolean(location) && confirmation === null, requestClose, dialogRef);
 
@@ -125,8 +131,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
   if (!location || !formData) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     const districtManager = people.find(person => person.id === formData.districtManagerId);
     const storeManager = people.find(person => person.id === formData.storeManagerId);
     const assistantStoreManagerIds = (formData.assistantStoreManagerIds || []).filter(Boolean);
@@ -149,15 +156,14 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       holidayHours: (formData.holidayHours || []).filter(h => h.holidayName.trim().length > 0 || h.date.trim().length > 0)
     };
 
-    if (isCreating) {
-      const { id: _draftId, ...newLocationData } = sanitizedData;
-      createLocation(newLocationData);
-      onSaved?.(`Store #${sanitizedData.storeNumber} was created.`);
-    } else {
-      updateLocation(location.id, sanitizedData);
-      onSaved?.(`Store #${sanitizedData.storeNumber} was saved.`);
-    }
-    onClose();
+    setSaving(true); setSaveError('');
+    try {
+      sanitizedData.customMetadata = validateCustomMetadata(sanitizedData.customMetadata || {}, customFieldDefinitions, location.customMetadata || {});
+      await saveLocationRecord(sanitizedData, isCreating, location.customMetadata || {});
+      onSaved?.(`Store #${sanitizedData.storeNumber} was ${isCreating ? 'created' : 'saved'}.`);
+      onClose();
+    } catch (error) { setSaveError(error instanceof Error ? error.message : 'The location could not be saved.'); }
+    finally { setSaving(false); }
   };
 
   const handleApplyTemplate = (templateId: string) => {
@@ -503,6 +509,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
         {/* Scrollable Form Body: Flat, clean white background and minimal borders */}
         <form id="location-edit-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto bg-white p-5 sm:p-6">
+          <fieldset disabled={saving} className="min-w-0">
           
           {/* Lifecycle / Status Notice if Retired */}
           {formData.recordStatus === 'Retired' && (
@@ -747,6 +754,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              <CustomMetadataFields definitions={customFieldDefinitions} values={formData.customMetadata || {}} onChange={customMetadata => setFormData({ ...formData, customMetadata })} />
 
               {/* Section 3: Store Leadership Assignment */}
               <div className="space-y-4">
@@ -1332,8 +1341,10 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
             </div>
           )}
 
+          </fieldset>
         </form>
 
+        {saveError && <p role="alert" className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">{saveError}</p>}
         {/* Sticky Action Footer */}
         <div className="sticky bottom-0 z-20 flex shrink-0 items-center justify-between gap-2 border-t border-neutral-200 bg-white p-3 shadow-sm sm:p-4">
           <div>
@@ -1341,6 +1352,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
               <button
                 type="button"
                 onClick={handleToggleRetire}
+                disabled={saving}
                 className="flex cursor-pointer items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 shadow-2xs transition-colors hover:bg-neutral-100"
               >
                 <Archive className="w-3.5 h-3.5 text-neutral-500" />
@@ -1350,6 +1362,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
               <button
                 type="button"
                 onClick={handleToggleRetire}
+                disabled={saving}
                 className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
@@ -1370,11 +1383,12 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
             <button
               type="submit"
               form="location-edit-form"
+              disabled={saving}
               className="flex cursor-pointer items-center gap-2 rounded-md bg-red-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-800 sm:px-5"
             >
               <Save className="w-4 h-4" />
-              <span className="sm:hidden">{isCreating ? 'Create' : 'Save Record'}</span>
-              <span className="hidden sm:inline">{isCreating ? 'Create Location' : 'Save Authoritative Record'}</span>
+              <span className="sm:hidden">{saving ? 'Saving...' : isCreating ? 'Create' : 'Save Record'}</span>
+              <span className="hidden sm:inline">{saving ? 'Saving...' : isCreating ? 'Create Location' : 'Save Authoritative Record'}</span>
             </button>
           </div>
         </div>

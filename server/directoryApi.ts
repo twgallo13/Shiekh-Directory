@@ -2,6 +2,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 import type { ErrorRequestHandler, Request, RequestHandler, Response } from "express";
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
+import { publicCustomMetadata, sortedCustomFields, type CustomFieldDefinition } from "../src/lib/customFields";
 
 export const LOCATION_READ_SCOPE = "locations:read";
 
@@ -22,6 +23,7 @@ export interface LocationDocument {
 export interface LocationRepository {
   readPage(options: LocationPageOptions): Promise<LocationPage>;
   findActiveByStoreNumber(storeNumber: string): Promise<LocationDocument | null>;
+  readCustomFieldDefinitions?(): Promise<CustomFieldDefinition[]>;
 }
 
 export interface LocationPageOptions {
@@ -64,6 +66,7 @@ interface CursorPayload {
   id: string;
   updatedSince: string | null;
   snapshotAt: string;
+  customFieldsVersion?: string;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -153,6 +156,18 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
 
   router.use(createAuthenticationMiddleware(options.credentials, options.tokenHmacSecret, now));
   router.use(requireScope(LOCATION_READ_SCOPE));
+  router.use(async (_request, response, next) => {
+    const definitions = sortedCustomFields(await options.locations.readCustomFieldDefinitions?.() || []);
+    const fields = definitions.filter(field => field.apiVisible && !field.retired);
+    response.locals.customFieldDefinitions = fields;
+    response.locals.customFieldsVersion = createHash('sha256').update(JSON.stringify(fields)).digest('hex');
+    response.locals.hasCustomFieldSchema = Boolean(options.locations.readCustomFieldDefinitions);
+    next();
+  });
+
+  router.get('/location-fields', (_request, response) => {
+    response.set('Cache-Control', 'no-store').json({ version: response.locals.customFieldsVersion, fields: response.locals.customFieldDefinitions });
+  });
 
   router.get("/locations", async (request, response) => {
     const limit = parsePageSize(request.query.limit);
@@ -181,26 +196,34 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
     if (updatedSince && updatedSince > snapshotAt) {
       return sendError(response, 400, "invalid_updated_since", "updatedSince cannot exceed the snapshot watermark.");
     }
+    const customFieldsVersion = response.locals.customFieldsVersion as string;
+    if ((cursor && cursor.customFieldsVersion !== customFieldsVersion)
+      || (request.query.customFieldsVersion !== undefined && request.query.customFieldsVersion !== customFieldsVersion)) {
+      return sendError(response, 409, 'custom_fields_changed', 'Custom fields changed. Restart a full reconciliation without a cursor, updatedSince, or customFieldsVersion.');
+    }
+    const effectiveUpdatedSince = response.locals.hasCustomFieldSchema && request.query.customFieldsVersion === undefined ? null : updatedSince;
 
     const result = await options.locations.readPage({ snapshotAt, limit, afterId: cursor?.id });
     const page = result.records
       .filter((record) => record.data.recordStatus === "Active")
       .filter((record) => record.updatedAt <= snapshotAt)
-      .filter((record) => !updatedSince || record.updatedAt.getTime() >= updatedSince.getTime());
+      .filter((record) => !effectiveUpdatedSince || record.updatedAt.getTime() >= effectiveUpdatedSince.getTime());
     const nextCursor = result.nextId
       ? encodeCursor({
           v: 2,
           id: result.nextId,
           updatedSince: canonicalUpdatedSince,
           snapshotAt: snapshotAt.toISOString(),
+          customFieldsVersion,
         }, options.tokenHmacSecret)
       : null;
 
     return sendCacheableJson(request, response, {
-      data: page.map(mapPublicLocation),
+      data: page.map(record => mapPublicLocation(record, response.locals.customFieldDefinitions)),
       sync: {
         watermark: snapshotAt.toISOString(),
-        mode: updatedSince ? "delta" : "full",
+        mode: effectiveUpdatedSince ? "delta" : "full",
+        customFieldsVersion,
         fullReconciliationRequired: true,
       },
       pagination: {
@@ -221,7 +244,7 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
       return sendError(response, 404, "location_not_found", "Location not found.");
     }
 
-    return sendCacheableJson(request, response, { data: mapPublicLocation(location) });
+    return sendCacheableJson(request, response, { data: mapPublicLocation(location, response.locals.customFieldDefinitions), customFieldsVersion: response.locals.customFieldsVersion });
   });
 
   router.use((_request, response) => {
@@ -324,7 +347,7 @@ function sendError(response: Response, status: number, code: string, message: st
 function sendCacheableJson(request: Request, response: Response, payload: unknown): Response {
   const body = JSON.stringify(payload);
   const etag = `"${createHash("sha256").update(body).digest("base64url")}"`;
-  response.setHeader("Cache-Control", "private, max-age=60, must-revalidate");
+  response.setHeader("Cache-Control", response.locals.hasCustomFieldSchema ? "no-store" : "private, max-age=60, must-revalidate");
   response.setHeader("ETag", etag);
 
   if (request.get("if-none-match")?.split(",").map((value) => value.trim()).includes(etag)) {
@@ -334,13 +357,14 @@ function sendCacheableJson(request: Request, response: Response, payload: unknow
   return response.type("application/json").send(body);
 }
 
-function mapPublicLocation(record: LocationDocument): Record<string, unknown> {
+function mapPublicLocation(record: LocationDocument, definitions: CustomFieldDefinition[]): Record<string, unknown> {
   const source = record.data;
   const location: Record<string, unknown> = {
     id: record.id,
     storeNumber: getStoreNumber(record),
     recordStatus: "Active",
     updatedAt: record.updatedAt.toISOString(),
+    customMetadata: publicCustomMetadata(source.customMetadata, definitions),
   };
 
   copyStrings(source, location, [

@@ -3,6 +3,8 @@ import { Firestore, type QueryDocumentSnapshot } from "@google-cloud/firestore";
 import type { Account } from "./authAuthority";
 import type { DirectorySeed } from "../src/lib/directorySeed";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
+import { isPlainRecord, isWebUrl, parseCustomFieldDefinition, validateCustomMetadata, type CustomFieldDefinition } from "../src/lib/customFields";
+import { isDeepStrictEqual } from "node:util";
 
 export const DIRECTORY_COLLECTIONS = {
   locations: "locations",
@@ -16,12 +18,15 @@ export const DIRECTORY_COLLECTIONS = {
   notificationRules: "notification_rules",
   outboxLogs: "outbox_logs",
   sopRunbooks: "sop_runbooks",
+  customFieldDefinitions: "custom_field_definitions",
 } as const;
 
 export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRECTORY_COLLECTIONS];
-export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown> }
+export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown> }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
 export class DirectoryConflict extends Error {}
+export class DirectoryValidationError extends Error {}
+export class DirectoryWriteDenied extends Error {}
 
 export interface DirectoryReader {
   read(): Promise<DirectorySeed>;
@@ -45,6 +50,10 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<void> {
     await this.firestore.runTransaction(async transaction => {
       const snapshots = await Promise.all(writes.map(write => transaction.get(this.firestore.collection(write.collection).doc(write.id))));
+      const needsDefinitions = writes.some(write => write.collection === 'custom_field_definitions' || (write.collection === 'locations' && write.operation === 'set'));
+      const definitionSnapshot = needsDefinitions ? await transaction.get(this.firestore.collection('custom_field_definitions').limit(101)) : null;
+      const definitions = definitionSnapshot?.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id })) || [];
+      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
       const locationMatches = await Promise.all(locationQueries.map(({ query }) => transaction.get(query)));
@@ -67,7 +76,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         }
       });
 
-      writes.forEach(write => {
+      validatedWrites.forEach(write => {
         const reference = this.firestore.collection(write.collection).doc(write.id);
         if (write.operation === "delete") transaction.delete(reference);
         else transaction.set(reference, { ...write.data, id: write.id }, { merge: write.collection === "users" });
@@ -75,7 +84,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       if (audit) {
         const id = `aud-${Date.now()}-${randomUUID().slice(0, 8)}`;
         const previousState = snapshots.length === 1 && snapshots[0].exists ? snapshots[0].data() : undefined;
-        const nextState = writes.length === 1 && writes[0].operation === "set" ? { ...writes[0].data, id: writes[0].id } : undefined;
+        const nextState = validatedWrites.length === 1 && validatedWrites[0].operation === "set" ? { ...validatedWrites[0].data, id: validatedWrites[0].id } : undefined;
         transaction.set(this.firestore.collection("audit_logs").doc(id), {
           id,
           timestamp: new Date().toISOString(),
@@ -92,6 +101,53 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       }
     });
   }
+}
+
+export function validateMetadataWrites(writes: DirectoryWrite[], previous: (Record<string, unknown> | undefined)[], definitions: CustomFieldDefinition[], actor: Account): DirectoryWrite[] {
+  if (new Set(writes.map(write => `${write.collection}/${write.id}`)).size !== writes.length) throw new DirectoryValidationError('Duplicate writes are not allowed.');
+  if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
+  return writes.map((write, index) => {
+    const current = previous[index];
+    if (write.collection === 'custom_field_definitions') {
+      if (actor.role !== 'System Administrator') throw new DirectoryWriteDenied('Only system administrators can define custom fields.');
+      if (write.operation !== 'set') throw new DirectoryValidationError('Retire custom fields instead of deleting them.');
+      if (!Object.hasOwn(write, 'expectedDefinition') || !isDeepStrictEqual(write.expectedDefinition, current ? parseCustomFieldDefinition(current) : null)) {
+        throw new DirectoryConflict('This field definition changed. Reload the directory before saving.');
+      }
+      let definition: CustomFieldDefinition;
+      try { definition = parseCustomFieldDefinition(write.data); }
+      catch (error) { throw new DirectoryValidationError((error as Error).message); }
+      if (definition.id !== write.id) throw new DirectoryValidationError('The field key cannot change.');
+      if (!current && definitions.length >= 100) throw new DirectoryValidationError('The directory supports up to 100 custom field definitions, including retired fields.');
+      if (current && (definition.type !== current.type || (current.options as string[]).some(option => !definition.options.includes(option)))) {
+        throw new DirectoryValidationError('Field types and existing choices cannot change. Retire the field and create a new one.');
+      }
+      return { ...write, data: { ...definition } };
+    }
+    if (write.collection !== 'locations' || write.operation !== 'set') return write;
+    const data = { ...write.data };
+    const existing = isPlainRecord(current?.customMetadata) ? current.customMetadata : {};
+    const supplied = Object.hasOwn(data, 'customMetadata') ? data.customMetadata : existing;
+    const changed = !isDeepStrictEqual(supplied, existing);
+    if (changed) {
+      if (!['System Administrator', 'Directory Data Steward', 'Editor'].includes(actor.role)) throw new DirectoryWriteDenied('Your role cannot edit location metadata.');
+      const companyScope = ['Company', 'Company-wide'].includes(actor.accessScope);
+      const storeScope = actor.accessScope.match(/^Store ([0-9]+)$/)?.[1];
+      if (!companyScope && (!storeScope || storeScope !== data.storeNumber || (current && storeScope !== current.storeNumber))) {
+        throw new DirectoryWriteDenied('Your access scope does not permit metadata changes for this store.');
+      }
+      if (!isDeepStrictEqual(write.expectedCustomMetadata, existing)) throw new DirectoryConflict('Custom metadata changed. Reload the directory before saving.');
+    }
+    for (const key of ['googleReviewUrl', 'storePageUrl']) {
+      if (data[key] !== undefined && data[key] !== '' && !isWebUrl(data[key]) && data[key] !== current?.[key]) {
+        throw new DirectoryValidationError(`${key} must be an HTTP or HTTPS URL without credentials.`);
+      }
+    }
+    try {
+      if (Object.hasOwn(data, 'customMetadata') || Object.keys(existing).length > 0) data.customMetadata = validateCustomMetadata(supplied, definitions, existing);
+    } catch (error) { throw new DirectoryValidationError((error as Error).message); }
+    return { ...write, data };
+  });
 }
 
 export function createFirestoreDirectoryStore(): FirestoreDirectoryStore {

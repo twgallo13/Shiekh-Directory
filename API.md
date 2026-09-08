@@ -13,6 +13,7 @@ Query parameters:
 - `limit`: optional integer from 1 to 100; defaults to 50. This bounds scanned documents, not the count of matching active records. A filtered page may be empty and still have a continuation cursor.
 - `cursor`: optional opaque cursor returned in `pagination.nextCursor`.
 - `updatedSince`: optional valid ISO 8601 timestamp with a timezone and at most millisecond precision. Matching uses Firestore document update time, with an inclusive lower bound to permit safe boundary replay. Upsert by store number.
+- `customFieldsVersion`: schema version saved from the last completed synchronization. Send it with delta requests and their continuation pages. If omitted, the production repository returns a full reconciliation even when `updatedSince` is supplied, so field visibility changes cannot silently leave stale metadata downstream. A mismatched version returns `409 custom_fields_changed`.
 
 The response contains active records only:
 
@@ -37,7 +38,48 @@ Returns one active public location, or a JSON `404` when the store is unknown, r
 
 Store numbers are exact strings, including leading zeros. Ambiguous identities return `409 location_conflict` without document IDs or record values. A new list run validates all location identities, including inactive records, at the snapshot before returning any data. Detail requests check for two matching documents rather than choosing one. This release intentionally blocks the currently duplicated dataset until a separately approved reconciliation establishes unique identities.
 
-Successful responses include `X-Request-ID`, a strong `ETag`, and `Cache-Control: private, max-age=60, must-revalidate`. Send `If-None-Match` on later requests to receive `304 Not Modified` when appropriate. A new list run has a new watermark and therefore a new representation/ETag; detail responses and repeated snapshot pages can be revalidated.
+Successful production location responses include `X-Request-ID`, a strong `ETag`, and `Cache-Control: no-store`. Custom-field publication rules are read afresh on each request; stale cached responses must not keep publishing withdrawn metadata. Send `If-None-Match` on later requests to receive `304 Not Modified` when appropriate. A new list run has a new watermark and therefore a new representation/ETag; detail responses and repeated snapshot pages can be revalidated.
+
+### Location URLs and Custom Metadata
+
+`googleReviewUrl` and `storePageUrl` remain optional top-level strings in both list and detail responses. Their existing names are reserved and cannot be reused for custom fields. They are editable built-in fields, not a claim that GBP automation is connected.
+
+Every location response now includes a `customMetadata` object. Only defined, active fields whose `apiVisible` flag is true and whose stored values satisfy the field type are returned. Internal, retired, undefined, and invalid values are omitted. False and zero are preserved. All custom fields are optional. Example location fragment:
+
+```json
+{
+  "googleReviewUrl": "https://example.test/review",
+  "storePageUrl": "https://example.test/store",
+  "customMetadata": {
+    "yelpUrl": "https://example.test/yelp",
+    "pickupAvailable": false
+  }
+}
+```
+
+### `GET /api/v1/location-fields`
+
+Requires the same Bearer credential and `locations:read` scope as location reads. Returns `Cache-Control: no-store` with `{ "version": "<sha256>", "fields": [...] }`. Only API-visible, active definitions are returned, sorted by display order and key. Each definition contains `id` (the permanent metadata key), `label`, `type`, `helpText`, `options`, `order`, `apiVisible`, and `retired`. Types are `url`, `text`, `number`, `boolean`, and `select`.
+
+List responses include `sync.customFieldsVersion`; detail responses include top-level `customFieldsVersion`. The version hashes the published definitions. Label, choice, visibility, and retirement changes affecting the published schema change this version, even if no location document was modified. Schema changes invalidate in-flight pagination cursors with `409 custom_fields_changed`.
+
+Consumer synchronization rules:
+
+1. Start with `GET /api/v1/locations` and follow all continuation pages.
+2. Replace each received location's entire `customMetadata` object; do not merge it with stale keys. `{}` means there are no currently published custom values for that location.
+3. Save the watermark and `customFieldsVersion` only after the final page succeeds. Keep the same filter/version query parameters on continuation requests.
+4. Send both `updatedSince=<watermark>` and `customFieldsVersion=<version>` for subsequent delta runs. A client that omits the version receives full results instead.
+5. On `409 custom_fields_changed`, discard the incomplete run and start a full reconciliation without `cursor`, `updatedSince`, or `customFieldsVersion`. Do not merely substitute the latest version into a delta request: older records may need fields added or removed.
+
+The full-reconciliation requirement for retired/deleted stores still applies. Removing a field from this API cannot erase copies already held by a consumer; consumers must follow replacement and reconciliation rules.
+
+### Custom Field Writes (Application Only)
+
+The read-only service API never accepts metadata writes. Signed-in application users use `POST /api/directory/commit` with Firebase authentication. `custom_field_definitions` writes require `System Administrator`, exactly one definition per commit, and `expectedDefinition` containing the last-read definition (`null` when creating). Definitions and audit entries are saved transactionally. Keys/types and existing choice values cannot change; labels/help/order/API visibility can change. Definitions may be retired/reactivated but not deleted. There is a limit of 100 definitions including retired ones.
+
+Location metadata is validated against the current definitions inside the location transaction. Changes require `expectedCustomMetadata` containing the last-read entire metadata object (`{}` for a new record). A concurrent change returns `409 directory_conflict`; invalid values return `400 invalid_metadata`. Metadata edits require Administrator, Data Steward, or Editor roles and a recognized scope: `Company`, `Company-wide`, or exact `Store <storeNumber>` (including leading zeros). Other scopes fail closed for metadata changes. Existing UI rules still limit direct location editing to administrators and stewards. This does not expand or redesign permissions for unrelated directory fields.
+
+URL values must be absolute HTTP/HTTPS URLs without embedded credentials and at most 2048 characters. Text values are limited to 2000 characters; numbers must be finite; booleans must be actual JSON booleans; choice values must match their definition. Empty optional values are removed rather than stored as null. Unknown keys are rejected, omitted existing metadata is preserved, and retired field values are retained but cannot be changed. Newly changed built-in URL values are validated too; unchanged legacy URLs do not block unrelated saves.
 
 Errors use this shape:
 

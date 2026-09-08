@@ -48,8 +48,10 @@ import { useDialogFocus } from '../common/useDialogFocus';
 import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
+import { CustomFieldsPanel } from './CustomFieldsPanel';
 
 type AdminTab = 
+  | 'custom-fields'
   | 'csv' 
   | 'hours' 
   | 'gbp' 
@@ -594,6 +596,12 @@ export const AdminIntegrationsView: React.FC = () => {
       title: 'DATA & STORE FLEET',
       items: [
         {
+          id: 'custom-fields' as AdminTab,
+          label: 'Custom Fields',
+          icon: Sliders,
+          keywords: ['custom', 'fields', 'metadata', 'yelp', 'apple', 'urls']
+        },
+        {
           id: 'hours' as AdminTab,
           label: 'Hours Templates',
           icon: Clock,
@@ -921,6 +929,7 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* ======================================================== */}
       {/* Tab 2: Google Business Profile (GBP) */}
       {/* ======================================================== */}
+      {activeTab === 'custom-fields' && <CustomFieldsPanel />}
       {activeTab === 'gbp' && (
         <div className="space-y-6">
           <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs">

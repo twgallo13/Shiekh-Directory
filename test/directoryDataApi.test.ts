@@ -4,7 +4,7 @@ import { test } from "node:test";
 import express from "express";
 import type { Account } from "../server/authAuthority";
 import { createDirectoryDataRouter } from "../server/directoryDataApi";
-import { DirectoryConflict, type DirectoryAudit, type DirectoryWrite, type DirectoryWriter } from "../server/firestoreDirectory";
+import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryAudit, type DirectoryWrite, type DirectoryWriter } from "../server/firestoreDirectory";
 
 const baseAccount: Account = { uid: "uid-1", email: "admin@example.test", emailVerified: true, name: "Admin", role: "System Administrator", status: "Active", accessScope: "Company-wide", personId: null, authenticationMethod: "password" };
 
@@ -58,4 +58,28 @@ test("duplicate location conflicts return a stable 409 without leaking internals
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), { error: { code: "directory_conflict", message: "A location with that store number already exists." } });
   } finally { await app.close(); }
+});
+
+test('custom field definitions are administrator-only and retain concurrency expectations', async () => {
+  const definition = { id: 'yelpUrl', label: 'Yelp', type: 'url', helpText: '', options: [], order: 0, apiVisible: false, retired: false };
+  const write = { collection: 'custom_field_definitions', id: definition.id, operation: 'set', data: definition, expectedDefinition: null };
+  for (const role of ['System Administrator', 'Directory Data Steward', 'Editor', 'Viewer'] as Account['role'][]) {
+    const app = await harness(role);
+    try {
+      assert.equal((await app.request({ writes: [write], audit })).status, role === 'System Administrator' ? 204 : 403);
+      if (role === 'System Administrator') assert.deepEqual(app.calls[0].writes[0], write);
+      else assert.equal(app.calls.length, 0);
+    } finally { await app.close(); }
+  }
+});
+
+test('metadata validation and scope failures return actionable non-success responses', async () => {
+  for (const [error, status] of [[new DirectoryValidationError('Invalid value for Yelp.'), 400], [new DirectoryWriteDenied('Store scope denied.'), 403]] as const) {
+    const app = await harness('System Administrator', async () => { throw error; });
+    try {
+      const response = await app.request({ writes: [locationWrite], audit });
+      assert.equal(response.status, status);
+      assert.equal((await response.json()).error.message, error.message);
+    } finally { await app.close(); }
+  }
 });

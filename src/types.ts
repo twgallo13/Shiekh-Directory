@@ -122,6 +122,7 @@ export interface LocationRecord {
   slug?: string;
   googleReviewUrl?: string;
   storePageUrl?: string;
+  customMetadata?: Record<string, import('./lib/customFields').CustomFieldValue>;
 }
 
 export interface Person {

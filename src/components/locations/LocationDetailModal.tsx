@@ -5,6 +5,7 @@ import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
 import { AuditLogView } from '../common/AuditLogView';
 import { useDialogFocus } from '../common/useDialogFocus';
+import { CustomMetadataFields } from './CustomMetadataFields';
 import { 
   X, 
   MapPin, 
@@ -41,7 +42,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   onRequestCorrection,
   onSelectPerson,
 }) => {
-  const { currentUser, people, hoursTemplates, verifyLocation, auditLogs } = useDirectory();
+  const { currentUser, people, hoursTemplates, verifyLocation, auditLogs, customFieldDefinitions } = useDirectory();
 
   // Tabbed Navigation State
   const [activeTab, setActiveTab] = useState<LocationDetailTab>('overview');
@@ -578,6 +579,8 @@ Operating Status: ${location.operationalStatus}`;
                   )}
                 </div>
               </div>
+
+              <CustomMetadataFields definitions={customFieldDefinitions} values={location.customMetadata || {}} />
 
               {/* 4. Google Business Profile (GBP) Status Block (Absolute bottom of content area) */}
               <div className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-xl">

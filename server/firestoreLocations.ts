@@ -1,6 +1,7 @@
 import { FieldPath, Firestore, Timestamp, type DocumentSnapshot } from "@google-cloud/firestore";
 import type { LocationDocument, LocationRepository, LocationPageOptions, LocationPage } from "./directoryApi";
 import { assertUniqueStoreNumbers } from "./directoryApi";
+import { parseCustomFieldDefinition } from "../src/lib/customFields";
 
 export const DEFAULT_GOOGLE_CLOUD_PROJECT = "gen-lang-client-0801664258";
 export const DEFAULT_FIRESTORE_DATABASE = "ai-studio-shiekhlocationco-00e1a479-af25-4ab6-9565-5c8b804c56a4";
@@ -28,10 +29,17 @@ const PUBLIC_LOCATION_FIELDS = [
   "slug",
   "googleReviewUrl",
   "storePageUrl",
+  "customMetadata",
 ] as const;
 
 export class FirestoreLocationRepository implements LocationRepository {
   constructor(private readonly firestore: Firestore) {}
+
+  async readCustomFieldDefinitions() {
+    const snapshot = await this.firestore.collection('custom_field_definitions').limit(101).get();
+    if (snapshot.size > 100) throw new Error('Too many custom field definitions.');
+    return snapshot.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id }));
+  }
 
   async readPage({ snapshotAt, limit, afterId }: LocationPageOptions): Promise<LocationPage> {
     return this.firestore.runTransaction(async (transaction) => {

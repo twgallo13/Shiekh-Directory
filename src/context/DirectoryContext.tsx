@@ -20,6 +20,7 @@ import { migrateDirectoryRelationships } from '../lib/directoryMigration';
 import { commitDirectory, type DirectoryAudit, type DirectoryWrite } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
+import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -34,6 +35,9 @@ interface DirectoryContextType {
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
   sopRunbooks: SopRunbook[];
+  customFieldDefinitions: CustomFieldDefinition[];
+  saveCustomFieldDefinition: (definition: CustomFieldDefinition) => Promise<void>;
+  saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => Promise<void>;
   persistenceError: string | null;
   clearPersistenceError: () => void;
   updateLocation: (id: string, updates: Partial<LocationRecord>) => void;
@@ -93,6 +97,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const [notificationRules, setNotificationRules] = useState<NotificationRule[]>(seed.notificationRules);
   const [outboxLogs, setOutboxLogs] = useState<OutboxLogEntry[]>(seed.outboxLogs);
   const [sopRunbooks, setSopRunbooks] = useState<SopRunbook[]>(seed.sopRunbooks);
+  const [customFieldDefinitions, setCustomFieldDefinitions] = useState<CustomFieldDefinition[]>(seed.customFieldDefinitions || []);
   const [requests, setRequests] = useState<UpdateRequest[]>(seed.requests);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => seed.auditLogs.map(scrubLegacyApiKeyAuditEntry));
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
@@ -139,6 +144,28 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       newState
     };
     setAuditLogs(prev => [log, ...prev].slice(0, 200));
+  };
+
+  const saveCustomFieldDefinition = async (input: CustomFieldDefinition) => {
+    const definition = parseCustomFieldDefinition(input);
+    const previous = customFieldDefinitions.find(field => field.id === definition.id) || null;
+    await persist([{ collection: 'custom_field_definitions', id: definition.id, operation: 'set', data: { ...definition }, expectedDefinition: previous }], {
+      action: previous ? 'Custom Field Updated' : 'Custom Field Created', entityType: 'Setting', entityId: definition.id, entityName: definition.label, details: `Saved custom field ${definition.id}. API visible: ${definition.apiVisible}. Retired: ${definition.retired}.`,
+    });
+    setCustomFieldDefinitions(fields => [...fields.filter(field => field.id !== definition.id), definition]);
+    addAuditLog(previous ? 'Custom Field Updated' : 'Custom Field Created', 'Setting', definition.id, definition.label, `Saved custom field ${definition.id}.`, previous, definition);
+  };
+
+  const saveLocationRecord = async (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => {
+    const timestamp = new Date().toISOString();
+    const saved = { ...location, updatedAt: timestamp, ...(create ? { id: `loc-${crypto.randomUUID()}`, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
+    const previous = locations.find(record => record.id === saved.id);
+    const action = create ? 'Location Created' : 'Location Updated';
+    await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: saved as unknown as Record<string, unknown>, expectedCustomMetadata }], {
+      action, entityType: 'Location', entityId: saved.id, entityName: `Store #${saved.storeNumber}`, details: 'Saved location record and custom metadata.',
+    });
+    setLocations(records => create ? [...records, saved] : records.map(record => record.id === saved.id ? saved : record));
+    addAuditLog(action, 'Location', saved.id, `Store #${saved.storeNumber}`, 'Saved location record and custom metadata.', previous, saved);
   };
 
   const updateLocation = (id: string, updates: Partial<LocationRecord>) => {
@@ -713,6 +740,9 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         notificationRules,
         outboxLogs,
         sopRunbooks,
+        customFieldDefinitions,
+        saveCustomFieldDefinition,
+        saveLocationRecord,
         persistenceError,
         clearPersistenceError: () => setPersistenceError(null),
         updateLocation,

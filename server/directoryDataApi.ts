@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, APPLICATION_ROLES, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
-import { DirectoryConflict, type DirectoryAudit, type DirectoryCollection, type DirectoryWrite, type DirectoryWriter } from "./firestoreDirectory";
+import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryAudit, type DirectoryCollection, type DirectoryWrite, type DirectoryWriter } from "./firestoreDirectory";
 
 const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   locations: ["System Administrator", "Directory Data Steward", "Editor"],
@@ -15,6 +15,7 @@ const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   notification_rules: ["System Administrator", "Directory Data Steward"],
   outbox_logs: [],
   sop_runbooks: ["System Administrator", "Directory Data Steward"],
+  custom_field_definitions: ["System Administrator"],
 };
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const ENTITY_TYPES = new Set(["Location", "Person", "User", "Setting", "Request", "Communication"]);
@@ -43,6 +44,8 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
       await store.commit(writes, audit, account);
       response.status(204).end();
     } catch (error) {
+      if (error instanceof DirectoryValidationError) return response.status(400).json({ error: { code: "invalid_metadata", message: error.message } });
+      if (error instanceof DirectoryWriteDenied) return response.status(403).json({ error: { code: "write_not_allowed", message: error.message } });
       if (error instanceof DirectoryConflict) return response.status(409).json({ error: { code: "directory_conflict", message: error.message } });
       response.status(503).json({ error: { code: "directory_unavailable" } });
     }
@@ -72,7 +75,11 @@ function parseWrites(value: unknown): DirectoryWrite[] | null {
         ...(typeof data.personId === "string" && data.personId ? { personId: data.personId } : {}),
         ...(typeof data.storeNumber === "string" && data.storeNumber ? { storeNumber: data.storeNumber } : {}) };
     }
-    writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}) });
+    if (Object.hasOwn(candidate, 'expectedCustomMetadata') && !plainObject(candidate.expectedCustomMetadata)) return null;
+    if (Object.hasOwn(candidate, 'expectedDefinition') && candidate.expectedDefinition !== null && !plainObject(candidate.expectedDefinition)) return null;
+    writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}),
+      ...(Object.hasOwn(candidate, 'expectedCustomMetadata') ? { expectedCustomMetadata: candidate.expectedCustomMetadata as Record<string, unknown> } : {}),
+      ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}) });
   }
   const locationNumbers = writes.filter(write => write.collection === "locations" && write.operation === "set").map(write => String(write.data?.storeNumber || ""));
   if (locationNumbers.some(number => !number.trim()) || new Set(locationNumbers).size !== locationNumbers.length) return null;

@@ -376,7 +376,9 @@ export const INITIAL_HOURS_TEMPLATES: HoursTemplate[] = [
     id: 'standard-mall-70',
     name: 'Standard Mall (10 AM - 8 PM / Sun 11-6)',
     description: 'Standard enclosed mall operating hours with 6 PM close on Sundays',
-    schedule: DEFAULT_WEEKLY_HOURS
+    schedule: DEFAULT_WEEKLY_HOURS,
+    defaultForTypes: ['Enclosed Mall'],
+    isDefault: true,
   },
   {
     id: 'street-strip-center',
@@ -390,7 +392,51 @@ export const INITIAL_HOURS_TEMPLATES: HoursTemplate[] = [
       friday: { open: '10:00', close: '20:00', isClosed: false },
       saturday: { open: '10:00', close: '20:00', isClosed: false },
       sunday: { open: '11:00', close: '18:00', isClosed: false },
-    }
+    },
+    defaultForTypes: ['Strip Center / Shopping Center', 'Street / Standalone Location'],
+  },
+  {
+    id: 'flagship-extended',
+    name: 'High-Volume Flagship Extended Schedule',
+    description: 'Extended schedule for flagship and high-traffic stores.',
+    schedule: {
+      monday: { open: '09:00', close: '22:00', isClosed: false },
+      tuesday: { open: '09:00', close: '22:00', isClosed: false },
+      wednesday: { open: '09:00', close: '22:00', isClosed: false },
+      thursday: { open: '09:00', close: '22:00', isClosed: false },
+      friday: { open: '09:00', close: '22:00', isClosed: false },
+      saturday: { open: '09:00', close: '22:00', isClosed: false },
+      sunday: { open: '10:00', close: '20:00', isClosed: false },
+    },
+  },
+  {
+    id: 'premium-outlet',
+    name: 'Premium Outlet Schedule',
+    description: 'Outlet schedule with extended Friday and Saturday hours.',
+    schedule: {
+      monday: { open: '10:00', close: '20:00', isClosed: false },
+      tuesday: { open: '10:00', close: '20:00', isClosed: false },
+      wednesday: { open: '10:00', close: '20:00', isClosed: false },
+      thursday: { open: '10:00', close: '20:00', isClosed: false },
+      friday: { open: '10:00', close: '21:00', isClosed: false },
+      saturday: { open: '10:00', close: '21:00', isClosed: false },
+      sunday: { open: '11:00', close: '19:00', isClosed: false },
+    },
+  },
+  {
+    id: 'corporate-office-distribution',
+    name: 'Corporate Office & Distribution Center',
+    description: 'Weekday schedule for corporate, distribution, and logistics facilities.',
+    schedule: {
+      monday: { open: '08:00', close: '17:00', isClosed: false },
+      tuesday: { open: '08:00', close: '17:00', isClosed: false },
+      wednesday: { open: '08:00', close: '17:00', isClosed: false },
+      thursday: { open: '08:00', close: '17:00', isClosed: false },
+      friday: { open: '08:00', close: '17:00', isClosed: false },
+      saturday: { open: '08:00', close: '17:00', isClosed: true },
+      sunday: { open: '08:00', close: '17:00', isClosed: true },
+    },
+    defaultForTypes: ['Corporate Office', 'Warehouse / Distribution Center', 'Other Company Location'],
   }
 ];
 

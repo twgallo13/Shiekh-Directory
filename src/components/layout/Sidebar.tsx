@@ -8,8 +8,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
-
-export type NavigationTab = 'dashboard' | 'locations' | 'people' | 'requests' | 'print' | 'admin';
+import type { NavigationTab } from '../../lib/navigation';
 
 interface SidebarProps {
   currentTab: NavigationTab;
@@ -55,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               key={item.id}
               type="button"
               onClick={() => onSelectTab(item.id)}
+              aria-current={isActive ? 'page' : undefined}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 isActive
                   ? 'bg-red-50 text-red-600 border border-red-100 font-semibold shadow-2xs'

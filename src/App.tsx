@@ -1,9 +1,17 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { DirectoryProvider, useDirectory } from './context/DirectoryContext';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
-import type { NavigationTab } from './components/layout/Sidebar';
 import { Toast } from './components/common/Toast';
+import {
+  TAB_PATHS,
+  TAB_TITLES,
+  getTabForPath,
+  locationPath,
+  personPath,
+  type NavigationTab,
+} from './lib/navigation';
 import { LocationRecord, PersonRecord } from './types';
 
 const DashboardView = lazy(() => import('./components/dashboard/DashboardView').then(module => ({ default: module.DashboardView })));
@@ -24,130 +32,182 @@ const ViewFallback = () => (
   </div>
 );
 
-function AppContent() {
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
-  const [isNavigationOpen, setIsNavigationOpen] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState<LocationRecord | null>(null);
-  const [editingLocation, setEditingLocation] = useState<LocationRecord | null>(null);
-  const [isCreatingLocation, setIsCreatingLocation] = useState(false);
-  const [selectedPerson, setSelectedPerson] = useState<PersonRecord | null>(null);
-  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-  const [requestTargetLocation, setRequestTargetLocation] = useState<LocationRecord | null>(null);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const { currentUser } = useDirectory();
+const createLocationDraft = (): LocationRecord => ({
+  id: 'new-location-draft',
+  storeNumber: '',
+  name: '',
+  type: 'Strip Center / Shopping Center',
+  address: '',
+  city: '',
+  state: 'CA',
+  zipCode: '',
+  phone: '',
+  phonePrivacy: 'Public',
+  timeZone: 'America/Los_Angeles',
+  operationalStatus: 'Opening Soon — New Store',
+  standardHours: {
+    monday: { open: '10:00', close: '20:00', isClosed: false },
+    tuesday: { open: '10:00', close: '20:00', isClosed: false },
+    wednesday: { open: '10:00', close: '20:00', isClosed: false },
+    thursday: { open: '10:00', close: '20:00', isClosed: false },
+    friday: { open: '10:00', close: '21:00', isClosed: false },
+    saturday: { open: '10:00', close: '21:00', isClosed: false },
+    sunday: { open: '11:00', close: '18:00', isClosed: false },
+  },
+  hoursTemplateId: 'standard-mall-70',
+  hoursMode: 'template',
+  recordStatus: 'Active',
+});
 
-  // Auto-redirect if non-admin attempts to view admin tab
+function AppContent() {
+  const navigate = useNavigate();
+  const routeLocation = useLocation();
+  const [isNavigationOpen, setIsNavigationOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const { currentUser, locations, people } = useDirectory();
+  const currentTab = getTabForPath(routeLocation.pathname);
+  const isAdminOrSteward =
+    currentUser.role === 'System Administrator' ||
+    currentUser.role === 'Directory Data Steward';
+
+  const isCreatingLocation = routeLocation.pathname === '/locations/new';
+  const locationEditMatch = matchPath('/locations/:locationId/edit', routeLocation.pathname);
+  const locationDetailMatch = isCreatingLocation
+    ? null
+    : matchPath('/locations/:locationId', routeLocation.pathname);
+  const personDetailMatch = matchPath('/people/:personId', routeLocation.pathname);
+  const newLocationDraft = useMemo(createLocationDraft, []);
+  const selectedLocation = locationDetailMatch
+    ? locations.find(location => location.id === locationDetailMatch.params.locationId) || null
+    : null;
+  const editingLocation = isCreatingLocation
+    ? newLocationDraft
+    : locations.find(location => location.id === locationEditMatch?.params.locationId) || null;
+  const selectedPerson = personDetailMatch
+    ? people.find(person => person.id === personDetailMatch.params.personId) || null
+    : null;
+  const isRequestModalOpen = routeLocation.pathname === '/requests/new';
+  const requestedLocationId = new URLSearchParams(routeLocation.search).get('locationId');
+  const requestTargetLocation = locations.find(location => location.id === requestedLocationId) || null;
+  const isSearchOpen = routeLocation.pathname === '/search';
+
   useEffect(() => {
-    const isAdminOrSteward = 
-      currentUser.role === 'System Administrator' || 
-      currentUser.role === 'Directory Data Steward';
-    if (currentTab === 'admin' && !isAdminOrSteward) {
-      setCurrentTab('dashboard');
+    const recordName = selectedLocation?.name || selectedPerson?.fullName;
+    const title = recordName || (isSearchOpen ? 'Search' : TAB_TITLES[currentTab]);
+    document.title = `${title} | Shiekh Store Directory`;
+  }, [currentTab, isSearchOpen, selectedLocation?.name, selectedPerson?.fullName]);
+
+  useEffect(() => {
+    const missingLocationId = locationDetailMatch?.params.locationId || locationEditMatch?.params.locationId;
+    if (missingLocationId && !locations.some(location => location.id === missingLocationId)) {
+      navigate('/locations', { replace: true });
     }
-  }, [currentUser.role, currentTab]);
+  }, [locationDetailMatch?.params.locationId, locationEditMatch?.params.locationId, locations, navigate]);
+
+  useEffect(() => {
+    const personId = personDetailMatch?.params.personId;
+    if (personId && !people.some(person => person.id === personId)) {
+      navigate('/people', { replace: true });
+    }
+  }, [navigate, people, personDetailMatch?.params.personId]);
+
+  const navigateBack = (fallback = '/') => {
+    const historyIndex = window.history.state?.idx;
+    if (typeof historyIndex === 'number' && historyIndex > 0) {
+      navigate(-1);
+    } else {
+      navigate(fallback, { replace: true });
+    }
+  };
 
   const handleOpenNewRequest = (loc?: LocationRecord) => {
-    setRequestTargetLocation(loc || null);
-    setIsRequestModalOpen(true);
+    const search = loc ? `?locationId=${encodeURIComponent(loc.id)}` : '';
+    navigate(`/requests/new${search}`);
   };
 
   const handleCreateNewLocation = () => {
-    setIsCreatingLocation(true);
-    setEditingLocation({
-      id: 'new-location-draft',
-      storeNumber: '',
-      name: '',
-      type: 'Strip Center / Shopping Center',
-      address: '',
-      city: '',
-      state: 'CA',
-      zipCode: '',
-      phone: '',
-      phonePrivacy: 'Public',
-      timeZone: 'America/Los_Angeles',
-      operationalStatus: 'Opening Soon — New Store',
-      standardHours: {
-        monday: { open: '10:00', close: '20:00', isClosed: false },
-        tuesday: { open: '10:00', close: '20:00', isClosed: false },
-        wednesday: { open: '10:00', close: '20:00', isClosed: false },
-        thursday: { open: '10:00', close: '20:00', isClosed: false },
-        friday: { open: '10:00', close: '21:00', isClosed: false },
-        saturday: { open: '10:00', close: '21:00', isClosed: false },
-        sunday: { open: '11:00', close: '18:00', isClosed: false },
-      },
-      recordStatus: 'Active'
-    });
+    navigate('/locations/new');
   };
 
   const handleEditLocation = (location: LocationRecord) => {
-    setIsCreatingLocation(false);
-    setEditingLocation(location);
-  };
-
-  const handleCloseLocationEditor = () => {
-    setEditingLocation(null);
-    setIsCreatingLocation(false);
+    navigate(`/locations/${encodeURIComponent(location.id)}/edit`);
   };
 
   const handleSelectTab = (tab: NavigationTab) => {
-    setCurrentTab(tab);
+    navigate(TAB_PATHS[tab]);
     setIsNavigationOpen(false);
   };
 
+  const dashboardView = (
+    <DashboardView
+      onSelectLocation={location => navigate(locationPath(location))}
+      onSelectPerson={person => navigate(personPath(person))}
+      onNavigateToLocations={() => handleSelectTab('locations')}
+      onNavigateToPeople={() => handleSelectTab('people')}
+      onNavigateToRequests={() => handleSelectTab('requests')}
+    />
+  );
+
+  const locationsView = (
+    <LocationsView
+      onSelectLocation={location => navigate(locationPath(location))}
+      onSelectPerson={person => navigate(personPath(person))}
+      onEditLocation={handleEditLocation}
+      onAddNewLocation={handleCreateNewLocation}
+      onRequestCorrection={handleOpenNewRequest}
+    />
+  );
+
+  const peopleView = <PeopleView onSelectPerson={person => navigate(personPath(person))} />;
+
+  const requestsView = <RequestsView onOpenNewRequest={() => handleOpenNewRequest()} />;
+
   return (
-    <div className="h-screen bg-neutral-50 text-neutral-900 flex flex-col antialiased">
+    <div className="flex h-screen flex-col bg-neutral-50 text-neutral-900 antialiased print:block print:h-auto print:overflow-visible print:bg-white">
       <Header
-        onOpenSearch={() => setIsSearchOpen(true)}
+        onOpenSearch={() => navigate('/search')}
         onToggleNavigation={() => setIsNavigationOpen(prev => !prev)}
         onNavigateToRequests={() => handleSelectTab('requests')}
+        onNavigateBack={() => navigateBack('/')}
+        showBackButton={routeLocation.pathname !== '/'}
       />
 
-      <div className="relative flex flex-1 overflow-hidden">
+      <div className="relative mx-auto flex w-full max-w-[1536px] flex-1 overflow-hidden print:block print:max-w-none print:overflow-visible">
         {isNavigationOpen && (
           <button
             type="button"
             aria-label="Close navigation"
-            className="fixed inset-x-0 bottom-0 top-16 z-30 bg-black/40 lg:hidden"
+            className="fixed inset-x-0 bottom-0 top-16 z-30 bg-black/40 print:hidden lg:hidden"
             onClick={() => setIsNavigationOpen(false)}
           />
         )}
-        <div className={`fixed bottom-0 left-0 top-16 z-40 flex-shrink-0 transition-transform duration-200 lg:static lg:translate-x-0 ${isNavigationOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className={`fixed bottom-0 left-0 top-16 z-40 flex-shrink-0 transition-transform duration-200 print:hidden lg:static lg:translate-x-0 ${isNavigationOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <Sidebar currentTab={currentTab} onSelectTab={handleSelectTab} />
         </div>
 
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto max-w-7xl mx-auto w-full">
-          <Suspense fallback={<ViewFallback />}>
-            {currentTab === 'dashboard' && (
-              <DashboardView
-                onSelectLocation={setSelectedLocation}
-                onSelectPerson={setSelectedPerson}
-                onNavigateToRequests={() => setCurrentTab('requests')}
-              />
-            )}
-
-            {currentTab === 'locations' && (
-              <LocationsView
-                onSelectLocation={setSelectedLocation}
-                onSelectPerson={setSelectedPerson}
-                onEditLocation={handleEditLocation}
-                onAddNewLocation={handleCreateNewLocation}
-                onRequestCorrection={handleOpenNewRequest}
-              />
-            )}
-
-            {currentTab === 'people' && (
-              <PeopleView onSelectPerson={setSelectedPerson} />
-            )}
-
-            {currentTab === 'requests' && (
-              <RequestsView onOpenNewRequest={() => handleOpenNewRequest()} />
-            )}
-
-            {currentTab === 'print' && <PrintSheetView />}
-
-            {currentTab === 'admin' && <AdminIntegrationsView />}
-          </Suspense>
+        <main className="min-w-0 flex-1 overflow-y-auto print:overflow-visible">
+          <div className="mx-auto w-full max-w-7xl p-4 print:max-w-none print:p-0 sm:p-6">
+            <Suspense fallback={<ViewFallback />}>
+              <Routes>
+                <Route path="/" element={dashboardView} />
+                <Route path="/search" element={dashboardView} />
+                <Route path="/locations" element={locationsView} />
+                <Route path="/locations/new" element={locationsView} />
+                <Route path="/locations/:locationId" element={locationsView} />
+                <Route path="/locations/:locationId/edit" element={locationsView} />
+                <Route path="/people" element={peopleView} />
+                <Route path="/people/:personId" element={peopleView} />
+                <Route path="/requests" element={requestsView} />
+                <Route path="/requests/new" element={requestsView} />
+                <Route path="/print" element={<PrintSheetView />} />
+                <Route
+                  path="/admin"
+                  element={isAdminOrSteward ? <AdminIntegrationsView /> : <Navigate to="/" replace />}
+                />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </div>
         </main>
       </div>
 
@@ -156,16 +216,10 @@ function AppContent() {
         {selectedLocation && (
           <LocationDetailModal
             location={selectedLocation}
-            onClose={() => setSelectedLocation(null)}
-            onEdit={(loc) => {
-              setSelectedLocation(null);
-              handleEditLocation(loc);
-            }}
-            onRequestCorrection={(loc) => {
-              setSelectedLocation(null);
-              handleOpenNewRequest(loc);
-            }}
-            onSelectPerson={setSelectedPerson}
+            onClose={() => navigateBack('/locations')}
+            onEdit={handleEditLocation}
+            onRequestCorrection={handleOpenNewRequest}
+            onSelectPerson={person => navigate(personPath(person))}
           />
         )}
 
@@ -173,7 +227,7 @@ function AppContent() {
           <LocationEditModal
             location={editingLocation}
             mode={isCreatingLocation ? 'create' : 'edit'}
-            onClose={handleCloseLocationEditor}
+            onClose={() => navigateBack('/locations')}
             onSaved={setSuccessMessage}
           />
         )}
@@ -181,24 +235,24 @@ function AppContent() {
         {selectedPerson && (
           <PersonDetailModal
             person={selectedPerson}
-            onClose={() => setSelectedPerson(null)}
-            onSelectLocation={setSelectedLocation}
+            onClose={() => navigateBack('/people')}
+            onSelectLocation={location => navigate(locationPath(location))}
           />
         )}
 
         {isRequestModalOpen && (
           <NewRequestModal
             location={requestTargetLocation}
-            onClose={() => setIsRequestModalOpen(false)}
+            onClose={() => navigateBack('/requests')}
           />
         )}
 
         {isSearchOpen && (
           <UniversalSearchModal
             isOpen
-            onClose={() => setIsSearchOpen(false)}
-            onSelectLocation={setSelectedLocation}
-            onSelectPerson={setSelectedPerson}
+            onClose={() => navigateBack('/')}
+            onSelectLocation={location => navigate(locationPath(location), { replace: true })}
+            onSelectPerson={person => navigate(personPath(person), { replace: true })}
           />
         )}
       </Suspense>

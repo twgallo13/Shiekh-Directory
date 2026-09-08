@@ -17,7 +17,7 @@ export const Toast: React.FC<ToastProps> = ({ message, onDismiss, duration = 400
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-5 right-5 z-[70] flex max-w-sm items-center gap-3 rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm text-neutral-800 shadow-xl"
+      className="fixed bottom-5 right-5 z-[70] flex max-w-sm items-center gap-3 rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm text-neutral-800 shadow-xl print:hidden"
     >
       <CircleCheck className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
       <span className="font-medium">{message}</span>

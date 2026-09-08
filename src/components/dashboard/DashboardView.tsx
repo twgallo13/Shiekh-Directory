@@ -25,12 +25,16 @@ import {
 interface DashboardViewProps {
   onSelectLocation: (loc: LocationRecord) => void;
   onSelectPerson: (person: PersonRecord) => void;
+  onNavigateToLocations: () => void;
+  onNavigateToPeople: () => void;
   onNavigateToRequests: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onSelectLocation,
   onSelectPerson,
+  onNavigateToLocations,
+  onNavigateToPeople,
   onNavigateToRequests,
 }) => {
   const { locations, people, requests } = useDirectory();
@@ -98,23 +102,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs">
+        <button
+          type="button"
+          onClick={onNavigateToLocations}
+          className="group min-w-0 space-y-2 rounded-lg border border-neutral-200 bg-white p-4 text-left shadow-xs transition-all hover:border-red-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+          aria-label={`View ${locations.length} retail stores`}
+        >
           <div className="flex items-center justify-between text-neutral-500">
             <span className="text-xs font-semibold">Total Retail Stores</span>
-            <Store className="w-4 h-4 text-red-600" />
+            <Store className="h-4 w-4 text-red-600 transition-transform group-hover:scale-110" aria-hidden="true" />
           </div>
           <div className="text-2xl font-bold text-neutral-900">{locations.length}</div>
           <div className="text-[11px] text-neutral-500">Active retail footprints</div>
-        </div>
+        </button>
 
-        <div className="min-w-0 p-4 bg-white border border-neutral-200 rounded-xl space-y-2 shadow-xs">
+        <button
+          type="button"
+          onClick={onNavigateToPeople}
+          className="group min-w-0 space-y-2 rounded-lg border border-neutral-200 bg-white p-4 text-left shadow-xs transition-all hover:border-blue-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+          aria-label={`View ${people.length} people in the directory`}
+        >
           <div className="flex items-center justify-between text-neutral-500">
             <span className="text-xs font-semibold">Field Leadership Roster</span>
-            <Users className="w-4 h-4 text-blue-600" />
+            <Users className="h-4 w-4 text-blue-600 transition-transform group-hover:scale-110" aria-hidden="true" />
           </div>
           <div className="text-2xl font-bold text-neutral-900">{people.length}</div>
           <div className="text-[11px] text-neutral-500">DMs, SMs & Support leads</div>
-        </div>
+        </button>
 
         <button
           type="button"
@@ -163,7 +177,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
 
-          <div className="space-y-3 flex-1 overflow-y-auto max-h-[580px] pr-1">
+          <div className={`flex-1 overflow-y-auto max-h-[580px] pr-1 ${storesWithNotices.length === 0 ? 'flex min-h-64 items-center' : 'space-y-3'}`}>
             {storesWithNotices.map(loc => {
               const isRemodel = loc.operationalStatus === 'Under Remodel / Renovation';
               const isEmergency = loc.operationalStatus === 'Temporarily Closed — Emergency';
@@ -246,6 +260,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 title="All stores operating normally"
                 description="No active operational notices, modified hours schedules, or emergency closures across the fleet."
                 compact
+                className="w-full"
               />
             )}
           </div>

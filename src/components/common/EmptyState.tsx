@@ -7,6 +7,7 @@ interface EmptyStateProps {
   description?: string;
   action?: React.ReactNode;
   compact?: boolean;
+  className?: string;
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
@@ -15,8 +16,9 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   description,
   action,
   compact = false,
+  className = '',
 }) => (
-  <div className={`flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 text-center ${compact ? 'px-5 py-6' : 'px-6 py-10'}`}>
+  <div className={`flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-neutral-50 text-center ${compact ? 'px-5 py-6' : 'px-6 py-10'} ${className}`}>
     <div className="mb-3 rounded-full border border-neutral-200 bg-white p-2.5 text-neutral-400 shadow-xs">
       <Icon className="h-5 w-5" aria-hidden="true" />
     </div>

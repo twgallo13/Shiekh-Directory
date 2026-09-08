@@ -92,11 +92,15 @@ export interface LocationRecord {
   storeManagerName?: string;
   storeManagerPhone?: string;
   storeManagerPhonePrivacy?: ContactPrivacyLevel;
+  assistantStoreManagerIds?: string[];
   assistantStoreManagerNames?: string[];
+  keyHolderIds?: string[];
   keyHolderNames?: string[];
   operationalStatus: OperationalStatus;
   activeNotice?: TemporaryNotice;
   standardHours: WeeklySchedule;
+  hoursTemplateId?: string;
+  hoursMode?: 'template' | 'custom';
   holidayHours?: HolidayHoursOverride[];
   specialHours?: SpecialHoursOverride[];
   recordStatus: RecordStatus;
@@ -171,6 +175,8 @@ export interface HoursTemplate {
   name: string;
   description: string;
   schedule: WeeklySchedule;
+  defaultForTypes?: LocationType[];
+  isDefault?: boolean;
 }
 
 export interface ApiKeyRecord {

@@ -25,6 +25,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   const assignedLocs = locations.filter(l => 
     l.storeManagerId === person.id || 
     l.districtManagerId === person.id ||
+    l.assistantStoreManagerIds?.includes(person.id) ||
+    l.keyHolderIds?.includes(person.id) ||
     l.storeManagerName?.toLowerCase() === person.fullName?.toLowerCase() ||
     l.districtManagerName?.toLowerCase() === person.fullName?.toLowerCase()
   );
@@ -99,7 +101,6 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                   onClick={() => {
                     if (onSelectLocation) {
                       onSelectLocation(loc);
-                      onClose();
                     }
                   }}
                   className="flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 p-2.5 text-left transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"

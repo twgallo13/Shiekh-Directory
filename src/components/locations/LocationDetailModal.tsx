@@ -41,7 +41,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   onRequestCorrection,
   onSelectPerson,
 }) => {
-  const { currentUser, people, verifyLocation, auditLogs } = useDirectory();
+  const { currentUser, people, hoursTemplates, verifyLocation, auditLogs } = useDirectory();
 
   // Tabbed Navigation State
   const [activeTab, setActiveTab] = useState<LocationDetailTab>('overview');
@@ -66,6 +66,20 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
 
   const todayStatus = getTodayHoursForLocation(location);
   const canEditDirectly = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
+  const storeManager = people.find(person => person.id === location.storeManagerId);
+  const districtManager = people.find(person => person.id === location.districtManagerId);
+  const assistantManagers = (location.assistantStoreManagerIds || [])
+    .map(id => people.find(person => person.id === id))
+    .filter((person): person is PersonRecord => Boolean(person));
+  const keyHolders = (location.keyHolderIds || [])
+    .map(id => people.find(person => person.id === id))
+    .filter((person): person is PersonRecord => Boolean(person));
+  const hoursTemplate = hoursTemplates.find(template => template.id === location.hoursTemplateId);
+  const hoursSourceLabel = hoursTemplate
+    ? location.hoursMode === 'template'
+      ? hoursTemplate.name
+      : `Modified from ${hoursTemplate.name}`
+    : 'Custom weekly schedule';
 
   const handleOpenPerson = (personId?: string, personName?: string) => {
     if (!onSelectPerson) return;
@@ -183,46 +197,49 @@ Operating Status: ${location.operationalStatus}`;
         </div>
 
         {/* Tab Navigation: White background with bottom border, [Copy] button to far right */}
-        <div className="bg-white px-4 border-b border-neutral-200 flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 border-b border-neutral-200 bg-white px-2 sm:px-4">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             <button
               type="button"
               onClick={() => setActiveTab('overview')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs border-b-2 transition-all cursor-pointer ${
+              className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs border-b-2 transition-all cursor-pointer sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'overview'
                   ? 'border-red-600 text-red-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 font-medium'
               }`}
             >
-              <Info className="w-3.5 h-3.5" />
-              <span>Overview & Contacts</span>
+              <Info className="hidden h-3.5 w-3.5 sm:block" />
+              <span className="sm:hidden">Overview</span>
+              <span className="hidden sm:inline">Overview & Contacts</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('hours')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs border-b-2 transition-all cursor-pointer ${
+              className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs border-b-2 transition-all cursor-pointer sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'hours'
                   ? 'border-red-600 text-red-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 font-medium'
               }`}
             >
-              <Clock className="w-3.5 h-3.5" />
-              <span>Operating Hours & Notices</span>
+              <Clock className="hidden h-3.5 w-3.5 sm:block" />
+              <span className="sm:hidden">Hours</span>
+              <span className="hidden sm:inline">Operating Hours & Notices</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('audit')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs border-b-2 transition-all cursor-pointer ${
+              className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs border-b-2 transition-all cursor-pointer sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'audit'
                   ? 'border-red-600 text-red-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 font-medium'
               }`}
             >
-              <History className="w-3.5 h-3.5" />
-              <span>Audit History</span>
-              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              <History className="hidden h-3.5 w-3.5 sm:block" />
+              <span className="sm:hidden">Audit</span>
+              <span className="hidden sm:inline">Audit History</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold sm:ml-1 ${
                 activeTab === 'audit'
                   ? 'bg-red-100 text-red-700'
                   : 'bg-neutral-100 text-neutral-600'
@@ -236,18 +253,18 @@ Operating Status: ${location.operationalStatus}`;
           <button
             type="button"
             onClick={handleCopyStoreInfo}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900 bg-neutral-100 hover:bg-neutral-200 border border-neutral-300 rounded-lg cursor-pointer transition-colors shadow-2xs shrink-0"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-300 bg-neutral-100 p-2 text-xs font-semibold text-neutral-700 shadow-2xs transition-colors hover:bg-neutral-200 hover:text-neutral-900 sm:px-3 sm:py-1.5"
             title="Copy store information to clipboard"
           >
             {copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-emerald-700">Copied!</span>
+                <span className="hidden text-emerald-700 sm:inline">Copied!</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5 text-neutral-600" />
-                <span>Copy</span>
+                <span className="hidden sm:inline">Copy</span>
               </>
             )}
           </button>
@@ -411,7 +428,7 @@ Operating Status: ${location.operationalStatus}`;
                   </div>
 
                   {/* View All 7 Days Styled in Red */}
-                  <div className="pt-2 border-t border-neutral-200 flex items-center justify-between">
+                  <div className="flex flex-col items-start gap-1 border-t border-neutral-200 pt-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                     <button
                       type="button"
                       onClick={() => setActiveTab('hours')}
@@ -419,155 +436,115 @@ Operating Status: ${location.operationalStatus}`;
                     >
                       <span>View All 7 Days &rarr;</span>
                     </button>
-                    <span className="text-[10px] text-neutral-400">Weekly Schedule</span>
+                    <span className="text-[10px] text-neutral-400 sm:max-w-44 sm:truncate sm:text-right" title={hoursSourceLabel}>
+                      {hoursSourceLabel}
+                    </span>
                   </div>
                 </div>
 
               </div>
 
-              {/* 2. Overview Tab - Leadership Roster 2x2 CSS Grid */}
+              {/* 2. Canonical Leadership Roster */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
                     Store Leadership Roster
                   </div>
-                  <span className="text-[10px] text-neutral-400">Personnel & Hierarchy</span>
+                  <span className="text-[10px] text-neutral-400">Sourced from People Directory</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Card 1: Store Manager */}
-                  <div className="border border-neutral-200 rounded-md p-3 bg-white shadow-2xs space-y-2 flex flex-col justify-between">
+                <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Store Manager</span>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                          Store Manager
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">
-                          SM
-                        </span>
-                      </div>
-                      {location.storeManagerName ? (
+                      {storeManager ? (
                         <button
                           type="button"
-                          onClick={() => handleOpenPerson(location.storeManagerId, location.storeManagerName)}
-                          className="text-neutral-900 font-bold hover:text-red-600 hover:underline flex items-center gap-1 cursor-pointer text-xs"
+                          onClick={() => handleOpenPerson(storeManager.id, storeManager.fullName)}
+                          className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
                         >
-                          <span>{location.storeManagerName}</span>
+                          <span>{storeManager.fullName}</span>
                           <ExternalLink className="w-3 h-3 text-neutral-400" />
                         </button>
                       ) : (
                         <span className="text-neutral-400 italic text-xs">Position Vacant</span>
                       )}
                     </div>
-                    <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px]">
-                      <span className="text-neutral-500">Direct Phone:</span>
-                      {location.storeManagerPhone ? (
+                    <div className="text-left sm:text-right">
+                      {storeManager?.phone || storeManager?.workPhone ? (
                         <a 
-                          href={`tel:${location.storeManagerPhone.replace(/[^0-9+]/g, '')}`}
-                          className="font-mono font-medium text-red-600 hover:underline"
+                          href={`tel:${(storeManager.phone || storeManager.workPhone || '').replace(/[^0-9+]/g, '')}`}
+                          className="font-mono text-[11px] font-medium text-red-600 hover:underline"
                         >
-                          {location.storeManagerPhone}
+                          {storeManager.phone || storeManager.workPhone}
                         </a>
                       ) : (
-                        <span className="text-neutral-400 font-mono">None on file</span>
+                        <span className="font-mono text-[11px] text-neutral-400">No phone on record</span>
                       )}
                     </div>
                   </div>
 
-                  {/* Card 2: District Manager */}
-                  <div className="border border-neutral-200 rounded-md p-3 bg-white shadow-2xs space-y-2 flex flex-col justify-between">
+                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">District Manager</span>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                          District Manager
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                          DM
-                        </span>
-                      </div>
-                      {location.districtManagerName ? (
+                      {districtManager ? (
                         <button
                           type="button"
-                          onClick={() => handleOpenPerson(location.districtManagerId, location.districtManagerName)}
-                          className="text-neutral-900 font-bold hover:text-red-600 hover:underline flex items-center gap-1 cursor-pointer text-xs"
+                          onClick={() => handleOpenPerson(districtManager.id, districtManager.fullName)}
+                          className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
                         >
-                          <span>{location.districtManagerName}</span>
+                          <span>{districtManager.fullName}</span>
                           <ExternalLink className="w-3 h-3 text-neutral-400" />
                         </button>
                       ) : (
                         <span className="text-neutral-400 italic text-xs">Unassigned</span>
                       )}
                     </div>
-                    <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-[11px]">
-                      <span className="text-neutral-500">District:</span>
-                      <span className="text-neutral-700 font-medium truncate max-w-[150px]">
+                    <span className="max-w-64 truncate text-[11px] font-medium text-neutral-600" title={location.district}>
                         {location.district || 'Unassigned District'}
-                      </span>
-                    </div>
+                    </span>
                   </div>
 
-                  {/* Card 3: Assistant Manager(s) */}
-                  <div className="border border-neutral-200 rounded-md p-3 bg-white shadow-2xs space-y-2 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                          Assistant Managers
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                          ASM
-                        </span>
-                      </div>
-                      {location.assistantStoreManagerNames && location.assistantStoreManagerNames.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {location.assistantStoreManagerNames.map((name, idx) => (
-                            <span 
-                              key={idx} 
-                              onClick={() => handleOpenPerson(undefined, name)}
-                              className="inline-flex items-center gap-1 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-[11px] text-neutral-800 font-medium cursor-pointer transition-colors"
+                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Assistant Managers</span>
+                    {assistantManagers.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                          {assistantManagers.map(person => (
+                            <button
+                              type="button"
+                              key={person.id}
+                              onClick={() => handleOpenPerson(person.id, person.fullName)}
+                              className="inline-flex cursor-pointer items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-medium text-neutral-800 transition-colors hover:bg-neutral-100"
                             >
-                              <span>{name}</span>
-                            </span>
+                              <span>{person.fullName}</span>
+                            </button>
                           ))}
-                        </div>
-                      ) : (
-                        <span className="text-neutral-400 italic text-xs">None Assigned</span>
-                      )}
-                    </div>
-                    <div className="pt-2 border-t border-neutral-100 text-[11px] text-neutral-500">
-                      {location.assistantStoreManagerNames?.length || 0} Assistant{(location.assistantStoreManagerNames?.length !== 1) ? 's' : ''} on roster
-                    </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs italic text-neutral-400">None assigned</span>
+                    )}
+                    <span className="text-[11px] text-neutral-500">{assistantManagers.length} assigned</span>
                   </div>
 
-                  {/* Card 4: Designated Key Holders */}
-                  <div className="border border-neutral-200 rounded-md p-3 bg-white shadow-2xs space-y-2 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                          Key Holders
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          KH
-                        </span>
-                      </div>
-                      {location.keyHolderNames && location.keyHolderNames.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {location.keyHolderNames.map((name, idx) => (
-                            <span 
-                              key={idx} 
-                              onClick={() => handleOpenPerson(undefined, name)}
-                              className="inline-flex items-center gap-1 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded text-[11px] text-neutral-700 cursor-pointer transition-colors"
+                  <div className="grid gap-3 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Key Holders</span>
+                    {keyHolders.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                          {keyHolders.map(person => (
+                            <button
+                              type="button"
+                              key={person.id}
+                              onClick={() => handleOpenPerson(person.id, person.fullName)}
+                              className="inline-flex cursor-pointer items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] text-neutral-700 transition-colors hover:bg-neutral-100"
                             >
-                              <span>{name}</span>
-                            </span>
+                              <span>{person.fullName}</span>
+                            </button>
                           ))}
-                        </div>
-                      ) : (
-                        <span className="text-neutral-400 italic text-xs">None Designated</span>
-                      )}
-                    </div>
-                    <div className="pt-2 border-t border-neutral-100 text-[11px] text-neutral-500">
-                      {location.keyHolderNames?.length || 0} Keyholder{(location.keyHolderNames?.length !== 1) ? 's' : ''} registered
-                    </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs italic text-neutral-400">None designated</span>
+                    )}
+                    <span className="text-[11px] text-neutral-500">{keyHolders.length} assigned</span>
                   </div>
                 </div>
               </div>
@@ -662,6 +639,9 @@ Operating Status: ${location.operationalStatus}`;
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-red-600" />
                     <span className="font-bold text-neutral-900">Weekly Operating Schedule</span>
+                    <span className="rounded border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-neutral-600">
+                      {hoursSourceLabel}
+                    </span>
                   </div>
                   <div className="text-xs">
                     <span className="text-neutral-500">Today's Status: </span>
@@ -761,17 +741,18 @@ Operating Status: ${location.operationalStatus}`;
         </div>
 
         {/* Modal Footer Actions */}
-        <div className="p-4 bg-neutral-50 border-t border-neutral-200 flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 p-3 sm:p-4">
           <button
             type="button"
             onClick={() => onRequestCorrection(location)}
-            className="px-3 py-2 bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-200 rounded-lg font-semibold flex items-center gap-2 cursor-pointer shadow-xs transition-colors"
+            className="flex shrink-0 items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 font-semibold text-neutral-800 shadow-xs transition-colors hover:bg-neutral-100"
           >
             <AlertCircle className="w-4 h-4 text-amber-600" />
-            <span>Request Correction</span>
+            <span className="sm:hidden">Request</span>
+            <span className="hidden sm:inline">Request Correction</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={onClose}
@@ -782,14 +763,12 @@ Operating Status: ${location.operationalStatus}`;
             {canEditDirectly && (
               <button
                 type="button"
-                onClick={() => {
-                  onClose();
-                  onEdit(location);
-                }}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                onClick={() => onEdit(location)}
+                className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 font-semibold text-white shadow-xs transition-colors hover:bg-red-700 sm:px-4"
               >
                 <Edit3 className="w-3.5 h-3.5" />
-                <span>Edit Store Record</span>
+                <span className="sm:hidden">Edit</span>
+                <span className="hidden sm:inline">Edit Store Record</span>
               </button>
             )}
           </div>

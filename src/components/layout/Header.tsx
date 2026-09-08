@@ -6,7 +6,11 @@ import {
   Bell, 
   Check, 
   X,
-  Menu
+  Menu,
+  Moon,
+  Sun,
+  Monitor,
+  ArrowLeft
 } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 
@@ -14,17 +18,45 @@ interface HeaderProps {
   onOpenSearch: () => void;
   onToggleNavigation: () => void;
   onNavigateToRequests: () => void;
+  onNavigateBack: () => void;
+  showBackButton: boolean;
 }
+
+type ThemeMode = 'light' | 'dark' | 'system';
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
   onToggleNavigation,
   onNavigateToRequests,
+  onNavigateBack,
+  showBackButton,
 }) => {
   const { currentUser, users, switchUser, requests } = useDirectory();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const savedTheme = localStorage.getItem('app-theme');
+    return savedTheme === 'dark' || savedTheme === 'system' ? savedTheme : 'light';
+  });
   const notificationsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => {
+      const shouldUseDark = theme === 'dark' || (theme === 'system' && mediaQuery.matches);
+      document.documentElement.classList.toggle('dark', shouldUseDark);
+      document.documentElement.style.colorScheme = shouldUseDark ? 'dark' : 'light';
+    };
+
+    applyTheme();
+    localStorage.setItem('app-theme', theme);
+    mediaQuery.addEventListener('change', applyTheme);
+    return () => mediaQuery.removeEventListener('change', applyTheme);
+  }, [theme]);
+
+  const cycleTheme = () => {
+    setTheme(currentTheme => currentTheme === 'light' ? 'dark' : currentTheme === 'dark' ? 'system' : 'light');
+  };
 
   // Close notifications on outside click
   useEffect(() => {
@@ -57,44 +89,56 @@ export const Header: React.FC<HeaderProps> = ({
   const unreadCount = systemAlerts.length;
 
   return (
-    <header className="h-16 shrink-0 bg-white border-b border-neutral-200 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-50 shadow-xs">
-      <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-        <button
-          type="button"
-          onClick={onToggleNavigation}
-          aria-label="Toggle navigation"
-          className="rounded-lg border border-neutral-200 p-2 text-neutral-600 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 lg:hidden"
-        >
-          <Menu className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <div className="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center text-white font-black shadow-md shadow-red-600/20">
-          <Store className="w-5 h-5" aria-hidden="true" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="truncate font-bold text-sm tracking-tight text-neutral-900">Shiekh Store Directory</h1>
-          <p className="hidden text-[11px] text-neutral-500 sm:block">Store operations and personnel directory</p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 sm:gap-3">
-        <button
-          type="button"
-          onClick={onOpenSearch}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-100 text-neutral-500 transition-colors hover:bg-neutral-200/70 hover:text-neutral-700 sm:w-60 sm:justify-between sm:px-3"
-          aria-label="Search stores and personnel"
-        >
-          <div className="flex items-center gap-2">
-            <Search className="w-3.5 h-3.5 text-neutral-400" />
-            <span className="hidden sm:inline">Search stores, personnel...</span>
+    <header className="sticky top-0 z-50 h-16 shrink-0 border-b border-neutral-200 bg-white shadow-xs print:hidden">
+      <div className="mx-auto flex h-full w-full max-w-[1536px] items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={onToggleNavigation}
+            aria-label="Toggle navigation"
+            className="rounded-lg border border-neutral-200 p-2 text-neutral-600 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 lg:hidden"
+          >
+            <Menu className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <div className="w-9 h-9 rounded-lg bg-red-600 flex items-center justify-center text-white font-black shadow-md shadow-red-600/20">
+            <Store className="w-5 h-5" aria-hidden="true" />
           </div>
-          <kbd className="hidden text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-neutral-300 text-neutral-500 shadow-2xs md:inline">
-            ⌘K
-          </kbd>
-        </button>
+          <div className="min-w-0">
+            <h1 className="truncate font-bold text-sm tracking-tight text-neutral-900">Shiekh Store Directory</h1>
+            <p className="hidden text-[11px] text-neutral-500 sm:block">Store operations and personnel directory</p>
+          </div>
+        </div>
+
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          {showBackButton && (
+            <button
+              type="button"
+              onClick={onNavigateBack}
+              aria-label="Go back"
+              title="Go back"
+              className="rounded-lg border border-neutral-200 p-2 text-neutral-600 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-100 text-neutral-500 transition-colors hover:bg-neutral-200/70 hover:text-neutral-700 sm:w-52 sm:justify-between sm:px-3 lg:w-60"
+            aria-label="Search stores and personnel"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Search className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+              <span className="hidden truncate whitespace-nowrap text-left leading-none sm:block">Search stores, personnel...</span>
+            </div>
+            <kbd className="hidden shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-neutral-300 text-neutral-500 shadow-2xs md:inline">
+              ⌘K
+            </kbd>
+          </button>
 
         {/* User Role Switcher Simulation */}
         <div className="hidden items-center gap-2 bg-neutral-50 p-1 rounded-lg border border-neutral-200 text-xs md:flex">
-          <div className="flex items-center gap-1.5 px-2 text-neutral-700">
+          <div className="hidden items-center gap-1.5 px-2 text-neutral-700 xl:flex">
             <ShieldCheck className="w-3.5 h-3.5 text-red-600" />
             <span className="font-medium">{currentUser.name}</span>
           </div>
@@ -110,6 +154,18 @@ export const Header: React.FC<HeaderProps> = ({
             ))}
           </select>
         </div>
+
+        <button
+          type="button"
+          onClick={cycleTheme}
+          title={`Theme: ${theme}. Click to switch theme.`}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
+          aria-label={`Current theme: ${theme}. Switch theme.`}
+        >
+          {theme === 'light' && <Sun className="h-4 w-4 text-amber-500" aria-hidden="true" />}
+          {theme === 'dark' && <Moon className="h-4 w-4 text-blue-400" aria-hidden="true" />}
+          {theme === 'system' && <Monitor className="h-4 w-4" aria-hidden="true" />}
+        </button>
 
         {/* Notifications Bell */}
         <div className="relative" ref={notificationsRef}>
@@ -201,6 +257,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+      </div>
       </div>
     </header>
   );

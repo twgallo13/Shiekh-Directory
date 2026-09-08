@@ -102,7 +102,6 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
                     type="button"
                     onClick={() => {
                       onSelectLocation(loc);
-                      onClose();
                     }}
                     className="w-full p-2.5 rounded-lg hover:bg-neutral-50 flex items-center justify-between text-left cursor-pointer transition-colors border border-transparent hover:border-neutral-200"
                   >
@@ -136,7 +135,6 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
                     type="button"
                     onClick={() => {
                       onSelectPerson(person);
-                      onClose();
                     }}
                     className="w-full p-2.5 rounded-lg hover:bg-neutral-50 flex items-center justify-between text-left cursor-pointer transition-colors border border-transparent hover:border-neutral-200"
                   >

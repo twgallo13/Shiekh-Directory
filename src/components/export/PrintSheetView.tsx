@@ -68,7 +68,7 @@ export const PrintSheetView: React.FC = () => {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 print:space-y-0">
       <div className="print:hidden">
         <PageHeader
           title="1-Sheet Retail Directory PDF"
@@ -114,10 +114,13 @@ export const PrintSheetView: React.FC = () => {
       </div>
 
       {/* Printable Sheet Container */}
-      <div className="bg-white rounded-xl border border-neutral-200 p-6 shadow-xs print:p-0 print:border-none print:shadow-none print:m-0 text-neutral-900">
+      <div
+        id="print-directory-sheet"
+        className="rounded-xl border border-neutral-200 bg-white p-6 text-neutral-900 shadow-xs print:m-0 print:rounded-none print:border-none print:p-0 print:shadow-none"
+      >
         
         {/* Printable Header */}
-        <div className="flex items-center justify-between border-b-2 border-neutral-900 pb-2 mb-3">
+        <div className="print-sheet-header mb-3 flex items-center justify-between border-b-2 border-neutral-900 pb-2">
           <div>
             <div className="flex items-center gap-2">
               <span className="bg-red-600 text-white text-[11px] font-black px-2 py-0.5 rounded tracking-wider">
@@ -142,12 +145,12 @@ export const PrintSheetView: React.FC = () => {
         </div>
 
         {/* Directory Tables Grouped By District */}
-        <div className="space-y-4">
+        <div className="print-sheet-groups space-y-4 print:space-y-1">
           {Array.from(groupedByDistrict.entries()).map(([districtName, { dmName, stores }]) => (
-            <div key={districtName} className="break-inside-avoid">
+            <div key={districtName} className="print-district break-inside-avoid">
               
               {/* District Sub-Header Bar */}
-              <div className="bg-neutral-100 border-y border-neutral-300 px-3 py-1 flex items-center justify-between text-[11px] font-bold text-neutral-900 mb-1">
+              <div className="print-district-header mb-1 flex items-center justify-between border-y border-neutral-300 bg-neutral-100 px-3 py-1 text-[11px] font-bold text-neutral-900">
                 <span className="uppercase tracking-wider text-red-700">
                   {districtName} ({stores.length} Locations)
                 </span>
@@ -220,7 +223,7 @@ export const PrintSheetView: React.FC = () => {
         </div>
 
         {/* Printable Footer */}
-        <div className="mt-4 pt-2 border-t border-neutral-300 text-[9px] text-neutral-500 flex items-center justify-between">
+  <div className="print-sheet-footer mt-4 flex items-center justify-between border-t border-neutral-300 pt-2 text-[9px] text-neutral-500">
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
               <AlertTriangle className="w-2.5 h-2.5" /> Indicates active notice or temporary operating schedule

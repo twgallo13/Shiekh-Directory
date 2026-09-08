@@ -29,6 +29,7 @@ import {
   INITIAL_OUTBOX_LOGS,
   INITIAL_SOP_RUNBOOKS
 } from '../data/initialData';
+import { mergeHoursTemplates, migrateDirectoryRelationships } from '../lib/directoryMigration';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -101,16 +102,32 @@ const NOTIFICATION_RULES_STORAGE_KEY = 'shiekh_notification_rules_v3';
 const OUTBOX_LOGS_STORAGE_KEY = 'shiekh_outbox_logs_v3';
 const SOP_RUNBOOKS_STORAGE_KEY = 'shiekh_sop_runbooks_v3';
 
-export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [locations, setLocations] = useState<LocationRecord[]>(() => {
-    const saved = localStorage.getItem(LOCATIONS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_LOCATIONS;
-  });
+const readStoredArray = <T,>(key: string, fallback: T[]): T[] => {
+  const saved = localStorage.getItem(key);
+  if (!saved) return fallback;
+  try {
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+};
 
-  const [people, setPeople] = useState<Person[]>(() => {
-    const saved = localStorage.getItem(PEOPLE_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_PEOPLE;
+export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [initialDirectory] = useState(() => {
+    const templates = mergeHoursTemplates(
+      readStoredArray(HOURS_TEMPLATES_STORAGE_KEY, INITIAL_HOURS_TEMPLATES),
+      INITIAL_HOURS_TEMPLATES,
+    );
+    const migrated = migrateDirectoryRelationships(
+      readStoredArray(LOCATIONS_STORAGE_KEY, INITIAL_LOCATIONS),
+      readStoredArray(PEOPLE_STORAGE_KEY, INITIAL_PEOPLE),
+      templates,
+    );
+    return { ...migrated, templates };
   });
+  const [locations, setLocations] = useState<LocationRecord[]>(initialDirectory.locations);
+  const [people, setPeople] = useState<Person[]>(initialDirectory.people);
 
   const [users, setUsers] = useState<UserProfile[]>(() => {
     const saved = localStorage.getItem(USERS_STORAGE_KEY);
@@ -121,10 +138,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return users[0] || INITIAL_USERS[0];
   });
 
-  const [hoursTemplates, setHoursTemplates] = useState<HoursTemplate[]>(() => {
-    const saved = localStorage.getItem(HOURS_TEMPLATES_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_HOURS_TEMPLATES;
-  });
+  const [hoursTemplates, setHoursTemplates] = useState<HoursTemplate[]>(initialDirectory.templates);
 
   const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>(() => {
     const saved = localStorage.getItem(API_KEYS_STORAGE_KEY);
@@ -413,14 +427,34 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const updatePerson = (id: string, updates: Partial<Person>) => {
-    setPeople(prev => prev.map(p => {
-      if (p.id === id) {
-        const updated = { ...p, ...updates };
-        addAuditLog('Person Updated', 'Person', p.id, p.fullName, `Updated attributes: ${Object.keys(updates).join(', ')}`, p, updated);
-        return updated;
-      }
-      return p;
-    }));
+    const currentPerson = people.find(person => person.id === id);
+    if (!currentPerson) return;
+
+    const updatedPerson = { ...currentPerson, ...updates };
+    const personById = (personId: string) => personId === id
+      ? updatedPerson
+      : people.find(person => person.id === personId);
+
+    setPeople(previous => previous.map(person => person.id === id ? updatedPerson : person));
+    setLocations(previous => previous.map(location => ({
+      ...location,
+      ...(location.storeManagerId === id ? {
+        storeManagerName: updatedPerson.fullName,
+        storeManagerPhone: updatedPerson.phone || updatedPerson.workPhone || '',
+        storeManagerPhonePrivacy: updatedPerson.phonePrivacy,
+      } : {}),
+      ...(location.districtManagerId === id ? {
+        districtManagerName: updatedPerson.fullName,
+        district: updatedPerson.district || location.district,
+      } : {}),
+      assistantStoreManagerNames: (location.assistantStoreManagerIds || [])
+        .map(personId => personById(personId)?.fullName)
+        .filter((name): name is string => Boolean(name)),
+      keyHolderNames: (location.keyHolderIds || [])
+        .map(personId => personById(personId)?.fullName)
+        .filter((name): name is string => Boolean(name)),
+    })));
+    addAuditLog('Person Updated', 'Person', currentPerson.id, currentPerson.fullName, `Updated attributes: ${Object.keys(updates).join(', ')}`, currentPerson, updatedPerson);
   };
 
   const togglePersonPhonePrivacy = (id: string, privacy: ContactPrivacyLevel) => {
@@ -485,7 +519,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const applyHoursTemplate = (locationId: string, templateId: string) => {
     const template = hoursTemplates.find(t => t.id === templateId);
     if (template) {
-      updateLocation(locationId, { standardHours: template.schedule });
+      updateLocation(locationId, {
+        standardHours: structuredClone(template.schedule),
+        hoursTemplateId: template.id,
+        hoursMode: 'template',
+      });
     }
   };
 
@@ -509,12 +547,24 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       return t;
     }));
+    if (updates.schedule) {
+      setLocations(previous => previous.map(location =>
+        location.hoursTemplateId === id && location.hoursMode === 'template'
+          ? { ...location, standardHours: structuredClone(updates.schedule!) }
+          : location,
+      ));
+    }
   };
 
   const deleteHoursTemplate = (id: string) => {
     const target = hoursTemplates.find(t => t.id === id);
     if (target) {
       setHoursTemplates(prev => prev.filter(t => t.id !== id));
+      setLocations(previous => previous.map(location =>
+        location.hoursTemplateId === id
+          ? { ...location, hoursTemplateId: undefined, hoursMode: 'custom' }
+          : location,
+      ));
       addAuditLog('Hours Template Deleted', 'Setting', target.id, target.name, `Deleted hours template "${target.name}"`, target, undefined);
     }
   };

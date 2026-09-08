@@ -43,7 +43,9 @@ const DAYS: { key: keyof WeeklySchedule; label: string }[] = [
 
 const normalizeLocation = (location: LocationRecord): LocationRecord => ({
   ...location,
+  assistantStoreManagerIds: location.assistantStoreManagerIds || [],
   assistantStoreManagerNames: location.assistantStoreManagerNames || [],
+  keyHolderIds: location.keyHolderIds || [],
   keyHolderNames: location.keyHolderNames || [],
   holidayHours: location.holidayHours || [],
 });
@@ -115,16 +117,35 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       .sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
   }, [people]);
 
+  const activePersonnel = useMemo(() => {
+    return people
+      .filter(person => person.activeStatus !== false && person.status !== 'Inactive')
+      .sort((left, right) => left.fullName.localeCompare(right.fullName));
+  }, [people]);
+
   if (!location || !formData) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Clean up empty entries in dynamic arrays
+    const districtManager = people.find(person => person.id === formData.districtManagerId);
+    const storeManager = people.find(person => person.id === formData.storeManagerId);
+    const assistantStoreManagerIds = (formData.assistantStoreManagerIds || []).filter(Boolean);
+    const keyHolderIds = (formData.keyHolderIds || []).filter(Boolean);
     const sanitizedData: LocationRecord = {
       ...formData,
-      assistantStoreManagerNames: (formData.assistantStoreManagerNames || []).filter(name => name.trim().length > 0),
-      keyHolderNames: (formData.keyHolderNames || []).filter(name => name.trim().length > 0),
+      districtManagerName: districtManager?.fullName || '',
+      district: districtManager?.district || formData.district,
+      storeManagerName: storeManager?.fullName || '',
+      storeManagerPhone: storeManager?.phone || storeManager?.workPhone || '',
+      storeManagerPhonePrivacy: storeManager?.phonePrivacy || formData.storeManagerPhonePrivacy,
+      assistantStoreManagerIds,
+      assistantStoreManagerNames: assistantStoreManagerIds
+        .map(id => people.find(person => person.id === id)?.fullName)
+        .filter((name): name is string => Boolean(name)),
+      keyHolderIds,
+      keyHolderNames: keyHolderIds
+        .map(id => people.find(person => person.id === id)?.fullName)
+        .filter((name): name is string => Boolean(name)),
       holidayHours: (formData.holidayHours || []).filter(h => h.holidayName.trim().length > 0 || h.date.trim().length > 0)
     };
 
@@ -142,7 +163,12 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const handleApplyTemplate = (templateId: string) => {
     const template = hoursTemplates.find(t => t.id === templateId);
     if (template) {
-      setFormData(prev => prev ? ({ ...prev, standardHours: { ...template.schedule } }) : null);
+      setFormData(prev => prev ? ({
+        ...prev,
+        standardHours: structuredClone(template.schedule),
+        hoursTemplateId: template.id,
+        hoursMode: 'template',
+      }) : null);
     }
   };
 
@@ -159,7 +185,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
           wednesday: { ...monHours },
           thursday: { ...monHours },
           friday: { ...monHours },
-        }
+        },
+        hoursMode: 'custom',
       };
     });
   };
@@ -179,7 +206,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
           friday: { ...monHours },
           saturday: { ...monHours },
           sunday: { ...monHours },
-        }
+        },
+        hoursMode: 'custom',
       };
     });
   };
@@ -195,7 +223,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
             ...prev.standardHours[dayKey],
             ...updates,
           }
-        }
+        },
+        hoursMode: 'custom',
       };
     });
   };
@@ -235,7 +264,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       if (!prev) return null;
       return {
         ...prev,
-        assistantStoreManagerNames: [...(prev.assistantStoreManagerNames || []), '']
+        assistantStoreManagerIds: [...(prev.assistantStoreManagerIds || []), '']
       };
     });
   };
@@ -243,17 +272,17 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const handleUpdateAssistantManager = (index: number, value: string) => {
     setFormData(prev => {
       if (!prev) return null;
-      const updated = [...(prev.assistantStoreManagerNames || [])];
+      const updated = [...(prev.assistantStoreManagerIds || [])];
       updated[index] = value;
-      return { ...prev, assistantStoreManagerNames: updated };
+      return { ...prev, assistantStoreManagerIds: updated };
     });
   };
 
   const handleRemoveAssistantManager = (index: number) => {
     setFormData(prev => {
       if (!prev) return null;
-      const updated = (prev.assistantStoreManagerNames || []).filter((_, i) => i !== index);
-      return { ...prev, assistantStoreManagerNames: updated };
+      const updated = (prev.assistantStoreManagerIds || []).filter((_, i) => i !== index);
+      return { ...prev, assistantStoreManagerIds: updated };
     });
   };
 
@@ -263,7 +292,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       if (!prev) return null;
       return {
         ...prev,
-        keyHolderNames: [...(prev.keyHolderNames || []), '']
+        keyHolderIds: [...(prev.keyHolderIds || []), '']
       };
     });
   };
@@ -271,17 +300,17 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const handleUpdateKeyHolder = (index: number, value: string) => {
     setFormData(prev => {
       if (!prev) return null;
-      const updated = [...(prev.keyHolderNames || [])];
+      const updated = [...(prev.keyHolderIds || [])];
       updated[index] = value;
-      return { ...prev, keyHolderNames: updated };
+      return { ...prev, keyHolderIds: updated };
     });
   };
 
   const handleRemoveKeyHolder = (index: number) => {
     setFormData(prev => {
       if (!prev) return null;
-      const updated = (prev.keyHolderNames || []).filter((_, i) => i !== index);
-      return { ...prev, keyHolderNames: updated };
+      const updated = (prev.keyHolderIds || []).filter((_, i) => i !== index);
+      return { ...prev, keyHolderIds: updated };
     });
   };
 
@@ -355,6 +384,16 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const currentSmId = formData.storeManagerId || 
     storeManagers.find(s => s.fullName?.toLowerCase() === (formData.storeManagerName || '').toLowerCase())?.id || 
     '';
+  const currentStoreManager = people.find(person => person.id === currentSmId);
+  const activeHoursTemplate = hoursTemplates.find(template => template.id === formData.hoursTemplateId);
+  const recommendedHoursTemplate = hoursTemplates.find(template =>
+    template.defaultForTypes?.includes(formData.type),
+  );
+  const hoursSourceLabel = activeHoursTemplate
+    ? formData.hoursMode === 'template'
+      ? activeHoursTemplate.name
+      : `Modified from ${activeHoursTemplate.name}`
+    : 'Custom weekly schedule';
 
   return (
     <div
@@ -370,43 +409,32 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
         aria-modal="true"
         aria-labelledby="location-editor-title"
         tabIndex={-1}
-        className="bg-white border border-neutral-200 rounded-2xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden relative"
+        className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl"
       >
         
         {/* Premium Dark Header (Parity with Detail Modal) */}
-        <div className="sticky top-0 z-20 bg-neutral-900 text-white p-6 border-b border-neutral-800 shrink-0 shadow-md">
+        <div className="sticky top-0 z-20 shrink-0 border-b border-neutral-800 bg-neutral-900 p-4 text-white">
           <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1.5 flex-1 min-w-0">
-              {/* Top Flex Row: Store Number in red badge, Location Type in muted text, Status in green badge */}
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span className="bg-red-700 text-white px-2 py-1 rounded text-xs font-mono font-bold">
-                  STORE #{formData.storeNumber || location.storeNumber}
-                </span>
-                <span className="text-xs text-neutral-400 font-medium">
-                  {formData.type || location.type}
-                </span>
-                <OperationalStatusBadge status={formData.operationalStatus} surface="dark" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <Store className="h-5 w-5 shrink-0 text-red-500" />
+                <h2 id="location-editor-title" className="truncate text-lg font-bold tracking-tight text-white">
+                  {isCreating
+                    ? 'Create New Authoritative Store Record'
+                    : `Edit Store #${formData.storeNumber} (${formData.name})`}
+                </h2>
               </div>
-
-              {/* Title: Large, bold white text */}
-              <h2 id="location-editor-title" className="text-2xl font-bold text-white tracking-tight truncate">
-                {formData.name || (isCreating ? 'New Store Location' : location.name)}
-              </h2>
-
-              {/* Subtitle: Muted city/state and ID string below the title */}
-              <div className="flex items-center gap-1.5 text-xs text-neutral-400 font-normal">
-                <MapPin className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                <span>
-                  {formData.city || 'City'}, {formData.state || 'State'} {isCreating ? '• New directory record' : `• ID: ${location.id}`}
-                </span>
-              </div>
+              <p className="mt-1 hidden pl-7 text-xs text-neutral-400 sm:block">
+                Authoritative master record, personnel assignments, and operating-hours source
+              </p>
+              <p className="mt-1 pl-7 text-xs text-neutral-400 sm:hidden">Master record & hours</p>
             </div>
 
             {/* Right Header Action / Close */}
             <div className="flex items-center gap-3 shrink-0">
-              <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider bg-neutral-800 border border-neutral-700 px-3 py-1 rounded-md hidden sm:inline-block">
-                {isCreating ? 'Create Store Record' : 'Edit Store Record'}
-              </span>
+              <div className="hidden sm:block">
+                <OperationalStatusBadge status={formData.operationalStatus} surface="dark" />
+              </div>
               <button
                 type="button"
                 onClick={requestClose}
@@ -421,45 +449,45 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
         </div>
 
         {/* Tab Navigation: Clean white tab row with bottom border */}
-        <div className="sticky top-[106px] z-10 bg-white px-6 border-b border-neutral-200 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="z-10 flex shrink-0 items-center justify-between border-b border-neutral-200 bg-neutral-50 px-2 sm:px-4">
+          <div className="flex w-full items-center sm:w-auto sm:gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('details')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs border-b-2 transition-all cursor-pointer ${
+              className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 border-b-2 px-2 py-3 text-xs transition-all sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'details'
                   ? 'border-red-600 text-red-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 font-medium'
               }`}
             >
               <Store className="w-3.5 h-3.5" />
-              <span>Store Details & Status</span>
+              <span><span className="sm:hidden">Store</span><span className="hidden sm:inline">Store Details & Status</span></span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('hours')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs border-b-2 transition-all cursor-pointer ${
+              className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 border-b-2 px-2 py-3 text-xs transition-all sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'hours'
                   ? 'border-red-600 text-red-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 font-medium'
               }`}
             >
               <Clock className="w-3.5 h-3.5" />
-              <span>Standard Hours</span>
+              <span><span className="sm:hidden">Hours</span><span className="hidden sm:inline">Standard Hours (7-Day Grid)</span></span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('holidays')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs border-b-2 transition-all cursor-pointer ${
+              className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 border-b-2 px-2 py-3 text-xs transition-all sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'holidays'
                   ? 'border-red-600 text-red-600 font-bold'
                   : 'border-transparent text-neutral-500 hover:text-neutral-800 font-medium'
               }`}
             >
               <Calendar className="w-3.5 h-3.5" />
-              <span>Holiday & Special Hours</span>
+              <span><span className="sm:hidden">Exceptions</span><span className="hidden sm:inline">Holiday & Special Hours</span></span>
               {formData.holidayHours && formData.holidayHours.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-neutral-100 text-neutral-700">
                   {formData.holidayHours.length}
@@ -474,7 +502,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
         </div>
 
         {/* Scrollable Form Body: Flat, clean white background and minimal borders */}
-        <form id="location-edit-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 bg-white">
+        <form id="location-edit-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto bg-white p-5 sm:p-6">
           
           {/* Lifecycle / Status Notice if Retired */}
           {formData.recordStatus === 'Retired' && (
@@ -498,7 +526,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
           {/* TAB 1: STORE DETAILS & STATUS */}
           {activeTab === 'details' && (
-            <div className="space-y-8">
+            <div className="space-y-6">
               
               {/* Section 1: Core Identification */}
               <div className="space-y-4">
@@ -805,7 +833,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                           setFormData(prev => prev ? ({
                             ...prev,
                             storeManagerId: undefined,
-                            storeManagerName: ''
+                            storeManagerName: '',
+                            storeManagerPhone: '',
                           }) : null);
                         } else {
                           const sm = people.find(p => p.id === selectedId);
@@ -813,7 +842,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                             ...prev,
                             storeManagerId: sm?.id,
                             storeManagerName: sm?.fullName || '',
-                            storeManagerPhone: sm ? (sm.phone || sm.workPhone || prev.storeManagerPhone) : prev.storeManagerPhone
+                            storeManagerPhone: sm?.phone || sm?.workPhone || '',
+                            storeManagerPhonePrivacy: sm?.phonePrivacy || prev.storeManagerPhonePrivacy,
                           }) : null);
                         }
                       }}
@@ -846,13 +876,12 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">
                       Store Manager Direct Phone
                     </label>
-                    <input
-                      type="text"
-                      placeholder="(555) 000-0000"
-                      value={formData.storeManagerPhone || ''}
-                      onChange={(e) => setFormData({ ...formData, storeManagerPhone: e.target.value })}
-                      className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 font-mono text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
-                    />
+                    <div className="flex min-h-10 items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
+                      <span className="font-mono text-sm text-neutral-900">
+                        {currentStoreManager?.phone || currentStoreManager?.workPhone || 'No phone on directory record'}
+                      </span>
+                      <span className="text-[10px] font-semibold uppercase text-neutral-400">From People Directory</span>
+                    </div>
                   </div>
                 </div>
 
@@ -877,21 +906,26 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </button>
                   </div>
 
-                  {(formData.assistantStoreManagerNames || []).length === 0 ? (
+                  {(formData.assistantStoreManagerIds || []).length === 0 ? (
                     <div className="py-2 text-xs text-neutral-400 italic">
                       No Assistant Managers currently assigned.
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {(formData.assistantStoreManagerNames || []).map((amName, idx) => (
+                      {(formData.assistantStoreManagerIds || []).map((assistantId, idx) => (
                         <div key={idx} className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={amName}
+                          <select
+                            value={assistantId}
                             onChange={(e) => handleUpdateAssistantManager(idx, e.target.value)}
-                            placeholder="Full name of Assistant Manager..."
-                            className="flex-1 px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
-                          />
+                            className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
+                          >
+                            <option value="">Select a person from the directory...</option>
+                            {activePersonnel.map(person => (
+                              <option key={person.id} value={person.id}>
+                                {person.fullName} ({person.jobTitle || person.role || 'Staff'})
+                              </option>
+                            ))}
+                          </select>
                           <button
                             type="button"
                             onClick={() => handleRemoveAssistantManager(idx)}
@@ -927,21 +961,26 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </button>
                   </div>
 
-                  {(formData.keyHolderNames || []).length === 0 ? (
+                  {(formData.keyHolderIds || []).length === 0 ? (
                     <div className="py-2 text-xs text-neutral-400 italic">
                       No Designated Key Holders registered.
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {(formData.keyHolderNames || []).map((khName, idx) => (
+                      {(formData.keyHolderIds || []).map((keyHolderId, idx) => (
                         <div key={idx} className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={khName}
+                          <select
+                            value={keyHolderId}
                             onChange={(e) => handleUpdateKeyHolder(idx, e.target.value)}
-                            placeholder="Full name of Key Holder..."
-                            className="flex-1 px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
-                          />
+                            className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
+                          >
+                            <option value="">Select a person from the directory...</option>
+                            {activePersonnel.map(person => (
+                              <option key={person.id} value={person.id}>
+                                {person.fullName} ({person.jobTitle || person.role || 'Staff'})
+                              </option>
+                            ))}
+                          </select>
                           <button
                             type="button"
                             onClick={() => handleRemoveKeyHolder(idx)}
@@ -963,7 +1002,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
           {/* TAB 2: STANDARD HOURS RESTORATION */}
           {activeTab === 'hours' && (
-            <div className="space-y-6">
+            <div className="space-y-4">
               
               {/* Light blue Authoritative Regular Operating Hours info banner */}
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3 text-xs text-blue-900">
@@ -977,23 +1016,48 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                 </div>
               </div>
 
-              {/* Horizontal Template Control Row */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-neutral-200">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-neutral-700">Apply Template:</span>
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-neutral-500" />
+                    <span className="text-sm font-semibold text-neutral-900">7-Day Weekly Grid</span>
+                    <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${formData.hoursMode === 'template' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                      {hoursSourceLabel}
+                    </span>
+                  </div>
+                  {recommendedHoursTemplate && recommendedHoursTemplate.id !== formData.hoursTemplateId && (
+                    <span className="text-[11px] text-neutral-500">
+                      Recommended: {recommendedHoursTemplate.name}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-xs font-semibold text-neutral-700">Template:</span>
                   <select
-                    onChange={(e) => handleApplyTemplate(e.target.value)}
-                    defaultValue=""
-                    className="bg-white border border-neutral-300 text-neutral-800 rounded-md px-3 py-1.5 text-xs font-medium cursor-pointer focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleApplyTemplate(e.target.value);
+                      } else {
+                        setFormData(previous => previous ? ({
+                          ...previous,
+                          hoursTemplateId: undefined,
+                          hoursMode: 'custom',
+                        }) : null);
+                      }
+                    }}
+                    value={formData.hoursTemplateId || ''}
+                    className="min-w-56 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
                   >
-                    <option value="" disabled>Select hours template...</option>
+                    <option value="">Custom schedule</option>
                     {hoursTemplates.map(t => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
-                </div>
+                  </div>
 
-                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={handleCopyMonToWeekdays}
@@ -1008,20 +1072,20 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                   >
                     Copy Mon to All
                   </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Flat 7-Day Grid: When "Closed" checked, label turns red and displays "Closed all day" */}
-              <div className="divide-y divide-neutral-200 border-t border-b border-neutral-200">
+              <div className="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200">
                 {DAYS.map(({ key, label }) => {
                   const day = formData.standardHours?.[key] || { open: '10:00', close: '20:00', isClosed: false };
                   return (
-                    <div key={key} className="py-3 flex items-center justify-between gap-4 text-xs">
-                      <span className={`w-28 font-medium transition-colors ${day.isClosed ? 'text-red-600 font-semibold' : 'text-neutral-900'}`}>
+                    <div key={key} className="flex min-h-14 flex-col items-stretch justify-between gap-2 px-4 py-3 text-xs sm:flex-row sm:items-center sm:gap-4 sm:py-2.5">
+                      <span className={`w-28 font-semibold transition-colors ${day.isClosed ? 'text-neutral-400 line-through' : 'text-neutral-900'}`}>
                         {label}
                       </span>
                       
-                      <div className="flex items-center gap-4 flex-1 justify-end">
+                      <div className="flex flex-wrap items-center justify-between gap-3 sm:flex-1 sm:justify-end sm:gap-4">
                         <label className="flex items-center gap-1.5 cursor-pointer text-neutral-600">
                           <input
                             type="checkbox"
@@ -1033,23 +1097,24 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                         </label>
 
                         {!day.isClosed ? (
-                          <div className="flex items-center gap-2">
+                          <div className="grid w-full grid-cols-[auto_1fr] items-center gap-x-2 gap-y-2 sm:flex sm:w-auto">
+                            <span className="text-[10px] font-semibold uppercase text-neutral-400">Open</span>
                             <input
                               type="time"
                               value={day.open}
                               onChange={(e) => handleDayHoursChange(key, { open: e.target.value })}
-                              className="px-2.5 py-1.5 bg-white border border-neutral-300 rounded-md text-neutral-900 text-xs focus:outline-none focus:border-red-500 font-mono"
+                              className="min-w-0 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 font-mono text-xs text-neutral-900 focus:border-red-500 focus:outline-none"
                             />
-                            <span className="text-neutral-400">to</span>
+                            <span className="text-[10px] font-semibold uppercase text-neutral-400">Close</span>
                             <input
                               type="time"
                               value={day.close}
                               onChange={(e) => handleDayHoursChange(key, { close: e.target.value })}
-                              className="px-2.5 py-1.5 bg-white border border-neutral-300 rounded-md text-neutral-900 text-xs focus:outline-none focus:border-red-500 font-mono"
+                              className="min-w-0 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 font-mono text-xs text-neutral-900 focus:border-red-500 focus:outline-none"
                             />
                           </div>
                         ) : (
-                          <span className="text-red-600 font-medium italic px-2 py-1">Closed all day</span>
+                          <span className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-1.5 font-medium italic text-neutral-400">Closed all day</span>
                         )}
                       </div>
                     </div>
@@ -1270,16 +1335,16 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
         </form>
 
         {/* Sticky Action Footer */}
-        <div className="sticky bottom-0 z-20 bg-white border-t border-neutral-200 p-4 flex items-center justify-between shrink-0 shadow-sm">
+        <div className="sticky bottom-0 z-20 flex shrink-0 items-center justify-between gap-2 border-t border-neutral-200 bg-white p-3 shadow-sm sm:p-4">
           <div>
             {!isCreating && formData.recordStatus === 'Active' ? (
               <button
                 type="button"
                 onClick={handleToggleRetire}
-                className="px-3 py-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-300 rounded-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 shadow-2xs transition-colors hover:bg-neutral-100"
               >
                 <Archive className="w-3.5 h-3.5 text-neutral-500" />
-                <span>Retire Store</span>
+                <span><span className="sm:hidden">Retire</span><span className="hidden sm:inline">Retire Store</span></span>
               </button>
             ) : !isCreating ? (
               <button
@@ -1294,21 +1359,22 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
           </div>
 
           {/* Flex right-aligned buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={requestClose}
-              className="px-4 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 cursor-pointer transition-colors"
+              className="cursor-pointer px-2 py-2 text-sm font-medium text-neutral-600 transition-colors hover:text-neutral-900 sm:px-4"
             >
               Cancel
             </button>
             <button
               type="submit"
               form="location-edit-form"
-              className="bg-red-700 hover:bg-red-800 text-white shadow-sm rounded-md px-5 py-2 text-sm font-semibold flex items-center gap-2 cursor-pointer transition-colors"
+              className="flex cursor-pointer items-center gap-2 rounded-md bg-red-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-800 sm:px-5"
             >
               <Save className="w-4 h-4" />
-              <span>{isCreating ? 'Create Location' : 'Save Authoritative Record'}</span>
+              <span className="sm:hidden">{isCreating ? 'Create' : 'Save Record'}</span>
+              <span className="hidden sm:inline">{isCreating ? 'Create Location' : 'Save Authoritative Record'}</span>
             </button>
           </div>
         </div>

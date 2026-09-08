@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Firestore } from "@google-cloud/firestore";
-import { resolveEvent, resolveTemplate } from "../server/firestoreMail";
+import { resolveEvent, resolveTemplate, sendFirebaseInvitationEmail } from "../server/firestoreMail";
 import type { MailConfiguration } from "../server/mailApi";
 import { INITIAL_EMAIL_TEMPLATES } from "../src/data/initialData";
 
@@ -28,53 +28,42 @@ test("Firestore mail templates replace escaped variables and produce text altern
   assert.match(rendered.text, /Hello <Theo & Team>/);
 });
 
-test("user invitation resolves the onboarding template with account and store data", async () => {
-  const requestedDocuments: string[] = [];
+test("Firebase invitation delivery uses the exact active Firestore email and records metadata only after acceptance", async () => {
   const metadataWrites: Record<string, unknown>[] = [];
-  const records: Record<string, Record<string, unknown>> = {
-    "users/usr-new": { email: "new.user@example.test", status: "Active", displayName: "New User", role: "Viewer", storeNumber: "07", accessScope: "Store 07" },
-    "email_templates/tmpl-account-invite": { subject: "Welcome {{recipient_name}}", bodyHtml: '<p>{{role}} at {{store_number}} - {{store_name}}</p><a href="https://directory.shiekhshoes.com/auth/login">Access dashboard</a>' },
-  };
   const firestore = {
-    collection(name: string) {
-      return {
-        doc(id: string) {
-          requestedDocuments.push(`${name}/${id}`);
-          const data = records[`${name}/${id}`];
-          return {
-            get: async () => ({ exists: Boolean(data), data: () => data }),
-            set: async (value: Record<string, unknown>) => { metadataWrites.push(value); },
-          };
-        },
-        where(field: string, operator: string, value: string) {
-          assert.deepEqual([name, field, operator, value], ["locations", "storeNumber", "==", "07"]);
-          return { limit: () => ({ get: async () => ({ docs: [{ data: () => ({ name: "Test Store" }) }] }) }) };
-        },
-      };
-    },
+    collection: () => ({ doc: () => ({
+      get: async () => ({ exists: true, data: () => ({ email: "Authorized.User@Example.test", status: "Active" }) }),
+      set: async (value: Record<string, unknown>) => { metadataWrites.push(value); },
+    }) }),
   } as unknown as Firestore;
-  const configuration = { host: "smtp.test", port: 587, user: "user", password: "password", from: "sender@example.test", recipients: ["sender@example.test"] } as MailConfiguration;
-  const message = await resolveEvent(firestore, "user-invitation", "usr-new", { uid: "admin", role: "System Administrator" }, configuration, async email => {
-    assert.equal(email, "new.user@example.test");
-    return "https://secure.example.test/firebase-action-code";
+  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const request = async (input: string | URL | Request, init?: RequestInit) => {
+    requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    return new Response("{}", { status: 200 });
+  };
+  await sendFirebaseInvitationEmail(firestore, "usr-new", { uid: "admin", role: "System Administrator" }, "public api key", "https://shiekh-dir.ai.studio/", request as typeof fetch);
+  assert.match(requests[0].url, /accounts:sendOobCode\?key=public%20api%20key$/);
+  assert.deepEqual(requests[0].body, {
+    requestType: "EMAIL_SIGNIN",
+    email: "authorized.user@example.test",
+    continueUrl: "https://shiekh-dir.ai.studio/auth/email-link",
+    canHandleCodeInApp: true,
   });
-  assert.equal(message.to, "new.user@example.test");
-  assert.equal(message.subject, "Welcome New User");
-  assert.match(message.html || "", /Viewer at 07 - Test Store/);
-  assert.match(message.html || "", /https:\/\/secure\.example\.test\/firebase-action-code/);
-  assert.doesNotMatch(message.html || "", /directory\.shiekhshoes\.com\/auth\/login/);
-  assert.match(message.text || "", /Secure sign-in link/);
-  assert.deepEqual(metadataWrites, [{ invitationStatus: "Pending", invitedAt: metadataWrites[0].invitedAt, invitedBy: "admin" }]);
-  assert.equal(JSON.stringify(metadataWrites).includes("firebase-action-code"), false);
-  assert.ok(requestedDocuments.includes("email_templates/tmpl-account-invite"));
+  assert.equal(metadataWrites.length, 1);
+  assert.deepEqual(metadataWrites[0], {
+    invitationStatus: "Pending",
+    invitationDelivery: "Firebase email",
+    invitationDeliveryStatus: "Submitted",
+    invitedAt: metadataWrites[0].invitedAt,
+    invitedBy: "admin",
+  });
+  assert.equal(JSON.stringify(metadataWrites).includes("api key"), false);
+
+  metadataWrites.length = 0;
+  await assert.rejects(() => sendFirebaseInvitationEmail(firestore, "usr-new", { uid: "admin", role: "System Administrator" }, "key", "https://shiekh-dir.ai.studio", async () => new Response("{}", { status: 400 })), /submission failed/);
+  assert.equal(metadataWrites.length, 0);
 });
 
-test("seeded onboarding copy explains passwordless sign-in and optional password setup", () => {
-  const template = INITIAL_EMAIL_TEMPLATES.find(item => item.id === "tmpl-account-invite");
-  assert.ok(template);
-  assert.equal(template.subject, "Your Shiekh Directory secure sign-in link");
-  assert.ok(template.variables.includes("authorized_email"));
-  assert.match(template.bodyHtml, /you do not need a password/i);
-  assert.match(template.bodyHtml, /Set or change password/);
-  assert.match(template.bodyHtml, /Spam and your company quarantine/);
+test("seeded SMTP templates do not claim to control Firebase onboarding email", () => {
+  assert.equal(INITIAL_EMAIL_TEMPLATES.some(item => item.id === "tmpl-account-invite"), false);
 });

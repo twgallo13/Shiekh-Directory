@@ -170,6 +170,8 @@ function toRecord(snapshot: QueryDocumentSnapshot, collection: DirectoryCollecti
     storeNumber: data.storeNumber || data.assignedStoreId,
     identityLinked: Boolean(data.firebaseUid),
     invitationStatus: data.invitationStatus,
+    invitationDelivery: data.invitationDelivery,
+    invitationDeliveryStatus: data.invitationDeliveryStatus,
     invitedAt: data.invitedAt,
     lastLogin: data.lastLogin,
   };

@@ -3,19 +3,50 @@ import { Firestore } from "@google-cloud/firestore";
 import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { AccessDenied } from "./authAuthority";
-import { parseMailSettings, type MailConfiguration, type MailEvent, type MailIdentity, type MailSettingsStore, type ResolveDiagnosticTemplate, type ResolveInvitationLink, type ResolveMailEvent } from "./mailApi";
+import { parseMailSettings, type MailConfiguration, type MailEvent, type MailIdentity, type MailSettingsStore, type ResolveDiagnosticTemplate, type ResolveInvitationLink, type ResolveMailEvent, type SendInvitationEmail } from "./mailApi";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 export function createFirestoreMailEventResolver(): ResolveMailEvent {
   const firestore = createFirestore();
-  const generateLink = createFirebaseSignInLinkGenerator();
-  return async (event, entityId, identity, configuration) => resolveEvent(firestore, event, entityId, identity, configuration, generateLink);
+  return async (event, entityId, identity, configuration) => resolveEvent(firestore, event, entityId, identity, configuration);
 }
 
 export function createFirestoreInvitationLinkResolver(): ResolveInvitationLink {
   const firestore = createFirestore();
   const generateLink = createFirebaseSignInLinkGenerator();
   return (entityId, identity) => resolveInvitationLink(firestore, entityId, identity, generateLink);
+}
+
+export function createFirestoreInvitationEmailSender(apiKey = process.env.FIREBASE_WEB_API_KEY, request: typeof fetch = fetch): SendInvitationEmail | null {
+  if (!apiKey || /\s/.test(apiKey)) return null;
+  const firestore = createFirestore();
+  const appUrl = (process.env.DIRECTORY_APP_URL || "https://shiekh-dir.ai.studio").replace(/\/$/, "");
+  return (entityId, identity) => sendFirebaseInvitationEmail(firestore, entityId, identity, apiKey, appUrl, request);
+}
+
+export async function sendFirebaseInvitationEmail(firestore: Firestore, entityId: string, identity: MailIdentity, apiKey: string, appUrl: string, request: typeof fetch = fetch) {
+  const reference = firestore.collection("users").doc(entityId);
+  const snapshot = await reference.get();
+  const user = snapshot.data();
+  if (!snapshot.exists || !mailbox(user?.email) || user?.status !== "Active") throw new AccessDenied();
+  const response = await request(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestType: "EMAIL_SIGNIN",
+      email: user.email.toLowerCase(),
+      continueUrl: `${appUrl.replace(/\/$/, "")}/auth/email-link`,
+      canHandleCodeInApp: true,
+    }),
+  });
+  if (!response.ok) throw new Error("Firebase email submission failed.");
+  await reference.set({
+    invitationStatus: "Pending",
+    invitationDelivery: "Firebase email",
+    invitationDeliveryStatus: "Submitted",
+    invitedAt: new Date().toISOString(),
+    invitedBy: identity.uid,
+  }, { merge: true });
 }
 
 export function createFirestoreDiagnosticResolver(): ResolveDiagnosticTemplate {
@@ -63,26 +94,7 @@ export function createFirestoreMailSettingsStore(): MailSettingsStore {
   };
 }
 
-export async function resolveEvent(firestore: Firestore, event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration, generateLink?: (email: string) => Promise<string>) {
-  if (event === "user-invitation") {
-    if (!generateLink) throw new Error("Invitation link generation is unavailable.");
-    const { user, activationLink } = await invitationForUser(firestore, entityId, identity, generateLink);
-    const storeNumber = safeText(user.storeNumber || String(user.accessScope || "").replace(/^Store\s+/i, "") || "Company-wide");
-    const location = storeNumber === "Company-wide" ? null : await firestore.collection("locations").where("storeNumber", "==", storeNumber).limit(1).get();
-    const content = await resolveTemplate(firestore, "tmpl-account-invite", {
-      recipient_name: user.displayName || user.name || "there",
-      role: user.role,
-      authorized_email: user.email.toLowerCase(),
-      store_number: storeNumber,
-      store_name: location?.docs[0]?.data()?.name || (storeNumber === "Company-wide" ? "All locations" : "Assigned location"),
-      activation_link: activationLink,
-    });
-    const encodedLink = escapeHtml(activationLink);
-    const migratedHtml = content.html.replace(/https:\/\/directory\.shiekhshoes\.com\/auth\/login/g, encodedLink);
-    const html = migratedHtml.includes(encodedLink) ? migratedHtml : `${migratedHtml}<p style="margin:24px 0"><a href="${encodedLink}" style="background:#b91c1c;color:#fff;padding:12px 18px;text-decoration:none;border-radius:6px;font-weight:700">Secure sign in</a></p>`;
-    return { to: user.email.toLowerCase(), ...content, html, text: `${content.text}\n\nSecure sign-in link:\n${activationLink}` };
-  }
-
+export async function resolveEvent(firestore: Firestore, event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) {
   const snapshot = await firestore.collection("requests").doc(entityId).get();
   const request = snapshot.data();
   if (!snapshot.exists || !request) throw new AccessDenied();
@@ -102,7 +114,9 @@ export async function resolveEvent(firestore: Firestore, event: MailEvent, entit
 }
 
 export async function resolveInvitationLink(firestore: Firestore, entityId: string, identity: MailIdentity, generateLink: (email: string) => Promise<string>) {
-  return (await invitationForUser(firestore, entityId, identity, generateLink)).activationLink;
+  const result = await invitationForUser(firestore, entityId, identity, generateLink);
+  await firestore.collection("users").doc(entityId).set({ invitationDelivery: "Copied link", invitationDeliveryStatus: "Submitted" }, { merge: true });
+  return result.activationLink;
 }
 
 async function invitationForUser(firestore: Firestore, entityId: string, identity: MailIdentity, generateLink: (email: string) => Promise<string>) {

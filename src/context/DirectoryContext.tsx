@@ -18,7 +18,7 @@ import {
 import type { DirectorySeed } from '../lib/directorySeed';
 import { migrateDirectoryRelationships } from '../lib/directoryMigration';
 import { commitDirectory, type DirectoryAudit, type DirectoryWrite } from '../lib/directoryClient';
-import { createInvitationLink, mailRequest, sendMailEvent } from '../lib/mailClient';
+import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
 import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
 
@@ -58,7 +58,7 @@ interface DirectoryContextType {
   createHoursTemplate: (template: Omit<HoursTemplate, 'id'>) => HoursTemplate;
   updateHoursTemplate: (id: string, updates: Partial<HoursTemplate>) => void;
   deleteHoursTemplate: (id: string) => void;
-  createUserAccount: (user: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice) => Promise<{ user: UserProfile; outcome: 'relay-accepted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }>;
+  createUserAccount: (user: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice) => Promise<{ user: UserProfile; outcome: 'email-submitted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }>;
   sendUserInvitation: (id: string) => Promise<void>;
   createUserInvitationLink: (id: string) => Promise<string>;
   updateUserAccount: (id: string, updates: Partial<UserProfile>) => void;
@@ -115,7 +115,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     return operation;
   };
 
-  const notifyAfterSave = (operation: Promise<void>, event: 'user-invitation' | 'request-submitted' | 'request-approved' | 'request-rejected', entityId: string) => {
+  const notifyAfterSave = (operation: Promise<void>, event: 'request-submitted' | 'request-approved' | 'request-rejected', entityId: string) => {
     void operation.then(() => sendMailEvent(event, entityId)).catch(error => {
       setPersistenceError(error instanceof Error ? error.message : 'The directory email could not be sent.');
     });
@@ -408,23 +408,23 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   // User Accounts CUD
-  const markInvitationIssued = (id: string) => {
+  const markInvitationIssued = (id: string, invitationDelivery: 'Firebase email' | 'Copied link') => {
     const invitedAt = new Date().toISOString();
-    setUsers(previous => previous.map(item => item.id === id ? { ...item, invitationStatus: 'Pending', invitedAt } : item));
+    setUsers(previous => previous.map(item => item.id === id ? { ...item, invitationStatus: 'Pending', invitationDelivery, invitationDeliveryStatus: 'Submitted', invitedAt } : item));
   };
 
   const sendUserInvitation = async (id: string) => {
-    await sendMailEvent('user-invitation', id);
-    markInvitationIssued(id);
+    await sendInvitationEmail(id);
+    markInvitationIssued(id, 'Firebase email');
   };
 
   const createUserInvitationLink = async (id: string) => {
     const activationLink = await createInvitationLink(id);
-    markInvitationIssued(id);
+    markInvitationIssued(id, 'Copied link');
     return activationLink;
   };
 
-  const createUserAccount = async (userData: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice): Promise<{ user: UserProfile; outcome: 'relay-accepted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }> => {
+  const createUserAccount = async (userData: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice): Promise<{ user: UserProfile; outcome: 'email-submitted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }> => {
     const id = `usr-${Date.now()}`;
     const next = { ...userData, id, accessScope: userData.accessScope || (userData.storeNumber ? `Store ${userData.storeNumber}` : 'Company-wide') };
     setUsers(previous => [...previous, next]);
@@ -442,7 +442,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         return { user: { ...next, invitationStatus: 'Pending' }, outcome: 'link-generated', activationLink };
       }
       await sendUserInvitation(id);
-      return { user: { ...next, invitationStatus: 'Pending' }, outcome: 'relay-accepted' };
+      return { user: { ...next, invitationStatus: 'Pending', invitationDelivery: 'Firebase email', invitationDeliveryStatus: 'Submitted' }, outcome: 'email-submitted' };
     }
     catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'The onboarding action failed.';

@@ -26,7 +26,7 @@ export async function mailRequest(route: "status" | "dispatch", recipient?: stri
   return body;
 }
 
-export async function sendMailEvent(event: "user-invitation" | "request-submitted" | "request-approved" | "request-rejected", entityId: string) {
+export async function sendMailEvent(event: "request-submitted" | "request-approved" | "request-rejected", entityId: string) {
   const auth = getSharedAuth();
   if (!auth.currentUser) throw new Error("Sign in with your authorized directory account to use mail.");
   const response = await fetch('/api/mail/event', {
@@ -52,6 +52,19 @@ export async function createInvitationLink(entityId: string): Promise<string> {
   const body = await response.json().catch(() => ({}));
   if (!response.ok || typeof body.activationLink !== 'string') throw new Error(body.error?.message || 'A secure sign-in link could not be generated.');
   return body.activationLink;
+}
+
+export async function sendInvitationEmail(entityId: string): Promise<void> {
+  const auth = getSharedAuth();
+  if (!auth.currentUser) throw new Error("Sign in with your authorized directory account to send an invitation.");
+  const response = await fetch('/api/mail/invitation-email', {
+    method: 'POST',
+    redirect: 'error',
+    headers: { Authorization: `Bearer ${await auth.currentUser.getIdToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entityId }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error?.message || 'Firebase could not submit the sign-in email.');
 }
 
 export async function getMailSettings(): Promise<{ settings: MailSettings; passwordConfigured: boolean }> {

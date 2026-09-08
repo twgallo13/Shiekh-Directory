@@ -40,6 +40,8 @@ export interface UserProfile {
   invitationStatus?: 'Pending' | 'Accepted';
   invitedAt?: string;
   lastLogin?: string;
+  invitationDelivery?: 'Firebase email' | 'Copied link';
+  invitationDeliveryStatus?: 'Submitted';
 }
 
 export type UserOnboardingChoice = 'send' | 'copy' | 'access-only';

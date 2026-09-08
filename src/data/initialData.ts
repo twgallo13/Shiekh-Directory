@@ -15,32 +15,6 @@ export { DEFAULT_WEEKLY_HOURS } from '../lib/defaultHours';
 
 export const INITIAL_EMAIL_TEMPLATES: EmailTemplate[] = [
   {
-    id: 'tmpl-account-invite',
-    name: 'Account Invitation & Role Provisioning',
-    subject: 'Your Shiekh Directory secure sign-in link',
-    triggerEvent: 'User Account Created',
-    variables: ['recipient_name', 'authorized_email', 'role', 'store_number', 'store_name', 'activation_link'],
-    updatedAt: '2026-09-08T09:00:00Z',
-    bodyHtml: `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1f2937; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-  <div style="background-color: #dc2626; color: white; padding: 18px 24px;">
-    <h2 style="margin: 0; font-size: 20px;">Welcome to Shiekh Shoes Dynamic Directory</h2>
-  </div>
-  <div style="padding: 24px; background: white;">
-    <p>Hello <strong>{{recipient_name}}</strong>,</p>
-    <p>An administrator granted <strong>{{authorized_email}}</strong> access to the Shiekh Directory.</p>
-    <p><strong>Role:</strong> {{role}}<br /><strong>Access:</strong> Store #{{store_number}} ({{store_name}})</p>
-    <p>Click the button below, then enter <strong>{{authorized_email}}</strong> when prompted. This link signs you in directly; you do not need a password.</p>
-    <div style="margin: 24px 0;">
-      <a href="{{activation_link}}" style="background-color: #b91c1c; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Sign in to Shiekh Directory</a>
-    </div>
-    <p>If you want to use a password later, sign in first, open <strong>My Profile / Account</strong>, and choose <strong>Set or change password</strong>. That sends a separate password email.</p>
-    <p style="font-size: 12px; color: #4b5563;">This secure link expires automatically. If it has expired, ask a directory administrator for a new link. If you cannot find this message, check Spam and your company quarantine.</p>
-    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
-    <p style="font-size: 11px; color: #6b7280; margin: 0;">This is an automated administrative invitation dispatched by the Shiekh Directory Relay.</p>
-  </div>
-</div>`
-  },
-  {
     id: 'tmpl-correction-alert',
     name: 'Correction Request Submitted Alert',
     subject: '[Action Required] New Directory Correction Request: Store #{{store_number}}',
@@ -134,62 +108,9 @@ export const INITIAL_EMAIL_TEMPLATES: EmailTemplate[] = [
   }
 ];
 
-export const INITIAL_NOTIFICATION_RULES: NotificationRule[] = [
-  {
-    id: 'rule-01',
-    eventName: 'New Correction Request Submitted',
-    recipientRole: 'Directory Data Steward',
-    enabled: true,
-    deliveryChannel: 'Email'
-  },
-  {
-    id: 'rule-02',
-    eventName: 'Request Approved / Published',
-    recipientRole: 'Store Manager',
-    enabled: true,
-    deliveryChannel: 'Email'
-  },
-  {
-    id: 'rule-03',
-    eventName: 'Request Rejected / Needs Info',
-    recipientRole: 'Store Manager',
-    enabled: true,
-    deliveryChannel: 'Email'
-  },
-  {
-    id: 'rule-04',
-    eventName: 'Fleet Holiday Broadcast Executed',
-    recipientRole: 'Store Operations Leadership',
-    enabled: true,
-    deliveryChannel: 'Email'
-  },
-  {
-    id: 'rule-05',
-    eventName: 'API Key Revocation / Expiration',
-    recipientRole: 'System Administrator',
-    enabled: true,
-    deliveryChannel: 'Email'
-  }
-];
+export const INITIAL_NOTIFICATION_RULES: NotificationRule[] = [];
 
-export const INITIAL_OUTBOX_LOGS: OutboxLogEntry[] = [
-  {
-    id: 'out-01',
-    timestamp: '2026-09-07T08:12:00Z',
-    recipient: 'theo@shiekhshoes.org',
-    subject: '[Diagnostic Ping] Shiekh Directory SMTP Relay Verification',
-    status: 'Delivered',
-    templateId: 'tmpl-diagnostic-test'
-  },
-  {
-    id: 'out-02',
-    timestamp: '2026-09-06T14:22:00Z',
-    recipient: 'store7@shiekhshoes.com',
-    subject: '[Approved] Directory Update for Store #07 has been Published',
-    status: 'Delivered',
-    templateId: 'tmpl-request-approved'
-  }
-];
+export const INITIAL_OUTBOX_LOGS: OutboxLogEntry[] = [];
 
 export const INITIAL_SOP_RUNBOOKS: SopRunbook[] = [
   {
@@ -294,39 +215,7 @@ export const INITIAL_CORPORATE_HOLIDAYS: CorporateHoliday[] = [
   }
 ];
 
-export const INITIAL_USERS: UserProfile[] = [
-  {
-    id: 'usr-steward-1',
-    name: 'Theo (Data Steward)',
-    email: 'theo@shiekhshoes.org',
-    role: 'Directory Data Steward',
-  },
-  {
-    id: 'usr-ops-1',
-    name: 'Sarah Jenkins',
-    email: 's.jenkins@shiekhshoes.com',
-    role: 'Store Operations Leadership',
-  },
-  {
-    id: 'usr-sm-07',
-    name: 'Deep Singh (SM #07)',
-    email: 'store7@shiekhshoes.com',
-    role: 'Store Manager',
-    storeNumber: '07',
-  },
-  {
-    id: 'usr-admin-1',
-    name: 'System Admin',
-    email: 'admin@shiekhshoes.com',
-    role: 'System Administrator',
-  },
-  {
-    id: 'usr-support-1',
-    name: 'Alex Rivera (Support Lead)',
-    email: 'a.rivera@shiekhshoes.com',
-    role: 'Customer Support Lead',
-  }
-];
+export const INITIAL_USERS: UserProfile[] = [];
 
 export const INITIAL_HOURS_TEMPLATES: HoursTemplate[] = [
   {

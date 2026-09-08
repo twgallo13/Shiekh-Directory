@@ -225,10 +225,34 @@ test("operational events resolve recipients and content on the server after role
 
   const viewer = await harness({ authenticate: async () => ({ uid: "viewer", role: "Viewer" }), resolveEvent: async () => ({ to: "requester@example.test", subject: "Server", text: "Server" }) });
   try {
-    assert.equal((await viewer.request("event", { event: "user-invitation", entityId: "usr-1" })).status, 403);
+    assert.equal((await viewer.request("event", { event: "user-invitation", entityId: "usr-1" })).status, 400);
     assert.equal((await viewer.request("event", { event: "request-approved", entityId: "req-1" })).status, 403);
     assert.equal((await viewer.request("event", { event: "request-submitted", entityId: "req-1" })).status, 200);
   } finally { await viewer.close(); }
+});
+
+test("Firebase invitation email is administrator-only and never invokes SMTP", async () => {
+  const submitted: unknown[] = [];
+  const app = await harness({ sendInvitationEmail: async (entityId, identity) => { submitted.push([entityId, identity.uid]); } });
+  try {
+    const response = await app.request("invitation-email", { entityId: "usr-1" });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { success: true, status: "submitted", provider: "firebase" });
+    assert.deepEqual(submitted, [["usr-1", "test-admin"]]);
+    assert.equal(app.sent.length, 0);
+    assert.equal((await app.request("event", { event: "user-invitation", entityId: "usr-1" })).status, 400);
+  } finally { await app.close(); }
+
+  const viewer = await harness({
+    authenticate: async () => ({ uid: "viewer", role: "Viewer" }),
+    sendInvitationEmail: async () => { throw new Error("must not submit"); },
+  });
+  try { assert.equal((await viewer.request("invitation-email", { entityId: "usr-1" })).status, 403); }
+  finally { await viewer.close(); }
+
+  const failure = await harness({ sendInvitationEmail: async () => { throw new Error("provider rejected"); } });
+  try { assert.equal((await failure.request("invitation-email", { entityId: "usr-1" })).status, 502); }
+  finally { await failure.close(); }
 });
 
 test("secure invitation links are freshly resolved for administrators and never sent by the copy endpoint", async () => {

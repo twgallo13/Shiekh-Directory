@@ -238,12 +238,12 @@ test("administrators can save non-secret mail settings without a password field"
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
 });
 
-test("Add User commits the account and reports SMTP relay acceptance without claiming delivery", async ({ page }) => {
+test("Add User commits the account and submits Firebase passwordless email", async ({ page }) => {
   await prepare(page, "System Administrator");
   let commit: any = null;
-  let event: any = null;
+  let invitation: any = null;
   await page.route("**/api/directory/commit", async route => { commit = route.request().postDataJSON(); await route.fulfill({ status: 204, body: "" }); });
-  await page.route("**/api/mail/event", async route => { event = route.request().postDataJSON(); await route.fulfill({ json: { success: true, status: "accepted" } }); });
+  await page.route("**/api/mail/invitation-email", async route => { invitation = route.request().postDataJSON(); await route.fulfill({ json: { success: true, status: "submitted", provider: "firebase" } }); });
   await page.goto(`${origin}/admin`); await restore(page, true);
   await page.getByRole("button", { name: "User RBAC" }).click();
   await page.getByRole("button", { name: "Add User" }).click();
@@ -251,12 +251,11 @@ test("Add User commits the account and reports SMTP relay acceptance without cla
   await page.getByLabel("Email Address *").fill("new.user@example.test");
   await page.getByLabel("Role / Permissions *").selectOption("Editor");
   await page.getByRole("button", { name: "Save Account" }).click();
-  await expect(page.getByRole("status")).toContainText("Gmail accepted the secure sign-in email for relay");
-  await expect(page.getByRole("status")).toContainText("inbox delivery can still be affected");
+  await expect(page.getByRole("status")).toContainText("submitted a passwordless sign-in email through Firebase");
+  await expect(page.getByRole("status")).toContainText("Spam or company quarantine");
   expect(commit.writes[0].collection).toBe("users");
   expect(commit.writes[0].data.email).toBe("new.user@example.test");
-  expect(event.event).toBe("user-invitation");
-  expect(event.entityId).toBe(commit.writes[0].id);
+  expect(invitation).toEqual({ entityId: commit.writes[0].id });
 });
 
 test("Add User supports copy-link and access-only onboarding without sending mail", async ({ page, context }) => {
@@ -264,10 +263,10 @@ test("Add User supports copy-link and access-only onboarding without sending mai
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
   const commits: any[] = [];
   const linkRequests: any[] = [];
-  let mailEvents = 0;
+  let invitationEmails = 0;
   await page.route("**/api/directory/commit", async route => { commits.push(route.request().postDataJSON()); await route.fulfill({ status: 204, body: "" }); });
   await page.route("**/api/mail/invitation-link", async route => { linkRequests.push(route.request().postDataJSON()); await route.fulfill({ json: { success: true, activationLink: "https://secure.example.test/firebase-action-code" } }); });
-  await page.route("**/api/mail/event", async route => { mailEvents++; await route.fulfill({ json: { success: true, status: "accepted" } }); });
+  await page.route("**/api/mail/invitation-email", async route => { invitationEmails++; await route.fulfill({ json: { success: true, status: "submitted", provider: "firebase" } }); });
   await page.goto(`${origin}/admin`); await restore(page, true);
   await page.getByRole("button", { name: "User RBAC" }).click();
   await page.getByRole("button", { name: "Add User" }).click();
@@ -279,7 +278,7 @@ test("Add User supports copy-link and access-only onboarding without sending mai
   await expect(page.getByRole("status")).toContainText("copied a fresh secure sign-in link");
   expect(linkRequests[0].entityId).toBe(commits[0].writes[0].id);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("https://secure.example.test/firebase-action-code");
-  expect(mailEvents).toBe(0);
+  expect(invitationEmails).toBe(0);
 
   await page.getByRole("button", { name: "Add User" }).click();
   await page.getByLabel("Full Name *").fill("Access Only User");
@@ -290,7 +289,36 @@ test("Add User supports copy-link and access-only onboarding without sending mai
   await expect(page.getByRole("status")).toContainText("No onboarding email was submitted");
   expect(commits).toHaveLength(2);
   expect(linkRequests).toHaveLength(1);
-  expect(mailEvents).toBe(0);
+  expect(invitationEmails).toBe(0);
+});
+
+test("User accounts distinguish readiness from access and protect the current session", async ({ page }) => {
+  await prepare(page, "System Administrator");
+  await page.route("**/api/auth/bootstrap", route => route.fulfill({ json: {
+    locations: [], people: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [],
+    users: [
+      { id: "usr-current", name: "Synthetic User", email: "user@example.test", role: "System Administrator", status: "Active", accessScope: "Company-wide", identityLinked: true },
+      { id: "usr-setup", name: "Setup User", email: "setup@example.test", role: "Editor", status: "Active", accessScope: "Company-wide", identityLinked: false, invitationStatus: "Pending", invitationDelivery: "Firebase email", invitedAt: "2026-09-08T12:00:00Z" },
+      { id: "usr-suspended", name: "Suspended User", email: "suspended@example.test", role: "Viewer", status: "Suspended", accessScope: "Store 07", storeNumber: "07", identityLinked: true },
+    ],
+  } }));
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole("button", { name: "User RBAC" }).click();
+
+  const current = page.getByRole("region", { name: "Synthetic User account" });
+  await expect(current).toContainText("Current session");
+  await expect(current.getByRole("button", { name: /Suspend|Revoke/ })).toHaveCount(0);
+
+  const setup = page.getByRole("region", { name: "Setup User account" });
+  await expect(setup).toContainText("Setup required");
+  await expect(setup).toContainText("AccessGranted");
+  await expect(setup).toContainText("Firebase email submitted");
+  await expect(setup.getByRole("button", { name: "Send setup email" })).toBeVisible();
+  await expect(setup.getByRole("button", { name: "Copy link" })).toBeVisible();
+
+  const suspended = page.getByRole("region", { name: "Suspended User account" });
+  await expect(suspended).toContainText("Suspended");
+  await expect(suspended.getByRole("button", { name: "Send setup email" })).toHaveCount(0);
 });
 
 for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {

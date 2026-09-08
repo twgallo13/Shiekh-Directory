@@ -53,10 +53,11 @@ export interface MailMessage {
   disableFileAccess: true;
   disableUrlAccess: true;
 }
-export type MailEvent = "user-invitation" | "request-submitted" | "request-approved" | "request-rejected";
+export type MailEvent = "request-submitted" | "request-approved" | "request-rejected";
 export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">>;
 export type ResolveDiagnosticTemplate = (configuration: MailConfiguration) => Promise<Pick<MailMessage, "subject" | "text" | "html">>;
 export type ResolveInvitationLink = (entityId: string, identity: MailIdentity) => Promise<string>;
+export type SendInvitationEmail = (entityId: string, identity: MailIdentity) => Promise<void>;
 
 export interface MailApiOptions {
   authenticate: ((token: string) => Promise<MailIdentity>) | null;
@@ -66,6 +67,7 @@ export interface MailApiOptions {
   resolveEvent?: ResolveMailEvent;
   resolveDiagnostic?: ResolveDiagnosticTemplate;
   resolveInvitationLink?: ResolveInvitationLink;
+  sendInvitationEmail?: SendInvitationEmail;
   audit?: (event: Record<string, string>) => void;
 }
 
@@ -250,14 +252,13 @@ export function createMailRouter(options: MailApiOptions): Router {
     json({ limit: "2kb", strict: true, inflate: false }),
     async (request, response) => {
       const body = request.body;
-      const events: MailEvent[] = ["user-invitation", "request-submitted", "request-approved", "request-rejected"];
+      const events: MailEvent[] = ["request-submitted", "request-approved", "request-rejected"];
       if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(field => field !== "event" && field !== "entityId")
         || !events.includes(body.event) || typeof body.entityId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.entityId)) {
         return mailError(response, 400, "invalid_mail_event", "A supported mail event and entityId are required.");
       }
       const identity = response.locals.mailIdentity as MailIdentity;
-      if (body.event === "user-invitation" && identity.role !== "System Administrator") return mailError(response, 403, "mail_role_required", "System Administrator access is required.");
-      if (body.event !== "request-submitted" && body.event !== "user-invitation" && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
+      if (body.event !== "request-submitted" && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
       let configuration: MailConfiguration | null;
       try { configuration = await activeConfiguration(options); }
       catch { return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
@@ -294,6 +295,28 @@ export function createMailRouter(options: MailApiOptions): Router {
       } catch (error) {
         if (error instanceof AccessDenied) return mailError(response, 403, "invitation_not_allowed", "A secure invitation link cannot be issued for this account.");
         mailError(response, 503, "invitation_unavailable", "A secure invitation link could not be generated.");
+      }
+    },
+  );
+  router.post("/invitation-email",
+    limiter(10, 10 * 60_000, () => "mail-invitation-email-global"),
+    json({ limit: "1kb", strict: true, inflate: false }),
+    async (request, response) => {
+      const identity = response.locals.mailIdentity as MailIdentity;
+      if (identity.role !== "System Administrator") return mailError(response, 403, "mail_role_required", "System Administrator access is required.");
+      const body = request.body;
+      if (!plainObject(body) || Object.keys(body).some(field => field !== "entityId")
+        || typeof body.entityId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.entityId)) {
+        return mailError(response, 400, "invalid_invitation_request", "A valid user entityId is required.");
+      }
+      if (!options.sendInvitationEmail) return mailError(response, 503, "invitation_email_unavailable", "Firebase sign-in email is unavailable.");
+      try {
+        await options.sendInvitationEmail(body.entityId, identity);
+        response.locals.mailOutcome = "firebase_email_submitted";
+        response.json({ success: true, status: "submitted", provider: "firebase" });
+      } catch (error) {
+        if (error instanceof AccessDenied) return mailError(response, 403, "invitation_not_allowed", "A sign-in email cannot be issued for this account.");
+        mailError(response, 502, "invitation_email_failed", "Firebase could not submit the sign-in email.");
       }
     },
   );

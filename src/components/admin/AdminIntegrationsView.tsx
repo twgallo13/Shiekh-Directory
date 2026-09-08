@@ -466,8 +466,8 @@ export const AdminIntegrationsView: React.FC = () => {
         setUserSaveNotice(`Updated ${payload.name}.`);
       } else {
         const result = await createUserAccount(payload, onboardingChoice);
-        if (result.outcome === 'relay-accepted') {
-          setUserSaveNotice(`Created ${payload.name}. Gmail accepted the secure sign-in email for relay; inbox delivery can still be affected by routing, quarantine, or spam filtering.`);
+        if (result.outcome === 'email-submitted') {
+          setUserSaveNotice(`Created ${payload.name} and submitted a passwordless sign-in email through Firebase. Ask the recipient to check Spam or company quarantine if it is not visible.`);
         } else if (result.outcome === 'link-generated' && result.activationLink) {
           try {
             await navigator.clipboard.writeText(result.activationLink);
@@ -495,7 +495,7 @@ export const AdminIntegrationsView: React.FC = () => {
     try {
       if (action === 'send') {
         await sendUserInvitation(account.id);
-        setUserSaveNotice(`Gmail accepted the secure sign-in email for ${account.name}. This confirms relay acceptance, not final inbox delivery.`);
+        setUserSaveNotice(`Firebase submitted a passwordless sign-in email for ${account.name}. Ask the recipient to check Spam or company quarantine if it is not visible.`);
       } else {
         const activationLink = await createUserInvitationLink(account.id);
         await navigator.clipboard.writeText(activationLink);
@@ -1333,65 +1333,52 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {users.map(u => (
-                <div key={u.id} className="p-3.5 bg-neutral-50 border border-neutral-200 rounded-xl space-y-2 text-xs flex flex-col justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-neutral-900">{u.name}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                        u.status === 'Revoked' ? 'bg-rose-50 text-rose-700' : u.status === 'Suspended' ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'
-                      }`}>Access: {u.status || 'Active'}</span>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 border-y border-neutral-200 py-2 text-[11px] text-neutral-600">
+              <span><strong className="text-neutral-900">{users.filter(user => user.status === 'Active' && user.identityLinked).length}</strong> ready</span>
+              <span><strong className="text-amber-800">{users.filter(user => user.status === 'Active' && !user.identityLinked).length}</strong> setup required</span>
+              <span><strong className="text-neutral-900">{users.filter(user => user.status !== 'Active').length}</strong> suspended or revoked</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {[...users].sort((left, right) => Number(right.email === currentUser.email) - Number(left.email === currentUser.email) || left.name.localeCompare(right.name)).map(u => {
+                const isCurrentUser = u.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase();
+                const state = u.status === 'Revoked' ? 'Revoked' : u.status === 'Suspended' ? 'Suspended' : u.identityLinked ? 'Ready' : 'Setup required';
+                const invitation = u.identityLinked || u.invitationStatus === 'Accepted'
+                  ? 'Sign-in completed'
+                  : u.invitationStatus === 'Pending'
+                    ? `${u.invitationDelivery || 'Previous invitation'} submitted${u.invitedAt ? ` ${new Date(u.invitedAt).toLocaleDateString()}` : ''}`
+                    : 'Never sent';
+                return <section key={u.id} aria-label={`${u.name} account`} className="flex flex-col justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs">
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0"><div className="truncate font-bold text-neutral-900">{u.name}</div><div className="truncate font-mono text-[11px] text-neutral-500">{u.email}</div></div>
+                      <span className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold ${state === 'Ready' ? 'bg-emerald-100 text-emerald-800' : state === 'Setup required' ? 'bg-amber-100 text-amber-900' : 'bg-rose-100 text-rose-800'}`}>{isCurrentUser ? 'Current session' : state}</span>
                     </div>
-                    <div className="text-neutral-500 font-mono text-[11px]">{u.email}</div>
-                    <div className="text-neutral-600 text-[11px] pt-1 border-t border-neutral-200">
-                      Role: <strong className="text-neutral-900">{u.role}</strong>
-                      {u.storeNumber && <span className="ml-1 text-neutral-500">(Store #{u.storeNumber})</span>}
-                    </div>
-                    <div className="text-[11px] text-neutral-600">
-                      Sign-in: <strong className="text-neutral-900">{u.identityLinked ? (u.lastLogin ? `Last used ${new Date(u.lastLogin).toLocaleDateString()}` : 'Linked') : 'Not yet linked'}</strong>
-                    </div>
-                    <div className="text-[11px] text-neutral-600">
-                      Invitation: <strong className="text-neutral-900">{u.invitationStatus === 'Accepted' || u.identityLinked ? 'Accepted' : u.invitationStatus === 'Pending' ? `Secure link issued${u.invitedAt ? ` ${new Date(u.invitedAt).toLocaleDateString()}` : ''}` : 'Not sent'}</strong>
-                    </div>
+                    <dl className="grid grid-cols-[5rem_1fr] gap-x-2 gap-y-1 border-t border-neutral-200 pt-2 text-[11px]">
+                      <dt className="text-neutral-500">Access</dt><dd className="font-semibold text-neutral-900">{u.status === 'Active' ? 'Granted' : u.status || 'Granted'}</dd>
+                      <dt className="text-neutral-500">Role</dt><dd className="font-semibold text-neutral-900">{u.role}{u.storeNumber ? ` · Store #${u.storeNumber}` : ''}</dd>
+                      <dt className="text-neutral-500">Sign-in</dt><dd className="font-semibold text-neutral-900">{u.identityLinked ? (u.lastLogin ? `Last used ${new Date(u.lastLogin).toLocaleDateString()}` : 'Identity linked') : 'Not completed'}</dd>
+                      <dt className="text-neutral-500">Invitation</dt><dd className="font-semibold text-neutral-900">{invitation}</dd>
+                    </dl>
                   </div>
 
-                  <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-neutral-200">
-                    {u.status === 'Active' && u.id !== currentUser.id && <>
-                      <button type="button" disabled={Boolean(userActionId)} onClick={() => void handleUserInvitation(u, 'send')} className="p-1 text-neutral-600 hover:text-red-700 rounded hover:bg-red-50 disabled:opacity-40" title={u.invitationStatus ? 'Resend secure sign-in link' : 'Send secure sign-in link'} aria-label={`${u.invitationStatus ? 'Resend' : 'Send'} secure sign-in link for ${u.name}`}>
-                        <Mail className="w-3.5 h-3.5" />
+                  <div className="flex flex-wrap items-center gap-2 border-t border-neutral-200 pt-3">
+                    {u.status === 'Active' && !isCurrentUser && <>
+                      <button type="button" disabled={Boolean(userActionId)} onClick={() => void handleUserInvitation(u, 'send')} className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 py-1.5 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-40">
+                        <Mail className="h-3.5 w-3.5" />{userActionId === `${u.id}:send` ? 'Submitting...' : u.identityLinked ? 'Email sign-in' : 'Send setup email'}
                       </button>
-                      <button type="button" disabled={Boolean(userActionId)} onClick={() => void handleUserInvitation(u, 'copy')} className="p-1 text-neutral-600 hover:text-neutral-900 rounded hover:bg-neutral-200 disabled:opacity-40" title="Copy fresh secure sign-in link" aria-label={`Copy secure sign-in link for ${u.name}`}>
-                        <Copy className="w-3.5 h-3.5" />
+                      <button type="button" disabled={Boolean(userActionId)} onClick={() => void handleUserInvitation(u, 'copy')} className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-2.5 py-1.5 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-40">
+                        <Copy className="h-3.5 w-3.5" />{userActionId === `${u.id}:copy` ? 'Copying...' : 'Copy link'}
                       </button>
                     </>}
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditUser(u)}
-                      className="p-1 text-neutral-600 hover:text-neutral-900 rounded hover:bg-neutral-200 cursor-pointer"
-                      title="Edit User"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    {u.id !== currentUser.id && (
-                      <button type="button" onClick={() => updateUserAccount(u.id, { status: u.status === 'Suspended' || u.status === 'Revoked' ? 'Active' : 'Suspended' })} className="p-1 text-amber-700 hover:bg-amber-50 rounded" title={u.status === 'Active' || !u.status ? 'Suspend access' : 'Restore access'} aria-label={`${u.status === 'Active' || !u.status ? 'Suspend' : 'Restore'} access for ${u.name}`}>
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {u.id !== currentUser.id && u.status !== 'Revoked' && (
-                      <button
-                        type="button"
-                        onClick={() => setPendingAdminAction({ kind: 'user', id: u.id, name: u.name })}
-                        className="p-1 text-rose-600 hover:text-rose-800 rounded hover:bg-rose-50 cursor-pointer"
-                        title="Revoke access"
-                        aria-label={`Revoke access for ${u.name}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <div className="ml-auto flex items-center gap-1">
+                      <button type="button" onClick={() => handleOpenEditUser(u)} className="rounded p-1.5 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900" title="Edit account" aria-label={`Edit account ${u.name}`}><Edit2 className="h-3.5 w-3.5" /></button>
+                      {!isCurrentUser && <button type="button" onClick={() => updateUserAccount(u.id, { status: u.status === 'Suspended' || u.status === 'Revoked' ? 'Active' : 'Suspended' })} className="rounded p-1.5 text-amber-700 hover:bg-amber-50" title={u.status === 'Active' || !u.status ? 'Suspend access' : 'Restore access'} aria-label={`${u.status === 'Active' || !u.status ? 'Suspend' : 'Restore'} access for ${u.name}`}><ShieldCheck className="h-3.5 w-3.5" /></button>}
+                      {!isCurrentUser && u.status !== 'Revoked' && <button type="button" onClick={() => setPendingAdminAction({ kind: 'user', id: u.id, name: u.name })} className="rounded p-1.5 text-rose-600 hover:bg-rose-50 hover:text-rose-800" title="Revoke access" aria-label={`Revoke access for ${u.name}`}><Trash2 className="h-3.5 w-3.5" /></button>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                </section>;
+              })}
             </div>
           </div>
         </div>
@@ -1750,7 +1737,7 @@ export const AdminIntegrationsView: React.FC = () => {
               {!editingUser && <fieldset className="space-y-2">
                 <legend className="font-semibold text-neutral-700">Onboarding *</legend>
                 {([
-                  ['send', 'Send secure sign-in link', 'Submit through Gmail. The recipient may need to check Spam or company quarantine.'],
+                  ['send', 'Send passwordless sign-in email', 'Firebase manages the message and secure link. The recipient may need to check Spam or company quarantine.'],
                   ['copy', 'Copy secure sign-in link', 'Create a fresh Firebase link to share directly when email is delayed or filtered.'],
                   ['access-only', 'Grant access without email', 'Create authorization now; onboarding can happen later.'],
                 ] as const).map(([value, label, description]) => <label key={value} className="flex cursor-pointer gap-2 border-t border-neutral-200 py-2 first:border-t-0">

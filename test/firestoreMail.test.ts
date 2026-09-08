@@ -2,11 +2,24 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Firestore } from "@google-cloud/firestore";
 import type { Auth, UserRecord } from "firebase-admin/auth";
-import { recordMailOutcome, resolveEvent, resolveSmtpInvitationEmail, resolveTemplate } from "../server/firestoreMail";
+import { directEmailSignInLink, recordMailOutcome, resolveEvent, resolveSmtpInvitationEmail, resolveTemplate } from "../server/firestoreMail";
 import type { MailConfiguration } from "../server/mailApi";
 import { INITIAL_EMAIL_TEMPLATES } from "../src/data/initialData";
 
 const configuration = { host: "smtp.test", port: 587, user: "user", password: "password", from: "sender@example.test", recipients: ["sender@example.test"] } as MailConfiguration;
+
+test("Firebase action links become direct app links without a fragile continueUrl", () => {
+  const action = "https://gen-lang-client-0801664258.firebaseapp.com/__/auth/action?apiKey=test-key&mode=signIn&oobCode=synthetic-code&continueUrl=&lang=en";
+  const direct = directEmailSignInLink(action, "https://shiekh-dir.ai.studio");
+  assert.equal(direct, "https://shiekh-dir.ai.studio/auth/email-link?mode=signIn&oobCode=synthetic-code&apiKey=test-key&lang=en");
+  assert.equal(new URL(direct).searchParams.has("continueUrl"), false);
+  for (const invalid of [
+    action.replace("firebaseapp.com", "evil.example.test"),
+    action.replace("/__/auth/action", "/other"),
+    action.replace("mode=signIn", "mode=resetPassword"),
+    action.replace("oobCode=synthetic-code&", ""),
+  ]) assert.throws(() => directEmailSignInLink(invalid, "https://shiekh-dir.ai.studio"));
+});
 
 test("Firestore mail templates replace escaped variables and produce text alternatives", async () => {
   const firestore = {
@@ -54,11 +67,11 @@ test("SMTP invitation provisions Firebase identity and persists evidence without
   };
   const resolved = await resolveSmtpInvitationEmail(firestore, auth as unknown as Pick<Auth, "getUserByEmail" | "createUser">, "usr-new", { uid: "admin", role: "System Administrator" }, configuration, async email => {
     assert.equal(email, "authorized.user@example.test");
-    return "https://secure.example.test/firebase-action-code";
+    return "https://shiekh-dir.ai.studio/auth/email-link?mode=signIn&oobCode=synthetic-code&apiKey=test-key";
   });
   assert.deepEqual(created, [{ email: "authorized.user@example.test", displayName: "Authorized User", disabled: false }]);
   assert.equal(resolved.message.to, "authorized.user@example.test");
-  assert.match(resolved.message.html || "", /firebase-action-code/);
+  assert.match(resolved.message.html || "", /shiekh-dir\.ai\.studio\/auth\/email-link/);
   assert.deepEqual(userWrites, [{ firebaseIdentityProvisioned: true }]);
 
   await resolved.recordOutcome("Queued", "request-1");
@@ -66,7 +79,7 @@ test("SMTP invitation provisions Firebase identity and persists evidence without
   assert.equal(outboxWrites.length, 2);
   assert.equal(outboxWrites[0].status, "Queued");
   assert.equal(outboxWrites[1].status, "Accepted");
-  assert.equal(JSON.stringify(outboxWrites).includes("firebase-action-code"), false);
+  assert.equal(JSON.stringify(outboxWrites).includes("synthetic-code"), false);
   const acceptedUserWrite = userWrites[1] as Record<string, unknown>;
   assert.deepEqual(userWrites[1], {
     invitationStatus: "Pending",

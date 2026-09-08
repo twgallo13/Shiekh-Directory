@@ -228,7 +228,25 @@ function createFirebaseSignInLinkGenerator() {
     ?? initializeApp({ projectId: DEFAULT_GOOGLE_CLOUD_PROJECT, credential: applicationDefault() }, "directory-invitations");
   const auth = getAuth(app);
   const appUrl = (process.env.DIRECTORY_APP_URL || "https://shiekh-dir.ai.studio").replace(/\/$/, "");
-  return (email: string) => auth.generateSignInWithEmailLink(email, { url: `${appUrl}/auth/email-link`, handleCodeInApp: true });
+  return async (email: string) => directEmailSignInLink(
+    await auth.generateSignInWithEmailLink(email, { url: `${appUrl}/auth/email-link`, handleCodeInApp: true }),
+    appUrl,
+  );
+}
+
+export function directEmailSignInLink(firebaseActionLink: string, appUrl: string) {
+  const source = new URL(firebaseActionLink);
+  const destination = new URL("/auth/email-link", appUrl);
+  if (source.protocol !== "https:" || source.hostname !== `${DEFAULT_GOOGLE_CLOUD_PROJECT}.firebaseapp.com` || source.pathname !== "/__/auth/action"
+    || source.searchParams.get("mode") !== "signIn" || !source.searchParams.get("oobCode") || !source.searchParams.get("apiKey")
+    || destination.protocol !== "https:" || destination.username || destination.password || destination.search || destination.hash) {
+    throw new Error("Firebase generated an invalid sign-in link.");
+  }
+  for (const key of ["mode", "oobCode", "apiKey", "lang"] as const) {
+    const value = source.searchParams.get(key);
+    if (value) destination.searchParams.set(key, value);
+  }
+  return destination.href;
 }
 
 function createInvitationAuth() {

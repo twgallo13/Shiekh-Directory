@@ -49,11 +49,13 @@ export interface MailMessage {
   to: string;
   subject: string;
   text: string;
+  html?: string;
   disableFileAccess: true;
   disableUrlAccess: true;
 }
 export type MailEvent = "user-invitation" | "request-submitted" | "request-approved" | "request-rejected";
 export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">>;
+export type ResolveDiagnosticTemplate = (configuration: MailConfiguration) => Promise<Pick<MailMessage, "subject" | "text" | "html">>;
 
 export interface MailApiOptions {
   authenticate: ((token: string) => Promise<MailIdentity>) | null;
@@ -61,6 +63,7 @@ export interface MailApiOptions {
   send: ((message: MailMessage, configuration?: MailConfiguration) => Promise<boolean>) | null;
   settings?: MailSettingsStore;
   resolveEvent?: ResolveMailEvent;
+  resolveDiagnostic?: ResolveDiagnosticTemplate;
   audit?: (event: Record<string, string>) => void;
 }
 
@@ -221,15 +224,20 @@ export function createMailRouter(options: MailApiOptions): Router {
         return mailError(response, 403, "recipient_not_allowed", "The recipient is not approved for mail delivery.");
       }
       try {
+        const content = options.resolveDiagnostic
+          ? await options.resolveDiagnostic(configuration)
+          : {
+              subject: "Shiekh Directory SMTP Relay Verification",
+              text: "This diagnostic message confirms that the Shiekh Directory mail relay accepted a message requested by an authorized administrator.",
+            };
         const accepted = await options.send({
           from: formattedSender(configuration), ...(configuration.replyTo ? { replyTo: configuration.replyTo } : {}), to: recipient,
-          subject: "Shiekh Directory SMTP Relay Verification",
-          text: "This diagnostic message confirms that the Shiekh Directory mail relay accepted a message requested by an authorized administrator.",
+          ...content,
           disableFileAccess: true, disableUrlAccess: true,
         }, configuration);
         if (!accepted) throw new Error("Not accepted");
         response.locals.mailOutcome = "accepted";
-        response.json({ success: true, status: "accepted", requestId: response.locals.requestId });
+        response.json({ success: true, status: "accepted", requestId: response.locals.requestId, templateId: DIAGNOSTIC_TEMPLATE, subject: content.subject });
       } catch {
         mailError(response, 502, "mail_delivery_failed", "The mail relay could not accept the message.");
       }

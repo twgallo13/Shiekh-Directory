@@ -149,6 +149,26 @@ test("administrators can save non-secret mail settings without a password field"
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
 });
 
+test("Add User commits the account and sends onboarding before reporting success", async ({ page }) => {
+  await prepare(page, "System Administrator");
+  let commit: any = null;
+  let event: any = null;
+  await page.route("**/api/directory/commit", async route => { commit = route.request().postDataJSON(); await route.fulfill({ status: 204, body: "" }); });
+  await page.route("**/api/mail/event", async route => { event = route.request().postDataJSON(); await route.fulfill({ json: { success: true, status: "accepted" } }); });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole("button", { name: "User RBAC" }).click();
+  await page.getByRole("button", { name: "Add User" }).click();
+  await page.getByLabel("Full Name *").fill("New Directory User");
+  await page.getByLabel("Email Address *").fill("new.user@example.test");
+  await page.getByLabel("Role / Permissions *").selectOption("Editor");
+  await page.getByRole("button", { name: "Save Account" }).click();
+  await expect(page.getByRole("status")).toContainText("sent the onboarding email");
+  expect(commit.writes[0].collection).toBe("users");
+  expect(commit.writes[0].data.email).toBe("new.user@example.test");
+  expect(event.event).toBe("user-invitation");
+  expect(event.entityId).toBe(commit.writes[0].id);
+});
+
 for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
   test(`profile, theme, protected admin and sign-out at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport); await prepare(page);

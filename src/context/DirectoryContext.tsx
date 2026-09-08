@@ -53,7 +53,7 @@ interface DirectoryContextType {
   createHoursTemplate: (template: Omit<HoursTemplate, 'id'>) => HoursTemplate;
   updateHoursTemplate: (id: string, updates: Partial<HoursTemplate>) => void;
   deleteHoursTemplate: (id: string) => void;
-  createUserAccount: (user: Omit<UserProfile, 'id'>) => UserProfile;
+  createUserAccount: (user: Omit<UserProfile, 'id'>) => Promise<{ user: UserProfile; invitationSent: boolean }>;
   updateUserAccount: (id: string, updates: Partial<UserProfile>) => void;
   deleteUserAccount: (id: string) => void;
   addCorporateHoliday: (holiday: Omit<CorporateHoliday, 'id'>) => CorporateHoliday;
@@ -378,13 +378,24 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   // User Accounts CUD
-  const createUserAccount = (userData: Omit<UserProfile, 'id'>): UserProfile => {
+  const createUserAccount = async (userData: Omit<UserProfile, 'id'>): Promise<{ user: UserProfile; invitationSent: boolean }> => {
     const id = `usr-${Date.now()}`;
     const next = { ...userData, id, accessScope: userData.accessScope || (userData.storeNumber ? `Store ${userData.storeNumber}` : 'Company-wide') };
     setUsers(previous => [...previous, next]);
     addAuditLog('User Created', 'User', id, next.name, `Created access record for ${next.email}.`, undefined, next);
-    notifyAfterSave(persist([{ collection: 'users', id, operation: 'set', data: { ...next, displayName: next.name } as unknown as Record<string, unknown> }], { action: 'User Created', entityType: 'User', entityId: id, entityName: next.name, details: `Created access record for ${next.email}.` }), 'user-invitation', id);
-    return next;
+    try {
+      await persist([{ collection: 'users', id, operation: 'set', data: { ...next, displayName: next.name } as unknown as Record<string, unknown> }], { action: 'User Created', entityType: 'User', entityId: id, entityName: next.name, details: `Created access record for ${next.email}.` });
+    } catch (error) {
+      setUsers(previous => previous.filter(item => item.id !== id));
+      throw error;
+    }
+    let invitationSent = true;
+    try { await sendMailEvent('user-invitation', id); }
+    catch (error) {
+      invitationSent = false;
+      setPersistenceError(`Account created, but its onboarding email was not sent: ${error instanceof Error ? error.message : 'Mail delivery failed.'}`);
+    }
+    return { user: next, invitationSent };
   };
 
   const updateUserAccount = (id: string, updates: Partial<UserProfile>) => {
@@ -504,14 +515,14 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       if (customSubject || (templateId && templateId !== effectiveTemplateId)) {
         throw new Error('Mail subjects and templates are controlled by the server.');
       }
-      await mailRequest('dispatch', recipient);
+      const delivery = await mailRequest('dispatch', recipient);
       const messageId = '';
 
       const newLog: OutboxLogEntry = {
         id: `out-${Date.now()}`,
         timestamp: new Date().toISOString(),
         recipient,
-        subject: effectiveSubject,
+        subject: typeof delivery.subject === 'string' ? delivery.subject : effectiveSubject,
         status: 'Queued',
         templateId: effectiveTemplateId
       };

@@ -53,6 +53,18 @@ test("mail remains functional for an authorized identity with server-owned trans
   } finally { await app.close(); }
 });
 
+test("diagnostic dispatch uses the server-resolved Firestore template", async () => {
+  const app = await harness({ resolveDiagnostic: async () => ({ subject: "Template diagnostic", text: "Plain template", html: "<p>HTML template</p>" }) });
+  try {
+    const response = await app.request();
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { success: true, status: "accepted", requestId: app.sent.length ? (app.events[0]?.requestId || "") : "", templateId: DIAGNOSTIC_TEMPLATE, subject: "Template diagnostic" });
+    assert.equal(app.sent[0].subject, "Template diagnostic");
+    assert.equal(app.sent[0].html, "<p>HTML template</p>");
+    assert.equal(app.sent[0].text, "Plain template");
+  } finally { await app.close(); }
+});
+
 test("both mail endpoints require authentication and never expose transport metadata", async () => {
   const app = await harness();
   try {

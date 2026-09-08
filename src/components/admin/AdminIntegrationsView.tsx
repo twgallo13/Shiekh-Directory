@@ -199,6 +199,9 @@ export const AdminIntegrationsView: React.FC = () => {
   useDialogFocus(isUserModalOpen, () => setIsUserModalOpen(false), userDialogRef);
   useDialogFocus(isAddStoreOpen, () => setIsAddStoreOpen(false), addStoreDialogRef);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
+  const [userSaveError, setUserSaveError] = useState('');
+  const [userSaveNotice, setUserSaveNotice] = useState('');
   const [userForm, setUserForm] = useState<Omit<UserProfile, 'id'>>({
     name: '',
     email: '',
@@ -402,6 +405,7 @@ export const AdminIntegrationsView: React.FC = () => {
 
   // User CUD Handlers
   const handleOpenNewUser = () => {
+    setUserSaveError('');
     setEditingUser(null);
     setUserForm({
       name: '',
@@ -414,6 +418,7 @@ export const AdminIntegrationsView: React.FC = () => {
   };
 
   const handleOpenEditUser = (u: UserProfile) => {
+    setUserSaveError('');
     setEditingUser(u);
     setUserForm({
       name: u.name,
@@ -425,30 +430,45 @@ export const AdminIntegrationsView: React.FC = () => {
     setIsUserModalOpen(true);
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userForm.name || !userForm.email) return;
+    setUserSaveError('');
+    const name = userForm.name.trim();
+    const email = userForm.email.trim().toLowerCase();
+    const storeNumber = userForm.storeNumber?.trim();
+    if (!name || !email) return setUserSaveError('Name and email are required.');
+    if (userForm.role === 'Viewer' && !storeNumber) return setUserSaveError('Viewer accounts require an assigned store.');
+    if (users.some(existing => existing.id !== editingUser?.id && existing.email.trim().toLowerCase() === email)) return setUserSaveError('An account with this email already exists.');
 
     const payload: Omit<UserProfile, 'id'> = {
-      name: userForm.name,
-      email: userForm.email,
+      name,
+      email,
       role: userForm.role,
-      status: userForm.status || 'Active'
+      status: userForm.status || 'Active',
+      ...(userForm.role === 'Viewer' && storeNumber ? { storeNumber } : {}),
     };
 
-    payload.accessScope = userForm.role === 'Viewer' && userForm.storeNumber
-      ? `Store ${userForm.storeNumber}`
+    payload.accessScope = userForm.role === 'Viewer' && storeNumber
+      ? `Store ${storeNumber}`
       : 'Company-wide';
 
-    if (editingUser) {
-      updateUserAccount(editingUser.id, payload);
-    } else {
-      if (payload.storeNumber === undefined) {
-        delete payload.storeNumber;
+    setIsSavingUser(true);
+    try {
+      if (editingUser) {
+        updateUserAccount(editingUser.id, payload);
+        setUserSaveNotice(`Updated ${payload.name}.`);
+      } else {
+        const result = await createUserAccount(payload);
+        setUserSaveNotice(result.invitationSent
+          ? `Created ${payload.name} and sent the onboarding email.`
+          : `Created ${payload.name}, but the onboarding email was not sent.`);
       }
-      createUserAccount(payload);
+      setIsUserModalOpen(false);
+    } catch (error) {
+      setUserSaveError(error instanceof Error ? error.message : 'The account could not be saved.');
+    } finally {
+      setIsSavingUser(false);
     }
-    setIsUserModalOpen(false);
   };
 
   const filteredLogs = auditFilter === 'All' 
@@ -1248,7 +1268,7 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* ======================================================== */}
       {(activeTab === 'governance' || activeTab === 'rbac') && (
         <div className="space-y-6">
-          <p role="status" className="text-sm text-neutral-600">Account management and invitations are unavailable pending the secure access-management phase.</p>
+          {userSaveNotice && <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{userSaveNotice}</p>}
           {/* User Roles Card */}
           <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -1258,15 +1278,14 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-neutral-500">Server-managed access</span>
-                <button
+                {currentUser.role === 'System Administrator' && <button
                   type="button"
-                  disabled
                   onClick={handleOpenNewUser}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add User</span>
-                </button>
+                </button>}
               </div>
             </div>
 
@@ -1617,8 +1636,9 @@ export const AdminIntegrationsView: React.FC = () => {
 
             <form onSubmit={handleSaveUser} className="p-5 space-y-4 text-xs">
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Full Name *</label>
+                <label htmlFor="user-full-name" className="block text-neutral-700 font-semibold mb-1">Full Name *</label>
                 <input
+                  id="user-full-name"
                   type="text"
                   required
                   placeholder="e.g. Jordan Miller"
@@ -1629,8 +1649,9 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Email Address *</label>
+                <label htmlFor="user-email" className="block text-neutral-700 font-semibold mb-1">Email Address *</label>
                 <input
+                  id="user-email"
                   type="email"
                   required
                   placeholder="j.miller@shiekhshoes.com"
@@ -1641,8 +1662,9 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-neutral-700 font-semibold mb-1">Role / Permissions *</label>
+                <label htmlFor="user-role" className="block text-neutral-700 font-semibold mb-1">Role / Permissions *</label>
                 <select
+                  id="user-role"
                   value={userForm.role}
                   onChange={(e) => setUserForm({ ...userForm, role: e.target.value as UserRole })}
                   className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
@@ -1656,21 +1678,25 @@ export const AdminIntegrationsView: React.FC = () => {
 
               {userForm.role === 'Viewer' && (
                 <div>
-                  <label className="block text-neutral-700 font-semibold mb-1">Assigned Store #</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 07"
+                  <label htmlFor="user-store" className="block text-neutral-700 font-semibold mb-1">Assigned Store # *</label>
+                  <select
+                    id="user-store"
+                    required
                     value={userForm.storeNumber || ''}
                     onChange={(e) => setUserForm({ ...userForm, storeNumber: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500 font-mono"
-                  />
+                  >
+                    <option value="">Select a store</option>
+                    {[...locations].sort((a, b) => a.storeNumber.localeCompare(b.storeNumber, undefined, { numeric: true })).map(location => <option key={location.id} value={location.storeNumber}>#{location.storeNumber} - {location.name}</option>)}
+                  </select>
                 </div>
               )}
 
               {editingUser && (
                 <div>
-                  <label className="block text-neutral-700 font-semibold mb-1">Account Status</label>
+                  <label htmlFor="user-status" className="block text-neutral-700 font-semibold mb-1">Account Status</label>
                   <select
+                    id="user-status"
                     value={userForm.status || 'Active'}
                     onChange={(e) => setUserForm({ ...userForm, status: e.target.value as any })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
@@ -1682,20 +1708,24 @@ export const AdminIntegrationsView: React.FC = () => {
                 </div>
               )}
 
+              {userSaveError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800">{userSaveError}</p>}
+
               <div className="p-4 bg-neutral-50 -mx-5 -mb-5 mt-5 border-t border-neutral-200 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsUserModalOpen(false)}
+                  disabled={isSavingUser}
                   className="px-4 py-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-lg font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  disabled={isSavingUser}
+                  className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs disabled:cursor-wait disabled:opacity-60"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  <span>Save Account</span>
+                  <span>{isSavingUser ? 'Saving...' : 'Save Account'}</span>
                 </button>
               </div>
             </form>

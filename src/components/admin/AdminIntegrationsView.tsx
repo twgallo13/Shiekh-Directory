@@ -466,8 +466,8 @@ export const AdminIntegrationsView: React.FC = () => {
         setUserSaveNotice(`Updated ${payload.name}.`);
       } else {
         const result = await createUserAccount(payload, onboardingChoice);
-        if (result.outcome === 'email-submitted') {
-          setUserSaveNotice(`Created ${payload.name} and submitted a passwordless sign-in email through Firebase. Ask the recipient to check Spam or company quarantine if it is not visible.`);
+        if (result.outcome === 'smtp-accepted') {
+          setUserSaveNotice(`Created ${payload.name}, provisioned the Firebase account, and sent the secure signup link through SMTP. The relay accepted it; inbox delivery is not yet confirmed.`);
         } else if (result.outcome === 'link-generated' && result.activationLink) {
           try {
             await navigator.clipboard.writeText(result.activationLink);
@@ -495,7 +495,7 @@ export const AdminIntegrationsView: React.FC = () => {
     try {
       if (action === 'send') {
         await sendUserInvitation(account.id);
-        setUserSaveNotice(`Firebase submitted a passwordless sign-in email for ${account.name}. Ask the recipient to check Spam or company quarantine if it is not visible.`);
+        setUserSaveNotice(`The SMTP relay accepted the secure signup email for ${account.name}. Firebase account provisioning and the outbound attempt are recorded; inbox delivery is not yet confirmed.`);
       } else {
         const activationLink = await createUserInvitationLink(account.id);
         await navigator.clipboard.writeText(activationLink);
@@ -1346,7 +1346,7 @@ export const AdminIntegrationsView: React.FC = () => {
                 const invitation = u.identityLinked || u.invitationStatus === 'Accepted'
                   ? 'Sign-in completed'
                   : u.invitationStatus === 'Pending'
-                    ? `${u.invitationDelivery || 'Previous invitation'} submitted${u.invitedAt ? ` ${new Date(u.invitedAt).toLocaleDateString()}` : ''}`
+                    ? `${u.invitationDelivery || 'Previous invitation'} ${u.invitationDeliveryStatus === 'Accepted' ? 'accepted by relay' : 'created'}${u.invitedAt ? ` ${new Date(u.invitedAt).toLocaleDateString()}` : ''}`
                     : 'Never sent';
                 return <section key={u.id} aria-label={`${u.name} account`} className="flex flex-col justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs">
                   <div className="space-y-2">
@@ -1357,7 +1357,7 @@ export const AdminIntegrationsView: React.FC = () => {
                     <dl className="grid grid-cols-[5rem_1fr] gap-x-2 gap-y-1 border-t border-neutral-200 pt-2 text-[11px]">
                       <dt className="text-neutral-500">Access</dt><dd className="font-semibold text-neutral-900">{u.status === 'Active' ? 'Granted' : u.status || 'Granted'}</dd>
                       <dt className="text-neutral-500">Role</dt><dd className="font-semibold text-neutral-900">{u.role}{u.storeNumber ? ` · Store #${u.storeNumber}` : ''}</dd>
-                      <dt className="text-neutral-500">Sign-in</dt><dd className="font-semibold text-neutral-900">{u.identityLinked ? (u.lastLogin ? `Last used ${new Date(u.lastLogin).toLocaleDateString()}` : 'Identity linked') : 'Not completed'}</dd>
+                      <dt className="text-neutral-500">Sign-in</dt><dd className="font-semibold text-neutral-900">{u.identityLinked ? (u.lastLogin ? `Last used ${new Date(u.lastLogin).toLocaleDateString()}` : 'Identity linked') : u.firebaseIdentityProvisioned ? 'Firebase ready; first sign-in pending' : 'Not completed'}</dd>
                       <dt className="text-neutral-500">Invitation</dt><dd className="font-semibold text-neutral-900">{invitation}</dd>
                     </dl>
                   </div>
@@ -1737,7 +1737,7 @@ export const AdminIntegrationsView: React.FC = () => {
               {!editingUser && <fieldset className="space-y-2">
                 <legend className="font-semibold text-neutral-700">Onboarding *</legend>
                 {([
-                  ['send', 'Send passwordless sign-in email', 'Firebase manages the message and secure link. The recipient may need to check Spam or company quarantine.'],
+                  ['send', 'Send secure signup email', 'Create the Firebase account and send its one-time sign-in link through the configured SMTP relay.'],
                   ['copy', 'Copy secure sign-in link', 'Create a fresh Firebase link to share directly when email is delayed or filtered.'],
                   ['access-only', 'Grant access without email', 'Create authorization now; onboarding can happen later.'],
                 ] as const).map(([value, label, description]) => <label key={value} className="flex cursor-pointer gap-2 border-t border-neutral-200 py-2 first:border-t-0">

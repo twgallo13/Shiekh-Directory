@@ -58,7 +58,7 @@ interface DirectoryContextType {
   createHoursTemplate: (template: Omit<HoursTemplate, 'id'>) => HoursTemplate;
   updateHoursTemplate: (id: string, updates: Partial<HoursTemplate>) => void;
   deleteHoursTemplate: (id: string) => void;
-  createUserAccount: (user: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice) => Promise<{ user: UserProfile; outcome: 'email-submitted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }>;
+  createUserAccount: (user: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice) => Promise<{ user: UserProfile; outcome: 'smtp-accepted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }>;
   sendUserInvitation: (id: string) => Promise<void>;
   createUserInvitationLink: (id: string) => Promise<string>;
   updateUserAccount: (id: string, updates: Partial<UserProfile>) => void;
@@ -408,23 +408,33 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   // User Accounts CUD
-  const markInvitationIssued = (id: string, invitationDelivery: 'Firebase email' | 'Copied link') => {
+  const markInvitationIssued = (id: string, invitationDelivery: 'SMTP email' | 'Copied link', invitationDeliveryStatus: 'Accepted' | 'Submitted') => {
     const invitedAt = new Date().toISOString();
-    setUsers(previous => previous.map(item => item.id === id ? { ...item, invitationStatus: 'Pending', invitationDelivery, invitationDeliveryStatus: 'Submitted', invitedAt } : item));
+    setUsers(previous => previous.map(item => item.id === id ? { ...item, invitationStatus: 'Pending', invitationDelivery, invitationDeliveryStatus, invitedAt, ...(invitationDelivery === 'SMTP email' ? { firebaseIdentityProvisioned: true } : {}) } : item));
   };
 
-  const sendUserInvitation = async (id: string) => {
-    await sendInvitationEmail(id);
-    markInvitationIssued(id, 'Firebase email');
+  const sendUserInvitation = async (id: string, createdAccount?: UserProfile) => {
+    const account = createdAccount || users.find(item => item.id === id);
+    if (!account) throw new Error('The user account is unavailable.');
+    const delivery = await sendInvitationEmail(id);
+    markInvitationIssued(id, 'SMTP email', 'Accepted');
+    setOutboxLogs(previous => [{
+      id: `out-${delivery.requestId}`,
+      timestamp: new Date().toISOString(),
+      recipient: account.email,
+      subject: 'Your Shiekh Directory secure sign-in link',
+      status: 'Accepted',
+      templateId: 'signup-invitation',
+    }, ...previous.filter(item => item.id !== `out-${delivery.requestId}`)].slice(0, 50));
   };
 
   const createUserInvitationLink = async (id: string) => {
     const activationLink = await createInvitationLink(id);
-    markInvitationIssued(id, 'Copied link');
+    markInvitationIssued(id, 'Copied link', 'Submitted');
     return activationLink;
   };
 
-  const createUserAccount = async (userData: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice): Promise<{ user: UserProfile; outcome: 'email-submitted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }> => {
+  const createUserAccount = async (userData: Omit<UserProfile, 'id'>, onboarding: UserOnboardingChoice): Promise<{ user: UserProfile; outcome: 'smtp-accepted' | 'link-generated' | 'access-only' | 'failed'; activationLink?: string; errorMessage?: string }> => {
     const id = `usr-${Date.now()}`;
     const next = { ...userData, id, accessScope: userData.accessScope || (userData.storeNumber ? `Store ${userData.storeNumber}` : 'Company-wide') };
     setUsers(previous => [...previous, next]);
@@ -441,8 +451,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         const activationLink = await createUserInvitationLink(id);
         return { user: { ...next, invitationStatus: 'Pending' }, outcome: 'link-generated', activationLink };
       }
-      await sendUserInvitation(id);
-      return { user: { ...next, invitationStatus: 'Pending', invitationDelivery: 'Firebase email', invitationDeliveryStatus: 'Submitted' }, outcome: 'email-submitted' };
+      await sendUserInvitation(id, next);
+      return { user: { ...next, invitationStatus: 'Pending', invitationDelivery: 'SMTP email', invitationDeliveryStatus: 'Accepted', firebaseIdentityProvisioned: true }, outcome: 'smtp-accepted' };
     }
     catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'The onboarding action failed.';
@@ -576,7 +586,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         timestamp: new Date().toISOString(),
         recipient,
         subject: typeof delivery.subject === 'string' ? delivery.subject : effectiveSubject,
-        status: 'Queued',
+        status: 'Accepted',
         templateId: effectiveTemplateId
       };
 

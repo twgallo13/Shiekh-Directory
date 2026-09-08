@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Firestore } from "@google-cloud/firestore";
-import { resolveEvent, resolveTemplate, sendFirebaseInvitationEmail } from "../server/firestoreMail";
+import type { Auth, UserRecord } from "firebase-admin/auth";
+import { recordMailOutcome, resolveEvent, resolveSmtpInvitationEmail, resolveTemplate } from "../server/firestoreMail";
 import type { MailConfiguration } from "../server/mailApi";
 import { INITIAL_EMAIL_TEMPLATES } from "../src/data/initialData";
+
+const configuration = { host: "smtp.test", port: 587, user: "user", password: "password", from: "sender@example.test", recipients: ["sender@example.test"] } as MailConfiguration;
 
 test("Firestore mail templates replace escaped variables and produce text alternatives", async () => {
   const firestore = {
@@ -28,42 +31,77 @@ test("Firestore mail templates replace escaped variables and produce text altern
   assert.match(rendered.text, /Hello <Theo & Team>/);
 });
 
-test("Firebase invitation delivery uses the exact active Firestore email and records metadata only after acceptance", async () => {
-  const metadataWrites: Record<string, unknown>[] = [];
+test("SMTP invitation provisions Firebase identity and persists evidence without storing the secure link", async () => {
+  const userWrites: Record<string, unknown>[] = [];
+  const outboxWrites: Record<string, unknown>[] = [];
   const firestore = {
-    collection: () => ({ doc: () => ({
-      get: async () => ({ exists: true, data: () => ({ email: "Authorized.User@Example.test", status: "Active" }) }),
-      set: async (value: Record<string, unknown>) => { metadataWrites.push(value); },
-    }) }),
+    collection(name: string) {
+      return { doc: () => name === "users" ? {
+        get: async () => ({ exists: true, data: () => ({ email: "Authorized.User@Example.test", displayName: "Authorized User", role: "Editor", status: "Active" }) }),
+        set: async (value: Record<string, unknown>) => { userWrites.push(value); },
+      } : {
+        set: async (value: Record<string, unknown>) => { outboxWrites.push(value); },
+      } };
+    },
   } as unknown as Firestore;
-  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
-  const request = async (input: string | URL | Request, init?: RequestInit) => {
-    requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
-    return new Response("{}", { status: 200 });
+  const created: Record<string, unknown>[] = [];
+  const auth = {
+    getUserByEmail: async () => { throw Object.assign(new Error("not found"), { code: "auth/user-not-found" }); },
+    createUser: async (properties: Record<string, unknown>) => {
+      created.push(properties);
+      return { uid: "firebase-uid", email: properties.email, disabled: false } as UserRecord;
+    },
   };
-  await sendFirebaseInvitationEmail(firestore, "usr-new", { uid: "admin", role: "System Administrator" }, "public api key", "https://shiekh-dir.ai.studio/", request as typeof fetch);
-  assert.match(requests[0].url, /accounts:sendOobCode\?key=public%20api%20key$/);
-  assert.deepEqual(requests[0].body, {
-    requestType: "EMAIL_SIGNIN",
-    email: "authorized.user@example.test",
-    continueUrl: "https://shiekh-dir.ai.studio/auth/email-link",
-    canHandleCodeInApp: true,
+  const resolved = await resolveSmtpInvitationEmail(firestore, auth as unknown as Pick<Auth, "getUserByEmail" | "createUser">, "usr-new", { uid: "admin", role: "System Administrator" }, configuration, async email => {
+    assert.equal(email, "authorized.user@example.test");
+    return "https://secure.example.test/firebase-action-code";
   });
-  assert.equal(metadataWrites.length, 1);
-  assert.deepEqual(metadataWrites[0], {
+  assert.deepEqual(created, [{ email: "authorized.user@example.test", displayName: "Authorized User", disabled: false }]);
+  assert.equal(resolved.message.to, "authorized.user@example.test");
+  assert.match(resolved.message.html || "", /firebase-action-code/);
+  assert.deepEqual(userWrites, [{ firebaseIdentityProvisioned: true }]);
+
+  await resolved.recordOutcome("Queued", "request-1");
+  await resolved.recordOutcome("Accepted", "request-1");
+  assert.equal(outboxWrites.length, 2);
+  assert.equal(outboxWrites[0].status, "Queued");
+  assert.equal(outboxWrites[1].status, "Accepted");
+  assert.equal(JSON.stringify(outboxWrites).includes("firebase-action-code"), false);
+  const acceptedUserWrite = userWrites[1] as Record<string, unknown>;
+  assert.deepEqual(userWrites[1], {
     invitationStatus: "Pending",
-    invitationDelivery: "Firebase email",
-    invitationDeliveryStatus: "Submitted",
-    invitedAt: metadataWrites[0].invitedAt,
+    invitationDelivery: "SMTP email",
+    invitationDeliveryStatus: "Accepted",
+    invitedAt: acceptedUserWrite.invitedAt,
     invitedBy: "admin",
   });
-  assert.equal(JSON.stringify(metadataWrites).includes("api key"), false);
-
-  metadataWrites.length = 0;
-  await assert.rejects(() => sendFirebaseInvitationEmail(firestore, "usr-new", { uid: "admin", role: "System Administrator" }, "key", "https://shiekh-dir.ai.studio", async () => new Response("{}", { status: 400 })), /submission failed/);
-  assert.equal(metadataWrites.length, 0);
 });
 
-test("seeded SMTP templates do not claim to control Firebase onboarding email", () => {
+test("mail outcomes persist server evidence without transport credentials or message bodies", async () => {
+  const writes: Record<string, unknown>[] = [];
+  const firestore = { collection: (name: string) => {
+    assert.equal(name, "outbox_logs");
+    return { doc: (id: string) => {
+      assert.equal(id, "out-request-2");
+      return { set: async (value: Record<string, unknown>) => { writes.push(value); } };
+    } };
+  } } as unknown as Firestore;
+  await recordMailOutcome(firestore, {
+    requestId: "request-2",
+    status: "Accepted",
+    recipient: "Recipient@Example.test",
+    subject: "Operational message",
+    templateId: "request-approved",
+    entityId: "req-1",
+    requestedBy: "admin",
+  });
+  assert.equal(writes[0].recipient, "recipient@example.test");
+  assert.equal(writes[0].status, "Accepted");
+  assert.equal(writes[0].transport, "SMTP");
+  assert.equal(JSON.stringify(writes).includes("password"), false);
+  assert.equal(JSON.stringify(writes).includes("oobCode"), false);
+});
+
+test("seeded SMTP templates do not expose a stale editable onboarding template", () => {
   assert.equal(INITIAL_EMAIL_TEMPLATES.some(item => item.id === "tmpl-account-invite"), false);
 });

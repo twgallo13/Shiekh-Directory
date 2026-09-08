@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Firestore } from "@google-cloud/firestore";
 import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { getAuth, type Auth, type UserRecord } from "firebase-admin/auth";
 import { AccessDenied } from "./authAuthority";
-import { parseMailSettings, type MailConfiguration, type MailEvent, type MailIdentity, type MailSettingsStore, type ResolveDiagnosticTemplate, type ResolveInvitationLink, type ResolveMailEvent, type SendInvitationEmail } from "./mailApi";
+import { parseMailSettings, type MailConfiguration, type MailEvent, type MailIdentity, type MailOutcome, type MailSettingsStore, type RecordMailOutcome, type ResolveDiagnosticTemplate, type ResolveInvitationEmail, type ResolveInvitationLink, type ResolveMailEvent } from "./mailApi";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 export function createFirestoreMailEventResolver(): ResolveMailEvent {
@@ -17,36 +17,62 @@ export function createFirestoreInvitationLinkResolver(): ResolveInvitationLink {
   return (entityId, identity) => resolveInvitationLink(firestore, entityId, identity, generateLink);
 }
 
-export function createFirestoreInvitationEmailSender(apiKey = process.env.FIREBASE_WEB_API_KEY, request: typeof fetch = fetch): SendInvitationEmail | null {
-  if (!apiKey || /\s/.test(apiKey)) return null;
+export function createFirestoreInvitationEmailResolver(): ResolveInvitationEmail {
   const firestore = createFirestore();
-  const appUrl = (process.env.DIRECTORY_APP_URL || "https://shiekh-dir.ai.studio").replace(/\/$/, "");
-  return (entityId, identity) => sendFirebaseInvitationEmail(firestore, entityId, identity, apiKey, appUrl, request);
+  const auth = createInvitationAuth();
+  const generateLink = createFirebaseSignInLinkGenerator();
+  return (entityId, identity, configuration) => resolveSmtpInvitationEmail(firestore, auth, entityId, identity, configuration, generateLink);
 }
 
-export async function sendFirebaseInvitationEmail(firestore: Firestore, entityId: string, identity: MailIdentity, apiKey: string, appUrl: string, request: typeof fetch = fetch) {
+export async function resolveSmtpInvitationEmail(firestore: Firestore, auth: Pick<Auth, "getUserByEmail" | "createUser">, entityId: string, identity: MailIdentity, configuration: MailConfiguration, generateLink: (email: string) => Promise<string>) {
   const reference = firestore.collection("users").doc(entityId);
   const snapshot = await reference.get();
   const user = snapshot.data();
   if (!snapshot.exists || !mailbox(user?.email) || user?.status !== "Active") throw new AccessDenied();
-  const response = await request(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      requestType: "EMAIL_SIGNIN",
-      email: user.email.toLowerCase(),
-      continueUrl: `${appUrl.replace(/\/$/, "")}/auth/email-link`,
-      canHandleCodeInApp: true,
-    }),
-  });
-  if (!response.ok) throw new Error("Firebase email submission failed.");
-  await reference.set({
-    invitationStatus: "Pending",
-    invitationDelivery: "Firebase email",
-    invitationDeliveryStatus: "Submitted",
-    invitedAt: new Date().toISOString(),
-    invitedBy: identity.uid,
-  }, { merge: true });
+  const email = user.email.toLowerCase();
+  let firebaseUser: UserRecord;
+  try {
+    firebaseUser = await auth.getUserByEmail(email);
+  } catch (error) {
+    if ((error as { code?: string }).code !== "auth/user-not-found") throw error;
+    firebaseUser = await auth.createUser({ email, displayName: safeText(user.displayName || user.name || email), disabled: false });
+  }
+  if (firebaseUser.disabled) throw new AccessDenied();
+  if (user.firebaseUid && user.firebaseUid !== firebaseUser.uid) throw new AccessDenied();
+  await reference.set({ firebaseIdentityProvisioned: true }, { merge: true });
+  const activationLink = await generateLink(email);
+  const recipientName = safeText(user.displayName || user.name || "there");
+  const role = safeText(user.role || "Directory user");
+  const subject = "Your Shiekh Directory secure sign-in link";
+  const encodedLink = escapeHtml(activationLink);
+  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;max-width:600px;margin:0 auto;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden"><div style="background:#dc2626;color:#fff;padding:18px 24px"><h2 style="margin:0;font-size:20px">Welcome to Shiekh Directory</h2></div><div style="padding:24px;background:#fff"><p>Hello <strong>${escapeHtml(recipientName)}</strong>,</p><p>An administrator granted <strong>${escapeHtml(email)}</strong> access as <strong>${escapeHtml(role)}</strong>.</p><p>Use the secure button below to finish setup and sign in. No password is required.</p><p style="margin:24px 0"><a href="${encodedLink}" style="background:#b91c1c;color:#fff;padding:12px 20px;text-decoration:none;border-radius:6px;font-weight:700">Finish setup and sign in</a></p><p style="font-size:12px;color:#4b5563">This one-time link expires automatically. If you did not expect this invitation, ignore this message.</p></div></div>`;
+  const text = `Hello ${recipientName},\n\nAn administrator granted ${email} access to Shiekh Directory as ${role}.\n\nFinish setup and sign in:\n${activationLink}\n\nThis one-time link expires automatically.`;
+  const outboxReference = (requestId: string) => firestore.collection("outbox_logs").doc(`out-${requestId}`);
+  return {
+    message: { to: email, subject, html, text },
+    async recordOutcome(status: "Queued" | "Accepted" | "Failed", requestId: string, errorMessage?: string) {
+      const timestamp = new Date().toISOString();
+      await outboxReference(requestId).set({
+        id: `out-${requestId}`,
+        timestamp,
+        recipient: email,
+        subject,
+        status,
+        transport: "SMTP",
+        templateId: "signup-invitation",
+        entityId,
+        requestedBy: identity.uid,
+        ...(errorMessage ? { errorMessage } : {}),
+      }, { merge: true });
+      if (status === "Accepted") await reference.set({
+        invitationStatus: "Pending",
+        invitationDelivery: "SMTP email",
+        invitationDeliveryStatus: "Accepted",
+        invitedAt: timestamp,
+        invitedBy: identity.uid,
+      }, { merge: true });
+    },
+  };
 }
 
 export function createFirestoreDiagnosticResolver(): ResolveDiagnosticTemplate {
@@ -58,6 +84,27 @@ export function createFirestoreDiagnosticResolver(): ResolveDiagnosticTemplate {
     sender_name: configuration.fromName || "Shiekh Directory",
     sender_email: configuration.from,
   });
+}
+
+export function createFirestoreMailOutcomeRecorder(): RecordMailOutcome {
+  const firestore = createFirestore();
+  return outcome => recordMailOutcome(firestore, outcome);
+}
+
+export async function recordMailOutcome(firestore: Firestore, outcome: MailOutcome) {
+  const timestamp = new Date().toISOString();
+  await firestore.collection("outbox_logs").doc(`out-${outcome.requestId}`).set({
+    id: `out-${outcome.requestId}`,
+    timestamp,
+    recipient: outcome.recipient.toLowerCase(),
+    subject: safeText(outcome.subject),
+    status: outcome.status,
+    transport: "SMTP",
+    templateId: outcome.templateId,
+    ...(outcome.entityId ? { entityId: outcome.entityId } : {}),
+    requestedBy: outcome.requestedBy,
+    ...(outcome.errorMessage ? { errorMessage: safeText(outcome.errorMessage) } : {}),
+  }, { merge: true });
 }
 
 export function createFirestoreMailSettingsStore(): MailSettingsStore {
@@ -182,6 +229,12 @@ function createFirebaseSignInLinkGenerator() {
   const auth = getAuth(app);
   const appUrl = (process.env.DIRECTORY_APP_URL || "https://shiekh-dir.ai.studio").replace(/\/$/, "");
   return (email: string) => auth.generateSignInWithEmailLink(email, { url: `${appUrl}/auth/email-link`, handleCodeInApp: true });
+}
+
+function createInvitationAuth() {
+  const app = getApps().find(candidate => candidate.name === "directory-invitations")
+    ?? initializeApp({ projectId: DEFAULT_GOOGLE_CLOUD_PROJECT, credential: applicationDefault() }, "directory-invitations");
+  return getAuth(app);
 }
 
 function safeText(value: unknown) {

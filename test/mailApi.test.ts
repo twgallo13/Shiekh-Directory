@@ -231,27 +231,49 @@ test("operational events resolve recipients and content on the server after role
   } finally { await viewer.close(); }
 });
 
-test("Firebase invitation email is administrator-only and never invokes SMTP", async () => {
-  const submitted: unknown[] = [];
-  const app = await harness({ sendInvitationEmail: async (entityId, identity) => { submitted.push([entityId, identity.uid]); } });
+test("signup email is administrator-only, SMTP-backed, and records evidence before reporting acceptance", async () => {
+  const resolved: unknown[] = [];
+  const outcomes: unknown[] = [];
+  const app = await harness({ resolveInvitationEmail: async (entityId, identity, active) => {
+    resolved.push([entityId, identity.uid, active.host]);
+    return {
+      message: { to: "invited@example.test", subject: "Finish setup", text: "Secure link" },
+      recordOutcome: async (status, requestId, errorMessage) => { outcomes.push([status, typeof requestId, errorMessage]); },
+    };
+  } });
   try {
     const response = await app.request("invitation-email", { entityId: "usr-1" });
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { success: true, status: "submitted", provider: "firebase" });
-    assert.deepEqual(submitted, [["usr-1", "test-admin"]]);
-    assert.equal(app.sent.length, 0);
+    const body = await response.json();
+    assert.equal(body.status, "accepted");
+    assert.equal(body.transport, "smtp");
+    assert.equal(typeof body.requestId, "string");
+    assert.deepEqual(resolved, [["usr-1", "test-admin", configuration.host]]);
+    assert.equal(app.sent.length, 1);
+    assert.equal(app.sent[0].to, "invited@example.test");
+    assert.deepEqual(outcomes, [["Queued", "string", undefined], ["Accepted", "string", undefined]]);
     assert.equal((await app.request("event", { event: "user-invitation", entityId: "usr-1" })).status, 400);
   } finally { await app.close(); }
 
   const viewer = await harness({
     authenticate: async () => ({ uid: "viewer", role: "Viewer" }),
-    sendInvitationEmail: async () => { throw new Error("must not submit"); },
+    resolveInvitationEmail: async () => { throw new Error("must not resolve"); },
   });
   try { assert.equal((await viewer.request("invitation-email", { entityId: "usr-1" })).status, 403); }
   finally { await viewer.close(); }
 
-  const failure = await harness({ sendInvitationEmail: async () => { throw new Error("provider rejected"); } });
-  try { assert.equal((await failure.request("invitation-email", { entityId: "usr-1" })).status, 502); }
+  const failedOutcomes: string[] = [];
+  const failure = await harness({
+    send: async () => false,
+    resolveInvitationEmail: async () => ({
+      message: { to: "invited@example.test", subject: "Finish setup", text: "Secure link" },
+      recordOutcome: async status => { failedOutcomes.push(status); },
+    }),
+  });
+  try {
+    assert.equal((await failure.request("invitation-email", { entityId: "usr-1" })).status, 502);
+    assert.deepEqual(failedOutcomes, ["Queued", "Failed"]);
+  }
   finally { await failure.close(); }
 });
 

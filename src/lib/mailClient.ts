@@ -54,7 +54,7 @@ export async function createInvitationLink(entityId: string): Promise<string> {
   return body.activationLink;
 }
 
-export async function sendInvitationEmail(entityId: string): Promise<void> {
+export async function sendInvitationEmail(entityId: string): Promise<{ status: 'accepted'; transport: 'smtp'; requestId: string }> {
   const auth = getSharedAuth();
   if (!auth.currentUser) throw new Error("Sign in with your authorized directory account to send an invitation.");
   const response = await fetch('/api/mail/invitation-email', {
@@ -64,7 +64,9 @@ export async function sendInvitationEmail(entityId: string): Promise<void> {
     body: JSON.stringify({ entityId }),
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error?.message || 'Firebase could not submit the sign-in email.');
+  if (!response.ok) throw new Error(body.error?.message || 'The SMTP relay could not accept the signup email.');
+  if (body.status !== 'accepted' || body.transport !== 'smtp' || typeof body.requestId !== 'string') throw new Error('The signup email response could not be verified.');
+  return body;
 }
 
 export async function getMailSettings(): Promise<{ settings: MailSettings; passwordConfigured: boolean }> {

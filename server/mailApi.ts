@@ -57,7 +57,22 @@ export type MailEvent = "request-submitted" | "request-approved" | "request-reje
 export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">>;
 export type ResolveDiagnosticTemplate = (configuration: MailConfiguration) => Promise<Pick<MailMessage, "subject" | "text" | "html">>;
 export type ResolveInvitationLink = (entityId: string, identity: MailIdentity) => Promise<string>;
-export type SendInvitationEmail = (entityId: string, identity: MailIdentity) => Promise<void>;
+export interface ResolvedInvitationEmail {
+  message: Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">;
+  recordOutcome(status: "Queued" | "Accepted" | "Failed", requestId: string, errorMessage?: string): Promise<void>;
+}
+export type ResolveInvitationEmail = (entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<ResolvedInvitationEmail>;
+export interface MailOutcome {
+  requestId: string;
+  status: "Queued" | "Accepted" | "Failed";
+  recipient: string;
+  subject: string;
+  templateId: string;
+  entityId?: string;
+  requestedBy: string;
+  errorMessage?: string;
+}
+export type RecordMailOutcome = (outcome: MailOutcome) => Promise<void>;
 
 export interface MailApiOptions {
   authenticate: ((token: string) => Promise<MailIdentity>) | null;
@@ -67,7 +82,8 @@ export interface MailApiOptions {
   resolveEvent?: ResolveMailEvent;
   resolveDiagnostic?: ResolveDiagnosticTemplate;
   resolveInvitationLink?: ResolveInvitationLink;
-  sendInvitationEmail?: SendInvitationEmail;
+  resolveInvitationEmail?: ResolveInvitationEmail;
+  recordMailOutcome?: RecordMailOutcome;
   audit?: (event: Record<string, string>) => void;
 }
 
@@ -227,22 +243,26 @@ export function createMailRouter(options: MailApiOptions): Router {
       if (!configuration.recipients.includes(recipient)) {
         return mailError(response, 403, "recipient_not_allowed", "The recipient is not approved for mail delivery.");
       }
+      let content: Pick<MailMessage, "subject" | "text" | "html"> | null = null;
       try {
-        const content = options.resolveDiagnostic
+        content = options.resolveDiagnostic
           ? await options.resolveDiagnostic(configuration)
           : {
               subject: "Shiekh Directory SMTP Relay Verification",
               text: "This diagnostic message confirms that the Shiekh Directory mail relay accepted a message requested by an authorized administrator.",
             };
+        await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Queued", recipient, subject: content.subject, templateId: DIAGNOSTIC_TEMPLATE, requestedBy: response.locals.mailIdentity.uid });
         const accepted = await options.send({
           from: formattedSender(configuration), ...(configuration.replyTo ? { replyTo: configuration.replyTo } : {}), to: recipient,
           ...content,
           disableFileAccess: true, disableUrlAccess: true,
         }, configuration);
         if (!accepted) throw new Error("Not accepted");
+        await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Accepted", recipient, subject: content.subject, templateId: DIAGNOSTIC_TEMPLATE, requestedBy: response.locals.mailIdentity.uid });
         response.locals.mailOutcome = "accepted";
         response.json({ success: true, status: "accepted", requestId: response.locals.requestId, templateId: DIAGNOSTIC_TEMPLATE, subject: content.subject });
       } catch {
+        if (content) await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Failed", recipient, subject: content.subject, templateId: DIAGNOSTIC_TEMPLATE, requestedBy: response.locals.mailIdentity.uid, errorMessage: "The SMTP relay did not accept the message." }).catch(() => undefined);
         mailError(response, 502, "mail_delivery_failed", "The mail relay could not accept the message.");
       }
     },
@@ -263,14 +283,18 @@ export function createMailRouter(options: MailApiOptions): Router {
       try { configuration = await activeConfiguration(options); }
       catch { return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
       if (!configuration || !options.send || !options.resolveEvent) return mailError(response, 503, "mail_not_configured", "Mail delivery is not configured.");
+      let resolved: Awaited<ReturnType<ResolveMailEvent>> | null = null;
       try {
-        const resolved = await options.resolveEvent(body.event, body.entityId, identity, configuration);
+        resolved = await options.resolveEvent(body.event, body.entityId, identity, configuration);
         if (!mailbox(resolved.to)) throw new Error("Invalid resolved recipient");
+        await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Queued", recipient: resolved.to, subject: resolved.subject, templateId: body.event, entityId: body.entityId, requestedBy: identity.uid });
         const accepted = await options.send({ ...resolved, from: formattedSender(configuration), ...(configuration.replyTo ? { replyTo: configuration.replyTo } : {}), disableFileAccess: true, disableUrlAccess: true }, configuration);
         if (!accepted) throw new Error("Not accepted");
+        await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Accepted", recipient: resolved.to, subject: resolved.subject, templateId: body.event, entityId: body.entityId, requestedBy: identity.uid });
         response.locals.mailOutcome = "accepted";
         response.json({ success: true, status: "accepted", requestId: response.locals.requestId });
       } catch (error) {
+        if (resolved) await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Failed", recipient: resolved.to, subject: resolved.subject, templateId: body.event, entityId: body.entityId, requestedBy: identity.uid, errorMessage: "The SMTP relay did not accept the message." }).catch(() => undefined);
         if (error instanceof AccessDenied) return mailError(response, 403, "mail_event_not_allowed", "The requested mail event is not allowed.");
         mailError(response, 502, "mail_delivery_failed", "The mail relay could not accept the message.");
       }
@@ -309,14 +333,30 @@ export function createMailRouter(options: MailApiOptions): Router {
         || typeof body.entityId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.entityId)) {
         return mailError(response, 400, "invalid_invitation_request", "A valid user entityId is required.");
       }
-      if (!options.sendInvitationEmail) return mailError(response, 503, "invitation_email_unavailable", "Firebase sign-in email is unavailable.");
+      let configuration: MailConfiguration | null;
+      try { configuration = await activeConfiguration(options); }
+      catch { return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
+      if (!configuration || !options.send || !options.resolveInvitationEmail) return mailError(response, 503, "invitation_email_unavailable", "Signup email delivery is unavailable.");
+      let resolved: ResolvedInvitationEmail | null = null;
       try {
-        await options.sendInvitationEmail(body.entityId, identity);
-        response.locals.mailOutcome = "firebase_email_submitted";
-        response.json({ success: true, status: "submitted", provider: "firebase" });
+        resolved = await options.resolveInvitationEmail(body.entityId, identity, configuration);
+        if (!mailbox(resolved.message.to)) throw new AccessDenied();
+        await resolved.recordOutcome("Queued", response.locals.requestId);
+        const accepted = await options.send({
+          ...resolved.message,
+          from: formattedSender(configuration),
+          ...(configuration.replyTo ? { replyTo: configuration.replyTo } : {}),
+          disableFileAccess: true,
+          disableUrlAccess: true,
+        }, configuration);
+        if (!accepted) throw new Error("Not accepted");
+        await resolved.recordOutcome("Accepted", response.locals.requestId);
+        response.locals.mailOutcome = "smtp_accepted";
+        response.json({ success: true, status: "accepted", transport: "smtp", requestId: response.locals.requestId });
       } catch (error) {
+        if (resolved) await resolved.recordOutcome("Failed", response.locals.requestId, "The SMTP relay did not accept the signup email.").catch(() => undefined);
         if (error instanceof AccessDenied) return mailError(response, 403, "invitation_not_allowed", "A sign-in email cannot be issued for this account.");
-        mailError(response, 502, "invitation_email_failed", "Firebase could not submit the sign-in email.");
+        mailError(response, 502, "invitation_email_failed", "The SMTP relay could not accept the signup email.");
       }
     },
   );

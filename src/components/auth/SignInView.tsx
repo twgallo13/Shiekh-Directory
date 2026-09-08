@@ -38,7 +38,7 @@ export function SignInView() {
           if (emailLink) { await actions.completeLink(email, emailLink); clearEmailLink(); navigate("/", { replace: true }); }
           else if (mode === "password") await actions.password(email, password);
           else if (mode === "reset") { await actions.reset(email); setMessage("If this account is eligible, a password-reset email will arrive shortly."); }
-          else { await actions.sendLink(email); setMessage("Firebase submitted a passwordless sign-in email. Check Spam or company quarantine, then use the same email address to complete sign-in."); }
+          else { await actions.sendLink(email); setMessage("Firebase accepted the passwordless email request; this is not inbox-delivery confirmation. Check Spam or company quarantine, then use the same email address to complete sign-in."); }
         });
       }}>
         <label className="block text-sm font-medium">Email<input type="email" name="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2" /></label>

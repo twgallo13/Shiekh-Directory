@@ -291,10 +291,10 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
               </div>
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">Recent Outbound Dispatch Logs</h3>
-                <p className="text-xs text-neutral-500">Live feed of all emails transmitted through the SMTP Relay Gateway (Capped at 50)</p>
+                <p className="text-xs text-neutral-500">Server-recorded SMTP attempts. Accepted confirms relay acceptance, not inbox delivery. Capped at 50.</p>
               </div>
             </div>
-            <span className="text-xs text-neutral-500 font-mono">{outboxLogs.length} total dispatches</span>
+            <span className="text-xs text-neutral-500 font-mono">{outboxLogs.length} recorded attempts</span>
           </div>
 
           <div className="space-y-2 max-h-72 overflow-y-auto">
@@ -309,7 +309,7 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
                   <div className="space-y-0.5 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold text-neutral-900 truncate">{log.subject}</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">
+                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold ${log.status === 'Failed' ? 'bg-rose-100 text-rose-800' : log.status === 'Accepted' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
                         {log.status}
                       </span>
                     </div>

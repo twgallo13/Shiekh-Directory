@@ -16,10 +16,10 @@ import {
   SopRunbook
 } from '../types';
 import type { DirectorySeed } from '../lib/directorySeed';
-import { mergeHoursTemplates, migrateDirectoryRelationships } from '../lib/directoryMigration';
-import { mailRequest } from '../lib/mailClient';
+import { migrateDirectoryRelationships } from '../lib/directoryMigration';
+import { commitDirectory, type DirectoryAudit, type DirectoryWrite } from '../lib/directoryClient';
+import { mailRequest, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
-import { serializeLocalDraft } from '../lib/authSession';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -35,6 +35,8 @@ interface DirectoryContextType {
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
   sopRunbooks: SopRunbook[];
+  persistenceError: string | null;
+  clearPersistenceError: () => void;
   updateLocation: (id: string, updates: Partial<LocationRecord>) => void;
   createLocation: (location: Omit<LocationRecord, 'id'>) => LocationRecord;
   deleteLocation: (id: string) => void;
@@ -74,201 +76,48 @@ interface DirectoryContextType {
 
 const DirectoryContext = createContext<DirectoryContextType | null>(null);
 
-const LOCATIONS_STORAGE_KEY = 'shiekh_locations_v3';
-const PEOPLE_STORAGE_KEY = 'shiekh_people_v3';
-const USERS_STORAGE_KEY = 'shiekh_users_v3';
-const HOURS_TEMPLATES_STORAGE_KEY = 'shiekh_hours_templates_v3';
-const LEGACY_API_KEYS_STORAGE_KEY = 'shiekh_api_keys_v3';
-const CORPORATE_HOLIDAYS_STORAGE_KEY = 'shiekh_corporate_holidays_v3';
-const REQUESTS_STORAGE_KEY = 'shiekh_requests_v3';
-const AUDIT_STORAGE_KEY = 'shiekh_audit_v3';
-const SMTP_CONFIG_STORAGE_KEY = 'shiekh_smtp_config_v3';
-const EMAIL_TEMPLATES_STORAGE_KEY = 'shiekh_email_templates_v3';
-const NOTIFICATION_RULES_STORAGE_KEY = 'shiekh_notification_rules_v3';
-const OUTBOX_LOGS_STORAGE_KEY = 'shiekh_outbox_logs_v3';
-const SOP_RUNBOOKS_STORAGE_KEY = 'shiekh_sop_runbooks_v3';
 const INITIAL_SMTP_CONFIG: SmtpConfig = { smtpHost: '', smtpPort: 587, smtpUser: '', smtpPassword: '', fromName: '', fromEmail: '', replyToEmail: '', stewardAlertRecipient: '', enforceTls: true };
 
-const readStoredArray = <T,>(key: string, fallback: T[]): T[] => {
-  const saved = localStorage.getItem(key);
-  if (!saved) return fallback;
-  try {
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
 export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: DirectorySeed }> = ({ children, seed }) => {
-  const { locations: INITIAL_LOCATIONS, people: INITIAL_PEOPLE, hoursTemplates: INITIAL_HOURS_TEMPLATES, corporateHolidays: INITIAL_CORPORATE_HOLIDAYS, emailTemplates: INITIAL_EMAIL_TEMPLATES, notificationRules: INITIAL_NOTIFICATION_RULES, outboxLogs: INITIAL_OUTBOX_LOGS, sopRunbooks: INITIAL_SOP_RUNBOOKS } = seed;
-  const { account } = useAuth();
-  if (!account) throw new Error('Authorized directory account required.');
+  const { account, user } = useAuth();
+  if (!account || !user) throw new Error('Authorized directory account required.');
   const currentUser: UserProfile = { id: account.uid, name: account.name, email: account.email || '', role: account.role, status: 'Active', accessScope: account.accessScope, personId: account.personId || undefined };
   const [initialDirectory] = useState(() => {
-    const templates = mergeHoursTemplates(
-      readStoredArray(HOURS_TEMPLATES_STORAGE_KEY, INITIAL_HOURS_TEMPLATES),
-      INITIAL_HOURS_TEMPLATES,
-    );
-    const migrated = migrateDirectoryRelationships(
-      readStoredArray(LOCATIONS_STORAGE_KEY, INITIAL_LOCATIONS),
-      readStoredArray(PEOPLE_STORAGE_KEY, INITIAL_PEOPLE),
-      templates,
-    );
-    return { ...migrated, templates };
+    const migrated = migrateDirectoryRelationships(seed.locations, seed.people, seed.hoursTemplates);
+    return { ...migrated, templates: seed.hoursTemplates };
   });
   const [locations, setLocations] = useState<LocationRecord[]>(initialDirectory.locations);
   const [people, setPeople] = useState<Person[]>(initialDirectory.people);
-
-  const [users, setUsers] = useState<UserProfile[]>([]);
-
+  const [users, setUsers] = useState<UserProfile[]>(seed.users);
   const [hoursTemplates, setHoursTemplates] = useState<HoursTemplate[]>(initialDirectory.templates);
-
-  const [corporateHolidays, setCorporateHolidays] = useState<CorporateHoliday[]>(() => {
-    const saved = localStorage.getItem(CORPORATE_HOLIDAYS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_CORPORATE_HOLIDAYS;
-  });
-
-  const [smtpConfig, setSmtpConfig] = useState<SmtpConfig>(() => {
-    const saved = localStorage.getItem(SMTP_CONFIG_STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Scrub any legacy stored password from client storage
-        delete parsed.smtpPassword;
-        return { ...INITIAL_SMTP_CONFIG, ...parsed, smtpPassword: '' };
-      } catch {
-        return INITIAL_SMTP_CONFIG;
-      }
-    }
-    return INITIAL_SMTP_CONFIG;
-  });
-
-  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(() => {
-    const saved = localStorage.getItem(EMAIL_TEMPLATES_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_EMAIL_TEMPLATES;
-  });
-
-  const [notificationRules, setNotificationRules] = useState<NotificationRule[]>(() => {
-    const saved = localStorage.getItem(NOTIFICATION_RULES_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_NOTIFICATION_RULES;
-  });
-
-  const [outboxLogs, setOutboxLogs] = useState<OutboxLogEntry[]>(() => {
-    const saved = localStorage.getItem(OUTBOX_LOGS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_OUTBOX_LOGS;
-  });
-
-  const [sopRunbooks, setSopRunbooks] = useState<SopRunbook[]>(() => {
-    const saved = localStorage.getItem(SOP_RUNBOOKS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : INITIAL_SOP_RUNBOOKS;
-  });
-
-  const [requests, setRequests] = useState<UpdateRequest[]>(() => {
-    const saved = localStorage.getItem(REQUESTS_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [
-      {
-        id: 'req-01',
-        targetId: 'loc-08',
-        targetType: 'Location',
-        targetStoreNumber: '08',
-        targetName: 'Shiekh Shoes — Downtown LA Broadway',
-        changeType: 'Operational Status Change',
-        requestedBy: {
-          id: 'usr-sm-01',
-          name: 'Marcus Vance (SM #01)',
-          email: 'm.vance@shiekhshoes.com',
-          role: 'Store Manager'
-        },
-        requestedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-        status: 'Pending',
-        requestedChanges: {
-          operationalStatus: 'Temporarily Modified Hours',
-          activeNotice: {
-            shortDescription: 'AC Unit Repair — Closing 1 Hour Early this week',
-            effectiveDate: '2026-09-04',
-            expectedResolutionDate: '2026-09-10'
-          }
-        },
-        currentSnapshot: {
-          operationalStatus: 'Open — Normal Operations'
-        },
-        reason: 'HVAC technician on site, early closure approved by DM.'
-      }
-    ];
-  });
-
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
-    const saved = localStorage.getItem(AUDIT_STORAGE_KEY);
-    const initialLogs: AuditLogEntry[] = saved ? JSON.parse(saved) : [
-      {
-        id: 'aud-01',
-        timestamp: new Date().toISOString(),
-        userId: currentUser?.id || 'usr-sys',
-        userName: currentUser?.name || 'System Admin',
-        action: 'System Startup',
-        entityType: 'Setting',
-        entityId: 'sys-0',
-        entityName: 'Directory Baseline Loaded',
-        details: 'Loaded directory records into active memory.'
-      }
-    ];
-    return initialLogs.map(scrubLegacyApiKeyAuditEntry);
-  });
+  const [corporateHolidays, setCorporateHolidays] = useState<CorporateHoliday[]>(seed.corporateHolidays);
+  const [smtpConfig, setSmtpConfig] = useState<SmtpConfig>(INITIAL_SMTP_CONFIG);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>(seed.emailTemplates);
+  const [notificationRules, setNotificationRules] = useState<NotificationRule[]>(seed.notificationRules);
+  const [outboxLogs, setOutboxLogs] = useState<OutboxLogEntry[]>(seed.outboxLogs);
+  const [sopRunbooks, setSopRunbooks] = useState<SopRunbook[]>(seed.sopRunbooks);
+  const [requests, setRequests] = useState<UpdateRequest[]>(seed.requests);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => seed.auditLogs.map(scrubLegacyApiKeyAuditEntry));
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem(LOCATIONS_STORAGE_KEY, JSON.stringify(locations));
-  }, [locations]);
-
-  useEffect(() => {
-    localStorage.setItem(PEOPLE_STORAGE_KEY, JSON.stringify(people));
-  }, [people]);
-
-  useEffect(() => {
-    localStorage.removeItem(USERS_STORAGE_KEY);
+    for (const key of Object.keys(localStorage)) if (key.startsWith('shiekh_') && key !== 'shiekh_theme_preference') localStorage.removeItem(key);
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem(HOURS_TEMPLATES_STORAGE_KEY, JSON.stringify(hoursTemplates));
-  }, [hoursTemplates]);
+  const persist = (writes: DirectoryWrite[], audit: DirectoryAudit) => {
+    setPersistenceError(null);
+    const operation = commitDirectory(user, writes, audit);
+    void operation.catch(error => {
+      setPersistenceError(error instanceof Error ? error.message : 'The directory database could not save this change.');
+    });
+    return operation;
+  };
 
-  useEffect(() => {
-    localStorage.removeItem(LEGACY_API_KEYS_STORAGE_KEY);
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(CORPORATE_HOLIDAYS_STORAGE_KEY, JSON.stringify(corporateHolidays));
-  }, [corporateHolidays]);
-
-  useEffect(() => {
-    // Security: Strip sensitive credentials so smtpPassword is never written to browser localStorage
-    const { smtpPassword, ...safeConfig } = smtpConfig;
-    localStorage.setItem(SMTP_CONFIG_STORAGE_KEY, JSON.stringify(safeConfig));
-  }, [smtpConfig]);
-
-  useEffect(() => {
-    localStorage.setItem(EMAIL_TEMPLATES_STORAGE_KEY, JSON.stringify(emailTemplates));
-  }, [emailTemplates]);
-
-  useEffect(() => {
-    localStorage.setItem(NOTIFICATION_RULES_STORAGE_KEY, JSON.stringify(notificationRules));
-  }, [notificationRules]);
-
-  useEffect(() => {
-    localStorage.setItem(OUTBOX_LOGS_STORAGE_KEY, JSON.stringify(outboxLogs));
-  }, [outboxLogs]);
-
-  useEffect(() => {
-    localStorage.setItem(SOP_RUNBOOKS_STORAGE_KEY, JSON.stringify(sopRunbooks));
-  }, [sopRunbooks]);
-
-  useEffect(() => {
-    localStorage.setItem(REQUESTS_STORAGE_KEY, serializeLocalDraft(requests));
-  }, [requests]);
-
-  useEffect(() => {
-    localStorage.setItem(AUDIT_STORAGE_KEY, serializeLocalDraft(auditLogs));
-  }, [auditLogs]);
+  const notifyAfterSave = (operation: Promise<void>, event: 'user-invitation' | 'request-submitted' | 'request-approved' | 'request-rejected', entityId: string) => {
+    void operation.then(() => sendMailEvent(event, entityId)).catch(error => {
+      setPersistenceError(error instanceof Error ? error.message : 'The directory email could not be sent.');
+    });
+  };
 
   const addAuditLog = (
     action: string, 
@@ -296,14 +145,13 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   const updateLocation = (id: string, updates: Partial<LocationRecord>) => {
-    setLocations(prev => prev.map(loc => {
-      if (loc.id === id) {
-        const updated = { ...loc, ...updates, updatedAt: new Date().toISOString() };
-        addAuditLog('Location Updated', 'Location', loc.id, `Store #${loc.storeNumber}`, `Updated attributes: ${Object.keys(updates).join(', ')}`, loc, updated);
-        return updated;
-      }
-      return loc;
-    }));
+    const current = locations.find(location => location.id === id);
+    if (!current) return;
+    const updated = { ...current, ...updates, updatedAt: new Date().toISOString() };
+    const details = `Updated attributes: ${Object.keys(updates).join(', ')}`;
+    setLocations(previous => previous.map(location => location.id === id ? updated : location));
+    addAuditLog('Location Updated', 'Location', current.id, `Store #${current.storeNumber}`, details, current, updated);
+    persist([{ collection: 'locations', id, operation: 'set', data: updated as unknown as Record<string, unknown> }], { action: 'Location Updated', entityType: 'Location', entityId: id, entityName: `Store #${current.storeNumber}`, details });
   };
 
   const createLocation = (newLocData: Omit<LocationRecord, 'id'>): LocationRecord => {
@@ -318,6 +166,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setLocations(prev => [...prev, newLoc]);
     addAuditLog('Location Created', 'Location', newLoc.id, `Store #${newLoc.storeNumber}`, `Created new location: ${newLoc.name}`, undefined, newLoc);
+    persist([{ collection: 'locations', id: newLoc.id, operation: 'set', data: newLoc as unknown as Record<string, unknown> }], { action: 'Location Created', entityType: 'Location', entityId: newLoc.id, entityName: `Store #${newLoc.storeNumber}`, details: `Created new location: ${newLoc.name}` });
     return newLoc;
   };
 
@@ -326,44 +175,27 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     if (loc) {
       setLocations(prev => prev.filter(l => l.id !== id));
       addAuditLog('Location Deleted', 'Location', loc.id, `Store #${loc.storeNumber}`, `Deleted location record.`, loc, undefined);
+      persist([{ collection: 'locations', id, operation: 'delete' }], { action: 'Location Deleted', entityType: 'Location', entityId: id, entityName: `Store #${loc.storeNumber}`, details: 'Deleted location record.' });
     }
   };
 
   const retireLocation = (id: string) => {
     const loc = locations.find(l => l.id === id);
     if (loc) {
-      setLocations(prev => prev.map(l => {
-        if (l.id === id) {
-          const updated = {
-            ...l,
-            recordStatus: 'Retired' as const,
-            operationalStatus: 'Permanently Closed' as const,
-            updatedAt: new Date().toISOString()
-          };
-          addAuditLog('Location Retired', 'Location', loc.id, `Store #${loc.storeNumber}`, `Retired store location (recordStatus set to Retired).`, loc, updated);
-          return updated;
-        }
-        return l;
-      }));
+      const updated = { ...loc, recordStatus: 'Retired' as const, operationalStatus: 'Permanently Closed' as const, updatedAt: new Date().toISOString() };
+      setLocations(previous => previous.map(location => location.id === id ? updated : location));
+      addAuditLog('Location Retired', 'Location', loc.id, `Store #${loc.storeNumber}`, 'Retired store location (recordStatus set to Retired).', loc, updated);
+      persist([{ collection: 'locations', id, operation: 'set', data: updated as unknown as Record<string, unknown> }], { action: 'Location Retired', entityType: 'Location', entityId: id, entityName: `Store #${loc.storeNumber}`, details: 'Retired store location (recordStatus set to Retired).' });
     }
   };
 
   const reactivateLocation = (id: string) => {
     const loc = locations.find(l => l.id === id);
     if (loc) {
-      setLocations(prev => prev.map(l => {
-        if (l.id === id) {
-          const updated = {
-            ...l,
-            recordStatus: 'Active' as const,
-            operationalStatus: 'Open — Normal Operations' as const,
-            updatedAt: new Date().toISOString()
-          };
-          addAuditLog('Location Reactivated', 'Location', loc.id, `Store #${loc.storeNumber}`, `Reactivated store location (recordStatus set to Active).`, loc, updated);
-          return updated;
-        }
-        return l;
-      }));
+      const updated = { ...loc, recordStatus: 'Active' as const, operationalStatus: 'Open — Normal Operations' as const, updatedAt: new Date().toISOString() };
+      setLocations(previous => previous.map(location => location.id === id ? updated : location));
+      addAuditLog('Location Reactivated', 'Location', loc.id, `Store #${loc.storeNumber}`, 'Reactivated store location (recordStatus set to Active).', loc, updated);
+      persist([{ collection: 'locations', id, operation: 'set', data: updated as unknown as Record<string, unknown> }], { action: 'Location Reactivated', entityType: 'Location', entityId: id, entityName: `Store #${loc.storeNumber}`, details: 'Reactivated store location (recordStatus set to Active).' });
     }
   };
 
@@ -395,6 +227,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setPeople(prev => [...prev, newPerson]);
     addAuditLog('Person Created', 'Person', newPerson.id, newPerson.fullName, `Added person record for ${newPerson.fullName}`, undefined, newPerson);
+    persist([{ collection: 'people', id: newPerson.id, operation: 'set', data: newPerson as unknown as Record<string, unknown> }], { action: 'Person Created', entityType: 'Person', entityId: newPerson.id, entityName: newPerson.fullName, details: `Added person record for ${newPerson.fullName}` });
     return newPerson;
   };
 
@@ -407,8 +240,9 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       ? updatedPerson
       : people.find(person => person.id === personId);
 
-    setPeople(previous => previous.map(person => person.id === id ? updatedPerson : person));
-    setLocations(previous => previous.map(location => ({
+    const affectsLocation = (location: LocationRecord) => location.storeManagerId === id || location.districtManagerId === id
+      || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id);
+    const updatedLocations = locations.map(location => affectsLocation(location) ? ({
       ...location,
       ...(location.storeManagerId === id ? {
         storeManagerName: updatedPerson.fullName,
@@ -425,8 +259,14 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       keyHolderNames: (location.keyHolderIds || [])
         .map(personId => personById(personId)?.fullName)
         .filter((name): name is string => Boolean(name)),
-    })));
+    }) : location);
+    setPeople(previous => previous.map(person => person.id === id ? updatedPerson : person));
+    setLocations(updatedLocations);
     addAuditLog('Person Updated', 'Person', currentPerson.id, currentPerson.fullName, `Updated attributes: ${Object.keys(updates).join(', ')}`, currentPerson, updatedPerson);
+    persist([
+      { collection: 'people', id, operation: 'set', data: updatedPerson as unknown as Record<string, unknown> },
+      ...updatedLocations.filter(affectsLocation).map(location => ({ collection: 'locations' as const, id: location.id, operation: 'set' as const, data: location as unknown as Record<string, unknown> })),
+    ], { action: 'Person Updated', entityType: 'Person', entityId: id, entityName: currentPerson.fullName, details: `Updated attributes: ${Object.keys(updates).join(', ')}` });
   };
 
   const togglePersonPhonePrivacy = (id: string, privacy: ContactPrivacyLevel) => {
@@ -442,50 +282,50 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setRequests(prev => [newReq, ...prev]);
     addAuditLog('Request Submitted', 'Request', newReq.id, newReq.changeType, `Submitted change request for ${newReq.targetName}`);
+    notifyAfterSave(persist([{ collection: 'requests', id: newReq.id, operation: 'set', data: newReq as unknown as Record<string, unknown> }], { action: 'Request Submitted', entityType: 'Request', entityId: newReq.id, entityName: newReq.changeType, details: `Submitted change request for ${newReq.targetName}` }), 'request-submitted', newReq.id);
   };
 
   const approveRequest = (requestId: string, reviewerNotes?: string) => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
 
-    if (req.targetType === 'Location') {
-      updateLocation(req.targetId, req.requestedChanges);
-    }
-
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return {
-          ...r,
+    const updatedRequest: UpdateRequest = {
+          ...req,
           status: 'Approved',
           reviewedBy: currentUser.name,
           reviewedAt: new Date().toISOString(),
           reviewerNotes
-        };
+    };
+    const writes: DirectoryWrite[] = [{ collection: 'requests', id: requestId, operation: 'set', data: updatedRequest as unknown as Record<string, unknown> }];
+    if (req.targetType === 'Location') {
+      const location = locations.find(item => item.id === req.targetId);
+      if (location) {
+        const updatedLocation = { ...location, ...req.requestedChanges, updatedAt: new Date().toISOString() };
+        setLocations(previous => previous.map(item => item.id === location.id ? updatedLocation : item));
+        writes.push({ collection: 'locations', id: location.id, operation: 'set', data: updatedLocation as unknown as Record<string, unknown> });
       }
-      return r;
-    }));
+    }
+    setRequests(previous => previous.map(item => item.id === requestId ? updatedRequest : item));
 
     addAuditLog('Request Approved', 'Request', req.id, req.changeType, `Approved request by ${currentUser.name}`);
+    notifyAfterSave(persist(writes, { action: 'Request Approved', entityType: 'Request', entityId: req.id, entityName: req.changeType, details: `Approved request by ${currentUser.name}` }), 'request-approved', req.id);
   };
 
   const rejectRequest = (requestId: string, reviewerNotes?: string) => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
 
-    setRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return {
-          ...r,
+    const updatedRequest: UpdateRequest = {
+          ...req,
           status: 'Rejected',
           reviewedBy: currentUser.name,
           reviewedAt: new Date().toISOString(),
           reviewerNotes
-        };
-      }
-      return r;
-    }));
+    };
+    setRequests(previous => previous.map(item => item.id === requestId ? updatedRequest : item));
 
     addAuditLog('Request Rejected', 'Request', req.id, req.changeType, `Rejected request by ${currentUser.name}: ${reviewerNotes || 'No notes'}`);
+    notifyAfterSave(persist([{ collection: 'requests', id: requestId, operation: 'set', data: updatedRequest as unknown as Record<string, unknown> }], { action: 'Request Rejected', entityType: 'Request', entityId: req.id, entityName: req.changeType, details: `Rejected request by ${currentUser.name}: ${reviewerNotes || 'No notes'}` }), 'request-rejected', req.id);
   };
 
   const applyHoursTemplate = (locationId: string, templateId: string) => {
@@ -507,25 +347,22 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setHoursTemplates(prev => [...prev, newTemplate]);
     addAuditLog('Hours Template Created', 'Setting', newTemplate.id, newTemplate.name, `Created hours template "${newTemplate.name}"`, undefined, newTemplate);
+    persist([{ collection: 'hours_templates', id: newTemplate.id, operation: 'set', data: newTemplate as unknown as Record<string, unknown> }], { action: 'Hours Template Created', entityType: 'Setting', entityId: newTemplate.id, entityName: newTemplate.name, details: `Created hours template "${newTemplate.name}"` });
     return newTemplate;
   };
 
   const updateHoursTemplate = (id: string, updates: Partial<HoursTemplate>) => {
-    setHoursTemplates(prev => prev.map(t => {
-      if (t.id === id) {
-        const updated = { ...t, ...updates };
-        addAuditLog('Hours Template Updated', 'Setting', t.id, t.name, `Updated hours template "${t.name}"`, t, updated);
-        return updated;
-      }
-      return t;
-    }));
-    if (updates.schedule) {
-      setLocations(previous => previous.map(location =>
-        location.hoursTemplateId === id && location.hoursMode === 'template'
-          ? { ...location, standardHours: structuredClone(updates.schedule!) }
-          : location,
-      ));
-    }
+    const target = hoursTemplates.find(template => template.id === id);
+    if (!target) return;
+    const updated = { ...target, ...updates };
+    const updatedLocations = updates.schedule ? locations.map(location => location.hoursTemplateId === id && location.hoursMode === 'template' ? { ...location, standardHours: structuredClone(updates.schedule!) } : location) : locations;
+    setHoursTemplates(previous => previous.map(template => template.id === id ? updated : template));
+    if (updates.schedule) setLocations(updatedLocations);
+    addAuditLog('Hours Template Updated', 'Setting', target.id, target.name, `Updated hours template "${target.name}"`, target, updated);
+    persist([
+      { collection: 'hours_templates', id, operation: 'set', data: updated as unknown as Record<string, unknown> },
+      ...updatedLocations.filter((location, index) => location !== locations[index]).map(location => ({ collection: 'locations' as const, id: location.id, operation: 'set' as const, data: location as unknown as Record<string, unknown> })),
+    ], { action: 'Hours Template Updated', entityType: 'Setting', entityId: id, entityName: target.name, details: `Updated hours template "${target.name}"` });
   };
 
   const deleteHoursTemplate = (id: string) => {
@@ -538,20 +375,39 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
           : location,
       ));
       addAuditLog('Hours Template Deleted', 'Setting', target.id, target.name, `Deleted hours template "${target.name}"`, target, undefined);
+      const affected = locations.filter(location => location.hoursTemplateId === id).map(location => ({ ...location, hoursTemplateId: undefined, hoursMode: 'custom' as const }));
+      persist([
+        { collection: 'hours_templates', id, operation: 'delete' },
+        ...affected.map(location => ({ collection: 'locations' as const, id: location.id, operation: 'set' as const, data: location as unknown as Record<string, unknown> })),
+      ], { action: 'Hours Template Deleted', entityType: 'Setting', entityId: id, entityName: target.name, details: `Deleted hours template "${target.name}"` });
     }
   };
 
   // User Accounts CUD
-  const createUserAccount = (_userData: Omit<UserProfile, 'id'>): UserProfile => {
-    throw new Error('Account provisioning is not available in this phase.');
+  const createUserAccount = (userData: Omit<UserProfile, 'id'>): UserProfile => {
+    const id = `usr-${Date.now()}`;
+    const next = { ...userData, id, accessScope: userData.accessScope || (userData.storeNumber ? `Store ${userData.storeNumber}` : 'Company-wide') };
+    setUsers(previous => [...previous, next]);
+    addAuditLog('User Created', 'User', id, next.name, `Created access record for ${next.email}.`, undefined, next);
+    notifyAfterSave(persist([{ collection: 'users', id, operation: 'set', data: { ...next, displayName: next.name } as unknown as Record<string, unknown> }], { action: 'User Created', entityType: 'User', entityId: id, entityName: next.name, details: `Created access record for ${next.email}.` }), 'user-invitation', id);
+    return next;
   };
 
-  const updateUserAccount = (_id: string, _updates: Partial<UserProfile>) => {
-    throw new Error('Role and scope changes require the server-owned access workflow.');
+  const updateUserAccount = (id: string, updates: Partial<UserProfile>) => {
+    const current = users.find(item => item.id === id);
+    if (!current) return;
+    const next = { ...current, ...updates };
+    setUsers(previous => previous.map(item => item.id === id ? next : item));
+    addAuditLog('User Updated', 'User', id, next.name, `Updated access record for ${next.email}.`, current, next);
+    persist([{ collection: 'users', id, operation: 'set', data: { ...next, displayName: next.name } as unknown as Record<string, unknown> }], { action: 'User Updated', entityType: 'User', entityId: id, entityName: next.name, details: `Updated access record for ${next.email}.` });
   };
 
-  const deleteUserAccount = (_id: string) => {
-    throw new Error('Account lifecycle changes are not available in this phase.');
+  const deleteUserAccount = (id: string) => {
+    const current = users.find(item => item.id === id);
+    if (!current || id === currentUser.id) return;
+    setUsers(previous => previous.filter(item => item.id !== id));
+    addAuditLog('User Deleted', 'User', id, current.name, `Deleted access record for ${current.email}.`, current, undefined);
+    persist([{ collection: 'users', id, operation: 'delete' }], { action: 'User Deleted', entityType: 'User', entityId: id, entityName: current.name, details: `Deleted access record for ${current.email}.` });
   };
 
   const addCorporateHoliday = (holidayData: Omit<CorporateHoliday, 'id'>): CorporateHoliday => {
@@ -561,18 +417,17 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setCorporateHolidays(prev => [...prev, newHoliday]);
     addAuditLog('Corporate Holiday Added', 'Setting', newHoliday.id, newHoliday.name, `Added holiday override for ${newHoliday.name} on ${newHoliday.date}`, undefined, newHoliday);
+    persist([{ collection: 'corporate_holidays', id: newHoliday.id, operation: 'set', data: newHoliday as unknown as Record<string, unknown> }], { action: 'Corporate Holiday Added', entityType: 'Setting', entityId: newHoliday.id, entityName: newHoliday.name, details: `Added holiday override for ${newHoliday.name} on ${newHoliday.date}` });
     return newHoliday;
   };
 
   const updateCorporateHoliday = (id: string, updates: Partial<CorporateHoliday>) => {
-    setCorporateHolidays(prev => prev.map(h => {
-      if (h.id === id) {
-        const updated = { ...h, ...updates };
-        addAuditLog('Corporate Holiday Updated', 'Setting', h.id, h.name, `Updated holiday override ${h.name}`, h, updated);
-        return updated;
-      }
-      return h;
-    }));
+    const target = corporateHolidays.find(holiday => holiday.id === id);
+    if (!target) return;
+    const updated = { ...target, ...updates };
+    setCorporateHolidays(previous => previous.map(holiday => holiday.id === id ? updated : holiday));
+    addAuditLog('Corporate Holiday Updated', 'Setting', target.id, target.name, `Updated holiday override ${target.name}`, target, updated);
+    persist([{ collection: 'corporate_holidays', id, operation: 'set', data: updated as unknown as Record<string, unknown> }], { action: 'Corporate Holiday Updated', entityType: 'Setting', entityId: id, entityName: target.name, details: `Updated holiday override ${target.name}` });
   };
 
   const deleteCorporateHoliday = (id: string) => {
@@ -580,11 +435,12 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     if (target) {
       setCorporateHolidays(prev => prev.filter(h => h.id !== id));
       addAuditLog('Corporate Holiday Deleted', 'Setting', target.id, target.name, `Deleted holiday override "${target.name}"`, target, undefined);
+      persist([{ collection: 'corporate_holidays', id, operation: 'delete' }], { action: 'Corporate Holiday Deleted', entityType: 'Setting', entityId: id, entityName: target.name, details: `Deleted holiday override "${target.name}"` });
     }
   };
 
   const broadcastHolidaysToFleet = () => {
-    setLocations(prev => prev.map(loc => {
+    const updatedLocations = locations.map(loc => {
       const overrides = corporateHolidays.map(hol => ({
         id: `hol-ovr-${loc.id}-${hol.id}`,
         holidayName: hol.name,
@@ -596,8 +452,10 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         holidayHours: overrides,
         updatedAt: new Date().toISOString()
       };
-    }));
+    });
+    setLocations(updatedLocations);
     addAuditLog('Holiday Broadcast', 'Setting', 'fleet-holidays', 'Fleet Holiday Broadcast', `Broadcasted ${corporateHolidays.length} holiday schedule overrides across ${locations.length} stores.`);
+    persist(updatedLocations.map(location => ({ collection: 'locations', id: location.id, operation: 'set', data: location as unknown as Record<string, unknown> })), { action: 'Holiday Broadcast', entityType: 'Setting', entityId: 'fleet-holidays', entityName: 'Fleet Holiday Broadcast', details: `Broadcasted ${corporateHolidays.length} holiday schedule overrides across ${locations.length} stores.` });
   };
 
   // SMTP & Communications CUD
@@ -620,18 +478,17 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setEmailTemplates(prev => [...prev, newTmpl]);
     addAuditLog('Email Template Created', 'Communication', newTmpl.id, newTmpl.name, `Created transactional email template "${newTmpl.name}"`, undefined, newTmpl);
+    persist([{ collection: 'email_templates', id: newTmpl.id, operation: 'set', data: newTmpl as unknown as Record<string, unknown> }], { action: 'Email Template Created', entityType: 'Communication', entityId: newTmpl.id, entityName: newTmpl.name, details: `Created transactional email template "${newTmpl.name}"` });
     return newTmpl;
   };
 
   const updateEmailTemplate = (id: string, updates: Partial<EmailTemplate>) => {
-    setEmailTemplates(prev => prev.map(t => {
-      if (t.id === id) {
-        const updated = { ...t, ...updates, updatedAt: new Date().toISOString() };
-        addAuditLog('Email Template Updated', 'Communication', t.id, t.name, `Updated email template "${t.name}"`, t, updated);
-        return updated;
-      }
-      return t;
-    }));
+    const target = emailTemplates.find(template => template.id === id);
+    if (!target) return;
+    const updated = { ...target, ...updates, updatedAt: new Date().toISOString() };
+    setEmailTemplates(previous => previous.map(template => template.id === id ? updated : template));
+    addAuditLog('Email Template Updated', 'Communication', target.id, target.name, `Updated email template "${target.name}"`, target, updated);
+    persist([{ collection: 'email_templates', id, operation: 'set', data: updated as unknown as Record<string, unknown> }], { action: 'Email Template Updated', entityType: 'Communication', entityId: id, entityName: target.name, details: `Updated email template "${target.name}"` });
   };
 
   const deleteEmailTemplate = (id: string) => {
@@ -639,18 +496,17 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     if (target) {
       setEmailTemplates(prev => prev.filter(t => t.id !== id));
       addAuditLog('Email Template Deleted', 'Communication', target.id, target.name, `Deleted email template "${target.name}"`, target, undefined);
+      persist([{ collection: 'email_templates', id, operation: 'delete' }], { action: 'Email Template Deleted', entityType: 'Communication', entityId: id, entityName: target.name, details: `Deleted email template "${target.name}"` });
     }
   };
 
   const updateNotificationRule = (id: string, enabled: boolean) => {
-    setNotificationRules(prev => prev.map(rule => {
-      if (rule.id === id) {
-        const updated = { ...rule, enabled };
-        addAuditLog('Notification Rule Changed', 'Setting', rule.id, rule.eventName, `Set notification rule for "${rule.eventName}" to ${enabled ? 'Enabled' : 'Disabled'}`, rule, updated);
-        return updated;
-      }
-      return rule;
-    }));
+    const target = notificationRules.find(rule => rule.id === id);
+    if (!target) return;
+    const updated = { ...target, enabled };
+    setNotificationRules(previous => previous.map(rule => rule.id === id ? updated : rule));
+    addAuditLog('Notification Rule Changed', 'Setting', target.id, target.eventName, `Set notification rule for "${target.eventName}" to ${enabled ? 'Enabled' : 'Disabled'}`, target, updated);
+    persist([{ collection: 'notification_rules', id, operation: 'set', data: updated as unknown as Record<string, unknown> }], { action: 'Notification Rule Changed', entityType: 'Setting', entityId: id, entityName: target.eventName, details: `Set notification rule for "${target.eventName}" to ${enabled ? 'Enabled' : 'Disabled'}` });
   };
 
   const sendDiagnosticTestEmail = async (
@@ -815,22 +671,17 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setSopRunbooks(prev => [...prev, newRunbook]);
     addAuditLog('SOP Runbook Created', 'Setting', newRunbook.id, newRunbook.title, `Created SOP runbook "${newRunbook.title}"`);
+    persist([{ collection: 'sop_runbooks', id: newRunbook.id, operation: 'set', data: newRunbook as unknown as Record<string, unknown> }], { action: 'SOP Runbook Created', entityType: 'Setting', entityId: newRunbook.id, entityName: newRunbook.title, details: `Created SOP runbook "${newRunbook.title}"` });
     return newRunbook;
   };
 
   const updateSopRunbook = (id: string, updates: Partial<SopRunbook>) => {
-    setSopRunbooks(prev => prev.map(s => {
-      if (s.id === id) {
-        const updated = { 
-          ...s, 
-          ...updates, 
-          lastUpdated: new Date().toISOString().split('T')[0] 
-        };
-        addAuditLog('SOP Runbook Updated', 'Setting', s.id, s.title, `Updated runbook "${s.title}"`);
-        return updated;
-      }
-      return s;
-    }));
+    const target = sopRunbooks.find(runbook => runbook.id === id);
+    if (!target) return;
+    const updated = { ...target, ...updates, lastUpdated: new Date().toISOString().split('T')[0] };
+    setSopRunbooks(previous => previous.map(runbook => runbook.id === id ? updated : runbook));
+    addAuditLog('SOP Runbook Updated', 'Setting', target.id, target.title, `Updated runbook "${target.title}"`);
+    persist([{ collection: 'sop_runbooks', id, operation: 'set', data: updated as unknown as Record<string, unknown> }], { action: 'SOP Runbook Updated', entityType: 'Setting', entityId: id, entityName: target.title, details: `Updated runbook "${target.title}"` });
   };
 
   const deleteSopRunbook = (id: string) => {
@@ -838,6 +689,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     if (target) {
       setSopRunbooks(prev => prev.filter(s => s.id !== id));
       addAuditLog('SOP Runbook Deleted', 'Setting', target.id, target.title, `Deleted SOP runbook "${target.title}"`);
+      persist([{ collection: 'sop_runbooks', id, operation: 'delete' }], { action: 'SOP Runbook Deleted', entityType: 'Setting', entityId: id, entityName: target.title, details: `Deleted SOP runbook "${target.title}"` });
     }
   };
 
@@ -857,6 +709,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         notificationRules,
         outboxLogs,
         sopRunbooks,
+        persistenceError,
+        clearPersistenceError: () => setPersistenceError(null),
         updateLocation,
         createLocation,
         deleteLocation,

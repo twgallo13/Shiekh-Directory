@@ -157,7 +157,7 @@ export const SmtpCommunicationsPanel: React.FC<SmtpCommunicationsPanelProps> = (
               </div>
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">Transactional Email Template Builder</h3>
-                <p className="text-xs text-neutral-500">Local template drafts. Not connected to server-approved mail delivery.</p>
+                <p className="text-xs text-neutral-500">Database-backed templates for server-approved directory notifications.</p>
               </div>
             </div>
 

@@ -4,6 +4,9 @@ import type { DirectorySeed } from '../src/lib/directorySeed';
 export const directorySeed: DirectorySeed = {
   locations: INITIAL_LOCATIONS,
   people: INITIAL_PEOPLE,
+  users: [],
+  requests: [],
+  auditLogs: [],
   hoursTemplates: INITIAL_HOURS_TEMPLATES,
   corporateHolidays: INITIAL_CORPORATE_HOLIDAYS,
   emailTemplates: INITIAL_EMAIL_TEMPLATES,

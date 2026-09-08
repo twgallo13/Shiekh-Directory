@@ -8,4 +8,4 @@ This directory contains source material for migration and reconciliation. It is 
 
 The file contains internal directory contact information. Keep access restricted to authorized project participants and do not publish it as a public asset.
 
-Do not automatically import or overwrite authoritative records from this snapshot. Validate store rows, resolve duplicate Firestore generations, normalize people and leadership relationships, preview changes, and obtain approval before any write operation.
+Use `npm run migrate:firestore` to preview the deterministic migration plan. After reviewing the counts and target database, use `npm run migrate:firestore -- --apply` to replace duplicate location and people generations, seed the current supporting collections, and deduplicate access records. The apply operation is intentionally explicit and targets only the named Firestore database.

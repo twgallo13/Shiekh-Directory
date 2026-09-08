@@ -9,8 +9,10 @@ import {
 } from "./server/directoryApi";
 import { createFirestoreLocationRepository } from "./server/firestoreLocations";
 import { createMailRouter, createMailSender, loadMailConfiguration } from "./server/mailApi";
+import { createFirestoreMailEventResolver } from "./server/firestoreMail";
 import { createAuthRouter, createFirebaseAuthenticator } from "./server/authAuthority";
-import { directorySeed } from "./server/directorySeed";
+import { createFirestoreDirectoryStore } from "./server/firestoreDirectory";
+import { createDirectoryDataRouter } from "./server/directoryDataApi";
 
 // Attempt to load .env file if present in Node 20.6+
 try {
@@ -27,13 +29,16 @@ async function startServer() {
 
   const mailConfiguration = loadMailConfiguration();
   const authenticate = createFirebaseAuthenticator();
-  app.use("/api/auth", createAuthRouter(authenticate, directorySeed));
+  const directory = createFirestoreDirectoryStore();
+  app.use("/api/auth", createAuthRouter(authenticate, () => directory.read()));
   app.use("/api/mail", createMailRouter({
     authenticate,
     configuration: mailConfiguration,
     send: mailConfiguration ? createMailSender(mailConfiguration) : null,
+    resolveEvent: createFirestoreMailEventResolver(),
   }));
   app.use(express.json());
+  app.use("/api/directory", createDirectoryDataRouter(authenticate, directory));
 
   app.use("/api/v1", createDirectoryApiRouter({
     credentials: loadApiCredentials(),

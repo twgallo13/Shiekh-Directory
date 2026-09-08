@@ -31,11 +31,14 @@ export interface MailMessage {
   disableFileAccess: true;
   disableUrlAccess: true;
 }
+export type MailEvent = "user-invitation" | "request-submitted" | "request-approved" | "request-rejected";
+export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity) => Promise<Omit<MailMessage, "from" | "disableFileAccess" | "disableUrlAccess">>;
 
 export interface MailApiOptions {
   authenticate: ((token: string) => Promise<MailIdentity>) | null;
   configuration: MailConfiguration | null;
   send: ((message: MailMessage) => Promise<boolean>) | null;
+  resolveEvent?: ResolveMailEvent;
   audit?: (event: Record<string, string>) => void;
 }
 
@@ -116,13 +119,12 @@ export function createMailRouter(options: MailApiOptions): Router {
         ? mailError(response, 503, "mail_auth_unavailable", "Mail authentication is unavailable.")
         : mailError(response, 401, "invalid_token", "A valid Firebase ID token is required.");
     }
-    if (!identity.uid || !MAIL_ROLES.some((role) => role === identity.role)) {
-      return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
-    }
+    if (!identity.uid) return mailError(response, 403, "mail_role_required", "An authorized directory account is required.");
     response.locals.mailIdentity = identity;
     next();
   });
   router.get("/status", (_request, response) => {
+    if (!hasMailRole(response.locals.mailIdentity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
     response.json({ configured: Boolean(options.configuration && options.send) });
   });
   router.post("/dispatch",
@@ -138,6 +140,7 @@ export function createMailRouter(options: MailApiOptions): Router {
     },
     json({ limit: "2kb", strict: true, inflate: false }),
     async (request, response) => {
+      if (!hasMailRole(response.locals.mailIdentity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
       const body = request.body;
       if (!body || typeof body !== "object" || Array.isArray(body)
         || Object.keys(body).some((field) => field !== "recipient" && field !== "templateId")
@@ -165,6 +168,33 @@ export function createMailRouter(options: MailApiOptions): Router {
       }
     },
   );
+  router.post("/event",
+    limiter(20, 10 * 60_000, () => "mail-event-global"),
+    json({ limit: "2kb", strict: true, inflate: false }),
+    async (request, response) => {
+      const body = request.body;
+      const events: MailEvent[] = ["user-invitation", "request-submitted", "request-approved", "request-rejected"];
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(field => field !== "event" && field !== "entityId")
+        || !events.includes(body.event) || typeof body.entityId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.entityId)) {
+        return mailError(response, 400, "invalid_mail_event", "A supported mail event and entityId are required.");
+      }
+      const identity = response.locals.mailIdentity as MailIdentity;
+      if (body.event === "user-invitation" && identity.role !== "System Administrator") return mailError(response, 403, "mail_role_required", "System Administrator access is required.");
+      if (body.event !== "request-submitted" && body.event !== "user-invitation" && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
+      if (!options.configuration || !options.send || !options.resolveEvent) return mailError(response, 503, "mail_not_configured", "Mail delivery is not configured.");
+      try {
+        const resolved = await options.resolveEvent(body.event, body.entityId, identity);
+        if (!mailbox(resolved.to)) throw new Error("Invalid resolved recipient");
+        const accepted = await options.send({ ...resolved, from: options.configuration.from, disableFileAccess: true, disableUrlAccess: true });
+        if (!accepted) throw new Error("Not accepted");
+        response.locals.mailOutcome = "accepted";
+        response.json({ success: true, status: "accepted", requestId: response.locals.requestId });
+      } catch (error) {
+        if (error instanceof AccessDenied) return mailError(response, 403, "mail_event_not_allowed", "The requested mail event is not allowed.");
+        mailError(response, 502, "mail_delivery_failed", "The mail relay could not accept the message.");
+      }
+    },
+  );
   router.use((_request, response) => mailError(response, 404, "api_route_not_found", "API route not found."));
   const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
     const status = error?.status === 413 ? 413 : error?.status === 415 ? 415 : 400;
@@ -172,6 +202,10 @@ export function createMailRouter(options: MailApiOptions): Router {
   };
   router.use(errorHandler);
   return router;
+}
+
+function hasMailRole(identity: MailIdentity | undefined) {
+  return Boolean(identity && MAIL_ROLES.some(role => role === identity.role));
 }
 
 function mailError(response: Response, status: number, code: string, message: string) {

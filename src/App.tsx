@@ -69,7 +69,7 @@ function AppContent() {
   const routeLocation = useLocation();
   const [isNavigationOpen, setIsNavigationOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const { currentUser, locations, people } = useDirectory();
+  const { currentUser, locations, people, persistenceError, clearPersistenceError } = useDirectory();
   const currentTab = getTabForPath(routeLocation.pathname);
   const isAdminOrSteward =
     currentUser.role === 'System Administrator' ||
@@ -176,6 +176,13 @@ function AppContent() {
         onNavigateBack={() => navigateBack('/')}
         showBackButton={routeLocation.pathname !== '/'}
       />
+
+      {persistenceError && (
+        <div role="alert" className="flex items-center justify-between gap-4 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800 print:hidden">
+          <span>{persistenceError} Reload the page before making another change.</span>
+          <button type="button" onClick={clearPersistenceError} className="font-semibold underline">Dismiss</button>
+        </div>
+      )}
 
       <div className="relative mx-auto flex w-full max-w-[1536px] flex-1 overflow-hidden print:block print:max-w-none print:overflow-visible">
         {isNavigationOpen && (

@@ -19,7 +19,7 @@ export function DirectoryBootstrap({ children }: { children: React.ReactNode }) 
         const response = await fetch('/api/auth/bootstrap', { headers: { Authorization: `Bearer ${await user.getIdToken()}` }, cache: 'no-store', redirect: 'error', signal: controller.signal });
         if (!response.ok) throw new Error();
         const data = await response.json();
-        for (const field of ['locations', 'people', 'hoursTemplates', 'corporateHolidays', 'emailTemplates', 'notificationRules', 'outboxLogs', 'sopRunbooks']) if (!Array.isArray(data[field])) throw new Error();
+        for (const field of ['locations', 'people', 'users', 'requests', 'auditLogs', 'hoursTemplates', 'corporateHolidays', 'emailTemplates', 'notificationRules', 'outboxLogs', 'sopRunbooks']) if (!Array.isArray(data[field])) throw new Error();
         if (active) setSeed(data);
       } catch { if (active) setError(true); }
     })();

@@ -35,9 +35,10 @@ test("expired, revoked and forged tokens are rejected; credential outages are un
 test("email fallback requires verified exact unique email and no conflicting UID", async () => {
   for (const verified of [false, true]) for (const records of [[], [{ ...mapping, firebaseUid: undefined }], [mapping, mapping], [{ ...mapping, firebaseUid: "other" }]]) {
     const queries: unknown[] = [];
-    const authenticate = firebaseAuthenticator({ async verifyIdToken() { return decoded; }, async getUser() { return { ...identity, emailVerified: verified, toJSON: () => ({}) }; } }, { async find(field, value) { queries.push([field, value]); return field === "firebaseUid" ? [] : records; } });
+    const bindings: unknown[] = [];
+    const authenticate = firebaseAuthenticator({ async verifyIdToken() { return decoded; }, async getUser() { return { ...identity, emailVerified: verified, toJSON: () => ({}) }; } }, { async find(field, value) { queries.push([field, value]); return field === "firebaseUid" ? [] : records; }, async bindUid(record, uid) { bindings.push([record, uid]); } });
     if (verified && records.length === 1 && !records[0].firebaseUid) {
-      assert.equal((await authenticate("test")).role, "Viewer"); assert.deepEqual(queries[1], ["email", "user@example.test"]);
+      assert.equal((await authenticate("test")).role, "Viewer"); assert.deepEqual(queries[1], ["email", "user@example.test"]); assert.deepEqual(bindings, [[records[0], decoded.uid]]);
     } else await assert.rejects(authenticate("test"), AccessDenied);
   }
 });

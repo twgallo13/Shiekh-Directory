@@ -30,7 +30,7 @@ async function prepare(page: Page, role = "Viewer") {
     await route.fulfill({ json: { uid: "synthetic-uid", email: "user@example.test", emailVerified: true, name: "Synthetic User", role, status: "Active", accessScope: "Company-wide", personId: null, authenticationMethod: "password" } });
   });
   await page.route("**/api/mail/**", route => route.fulfill({ status: 403, json: { error: { message: "No delivery in browser tests" } } }));
-  await page.route("**/api/auth/bootstrap", route => route.fulfill({ json: { locations: [], people: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [] } }));
+  await page.route("**/api/auth/bootstrap", route => route.fulfill({ json: { locations: [], people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [] } }));
 }
 async function restore(page: Page, signedIn: boolean) {
   await page.waitForFunction(() => typeof (window as any).__restore === "function" && (window as any).__persistence);

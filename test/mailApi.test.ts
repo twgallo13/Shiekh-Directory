@@ -193,3 +193,28 @@ test("SMTP sender uses server transport and reports only acceptance for the requ
     assert.deepEqual(messages, [message, message]);
   } finally { replacement.mock.restore(); }
 });
+
+test("operational events resolve recipients and content on the server after role checks", async () => {
+  const resolved: unknown[] = [];
+  const app = await harness({
+    authenticate: async () => ({ uid: "test-admin", role: "System Administrator" }),
+    resolveEvent: async (event, entityId, identity) => {
+      resolved.push([event, entityId, identity.uid]);
+      return { to: "requester@example.test", subject: "Server subject", text: "Server body" };
+    },
+  });
+  try {
+    const response = await app.request("event", { event: "request-approved", entityId: "req-1" });
+    assert.equal(response.status, 200);
+    assert.deepEqual(resolved, [["request-approved", "req-1", "test-admin"]]);
+    assert.equal(app.sent[0].to, "requester@example.test");
+    assert.equal(app.sent[0].from, configuration.from);
+  } finally { await app.close(); }
+
+  const viewer = await harness({ authenticate: async () => ({ uid: "viewer", role: "Viewer" }), resolveEvent: async () => ({ to: "requester@example.test", subject: "Server", text: "Server" }) });
+  try {
+    assert.equal((await viewer.request("event", { event: "user-invitation", entityId: "usr-1" })).status, 403);
+    assert.equal((await viewer.request("event", { event: "request-approved", entityId: "req-1" })).status, 403);
+    assert.equal((await viewer.request("event", { event: "request-submitted", entityId: "req-1" })).status, 200);
+  } finally { await viewer.close(); }
+});

@@ -202,7 +202,7 @@ export const AdminIntegrationsView: React.FC = () => {
   const [userForm, setUserForm] = useState<Omit<UserProfile, 'id'>>({
     name: '',
     email: '',
-    role: 'Store Manager',
+    role: 'Viewer',
     storeNumber: '01',
     status: 'Active'
   });
@@ -406,7 +406,7 @@ export const AdminIntegrationsView: React.FC = () => {
     setUserForm({
       name: '',
       email: '',
-      role: 'Store Manager',
+      role: 'Viewer',
       storeNumber: '01',
       status: 'Active'
     });
@@ -436,11 +436,9 @@ export const AdminIntegrationsView: React.FC = () => {
       status: userForm.status || 'Active'
     };
 
-    if (userForm.role === 'Store Manager') {
-      payload.storeNumber = userForm.storeNumber || '01';
-    } else {
-      payload.storeNumber = undefined;
-    }
+    payload.accessScope = userForm.role === 'Viewer' && userForm.storeNumber
+      ? `Store ${userForm.storeNumber}`
+      : 'Company-wide';
 
     if (editingUser) {
       updateUserAccount(editingUser.id, payload);
@@ -1649,15 +1647,14 @@ export const AdminIntegrationsView: React.FC = () => {
                   onChange={(e) => setUserForm({ ...userForm, role: e.target.value as UserRole })}
                   className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
                 >
-                  <option value="Directory Data Steward">Directory Data Steward (Full Access)</option>
-                  <option value="Store Operations Leadership">Store Operations Leadership (Review / Approve)</option>
-                  <option value="Store Manager">Store Manager (Store Scope)</option>
-                  <option value="Customer Support Lead">Customer Support Lead (Read Only)</option>
-                  <option value="System Administrator">System Administrator (Super User)</option>
+                  <option value="Viewer">Viewer (Read / Submit Requests)</option>
+                  <option value="Editor">Editor (Directory Updates)</option>
+                  <option value="Directory Data Steward">Directory Data Steward (Full Directory Access)</option>
+                  <option value="System Administrator">System Administrator (Access Administration)</option>
                 </select>
               </div>
 
-              {userForm.role === 'Store Manager' && (
+              {userForm.role === 'Viewer' && (
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Assigned Store #</label>
                   <input

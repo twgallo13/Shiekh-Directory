@@ -48,3 +48,24 @@ test("missing authority fails closed", async () => {
   const app = await harness(null);
   try { assert.equal((await app.request("/api/auth/me")).status, 503); } finally { await app.close(); }
 });
+
+test("bootstrap resolves fresh directory data and fails closed when Firestore is unavailable", async () => {
+  const live = express();
+  let reads = 0;
+  live.use("/api/auth", createAuthRouter(async () => account, async () => ({ locations: [{ id: `read-${++reads}` }] })));
+  const liveServer = live.listen(0, "127.0.0.1"); await once(liveServer, "listening");
+  try {
+    const base = `http://127.0.0.1:${(liveServer.address() as { port: number }).port}`;
+    assert.deepEqual(await (await fetch(`${base}/api/auth/bootstrap`, { headers: { Authorization: "Bearer token" } })).json(), { locations: [{ id: "read-1" }] });
+    assert.deepEqual(await (await fetch(`${base}/api/auth/bootstrap`, { headers: { Authorization: "Bearer token" } })).json(), { locations: [{ id: "read-2" }] });
+  } finally { liveServer.closeAllConnections(); await new Promise<void>(resolve => liveServer.close(() => resolve())); }
+
+  const failed = express();
+  failed.use("/api/auth", createAuthRouter(async () => account, async () => { throw new Error("private database failure"); }));
+  const failedServer = failed.listen(0, "127.0.0.1"); await once(failedServer, "listening");
+  try {
+    const response = await fetch(`http://127.0.0.1:${(failedServer.address() as { port: number }).port}/api/auth/bootstrap`, { headers: { Authorization: "Bearer token" } });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: { code: "directory_unavailable" } });
+  } finally { failedServer.closeAllConnections(); await new Promise<void>(resolve => failedServer.close(() => resolve())); }
+});

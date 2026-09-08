@@ -19,9 +19,10 @@ export interface Account {
 }
 export class AuthenticationUnavailable extends Error {}
 export class AccessDenied extends Error {}
-export interface UserMapping { firebaseUid?: unknown; email?: unknown; role?: unknown; status?: unknown; accessScope?: unknown; personId?: unknown }
-export interface UserAuthority { find(field: "firebaseUid" | "email", value: string): Promise<UserMapping[]> }
+export interface UserMapping { documentId?: string; firebaseUid?: unknown; email?: unknown; role?: unknown; status?: unknown; accessScope?: unknown; personId?: unknown }
+export interface UserAuthority { find(field: "firebaseUid" | "email", value: string): Promise<UserMapping[]>; bindUid?(record: UserMapping, uid: string): Promise<void> }
 export type Authenticate = (token: string) => Promise<Account>;
+export type BootstrapLoader = (account: Account) => Promise<unknown>;
 
 export function firebaseAuthenticator(auth: Pick<Auth, "verifyIdToken" | "getUser">, users: UserAuthority): Authenticate {
   return async (token) => {
@@ -54,6 +55,10 @@ export function firebaseAuthenticator(auth: Pick<Auth, "verifyIdToken" | "getUse
     if (record.status !== "Active" || !APPLICATION_ROLES.some(role => role === record.role)
       || typeof record.accessScope !== "string" || !record.accessScope.trim()
       || (record.personId != null && typeof record.personId !== "string")) throw new AccessDenied();
+    if (!record.firebaseUid && users.bindUid) {
+      try { await users.bindUid(record, identity.uid); }
+      catch { throw new AccessDenied(); }
+    }
     return {
       uid: identity.uid, email: identity.email ?? null, emailVerified: identity.emailVerified,
       name: identity.displayName || identity.email || "Directory account",
@@ -76,13 +81,27 @@ export function createFirebaseAuthenticator(): Authenticate | null {
       async find(field, value) {
         const snapshot = await firestore.collection("users").where(field, "==", value)
           .select("firebaseUid", "email", "role", "status", "accessScope", "personId").limit(2).get();
-        return snapshot.docs.map(document => document.data());
+        return snapshot.docs.map(document => ({ ...document.data(), documentId: document.id }));
+      },
+      async bindUid(record, uid) {
+        if (!record.documentId) throw new Error("Missing access record identity.");
+        await firestore.runTransaction(async transaction => {
+          const reference = firestore.collection("users").doc(record.documentId!);
+          const [current, conflicts] = await Promise.all([
+            transaction.get(reference),
+            transaction.get(firestore.collection("users").where("firebaseUid", "==", uid).limit(1)),
+          ]);
+          if (!current.exists || !conflicts.empty) throw new Error("Access record changed.");
+          const currentUid = current.data()?.firebaseUid;
+          if (currentUid && currentUid !== uid) throw new Error("Access record already bound.");
+          transaction.set(reference, { firebaseUid: uid, lastLogin: new Date().toISOString() }, { merge: true });
+        });
       },
     });
   } catch { return null; }
 }
 
-export function createAuthRouter(authenticate: Authenticate | null, bootstrap?: unknown) {
+export function createAuthRouter(authenticate: Authenticate | null, bootstrap?: unknown | BootstrapLoader) {
   const router = Router();
   router.use((_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
   router.use(rateLimit({ limit: 120, windowMs: 60_000, standardHeaders: "draft-8", legacyHeaders: false }));
@@ -93,7 +112,12 @@ export function createAuthRouter(authenticate: Authenticate | null, bootstrap?: 
     try {
       const account = await authenticate(token);
       if (request.path === "/bootstrap" && !bootstrap) return response.status(503).json({ error: { code: "directory_unavailable" } });
-      response.json(request.path === "/bootstrap" ? bootstrap : account);
+      if (request.path !== "/bootstrap") return response.json(account);
+      try {
+        response.json(typeof bootstrap === "function" ? await bootstrap(account) : bootstrap);
+      } catch {
+        response.status(503).json({ error: { code: "directory_unavailable" } });
+      }
     }
     catch (error) {
       const status = error instanceof AuthenticationUnavailable ? 503 : error instanceof AccessDenied ? 403 : 401;

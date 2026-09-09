@@ -49,6 +49,8 @@ import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
 import { CustomFieldsPanel } from './CustomFieldsPanel';
+import { useAuth } from '../../context/AuthContext';
+import { downloadPreparedLocationExport, prepareLocationExport, type LocationExportMetadata } from '../../lib/locationExportClient';
 
 type AdminTab = 
   | 'custom-fields'
@@ -74,6 +76,7 @@ type PendingAdminAction = {
 };
 
 export const AdminIntegrationsView: React.FC = () => {
+  const { user } = useAuth();
   const { 
     locations, 
     people, 
@@ -141,7 +144,9 @@ export const AdminIntegrationsView: React.FC = () => {
 
   // CSV Tab State
   const [csvStatus, setCsvStatus] = useState<string | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [pendingExport, setPendingExport] = useState<(LocationExportMetadata & { token: string }) | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isAddStoreOpen, setIsAddStoreOpen] = useState(false);
   const [newStoreForm, setNewStoreForm] = useState({
@@ -217,56 +222,36 @@ export const AdminIntegrationsView: React.FC = () => {
   });
   const [auditFilter, setAuditFilter] = useState('All');
 
-  // CSV Export Handler
-  const handleExportCSV = () => {
+  const handlePrepareExportAllStores = async () => {
+    if (!user || isExporting) return;
     setIsExporting(true);
-    setTimeout(() => {
-      const headers = [
-        'StoreNumber',
-        'StoreName',
-        'Type',
-        'Address',
-        'City',
-        'State',
-        'ZipCode',
-        'Phone',
-        'District',
-        'StoreManager',
-        'DistrictManager',
-        'OperationalStatus',
-        'RecordStatus',
-        'GoogleReviewUrl',
-        'StorePageUrl'
-      ];
-      const rows = locations.map(l => [
-        `"${l.storeNumber}"`,
-        `"${l.name.replace(/"/g, '""')}"`,
-        `"${l.type || ''}"`,
-        `"${l.address.replace(/"/g, '""')}"`,
-        `"${l.city}"`,
-        `"${l.state}"`,
-        `"${l.zipCode}"`,
-        `"${l.phone}"`,
-        `"${l.district || ''}"`,
-        `"${l.storeManagerName || ''}"`,
-        `"${l.districtManagerName || ''}"`,
-        `"${l.operationalStatus}"`,
-        `"${l.recordStatus}"`,
-        `"${l.googleReviewUrl || ''}"`,
-        `"${l.storePageUrl || ''}"`
-      ]);
-
-      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `shiekh_store_directory_${new Date().toISOString().split('T')[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    setCsvStatus(null);
+    setCsvError(null);
+    setPendingExport(null);
+    try {
+      const prepared = await prepareLocationExport(user);
+      setPendingExport({ ...prepared.metadata, token: prepared.token });
+      setCsvStatus(`Authoritative export prepared: ${prepared.metadata.recordCount} active store${prepared.metadata.recordCount === 1 ? '' : 's'} for ${prepared.metadata.authorizationScope.label}.`);
+    } catch (error) {
+      setCsvError(error instanceof Error ? error.message : 'The server could not prove this export is complete.');
+    } finally {
       setIsExporting(false);
-      setCsvStatus(`Successfully exported ${locations.length} stores.`);
-    }, 600);
+    }
+  };
+
+  const handleDownloadPreparedExport = async () => {
+    if (!user || !pendingExport || isExporting) return;
+    setIsExporting(true);
+    setCsvError(null);
+    try {
+      await downloadPreparedLocationExport(user, pendingExport.token, pendingExport.filename);
+      setCsvStatus(`Export complete: downloaded ${pendingExport.recordCount} active store${pendingExport.recordCount === 1 ? '' : 's'} for ${pendingExport.authorizationScope.label}.`);
+      setPendingExport(null);
+    } catch (error) {
+      setCsvError(error instanceof Error ? error.message : 'The prepared export could not be downloaded.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleSimulateImport = () => {
@@ -1231,30 +1216,43 @@ export const AdminIntegrationsView: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-neutral-900">Export Directory to CSV</h3>
-                    <p className="text-xs text-neutral-500">Download canonical store roster with full phone & manager mapping</p>
+                    <p className="text-xs text-neutral-500">Download canonical active stores with server-confirmed scope</p>
                   </div>
                 </div>
 
                 <p className="text-xs text-neutral-600 leading-relaxed">
-                  Generates a clean CSV containing all {locations.length} retail store records, address coordinates, contact info, operational statuses, review URLs, and assigned leadership personnel.
+                  Export All Stores reads the authoritative directory on the server and prepares a CSV only after validating active store identity, authorization scope, and canonical leadership relationships.
                 </p>
+                {pendingExport && (
+                  <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
+                    <div className="font-semibold text-neutral-900">Ready to download</div>
+                    <div>{pendingExport.recordCount} active store{pendingExport.recordCount === 1 ? '' : 's'} for {pendingExport.authorizationScope.label}</div>
+                    <div className="mt-1 font-mono text-[11px] text-neutral-500">Set digest {pendingExport.storeNumberSetDigest.slice(0, 12)}</div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
                 <button
                   type="button"
-                  disabled={isExporting}
-                  onClick={handleExportCSV}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
+                  disabled={isExporting || Boolean(pendingExport)}
+                  onClick={handlePrepareExportAllStores}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Download className="w-4 h-4" />
-                  <span>{isExporting ? 'Generating CSV...' : `Export ${locations.length} Locations CSV`}</span>
+                  <span>{isExporting ? 'Preparing export...' : 'Export All Stores'}</span>
                 </button>
 
                 {csvStatus && (
-                  <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs flex items-center gap-2">
+                  <div role="status" className="p-2.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span>{csvStatus}</span>
+                  </div>
+                )}
+                {csvError && (
+                  <div role="alert" className="p-2.5 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{csvError}</span>
                   </div>
                 )}
               </div>
@@ -1304,6 +1302,17 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
             </div>
           </div>
+          <ConfirmDialog
+            isOpen={Boolean(pendingExport)}
+            title="Download Export All Stores?"
+            description={pendingExport ? `The server prepared ${pendingExport.recordCount} active store${pendingExport.recordCount === 1 ? '' : 's'} for ${pendingExport.authorizationScope.label}. Download ${pendingExport.filename}?` : ''}
+            confirmLabel={isExporting ? 'Downloading...' : 'Download CSV'}
+            cancelLabel="Cancel"
+            tone="primary"
+            confirmDisabled={isExporting}
+            onConfirm={() => void handleDownloadPreparedExport()}
+            onCancel={() => { if (!isExporting) setPendingExport(null); }}
+          />
         </div>
       )}
 

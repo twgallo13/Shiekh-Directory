@@ -13,6 +13,7 @@ import { createFirestoreDiagnosticResolver, createFirestoreInvitationEmailResolv
 import { createAuthRouter, createFirebaseAuthenticator } from "./server/authAuthority";
 import { createFirestoreDirectoryStore } from "./server/firestoreDirectory";
 import { createDirectoryDataRouter } from "./server/directoryDataApi";
+import { createFirestoreLocationExportStore, createLocationExportRouter } from "./server/locationExport";
 
 // Attempt to load .env file if present in Node 20.6+
 try {
@@ -31,7 +32,9 @@ async function startServer() {
   const mailSettings = createFirestoreMailSettingsStore();
   const authenticate = createFirebaseAuthenticator();
   const directory = createFirestoreDirectoryStore();
+  const locationExports = createFirestoreLocationExportStore();
   app.use("/api/auth", createAuthRouter(authenticate, () => directory.read()));
+  app.use("/api/exports", createLocationExportRouter(authenticate, locationExports));
   app.use("/api/mail", createMailRouter({
     authenticate,
     configuration: mailConfiguration,

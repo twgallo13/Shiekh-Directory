@@ -9,6 +9,7 @@ interface ConfirmDialogProps {
   confirmLabel: string;
   cancelLabel?: string;
   tone?: 'danger' | 'primary';
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,6 +21,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   confirmLabel,
   cancelLabel = 'Cancel',
   tone = 'danger',
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }) => {
@@ -86,8 +88,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           </button>
           <button
             type="button"
+            disabled={confirmDisabled}
             onClick={onConfirm}
-            className={`rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${confirmClassName}`}
+            className={`rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${confirmClassName}`}
           >
             {confirmLabel}
           </button>

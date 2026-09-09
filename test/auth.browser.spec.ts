@@ -37,6 +37,51 @@ async function prepare(page: Page, role = "Viewer") {
   });
   await page.route("**/api/auth/bootstrap", route => route.fulfill({ json: { locations: [], people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [] } }));
 }
+
+function seedDirectory(locationCount: number) {
+  const standardHours = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, { open: '10:00', close: '20:00', isClosed: false }]));
+  return {
+    locations: Array.from({ length: locationCount }, (_value, index) => ({
+      id: `loc-${index + 1}`,
+      storeNumber: String(index + 1).padStart(3, '0'),
+      name: `Bootstrap Store ${index + 1}`,
+      type: 'Strip Center / Shopping Center',
+      address: `${index + 1} Local State Street`,
+      city: 'Los Angeles',
+      state: 'CA',
+      zipCode: '90001',
+      phone: '555-0100',
+      timeZone: 'America/Los_Angeles',
+      operationalStatus: 'Open — Normal Operations',
+      recordStatus: 'Active',
+      standardHours,
+    })),
+    people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [], customFieldDefinitions: [],
+  };
+}
+
+async function prepareExportBrowser(page: Page, options: { bootstrapCount?: number; exportCount?: number; failPrepare?: boolean } = {}) {
+  await prepare(page, 'System Administrator');
+  const bootstrapSeed = seedDirectory(options.bootstrapCount ?? 3);
+  let prepareCalls = 0;
+  let downloadCalls = 0;
+  await page.route("**/api/auth/bootstrap", route => route.fulfill({ json: bootstrapSeed }));
+  await page.route("**/api/exports/locations/prepare", async route => {
+    prepareCalls++;
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().headers().authorization).toBe('Bearer synthetic-token');
+    expect(route.request().postData()).toBeNull();
+    if (options.failPrepare) return route.fulfill({ status: 409, json: { error: { message: 'Duplicate store numbers prevent a complete export.' } } });
+    const exportCount = options.exportCount ?? 120;
+    return route.fulfill({ json: { token: 'export-token', metadata: { exportMode: 'all-stores', recordCount: exportCount, storeNumberSetDigest: 'abcdef1234567890', generatedAt: '2026-09-09T12:00:00.000Z', appliedLifecycle: 'Active', authorizationScope: { type: 'company-wide', label: 'Company-wide' }, missingCanonicalPersonReferences: 0, filename: 'shiekh_active_store_directory_2026-09-09.csv', expiresAt: '2026-09-09T12:02:00.000Z' } } });
+  });
+  await page.route("**/api/exports/locations/export-token", async route => {
+    downloadCalls++;
+    expect(route.request().headers().authorization).toBe('Bearer synthetic-token');
+    return route.fulfill({ status: 200, contentType: 'text/csv; charset=utf-8', headers: { 'Content-Disposition': 'attachment; filename="shiekh_active_store_directory_2026-09-09.csv"', 'X-Location-Export-Count': String(options.exportCount ?? 120), 'X-Location-Export-Digest': 'abcdef1234567890' }, body: 'StoreNumber,StoreName\r\n001,Authoritative Store\r\n' });
+  });
+  return { calls: () => ({ prepareCalls, downloadCalls }) };
+}
 async function restore(page: Page, signedIn: boolean) {
   await page.waitForFunction(() => typeof (window as any).__restore === "function" && (window as any).__persistence);
   await page.evaluate(value => (window as any).__restore(value), signedIn);
@@ -204,6 +249,49 @@ test("server denial on recheck removes the authorized shell", async ({ page }) =
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(page.getByRole("heading", { name: "Directory access unavailable" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "My Profile / Account" })).toHaveCount(0);
+});
+
+test("Export All Stores prepares authoritative metadata, confirms, and downloads after server response", async ({ page }) => {
+  const fixture = await prepareExportBrowser(page, { bootstrapCount: 3, exportCount: 120 });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Fleet CSV' }).click();
+  await page.evaluate(() => localStorage.setItem('shiekh_locations_v3', JSON.stringify([{ storeNumber: '999' }])));
+  await page.getByRole('button', { name: 'Export All Stores' }).click();
+  await expect(page.getByRole('status')).toContainText('120 active stores for Company-wide');
+  await expect(page.getByRole('button', { name: 'Export All Stores' })).toBeDisabled();
+  await expect(page.getByRole('alertdialog')).toContainText('120 active stores for Company-wide');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download CSV' }).click();
+  expect((await download).suggestedFilename()).toBe('shiekh_active_store_directory_2026-09-09.csv');
+  await expect(page.getByRole('status')).toContainText('Export complete: downloaded 120 active stores for Company-wide');
+  expect(fixture.calls()).toEqual({ prepareCalls: 1, downloadCalls: 1 });
+});
+
+test("active location filters, selected rows, returning state, and browser-held locations do not affect Export All", async ({ page }) => {
+  const fixture = await prepareExportBrowser(page, { bootstrapCount: 3, exportCount: 75 });
+  await page.goto(`${origin}/locations`); await restore(page, true);
+  await page.getByPlaceholder('Search store #, name, city, manager, district...').fill('no-visible-store');
+  await expect(page.getByText('No store locations match the active search and filter criteria.').first()).toBeVisible();
+  await page.evaluate(() => {
+    sessionStorage.setItem('shiekh_selected_locations', JSON.stringify(['loc-1']));
+    localStorage.setItem('shiekh_locations_v3', JSON.stringify([{ storeNumber: '001' }]));
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Fleet CSV' }).click();
+  await page.getByRole('button', { name: 'Export All Stores' }).click();
+  await expect(page.getByRole('status')).toContainText('75 active stores for Company-wide');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  expect(fixture.calls()).toEqual({ prepareCalls: 1, downloadCalls: 0 });
+});
+
+test("Export All Stores shows server failures visibly and does not download", async ({ page }) => {
+  const fixture = await prepareExportBrowser(page, { failPrepare: true });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Fleet CSV' }).click();
+  await page.getByRole('button', { name: 'Export All Stores' }).click();
+  await expect(page.getByRole('alert')).toContainText('Duplicate store numbers prevent a complete export.');
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  expect(fixture.calls()).toEqual({ prepareCalls: 1, downloadCalls: 0 });
 });
 
 test("diagnostic mail uses the account session without separate sign-in controls", async ({ page }) => {

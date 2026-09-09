@@ -9,6 +9,7 @@ import { FormLabel } from '../common/FormLabel';
 import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { formatUsPhone, normalizeUsPhone } from '../../lib/contactNormalization';
 
 interface PeopleViewProps {
   onSelectPerson: (person: Person) => void;
@@ -26,6 +27,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newDistrict, setNewDistrict] = useState('');
+    const [phoneError, setPhoneError] = useState('');
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   const canAdd = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
@@ -70,14 +72,20 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
   const handleCreatePerson = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
+    const phone = newPhone ? normalizeUsPhone(newPhone) : null;
+    if (newPhone && !phone) {
+      setPhoneError('Enter a valid US phone number, such as (555) 123-4567.');
+      return;
+    }
 
     addPerson({
       fullName: newName.trim(),
       name: newName.trim(),
       jobTitle: newTitle,
       role: newTitle,
-      phone: newPhone.trim(),
-      workPhone: newPhone.trim(),
+      phone: phone?.e164 || '',
+      workPhone: phone?.e164 || '',
+      ...(phone?.extension ? { phoneExtension: phone.extension, workPhoneExtension: phone.extension } : {}),
       email: newEmail.trim(),
       workEmail: newEmail.trim(),
       district: newDistrict.trim() || undefined,
@@ -153,7 +161,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
             <div className="space-y-1.5 text-xs pt-2 border-t border-neutral-100">
               <div className="flex items-center gap-2 text-neutral-500">
                 <Phone className="w-3.5 h-3.5 text-neutral-400" />
-                <span className="font-mono text-neutral-700">{person.phone || person.workPhone || 'No direct phone'}</span>
+                <span className="font-mono text-neutral-700">{formatUsPhone(person.phone || person.workPhone, person.phone ? person.phoneExtension : person.workPhoneExtension) || 'No direct phone'}</span>
               </div>
               <div className="flex items-center gap-2 text-neutral-500">
                 <Mail className="w-3.5 h-3.5 text-neutral-400" />
@@ -216,10 +224,12 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
                 <input
                   type="text"
                   value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
+                  onChange={(e) => { setNewPhone(e.target.value); setPhoneError(''); }}
+                  onBlur={(event) => { const phone = normalizeUsPhone(event.target.value); if (phone) setNewPhone(phone.display); else if (event.target.value) setPhoneError('Enter a valid US phone number, such as (555) 123-4567.'); }}
                   placeholder="(555) 000-0000"
                   className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 text-xs font-mono focus:outline-none focus:border-red-500 focus:bg-white"
                 />
+                {phoneError && <p className="mt-1 text-xs text-red-600">{phoneError}</p>}
               </div>
 
               <div>

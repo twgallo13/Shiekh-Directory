@@ -6,6 +6,7 @@ import { OperationalStatusBadge } from '../common/StatusBadge';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { validateCustomMetadata } from '../../lib/customFields';
+import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { 
   X, 
   Save, 
@@ -45,6 +46,7 @@ const DAYS: { key: keyof WeeklySchedule; label: string }[] = [
 
 const normalizeLocation = (location: LocationRecord): LocationRecord => ({
   ...location,
+  phone: formatUsPhone(location.phone, location.phoneExtension),
   assistantStoreManagerIds: location.assistantStoreManagerIds || [],
   assistantStoreManagerNames: location.assistantStoreManagerNames || [],
   keyHolderIds: location.keyHolderIds || [],
@@ -71,6 +73,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const [confirmation, setConfirmation] = useState<'discard' | 'retire' | 'reactivate' | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [contactErrors, setContactErrors] = useState<Record<string, string>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
   const isCreating = mode === 'create';
 
@@ -80,6 +83,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       setActiveTab('details');
       setConfirmation(null);
       setSaveError('');
+      setContactErrors({});
     }
   }, [location]);
 
@@ -134,12 +138,27 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
+    const normalizedPhone = normalizeUsPhone(formData.phone);
+    const legacyPhoneUnchanged = !normalizedPhone && formData.phone === formatUsPhone(location.phone, location.phoneExtension);
+    if (!normalizedPhone && !legacyPhoneUnchanged) {
+      setContactErrors({ phone: 'Enter a valid US phone number, such as (555) 123-4567.' });
+      return;
+    }
+    const normalizedStorePageUrl = formData.storePageUrl && formData.storePageUrl !== location.storePageUrl ? normalizeWebUrl(formData.storePageUrl) : formData.storePageUrl;
+    const normalizedGoogleReviewUrl = formData.googleReviewUrl && formData.googleReviewUrl !== location.googleReviewUrl ? normalizeWebUrl(formData.googleReviewUrl) : formData.googleReviewUrl;
+    if ((formData.storePageUrl && !normalizedStorePageUrl) || (formData.googleReviewUrl && !normalizedGoogleReviewUrl)) {
+      setContactErrors(errors => ({ ...errors, ...(formData.storePageUrl && !normalizedStorePageUrl ? { storePageUrl: 'Enter a valid HTTP or HTTPS URL.' } : {}), ...(formData.googleReviewUrl && !normalizedGoogleReviewUrl ? { googleReviewUrl: 'Enter a valid HTTP or HTTPS URL.' } : {}) }));
+      return;
+    }
     const districtManager = people.find(person => person.id === formData.districtManagerId);
     const storeManager = people.find(person => person.id === formData.storeManagerId);
     const assistantStoreManagerIds = (formData.assistantStoreManagerIds || []).filter(Boolean);
     const keyHolderIds = (formData.keyHolderIds || []).filter(Boolean);
     const sanitizedData: LocationRecord = {
       ...formData,
+      ...(normalizedPhone ? { phone: normalizedPhone.e164, ...(normalizedPhone.extension ? { phoneExtension: normalizedPhone.extension } : {}) } : {}),
+      ...(normalizedStorePageUrl ? { storePageUrl: normalizedStorePageUrl } : {}),
+      ...(normalizedGoogleReviewUrl ? { googleReviewUrl: normalizedGoogleReviewUrl } : {}),
       districtManagerName: districtManager?.fullName || '',
       district: districtManager?.district || formData.district,
       storeManagerName: storeManager?.fullName || '',
@@ -716,9 +735,16 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       required
                       placeholder="(818) 500-0000"
                       value={formData.phone || ''}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setContactErrors(errors => ({ ...errors, phone: '' })); }}
+                      onBlur={(event) => {
+                        const normalized = normalizeUsPhone(event.target.value);
+                        if (normalized) setFormData({ ...formData, phone: normalized.display });
+                        else if (event.target.value !== formatUsPhone(location.phone, location.phoneExtension)) setContactErrors(errors => ({ ...errors, phone: 'Enter a valid US phone number, such as (555) 123-4567.' }));
+                      }}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 font-mono text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                     />
+                    {contactErrors.phone && <p className="mt-1 text-xs text-red-600">{contactErrors.phone}</p>}
+                    {!normalizeUsPhone(formData.phone) && formData.phone && <p className="mt-1 text-xs text-amber-700">Legacy phone value needs review.</p>}
                   </div>
 
                   <div>
@@ -728,13 +754,15 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <div className="relative">
                       <Globe className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
-                        type="url"
+                        type="text"
                         placeholder="https://www.shiekh.com/stores/..."
                         value={formData.storePageUrl || ''}
-                        onChange={(e) => setFormData({ ...formData, storePageUrl: e.target.value })}
+                        onChange={(e) => { setFormData({ ...formData, storePageUrl: e.target.value }); setContactErrors(errors => ({ ...errors, storePageUrl: '' })); }}
+                        onBlur={(event) => { const normalized = event.target.value ? normalizeWebUrl(event.target.value) : ''; if (normalized) setFormData({ ...formData, storePageUrl: normalized }); else if (event.target.value && event.target.value !== location.storePageUrl) setContactErrors(errors => ({ ...errors, storePageUrl: 'Enter a valid HTTP or HTTPS URL.' })); }}
                         className="w-full pl-9 pr-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 font-mono text-xs focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                       />
                     </div>
+                    {contactErrors.storePageUrl && <p className="mt-1 text-xs text-red-600">{contactErrors.storePageUrl}</p>}
                   </div>
 
                   <div className="md:col-span-2">
@@ -744,13 +772,15 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <div className="relative">
                       <Star className="w-4 h-4 text-amber-500 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
-                        type="url"
+                        type="text"
                         placeholder="https://g.page/r/.../review"
                         value={formData.googleReviewUrl || ''}
-                        onChange={(e) => setFormData({ ...formData, googleReviewUrl: e.target.value })}
+                        onChange={(e) => { setFormData({ ...formData, googleReviewUrl: e.target.value }); setContactErrors(errors => ({ ...errors, googleReviewUrl: '' })); }}
+                        onBlur={(event) => { const normalized = event.target.value ? normalizeWebUrl(event.target.value) : ''; if (normalized) setFormData({ ...formData, googleReviewUrl: normalized }); else if (event.target.value && event.target.value !== location.googleReviewUrl) setContactErrors(errors => ({ ...errors, googleReviewUrl: 'Enter a valid HTTP or HTTPS URL.' })); }}
                         className="w-full pl-9 pr-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 font-mono text-xs focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                       />
                     </div>
+                    {contactErrors.googleReviewUrl && <p className="mt-1 text-xs text-red-600">{contactErrors.googleReviewUrl}</p>}
                   </div>
                 </div>
               </div>
@@ -887,7 +917,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <div className="flex min-h-10 items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
                       <span className="font-mono text-sm text-neutral-900">
-                        {currentStoreManager?.phone || currentStoreManager?.workPhone || 'No phone on directory record'}
+                        {currentStoreManager ? formatUsPhone(currentStoreManager.phone || currentStoreManager.workPhone, currentStoreManager.phone ? currentStoreManager.phoneExtension : currentStoreManager.workPhoneExtension) || 'No phone on directory record' : 'No phone on directory record'}
                       </span>
                       <span className="text-[10px] font-semibold uppercase text-neutral-400">From People Directory</span>
                     </div>

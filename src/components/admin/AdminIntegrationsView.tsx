@@ -46,6 +46,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PageHeader } from '../common/PageHeader';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
+import { normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
 import { CustomFieldsPanel } from './CustomFieldsPanel';
@@ -266,6 +267,13 @@ export const AdminIntegrationsView: React.FC = () => {
   const handleCreateStoreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStoreForm.storeNumber || !newStoreForm.name) return;
+    const phone = normalizeUsPhone(newStoreForm.phone);
+    const googleReviewUrl = newStoreForm.googleReviewUrl ? normalizeWebUrl(newStoreForm.googleReviewUrl) : '';
+    const storePageUrl = newStoreForm.storePageUrl ? normalizeWebUrl(newStoreForm.storePageUrl) : '';
+    if (!phone || (newStoreForm.googleReviewUrl && !googleReviewUrl) || (newStoreForm.storePageUrl && !storePageUrl)) {
+      setCsvError(!phone ? 'Enter a valid US phone number, such as (555) 123-4567.' : 'Enter a valid HTTP or HTTPS URL.');
+      return;
+    }
     createLocation({
       storeNumber: newStoreForm.storeNumber.padStart(2, '0'),
       name: newStoreForm.name,
@@ -274,15 +282,16 @@ export const AdminIntegrationsView: React.FC = () => {
       city: newStoreForm.city || 'Los Angeles',
       state: newStoreForm.state || 'CA',
       zipCode: newStoreForm.zipCode || '90001',
-      phone: newStoreForm.phone || '(555) 000-0000',
+      phone: phone.e164,
+      ...(phone.extension ? { phoneExtension: phone.extension } : {}),
       phonePrivacy: 'Public',
       timeZone: 'America/Los_Angeles',
       district: newStoreForm.district,
       operationalStatus: 'Open — Normal Operations',
       standardHours: DEFAULT_WEEKLY_HOURS,
       recordStatus: 'Active',
-      googleReviewUrl: newStoreForm.googleReviewUrl,
-      storePageUrl: newStoreForm.storePageUrl
+      googleReviewUrl,
+      storePageUrl
     });
     setIsAddStoreOpen(false);
     setNewStoreForm({
@@ -1861,6 +1870,7 @@ export const AdminIntegrationsView: React.FC = () => {
                     placeholder="(818) 555-0199"
                     value={newStoreForm.phone}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, phone: e.target.value })}
+                    onBlur={(event) => { const phone = normalizeUsPhone(event.target.value); if (phone) setNewStoreForm({ ...newStoreForm, phone: phone.display }); }}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:outline-none focus:border-red-500"
                   />
                 </div>
@@ -1893,20 +1903,22 @@ export const AdminIntegrationsView: React.FC = () => {
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Google Review URL</label>
                   <input
-                    type="url"
+                    type="text"
                     placeholder="https://g.page/r/.../review"
                     value={newStoreForm.googleReviewUrl}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, googleReviewUrl: e.target.value })}
+                    onBlur={(event) => { const url = event.target.value ? normalizeWebUrl(event.target.value) : ''; if (url) setNewStoreForm({ ...newStoreForm, googleReviewUrl: url }); }}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono text-[11px] focus:outline-none focus:border-red-500"
                   />
                 </div>
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Store Webpage URL</label>
                   <input
-                    type="url"
+                    type="text"
                     placeholder="https://www.shiekh.com/stores/..."
                     value={newStoreForm.storePageUrl}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, storePageUrl: e.target.value })}
+                    onBlur={(event) => { const url = event.target.value ? normalizeWebUrl(event.target.value) : ''; if (url) setNewStoreForm({ ...newStoreForm, storePageUrl: url }); }}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono text-[11px] focus:outline-none focus:border-red-500"
                   />
                 </div>

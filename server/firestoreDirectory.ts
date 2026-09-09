@@ -3,7 +3,8 @@ import { Firestore, type QueryDocumentSnapshot } from "@google-cloud/firestore";
 import type { Account } from "./authAuthority";
 import type { DirectorySeed } from "../src/lib/directorySeed";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
-import { isPlainRecord, isWebUrl, parseCustomFieldDefinition, validateCustomMetadata, type CustomFieldDefinition } from "../src/lib/customFields";
+import { isPlainRecord, parseCustomFieldDefinition, validateCustomMetadata, type CustomFieldDefinition } from "../src/lib/customFields";
+import { normalizeUsPhone, normalizeWebUrl } from "../src/lib/contactNormalization";
 import { isDeepStrictEqual } from "node:util";
 
 export const DIRECTORY_COLLECTIONS = {
@@ -124,8 +125,13 @@ export function validateMetadataWrites(writes: DirectoryWrite[], previous: (Reco
       }
       return { ...write, data: { ...definition } };
     }
-    if (write.collection !== 'locations' || write.operation !== 'set') return write;
+    if (write.operation !== 'set' || !['locations', 'people'].includes(write.collection)) return write;
     const data = { ...write.data };
+    normalizePhoneWrite(data, current, 'phone', 'phoneExtension', write.collection === 'locations');
+    if (write.collection === 'people') {
+      normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
+      return { ...write, data };
+    }
     const existing = isPlainRecord(current?.customMetadata) ? current.customMetadata : {};
     const supplied = Object.hasOwn(data, 'customMetadata') ? data.customMetadata : existing;
     const changed = !isDeepStrictEqual(supplied, existing);
@@ -139,15 +145,33 @@ export function validateMetadataWrites(writes: DirectoryWrite[], previous: (Reco
       if (!isDeepStrictEqual(write.expectedCustomMetadata, existing)) throw new DirectoryConflict('Custom metadata changed. Reload the directory before saving.');
     }
     for (const key of ['googleReviewUrl', 'storePageUrl']) {
-      if (data[key] !== undefined && data[key] !== '' && !isWebUrl(data[key]) && data[key] !== current?.[key]) {
-        throw new DirectoryValidationError(`${key} must be an HTTP or HTTPS URL without credentials.`);
+      if (data[key] !== undefined && data[key] !== '' && data[key] !== current?.[key]) {
+        const normalized = normalizeWebUrl(data[key]);
+        if (!normalized) throw new DirectoryValidationError(`${key} must be an HTTP or HTTPS URL without credentials.`);
+        data[key] = normalized;
       }
     }
     try {
-      if (Object.hasOwn(data, 'customMetadata') || Object.keys(existing).length > 0) data.customMetadata = validateCustomMetadata(supplied, definitions, existing);
+      if (changed) data.customMetadata = validateCustomMetadata(supplied, definitions, existing);
+      else if (Object.hasOwn(data, 'customMetadata') || Object.keys(existing).length > 0) data.customMetadata = supplied as Record<string, unknown>;
     } catch (error) { throw new DirectoryValidationError((error as Error).message); }
     return { ...write, data };
   });
+}
+
+function normalizePhoneWrite(data: Record<string, unknown>, current: Record<string, unknown> | undefined, field: string, extensionField: string, required = false) {
+  if (!Object.hasOwn(data, field)) return;
+  const value = data[field];
+  if (value === current?.[field] && data[extensionField] === current?.[extensionField]) return;
+  if (value === '' && !required) {
+    delete data[extensionField];
+    return;
+  }
+  const normalized = normalizeUsPhone(value);
+  if (!normalized) throw new DirectoryValidationError(`${field} must be a valid US phone number.`);
+  data[field] = normalized.e164;
+  if (normalized.extension) data[extensionField] = normalized.extension;
+  else delete data[extensionField];
 }
 
 export function createFirestoreDirectoryStore(): FirestoreDirectoryStore {

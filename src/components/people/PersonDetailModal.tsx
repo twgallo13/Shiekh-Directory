@@ -6,6 +6,7 @@ import { PrivacyBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { EmptyState } from '../common/EmptyState';
 import { Modal } from '../common/Modal';
+import { formatUsPhone } from '../../lib/contactNormalization';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -53,7 +54,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
               <div className="text-neutral-500 text-[10px] font-semibold uppercase flex items-center gap-1">
                 <Phone className="w-3 h-3 text-neutral-400" /> Direct Phone
               </div>
-              <div className="font-mono text-neutral-900 font-medium">{person.phone || person.workPhone || 'N/A'}</div>
+              <div className="font-mono text-neutral-900 font-medium">{formatUsPhone(person.phone || person.workPhone, person.phone ? person.phoneExtension : person.workPhoneExtension) || 'N/A'}</div>
               <div className="pt-1 flex items-center justify-between">
                 <PrivacyBadge level={person.phonePrivacy} />
                 {canEditPrivacy && (

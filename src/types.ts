@@ -96,6 +96,7 @@ export interface LocationRecord {
   state: string;
   zipCode: string;
   phone: string;
+  phoneExtension?: string;
   phonePrivacy?: ContactPrivacyLevel;
   timeZone: 'America/Los_Angeles' | 'America/Chicago' | 'America/New_York' | 'America/Denver' | string;
   district?: string;
@@ -134,6 +135,7 @@ export interface Person {
   lastName?: string;
   fullName: string;
   phone?: string;
+  phoneExtension?: string;
   email?: string;
   role?: string;
   status?: 'Active' | 'Inactive' | string;
@@ -141,6 +143,7 @@ export interface Person {
   jobTitle?: string;
   department?: string;
   workPhone?: string;
+  workPhoneExtension?: string;
   workEmail?: string;
   activeStatus?: boolean;
   assignedLocations?: string[];

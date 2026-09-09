@@ -1,3 +1,5 @@
+import { normalizeWebUrl } from './contactNormalization';
+
 export type CustomFieldType = 'url' | 'text' | 'number' | 'boolean' | 'select';
 export type CustomFieldValue = string | number | boolean;
 
@@ -22,13 +24,7 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
 }
 
 export function isWebUrl(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length > 2048 || value.trim() !== value) return false;
-  try {
-    const url = new URL(value);
-    return ['https:', 'http:'].includes(url.protocol) && Boolean(url.hostname) && !url.username && !url.password;
-  } catch {
-    return false;
-  }
+  return normalizeWebUrl(value) === value;
 }
 
 export function parseCustomFieldDefinition(value: unknown): CustomFieldDefinition {
@@ -68,10 +64,14 @@ export function validateCustomMetadata(value: unknown, definitions: CustomFieldD
     if (!definition || RESERVED_KEYS.has(key)) throw new Error(`Unknown custom field: ${key}.`);
     if (definition.retired) {
       if (fieldValue !== existing[key]) throw new Error(`The ${definition.label} field is retired.`);
-    } else if (!validCustomFieldValue(definition, fieldValue)) {
+    } else if (definition.type === 'url' && !normalizeWebUrl(fieldValue)) {
+      throw new Error(`Invalid value for ${definition.label}.`);
+    } else if (definition.type !== 'url' && !validCustomFieldValue(definition, fieldValue)) {
       throw new Error(`Invalid value for ${definition.label}.`);
     }
-    result[key] = fieldValue as CustomFieldValue;
+    result[key] = definition.type === 'url'
+      ? normalizeWebUrl(fieldValue)!
+      : fieldValue as CustomFieldValue;
   }
   for (const definition of definitions.filter(field => field.retired)) {
     if (Object.hasOwn(existing, definition.id)) result[definition.id] = existing[definition.id] as CustomFieldValue;

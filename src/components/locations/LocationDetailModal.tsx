@@ -6,6 +6,7 @@ import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
 import { AuditLogView } from '../common/AuditLogView';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
+import { formatUsPhone } from '../../lib/contactNormalization';
 import { 
   X, 
   MapPin, 
@@ -96,7 +97,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   const handleCopyStoreInfo = () => {
     const summary = `Shiekh Shoes — Store #${location.storeNumber} (${location.name})
 Address: ${location.address}, ${location.city}, ${location.state} ${location.zipCode}
-Phone: ${location.phone}
+Phone: ${formatUsPhone(location.phone, location.phoneExtension)}
 Hours (Today): ${todayStatus.hoursString}
 Operating Status: ${location.operationalStatus}`;
     navigator.clipboard.writeText(summary);
@@ -305,7 +306,7 @@ Operating Status: ${location.operationalStatus}`;
                           <Phone className="w-3.5 h-3.5" />
                         </div>
                         <span className="text-sm font-mono font-medium text-red-600 group-hover:text-red-700 group-hover:underline">
-                          {location.phone}
+                          {formatUsPhone(location.phone, location.phoneExtension)}
                         </span>
                       </a>
                     </div>
@@ -477,7 +478,7 @@ Operating Status: ${location.operationalStatus}`;
                           href={`tel:${(storeManager.phone || storeManager.workPhone || '').replace(/[^0-9+]/g, '')}`}
                           className="font-mono text-[11px] font-medium text-red-600 hover:underline"
                         >
-                          {storeManager.phone || storeManager.workPhone}
+                          {formatUsPhone(storeManager.phone || storeManager.workPhone, storeManager.phone ? storeManager.phoneExtension : storeManager.workPhoneExtension)}
                         </a>
                       ) : (
                         <span className="font-mono text-[11px] text-neutral-400">No phone on record</span>

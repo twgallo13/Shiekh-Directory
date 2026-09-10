@@ -4,6 +4,7 @@ import { stringify } from "csv-stringify/sync";
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
+import { buildLocationReadProjection, type ReadProjectionPerson } from "../src/lib/readProjectionContract";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 export type LocationExportMode = "all-stores";
@@ -129,13 +130,20 @@ export async function prepareLocationExport(account: Account, store: LocationExp
   const activeLocations = snapshot.locations.filter(location => location.recordStatus === "Active");
   assertUniqueIdentities(activeLocations);
   const peopleById = new Map(snapshot.people.filter(person => typeof person.id === "string" && person.id.trim()).map(person => [person.id, person]));
+  const people: ReadProjectionPerson[] = snapshot.people
+    .filter(person => typeof person.id === 'string' && person.id.trim())
+    .map(person => ({
+      id: String(person.id),
+      fullName: String(person.fullName ?? person.name ?? 'Unknown Person'),
+      status: typeof person.status === 'string' ? person.status : 'Active',
+    }));
   const authorizedLocations = scope.type === "company-wide"
     ? activeLocations
     : activeLocations.filter(location => normalizeStoreNumber(location.storeNumber) === scope.normalizedStoreNumber);
   const sortedLocations = [...authorizedLocations].sort(compareLocations);
   const storeNumbers = sortedLocations.map(location => stringField(location.storeNumber));
   const missingReferences = new Set<string>();
-  const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences));
+  const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences, people));
   const csv = stringify(rows, { header: true, columns: [...LOCATION_EXPORT_COLUMNS], record_delimiter: "\r\n", bom: false });
   const generatedIso = generatedAt.toISOString();
   const expiresAt = new Date(generatedAt.getTime() + EXPORT_TOKEN_TTL_MS).toISOString();
@@ -215,11 +223,56 @@ function normalizeStoreNumber(value: unknown) {
   return value.trim().replace(/^0+(?=\d)/, "");
 }
 
-function toCsvRow(location: LocationExportRecord, peopleById: Map<string, LocationExportRecord>, missingReferences: Set<string>): Record<typeof LOCATION_EXPORT_COLUMNS[number], string> {
-  const storeManager = resolvePersonText(location.storeManagerId, location.storeManagerName, peopleById, missingReferences);
-  const storeManagerPhone = resolvePersonText(location.storeManagerId, location.storeManagerPhone, peopleById, missingReferences, ["phone", "workPhone"]);
-  const districtManager = resolvePersonText(location.districtManagerId, location.districtManagerName, peopleById, missingReferences);
-  const assistantManagers = resolvePeopleList(location.assistantStoreManagerIds, location.assistantStoreManagerNames, peopleById, missingReferences);
+function toCsvRow(
+  location: LocationExportRecord,
+  peopleById: Map<string, LocationExportRecord>,
+  missingReferences: Set<string>,
+  people: ReadProjectionPerson[] = [],
+): Record<typeof LOCATION_EXPORT_COLUMNS[number], string> {
+  const projection = buildLocationReadProjection(
+    {
+      id: String(location.id ?? ''),
+      storeNumber: String(location.storeNumber ?? ''),
+      name: String(location.name ?? ''),
+      type: String(location.type ?? 'Street / Standalone Location'),
+      district: typeof location.district === 'string' ? location.district : undefined,
+      districtManagerId: typeof location.districtManagerId === 'string' ? location.districtManagerId : undefined,
+      districtManagerName: typeof location.districtManagerName === 'string' ? location.districtManagerName : undefined,
+      storeManagerId: typeof location.storeManagerId === 'string' ? location.storeManagerId : undefined,
+      storeManagerName: typeof location.storeManagerName === 'string' ? location.storeManagerName : undefined,
+      assistantStoreManagerIds: Array.isArray(location.assistantStoreManagerIds)
+        ? location.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string')
+        : undefined,
+      assistantStoreManagerNames: Array.isArray(location.assistantStoreManagerNames)
+        ? location.assistantStoreManagerNames.filter((item): item is string => typeof item === 'string')
+        : undefined,
+      keyHolderIds: Array.isArray(location.keyHolderIds)
+        ? location.keyHolderIds.filter((item): item is string => typeof item === 'string')
+        : undefined,
+      keyHolderNames: Array.isArray(location.keyHolderNames)
+        ? location.keyHolderNames.filter((item): item is string => typeof item === 'string')
+        : undefined,
+    },
+    people,
+  );
+
+  const storeManagerPhone = resolvePersonPhoneFromCanonical(
+    typeof location.storeManagerId === 'string' ? location.storeManagerId : undefined,
+    location.storeManagerPhone,
+    peopleById,
+    people,
+  );
+
+  trackMissingCanonicalReferences(
+    typeof location.storeManagerId === 'string' ? location.storeManagerId : undefined,
+    typeof location.districtManagerId === 'string' ? location.districtManagerId : undefined,
+    Array.isArray(location.assistantStoreManagerIds)
+      ? location.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string')
+      : [],
+    people,
+    missingReferences,
+  );
+
   return {
     StoreNumber: stringField(location.storeNumber),
     StoreName: stringField(location.name),
@@ -229,16 +282,60 @@ function toCsvRow(location: LocationExportRecord, peopleById: Map<string, Locati
     State: stringField(location.state),
     ZipCode: stringField(location.zipCode),
     Phone: stringField(location.phone),
-    District: stringField(location.district),
-    StoreManager: storeManager,
+    District: projection.district,
+    StoreManager: projection.storeManager,
     StoreManagerPhone: storeManagerPhone,
-    DistrictManager: districtManager,
-    AssistantStoreManagers: assistantManagers,
+    DistrictManager: projection.districtManager,
+    AssistantStoreManagers: projection.assistantStoreManagers.join('; '),
     OperationalStatus: stringField(location.operationalStatus),
     RecordStatus: stringField(location.recordStatus),
     GoogleReviewUrl: stringField(location.googleReviewUrl),
     StorePageUrl: stringField(location.storePageUrl),
   };
+}
+
+function resolveCanonicalPhone(id: string | undefined, fallback: unknown, people: ReadProjectionPerson[]): string | undefined {
+  if (!id) return undefined;
+  const person = people.find(p => p.id === id);
+  if (person && (!person.status || person.status === 'Active')) {
+    return undefined;
+  }
+  return undefined;
+}
+
+function trackMissingCanonicalReferences(
+  storeManagerId: string | undefined,
+  districtManagerId: string | undefined,
+  assistantIds: string[],
+  people: ReadProjectionPerson[],
+  missingReferences: Set<string>,
+): void {
+  const peopleMap = new Map(people.map(p => [p.id, p]));
+  for (const id of [storeManagerId, districtManagerId, ...assistantIds].filter((id): id is string => Boolean(id))) {
+    const person = peopleMap.get(id);
+    if (!person || (person.status && person.status !== 'Active')) {
+      missingReferences.add(id);
+    }
+  }
+}
+
+function resolvePersonPhoneFromCanonical(
+  id: string | undefined,
+  fallbackPhone: unknown,
+  peopleById: Map<string, LocationExportRecord>,
+  people: ReadProjectionPerson[],
+): string {
+  if (typeof id === 'string' && id.trim()) {
+    const person = people.find(p => p.id === id);
+    if (person && (!person.status || person.status === 'Active')) {
+      const personRecord = peopleById.get(id);
+      if (personRecord) {
+        const phone = personRecord.phone || personRecord.workPhone;
+        if (typeof phone === 'string' && phone.trim()) return phone;
+      }
+    }
+  }
+  return stringField(fallbackPhone);
 }
 
 function resolvePersonText(id: unknown, fallback: unknown, peopleById: Map<string, LocationExportRecord>, missingReferences: Set<string>, fields: string[] = ["fullName", "name"]): string {

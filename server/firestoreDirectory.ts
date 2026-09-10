@@ -5,6 +5,7 @@ import type { DirectorySeed } from "../src/lib/directorySeed";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 import { isPlainRecord, parseCustomFieldDefinition, validateCustomMetadata, type CustomFieldDefinition } from "../src/lib/customFields";
 import { normalizeUsPhone, normalizeWebUrl } from "../src/lib/contactNormalization";
+import { type HierarchyFieldContract, validateLocationHierarchyFields, validateUserPersonLink } from "../src/lib/hierarchyAssignmentContract";
 import { isDeepStrictEqual } from "node:util";
 
 export const DIRECTORY_COLLECTIONS = {
@@ -54,7 +55,11 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const needsDefinitions = writes.some(write => write.collection === 'custom_field_definitions' || (write.collection === 'locations' && write.operation === 'set'));
       const definitionSnapshot = needsDefinitions ? await transaction.get(this.firestore.collection('custom_field_definitions').limit(101)) : null;
       const definitions = definitionSnapshot?.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id })) || [];
-      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor);
+      const peopleSnapshot = writes.some(write => ["locations", "users"].includes(write.collection) && write.operation === "set")
+        ? await transaction.get(this.firestore.collection("people"))
+        : null;
+      const people = peopleSnapshot?.docs.map(document => ({ id: document.id, fullName: String(document.data().fullName || document.data().name || "Unknown Person"), status: document.data().status })) || [];
+      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
       const locationMatches = await Promise.all(locationQueries.map(({ query }) => transaction.get(query)));
@@ -104,7 +109,13 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   }
 }
 
-export function validateMetadataWrites(writes: DirectoryWrite[], previous: (Record<string, unknown> | undefined)[], definitions: CustomFieldDefinition[], actor: Account): DirectoryWrite[] {
+export function validateMetadataWrites(
+  writes: DirectoryWrite[],
+  previous: (Record<string, unknown> | undefined)[],
+  definitions: CustomFieldDefinition[],
+  actor: Account,
+  people: Array<{ id: string; fullName: string; status?: string }> = [],
+): DirectoryWrite[] {
   if (new Set(writes.map(write => `${write.collection}/${write.id}`)).size !== writes.length) throw new DirectoryValidationError('Duplicate writes are not allowed.');
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
   return writes.map((write, index) => {
@@ -125,11 +136,50 @@ export function validateMetadataWrites(writes: DirectoryWrite[], previous: (Reco
       }
       return { ...write, data: { ...definition } };
     }
-    if (write.operation !== 'set' || !['locations', 'people'].includes(write.collection)) return write;
+    if (write.operation !== 'set' || !['locations', 'people', 'users'].includes(write.collection)) return write;
     const data = { ...write.data };
     normalizePhoneWrite(data, current, 'phone', 'phoneExtension', write.collection === 'locations');
+
+    if (write.collection === 'locations') {
+      const hierarchyApplicability = data.hierarchyApplicability ?? current?.hierarchyApplicability;
+      const normalizedApplicability = hierarchyApplicability === 'Applicable' || hierarchyApplicability === 'Not Applicable' || hierarchyApplicability === 'Unknown'
+        ? hierarchyApplicability
+        : undefined;
+      const hierarchyInput: HierarchyFieldContract = {
+        type: String(data.type ?? current?.type ?? 'Street / Standalone Location'),
+        hierarchyApplicability: normalizedApplicability,
+        regionId: typeof data.regionId === 'string' ? data.regionId : typeof current?.regionId === 'string' ? current.regionId : undefined,
+        districtId: typeof data.districtId === 'string' ? data.districtId : typeof current?.districtId === 'string' ? current.districtId : undefined,
+        storeManagerId: typeof data.storeManagerId === 'string' ? data.storeManagerId : typeof current?.storeManagerId === 'string' ? current.storeManagerId : undefined,
+        assistantStoreManagerIds: Array.isArray(data.assistantStoreManagerIds) ? data.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string') : Array.isArray(current?.assistantStoreManagerIds) ? current.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string') : undefined,
+        keyHolderIds: Array.isArray(data.keyHolderIds) ? data.keyHolderIds.filter((item): item is string => typeof item === 'string') : Array.isArray(current?.keyHolderIds) ? current.keyHolderIds.filter((item): item is string => typeof item === 'string') : undefined,
+        districtManagerId: typeof data.districtManagerId === 'string' ? data.districtManagerId : typeof current?.districtManagerId === 'string' ? current.districtManagerId : undefined,
+        regionalManagerId: typeof data.regionalManagerId === 'string' ? data.regionalManagerId : typeof current?.regionalManagerId === 'string' ? current.regionalManagerId : undefined,
+      };
+      const hierarchyIssues = validateLocationHierarchyFields(hierarchyInput);
+      if (hierarchyIssues.length > 0) {
+        throw new DirectoryValidationError(hierarchyIssues.join('; '));
+      }
+    }
+
     if (write.collection === 'people') {
       normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
+      if (Object.hasOwn(data, 'personId')) {
+        try {
+          validateUserPersonLink(typeof data.personId === 'string' ? data.personId : undefined, people);
+        } catch (error) {
+          throw new DirectoryValidationError((error as Error).message);
+        }
+      }
+      return { ...write, data };
+    }
+    if (write.collection === 'users') {
+      const personId = typeof data.personId === 'string' ? data.personId : undefined;
+      try {
+        validateUserPersonLink(personId, people);
+      } catch (error) {
+        throw new DirectoryValidationError((error as Error).message);
+      }
       return { ...write, data };
     }
     const existing = isPlainRecord(current?.customMetadata) ? current.customMetadata : {};

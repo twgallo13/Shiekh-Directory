@@ -2,6 +2,7 @@ export interface ReadProjectionPerson {
   id: string;
   fullName: string;
   status?: string;
+  activeStatus?: boolean;
 }
 
 export interface LocationReadProjectionInput {
@@ -36,24 +37,27 @@ function resolveCanonicalName(
   field: string,
 ): { value: string; warning?: string } {
   if (!id) {
-    return {
-      value: legacyName || "",
-      warning: legacyName ? `${field} is using legacy copied value` : undefined,
-    };
+    if (legacyName && legacyName.trim()) {
+      return {
+        value: "",
+        warning: `${field} has legacy copied name "${legacyName}" without canonical person ID`,
+      };
+    }
+    return { value: "" };
   }
 
   const person = people.find(candidate => candidate.id === id);
   if (!person) {
     return {
-      value: legacyName || "",
-      warning: `${field} references missing person ${id}; using legacy copied value`,
+      value: "",
+      warning: `${field} references missing person ${id}`,
     };
   }
 
-  if (person.status && person.status !== "Active") {
+  if ((person.status && person.status !== "Active") || person.activeStatus === false) {
     return {
-      value: legacyName || "",
-      warning: `${field} references inactive person ${person.fullName}; using legacy copied value`,
+      value: "",
+      warning: `${field} references inactive person ${person.fullName} (${id})`,
     };
   }
 
@@ -71,9 +75,8 @@ function resolveCanonicalList(
 
   const canonicalIds = ids || [];
   const legacyValues = legacyNames || [];
-  const fallback = canonicalIds.length > 0 ? legacyValues : legacyValues;
 
-  for (let index = 0; index < Math.max(canonicalIds.length, legacyValues.length); index += 1) {
+  for (let index = 0; index < canonicalIds.length; index += 1) {
     const id = canonicalIds[index];
     const legacyName = legacyValues[index];
     const resolved = resolveCanonicalName(id, legacyName, people, field);
@@ -85,8 +88,13 @@ function resolveCanonicalList(
     }
   }
 
-  if (values.length === 0 && fallback.length > 0) {
-    values.push(...fallback.filter(Boolean));
+  if (legacyValues.length > canonicalIds.length) {
+    for (let index = canonicalIds.length; index < legacyValues.length; index += 1) {
+      const extraName = legacyValues[index];
+      if (extraName && extraName.trim()) {
+        warnings.push(`${field} has extra legacy copied name "${extraName}" without matching canonical ID`);
+      }
+    }
   }
 
   return { values, warnings };

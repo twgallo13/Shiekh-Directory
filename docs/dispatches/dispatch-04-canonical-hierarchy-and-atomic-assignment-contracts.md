@@ -1,10 +1,12 @@
 # Dispatch 4: Canonical Hierarchy and Atomic Assignment Contracts
 
-**Status:** Approved to proceed after business/data-owner confirmation
-**Depends on:** Dispatch 3 architecture review and approval
-**Implementation mode:** Additive contract and validation work only; no wholesale rewrite of existing records in this dispatch
+**Status:** Approved for Phases A–B Foundation & CSV Export Repair
+**Depends on:** Dispatch 3 architecture review and decision report
+**Implementation mode:** Additive contract, server validation, reconciliation tooling, and CSV export contract repair only; no wholesale rewrite or data migration of existing records in this dispatch
 
-This dispatch defines the first implementation of the canonical hierarchy and assignment model approved in Dispatch 3. It is intentionally bounded: we are not doing a full data migration or rewriting existing Firestore records in this phase.
+This dispatch defines the first implementation of the canonical hierarchy and assignment model approved in Dispatch 3.
+The active implementation scope is explicitly bounded to **Phases A–B** (Contract & Inventory, Additive Model & Server Validation), plus the targeted repair of the existing CSV export regression.
+Phases D–F (Manual Assignment UX Expansion, Governed CSV Import, Approved Cutover/Migration) are deferred to subsequent dispatches.
 
 ## Objective
 

@@ -35,7 +35,7 @@ describe("read projection contract", () => {
     assert.deepEqual(result.warnings, []);
   });
 
-  it("falls back to legacy names with a warning when canonical references are missing or inactive", () => {
+  it("returns blank leadership values with warnings when canonical references are missing or inactive", () => {
     const result = buildLocationReadProjection(
       {
         id: "loc-2",
@@ -59,10 +59,10 @@ describe("read projection contract", () => {
       ],
     );
 
-    assert.equal(result.storeManager, "Legacy Manager");
-    assert.equal(result.districtManager, "Legacy DM");
-    assert.equal(result.assistantStoreManagers.join(", "), "Legacy ASM");
-    assert.equal(result.keyHolders.join(", "), "Legacy Key Holder");
+    assert.equal(result.storeManager, "");
+    assert.equal(result.districtManager, "");
+    assert.equal(result.assistantStoreManagers.length, 0);
+    assert.equal(result.keyHolders.length, 0);
     assert.ok(result.warnings.some(item => item.includes("missing") || item.includes("inactive")));
   });
 

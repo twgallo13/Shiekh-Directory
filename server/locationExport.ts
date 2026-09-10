@@ -264,11 +264,7 @@ function toCsvRow(
   );
 
   trackMissingCanonicalReferences(
-    typeof location.storeManagerId === 'string' ? location.storeManagerId : undefined,
-    typeof location.districtManagerId === 'string' ? location.districtManagerId : undefined,
-    Array.isArray(location.assistantStoreManagerIds)
-      ? location.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string')
-      : [],
+    location,
     people,
     missingReferences,
   );
@@ -294,27 +290,49 @@ function toCsvRow(
   };
 }
 
-function resolveCanonicalPhone(id: string | undefined, fallback: unknown, people: ReadProjectionPerson[]): string | undefined {
-  if (!id) return undefined;
-  const person = people.find(p => p.id === id);
-  if (person && (!person.status || person.status === 'Active')) {
-    return undefined;
-  }
-  return undefined;
-}
-
 function trackMissingCanonicalReferences(
-  storeManagerId: string | undefined,
-  districtManagerId: string | undefined,
-  assistantIds: string[],
+  location: LocationExportRecord,
   people: ReadProjectionPerson[],
   missingReferences: Set<string>,
 ): void {
   const peopleMap = new Map(people.map(p => [p.id, p]));
-  for (const id of [storeManagerId, districtManagerId, ...assistantIds].filter((id): id is string => Boolean(id))) {
-    const person = peopleMap.get(id);
-    if (!person || (person.status && person.status !== 'Active')) {
-      missingReferences.add(id);
+
+  const singleRefs = [
+    ["storeManagerId", location.storeManagerId, location.storeManagerName],
+    ["districtManagerId", location.districtManagerId, location.districtManagerName],
+    ["regionalManagerId", location.regionalManagerId, location.regionalManagerName],
+  ] as const;
+
+  for (const [field, id, legacyName] of singleRefs) {
+    if (typeof id === "string" && id.trim()) {
+      const person = peopleMap.get(id);
+      if (!person || (person.status && person.status !== "Active") || person.activeStatus === false) {
+        missingReferences.add(`${location.id}:${field}:${id}`);
+      }
+    } else if (typeof legacyName === "string" && legacyName.trim()) {
+      missingReferences.add(`${location.id}:${field}:missing-id`);
+    }
+  }
+
+  const listRefs = [
+    ["assistantStoreManagerIds", location.assistantStoreManagerIds, location.assistantStoreManagerNames],
+    ["keyHolderIds", location.keyHolderIds, location.keyHolderNames],
+  ] as const;
+
+  for (const [field, ids, legacyNames] of listRefs) {
+    const idList = Array.isArray(ids) ? ids.filter((i): i is string => typeof i === "string" && Boolean(i.trim())) : [];
+    const nameList = Array.isArray(legacyNames) ? legacyNames.filter((n): n is string => typeof n === "string" && Boolean(n.trim())) : [];
+
+    for (const id of idList) {
+      const person = peopleMap.get(id);
+      if (!person || (person.status && person.status !== "Active") || person.activeStatus === false) {
+        missingReferences.add(`${location.id}:${field}:${id}`);
+      }
+    }
+    if (nameList.length > idList.length) {
+      for (let i = idList.length; i < nameList.length; i += 1) {
+        missingReferences.add(`${location.id}:${field}:extra-name-${i}`);
+      }
     }
   }
 }
@@ -326,8 +344,8 @@ function resolvePersonPhoneFromCanonical(
   people: ReadProjectionPerson[],
 ): string {
   if (typeof id === 'string' && id.trim()) {
-    const person = people.find(p => p.id === id);
-    if (person && (!person.status || person.status === 'Active')) {
+    const person = people.find(p => p.id === id && (!p.status || p.status === 'Active') && p.activeStatus !== false);
+    if (person) {
       const personRecord = peopleById.get(id);
       if (personRecord) {
         const phone = personRecord.phone || personRecord.workPhone;
@@ -335,7 +353,7 @@ function resolvePersonPhoneFromCanonical(
       }
     }
   }
-  return stringField(fallbackPhone);
+  return "";
 }
 
 function resolvePersonText(id: unknown, fallback: unknown, peopleById: Map<string, LocationExportRecord>, missingReferences: Set<string>, fields: string[] = ["fullName", "name"]): string {

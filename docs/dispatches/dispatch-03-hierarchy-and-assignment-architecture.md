@@ -81,6 +81,76 @@ If any item has changed, treat the current implementation as authoritative and d
    - Separate model changes, server validation, UI changes, data quality review, and any eventual migration.
    - No migration or Firestore write is allowed during this architecture dispatch.
 
+7. **Cross-Application Integration and UX Contract**
+   Treat this as a whole-directory architecture review. Do not evaluate hierarchy or assignments in isolation.
+
+   Trace each affected record through:
+
+   `Create or Import → Validate → Save → Assign → Display → Search → Edit → Export/PDF/API`
+
+   The analysis must cover:
+
+   - Retail, corporate, warehouse/distribution-center, and other company locations
+   - Retail, corporate, field-leadership, and distribution-center People records
+   - Store Manager, Assistant Store Manager, Key Holder, District Manager, and Regional Manager assignments
+   - Application-user-to-People linkage through the stable `personId`
+   - Location and Person profile navigation
+   - Universal search and filtering
+   - CSV import, CSV export, printable/PDF directory, and Directory API behavior
+   - Server validation, authorization, audit history, and rollback implications
+
+   Explicitly distinguish between:
+
+   - The existing one-time CSV migration script
+   - The current “Import & Sync CSV” administration surface
+   - A fully operational, governed CSV import workflow
+
+   Do not assume CSV import is production-ready because an interface or migration script exists. Report its verified current status and define how a future import must use the same canonical IDs, relationship validation, duplicate detection, preview, confirmation, audit, and error-handling rules as manual edits.
+
+   **Relationship and identity rules**
+
+   Define:
+
+   - Which relationship fields are authoritative and which are derived
+   - How derived names, phone numbers, districts, and reverse lookups remain synchronized
+   - How stale, missing, inactive, retired, duplicated, or conflicting references are handled
+   - How application users link to People records without combining organizational job titles, operational assignments, and application permissions
+   - What happens when a user’s linked People record is missing, inactive, duplicated, or reassigned
+   - How uniqueness and duplicate detection work for Locations, People, users, and CSV-imported records
+   - How concurrent edits and multi-record assignment changes remain consistent and auditable
+   - Whether assignment updates must be atomic so one side cannot save while the related record remains stale
+
+   Include a relationship matrix covering each supported location type, applicable hierarchy level, permitted leadership assignment types, and expected People-record behavior. Non-retail locations must not inherit retail-only requirements.
+
+   **User-experience contract**
+
+   Define the required user experience before implementation, including:
+
+   - Clear distinction between “works at,” “manages,” “supports,” and “oversees”
+   - Controlled selectors that use existing People and Location records
+   - Eligibility filtering that does not depend on ambiguous free-text job titles
+   - Clickable navigation between related Location, Person, and user profiles
+   - An obvious return path from every detail and edit screen
+   - Clear handling of unassigned, unavailable, inactive, and legacy relationships
+   - Prevention or warning for duplicate and conflicting assignments
+   - Search results that correctly reflect changed names, assignments, regions, districts, departments, and job titles
+   - Plain-language validation, confirmation, and error messages
+   - Loading, empty, error, success, and incomplete-data states
+   - Mobile usability, keyboard navigation, focus behavior, and accessible labels
+   - No regression to established directory navigation, theme behavior, privacy controls, or routine store-lookup workflows
+
+   **Existing-data and rollout protection**
+
+   The decision report must define an additive and reversible transition strategy that:
+
+   - Preserves current valid records and stable IDs
+   - Does not silently delete, merge, rewrite, or reclassify existing records
+   - Identifies legacy or inconsistent relationships through a read-only reconciliation report
+   - Separates automatic safe matches from ambiguous records requiring human review
+   - Defines backup, verification, stop, and rollback requirements before any future migration
+   - Prevents manual edits, CSV imports, exports, and API responses from using conflicting relationship rules
+   - Maintains backward compatibility until all approved consumers have moved to the canonical structure
+
 ## Required Deliverable
 
 Return a decision report containing:
@@ -94,6 +164,14 @@ Return a decision report containing:
 7. Test plan covering API, writes, UI selection, search, exports, audit, and legacy data
 8. Risks, open questions, and decisions that require user/business confirmation
 9. A proposed name and scope for Dispatch 4 implementation
+10. A cross-application traceability matrix showing every affected write path, read path, UI surface, export, PDF, API response, and user-profile dependency
+11. A relationship matrix for all supported location types, People categories, and leadership assignments
+12. The verified status and future contract of CSV import, not only CSV export
+13. A user-account-to-People linkage contract, including missing and inactive record behavior
+14. A complete UX contract covering navigation, selectors, validation, mobile, accessibility, and all major interface states
+15. A read-only data-quality and reconciliation plan covering duplicates, orphaned references, stale copied values, and conflicting assignments
+16. An atomicity, concurrency, audit, recovery, and rollback strategy
+17. A recommendation on whether implementation should be divided into multiple bounded dispatches, with dependencies and approval stop points, rather than forcing the entire structural change into one oversized build dispatch
 
 ## Safety Constraints
 

@@ -1,6 +1,7 @@
 # Dispatch 2: Phone Formatting/Validation and URL Normalization
 
-**Status:** Ready to execute
+**Status:** Implemented and deployed; retained as the implementation record
+**Implementation commit:** `b0e6aab`
 **Depends on:** Dispatch 1 (server-owned CSV export) — already deployed to production, commit `9ce8646`
 **Return dispatch required:** Yes — see "Completion Report" at the end of this file. Reply to the user with a summary plus the phrase "Return dispatch: see `docs/dispatches/dispatch-02-phone-url-normalization.md`" so the location stays traceable across chat sessions.
 
@@ -8,14 +9,40 @@ This addresses Observations #1 and #2 from the original architectural review (ph
 
 Remain in charge of implementation details, but keep this dispatch narrowly scoped to phone and URL field handling. Do not begin hierarchy, role, or assignment work in this dispatch.
 
-## Verified Starting Point
+## Verified Current State
 
-- No phone validation or normalization exists anywhere in the app. `Person.phone`, `Person.workPhone`, `Location.phone`, and the derived `Location.storeManagerPhone` are stored and displayed as free-text exactly as typed. Confirmed: `Location.phone` in [src/components/locations/LocationEditModal.tsx](../../src/components/locations/LocationEditModal.tsx) is a plain text input with no format constraint.
-- URL validation exists but does not normalize. [src/lib/customFields.ts](../../src/lib/customFields.ts) `isWebUrl()` requires an explicit `http:`/`https:` scheme, rejects credentials, and is enforced server-side in [server/firestoreDirectory.ts](../../server/firestoreDirectory.ts) `validateMetadataWrites()` for `googleReviewUrl`, `storePageUrl`, and custom `url`-type fields. A bare entry like `example.com` is currently rejected rather than normalized.
-- The browser's native `type="url"` inputs for `googleReviewUrl`/`storePageUrl` in [src/components/locations/LocationEditModal.tsx](../../src/components/locations/LocationEditModal.tsx) (lines ~731, ~747) also require a scheme before the value even reaches server validation.
-- `Location.storeManagerPhone` is a derived copy from the assigned person's phone, refreshed on person update in [src/context/DirectoryContext.tsx](../../src/context/DirectoryContext.tsx). Normalizing at the person record is sufficient; do not duplicate normalization logic on the derived copy.
-- The read-only public Directory API passes `phone` through unmodified in [server/directoryApi.ts](../../server/directoryApi.ts) (lines 387-391); confirm downstream consumers won't break if the stored format changes.
-- No phone-parsing library is currently a dependency (confirmed via `package.json`).
+- The implementation exists in commit `b0e6aab`; this document is the implementation contract and verification record, not an instruction to recreate the feature.
+- Shared normalization lives in [src/lib/contactNormalization.ts](../../src/lib/contactNormalization.ts) and phone parsing uses `libphonenumber-js/min`.
+- Valid US phone values are stored as E.164, displayed in national US format, and extensions are stored separately in `phoneExtension` and `workPhoneExtension`.
+- Shared URL normalization accepts protocol-less hostnames by adding `https://` and preserves explicit `http://` values.
+- Server-side normalization occurs in [server/firestoreDirectory.ts](../../server/firestoreDirectory.ts). Built-in location URLs and custom `url` fields use the shared URL path.
+- Unchanged legacy phone and URL values are preserved during unrelated saves. No migration or bulk rewrite is part of this work.
+- The public Directory API keeps its existing `phone` field and privacy behavior; it does not expose phone extensions in this dispatch.
+
+Reverify these facts against the current revision before any future maintenance change. If the implementation has changed, follow the current owning path and document the difference.
+
+## Affected Implementation Surfaces
+
+Verify these paths when maintaining this behavior:
+
+- `src/lib/contactNormalization.ts`
+- `src/lib/customFields.ts`
+- `src/types.ts`
+- `server/firestoreDirectory.ts`
+- `server/directoryApi.ts`
+- `src/components/locations/LocationEditModal.tsx`
+- `src/components/locations/CustomMetadataFields.tsx`
+- `src/components/locations/LocationDetailModal.tsx`
+- `src/components/people/PeopleView.tsx`
+- `src/components/people/PersonDetailModal.tsx`
+- `src/components/people/PersonSelector.tsx`
+- `src/components/admin/AdminIntegrationsView.tsx`
+- `src/context/DirectoryContext.tsx`
+- `test/contactNormalizationWrites.test.ts`
+- `test/customFields.test.ts`
+- `test/directoryApi.test.ts`
+- `test/customFieldWrites.test.ts`
+- `test/customFieldApi.test.ts`
 
 Reverify these facts against the current revision before editing. If the implementation has changed, follow the current owning path and document the difference.
 
@@ -38,6 +65,39 @@ Reverify these facts against the current revision before editing. If the impleme
 - Keep the existing rejection of credentials-in-URL and non-http(s) schemes unchanged.
 - Normalize in one shared function used by both the browser form and the server validator in `validateMetadataWrites`, so behavior cannot diverge.
 
+## URL Protocol Decision
+
+- `example.com` becomes `https://example.com`.
+- Explicit `https://` remains `https://`.
+- Explicit `http://` remains `http://`.
+- No automatic HTTPS upgrade is performed.
+- Credentials, non-HTTP(S) schemes, invalid hostnames, whitespace-padded values, and malformed URLs are rejected.
+
+## Phone Extension Contract
+
+- The canonical base phone is stored in E.164 form.
+- A recognized extension is stored separately in `Location.phoneExtension`, `Person.phoneExtension`, or `Person.workPhoneExtension`.
+- Extensions are never appended to the canonical E.164 value.
+- Display formatting may show `ext. 123`, but storage keeps the extension separate.
+- The public Directory API does not expose extensions in this dispatch.
+
+## Directory API Compatibility Decision
+
+The existing public API contract remains unchanged in field names, JSON types, privacy rules, and endpoint behavior.
+
+- Public `location.phone` remains a string field.
+- Newly normalized values are returned as canonical E.164 strings, such as `+12125550100`.
+- Consumers must treat phone values as opaque strings and must not depend on punctuation or national display formatting.
+- `phoneExtension`, `workPhoneExtension`, and personnel phone fields remain internal unless a separately approved API contract adds them.
+- Existing privacy behavior remains unchanged.
+
+## Legacy Invalid URL Behavior
+
+- Existing malformed or legacy URL values are not rewritten automatically.
+- Existing invalid URL values remain visible in edit and read-only views.
+- An unchanged invalid URL does not block an unrelated save.
+- A user editing an invalid URL receives an inline validation error until the value is cleared or replaced with a valid normalized URL.
+
 ## Architecture Requirements
 
 1. Add one shared phone-parsing/formatting module usable from both browser components and server validation (mirroring how `isWebUrl` is shared today).
@@ -45,6 +105,13 @@ Reverify these facts against the current revision before editing. If the impleme
 3. Server-side validation remains authoritative. The browser may pre-format for UX, but the server must independently validate and normalize on write — do not trust browser-normalized values.
 4. Do not change the stored shape of existing custom field definitions or their validation contract beyond the normalization step itself.
 5. Do not perform a bulk rewrite of existing Firestore phone/URL values in this dispatch. Only new saves are normalized going forward.
+
+## Bundle Verification
+
+- Use the lightweight `libphonenumber-js/min` browser import, not the full package entry point.
+- Confirm the production build does not introduce a separate full phone metadata bundle.
+- Record the relevant production bundle output from `npm run build`.
+- An existing large-chunk warning is not a phone-library failure unless the phone library materially increases the affected chunk.
 
 ## User Workflow
 
@@ -64,6 +131,27 @@ Reverify these facts against the current revision before editing. If the impleme
 - Existing stored malformed phone/URL values are not altered by unrelated location/person saves.
 - Server independently rejects a value the browser incorrectly "normalized," proving server-side is authoritative.
 - Custom field of type `url` uses the same normalization path as built-in `googleReviewUrl`/`storePageUrl`.
+
+## Final Acceptance Criteria
+
+The dispatch is complete only when all of the following are true:
+
+- The three common US phone formats normalize to the same E.164 value.
+- Leading `1` and `+1` are accepted.
+- Extensions remain separate and are preserved.
+- Invalid phone values are rejected on changed writes with field-specific errors.
+- Unchanged legacy invalid phone values do not block unrelated saves.
+- `example.com` becomes `https://example.com`.
+- Explicit `http://example.com` remains `http://example.com`.
+- Invalid, credential-bearing, and non-HTTP(S) URLs are rejected.
+- Unchanged legacy invalid URLs do not block unrelated saves.
+- Changed custom URL fields and built-in location URL fields use the same normalization function.
+- The public API keeps its existing field names, privacy behavior, response shape, and endpoint behavior.
+- The public API does not expose phone extensions in this dispatch.
+- Server validation rejects malformed values even if the browser sends an incorrectly formatted value.
+- No migration, bulk rewrite, or unrelated Firestore write occurs.
+- The repository passes lint, tests, build, and diff checks.
+- The completion report records the implementation commit and production deployment state.
 
 ## Safety Constraints
 

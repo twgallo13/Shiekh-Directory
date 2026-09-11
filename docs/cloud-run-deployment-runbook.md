@@ -13,11 +13,11 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 
 ## Current live revision
 
-- `latestReadyRevisionName`: `shiekh-location-company-directory-d5770f9` (deployed from commit `d5770f9405cfec92417946d669b7509000183e6a`, foundation repair branch, manually acceptance-tested 2026-09-11)
+- `latestReadyRevisionName`: `shiekh-location-company-directory-dispatch5-7e0d2bd` (deployed from commit `7e0d2bd2c7b553fde2d8ea4b8d3867d588d9a871`, Dispatch 5 draft branch, ready for owner manual testing 2026-09-11)
 - Traffic: 100%, confirmed via `gcloud run services describe` after promotion
 - Autoscaling: `minScale=0`, `maxScale=20`, `cpu-throttling=true`, `startup-cpu-boost=true`
 
-Previous production revision `shiekh-location-company-directory-phasec9a91bcf` (commit `9a91bcf`) is retained at 0% traffic, tag `phasec`, as the rollback target. Many other older tagged, no-traffic revisions also exist for rollback/reference (`smtp`, `cfg`, `tpl`, `onboarding`, `msg`, `fbmail`, `rev-9ce8646`, `a14`, `a14b`, `smtp2`, `custom-fields`), each reachable at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+Previous production revision `shiekh-location-company-directory-d5770f9` (commit `d5770f9`) is retained at 0% traffic as the rollback target. The earlier `phasec` revision and other tagged, no-traffic revisions remain available for rollback/reference (`smtp`, `cfg`, `tpl`, `onboarding`, `msg`, `fbmail`, `rev-9ce8646`, `a14`, `a14b`, `smtp2`, `custom-fields`), each reachable at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
 
 ## Runtime environment (names only; no secret values other than public Firebase config)
 
@@ -70,6 +70,28 @@ gcloud run services update-traffic shiekh-location-company-directory \
   --project gen-lang-client-0801664258 \
   --region us-west1 \
   --to-revisions=shiekh-location-company-directory-phasec9a91bcf=100
+```
+
+### 2026-09-11 Dispatch 5 deployment log (commit `7e0d2bd`)
+
+1. Deployed with `--revision-suffix=dispatch5-7e0d2bd` from the reviewed Dispatch 5 branch. The new Ready revision was `shiekh-location-company-directory-dispatch5-7e0d2bd`; the service's pinned traffic configuration initially kept 100% on `d5770f9`.
+2. Promoted explicitly:
+   ```bash
+   gcloud run services update-traffic shiekh-location-company-directory \
+     --project gen-lang-client-0801664258 \
+     --region us-west1 \
+     --to-revisions=shiekh-location-company-directory-dispatch5-7e0d2bd=100
+   ```
+3. Confirmed the new revision received 100% traffic. `shiekh-location-company-directory-d5770f9` remains at 0% for rollback.
+4. Confirmed default and branded URLs returned `200`; unauthenticated `/api/auth/me` returned `401`; unknown API route returned `404` JSON. Browser/visual/functional testing remains the owner's responsibility.
+
+**Dispatch 5 rollback command:**
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-d5770f9=100
 ```
 
 ## Adjacent services — do not confuse with production

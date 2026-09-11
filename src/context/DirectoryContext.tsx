@@ -17,7 +17,7 @@ import {
 } from '../types';
 import type { DirectorySeed } from '../lib/directorySeed';
 import { migrateDirectoryRelationships } from '../lib/directoryMigration';
-import { commitDirectory, type DirectoryAudit, type DirectoryWrite } from '../lib/directoryClient';
+import { commitDirectory, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
 import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
@@ -106,16 +106,52 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     for (const key of Object.keys(localStorage)) if (key.startsWith('shiekh_') && key !== 'shiekh_theme_preference') localStorage.removeItem(key);
   }, []);
 
+  const reconcileCommittedRecords = (result: DirectoryCommitResult) => {
+    for (const record of result.records || []) {
+      if (record.collection === 'locations') {
+        setLocations(previous => record.operation === 'delete'
+          ? previous.filter(item => item.id !== record.id)
+          : previous.some(item => item.id === record.id)
+            ? previous.map(item => item.id === record.id ? record.data as unknown as LocationRecord : item)
+            : [...previous, record.data as unknown as LocationRecord]);
+      }
+      if (record.collection === 'people') {
+        setPeople(previous => record.operation === 'delete'
+          ? previous.filter(item => item.id !== record.id)
+          : previous.some(item => item.id === record.id)
+            ? previous.map(item => item.id === record.id ? record.data as unknown as Person : item)
+            : [...previous, record.data as unknown as Person]);
+      }
+      if (record.collection === 'users') {
+        setUsers(previous => record.operation === 'delete'
+          ? previous.filter(item => item.id !== record.id)
+          : previous.some(item => item.id === record.id)
+            ? previous.map(item => item.id === record.id ? record.data as unknown as UserProfile : item)
+            : [...previous, record.data as unknown as UserProfile]);
+      }
+      if (record.collection === 'requests') {
+        setRequests(previous => record.operation === 'delete'
+          ? previous.filter(item => item.id !== record.id)
+          : previous.some(item => item.id === record.id)
+            ? previous.map(item => item.id === record.id ? record.data as unknown as UpdateRequest : item)
+            : [record.data as unknown as UpdateRequest, ...previous]);
+      }
+    }
+  };
+
   const persist = (writes: DirectoryWrite[], audit: DirectoryAudit) => {
     setPersistenceError(null);
-    const operation = commitDirectory(user, writes, audit);
+    const operation = commitDirectory(user, writes, audit).then(result => {
+      reconcileCommittedRecords(result);
+      return result;
+    });
     void operation.catch(error => {
       setPersistenceError(error instanceof Error ? error.message : 'The directory database could not save this change.');
     });
     return operation;
   };
 
-  const notifyAfterSave = (operation: Promise<void>, event: 'request-submitted' | 'request-approved' | 'request-rejected', entityId: string) => {
+  const notifyAfterSave = (operation: Promise<unknown>, event: 'request-submitted' | 'request-approved' | 'request-rejected', entityId: string) => {
     void operation.then(() => sendMailEvent(event, entityId)).catch(error => {
       setPersistenceError(error instanceof Error ? error.message : 'The directory email could not be sent.');
     });
@@ -166,7 +202,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: saved as unknown as Record<string, unknown>, expectedCustomMetadata, ...(!create ? { expectedVersion: expectedVersionOf(previous) } : {}) }], {
       action, entityType: 'Location', entityId: saved.id, entityName: `Store #${saved.storeNumber}`, details: 'Saved location record and custom metadata.',
     });
-    setLocations(records => create ? [...records, saved] : records.map(record => record.id === saved.id ? saved : record));
     addAuditLog(action, 'Location', saved.id, `Store #${saved.storeNumber}`, 'Saved location record and custom metadata.', previous, saved);
   };
 
@@ -342,6 +377,14 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         writes.push({ collection: 'locations', id: location.id, operation: 'set', data: updatedLocation as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(location) });
       }
     }
+    if (req.targetType === 'Person') {
+      const person = people.find(item => item.id === req.targetId);
+      if (person) {
+        const updatedPerson = { ...person, ...req.requestedChanges };
+        setPeople(previous => previous.map(item => item.id === person.id ? updatedPerson : item));
+        writes.push({ collection: 'people', id: person.id, operation: 'set', data: updatedPerson as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(person) });
+      }
+    }
     setRequests(previous => previous.map(item => item.id === requestId ? updatedRequest : item));
 
     addAuditLog('Request Approved', 'Request', req.id, req.changeType, `Approved request by ${currentUser.name}`);
@@ -349,6 +392,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     void operation.catch(() => {
       setRequests(previous => previous.map(item => item.id === requestId ? req : item));
       setLocations(locations);
+      setPeople(people);
     });
     notifyAfterSave(operation, 'request-approved', req.id);
   };

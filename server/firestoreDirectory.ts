@@ -26,6 +26,8 @@ export const DIRECTORY_COLLECTIONS = {
 export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRECTORY_COLLECTIONS];
 export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
+export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
+export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
 export class DirectoryConflict extends Error {}
 export class DirectoryValidationError extends Error {}
 export class DirectoryWriteDenied extends Error {}
@@ -35,7 +37,7 @@ export interface DirectoryReader {
 }
 
 export interface DirectoryWriter {
-  commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<void>;
+  commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult>;
 }
 
 export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter {
@@ -49,17 +51,21 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
     return Object.fromEntries(entries) as unknown as DirectorySeed;
   }
 
-  async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<void> {
-    await this.firestore.runTransaction(async transaction => {
+  async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult> {
+    return this.firestore.runTransaction(async transaction => {
       const snapshots = await Promise.all(writes.map(write => transaction.get(this.firestore.collection(write.collection).doc(write.id))));
       const needsDefinitions = writes.some(write => write.collection === 'custom_field_definitions' || (write.collection === 'locations' && write.operation === 'set'));
       const definitionSnapshot = needsDefinitions ? await transaction.get(this.firestore.collection('custom_field_definitions').limit(101)) : null;
       const definitions = definitionSnapshot?.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id })) || [];
-      const peopleSnapshot = writes.some(write => ["locations", "users", "requests"].includes(write.collection) && write.operation === "set")
+      const needsRelationshipState = writes.some(write => ["locations", "people", "users", "requests"].includes(write.collection));
+      const peopleSnapshot = needsRelationshipState
         ? await transaction.get(this.firestore.collection("people"))
         : null;
-      const locationSnapshot = writes.some(write => ["locations", "people", "requests"].includes(write.collection))
+      const locationSnapshot = needsRelationshipState
         ? await transaction.get(this.firestore.collection("locations"))
+        : null;
+      const userSnapshot = needsRelationshipState
+        ? await transaction.get(this.firestore.collection("users"))
         : null;
 
       const peopleMap = new Map<string, { id: string; fullName: string; status?: string; activeStatus?: boolean }>(
@@ -91,7 +97,8 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
 
       const combinedPeople = Array.from(peopleMap.values());
       const locations = locationSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
-      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, combinedPeople, locations);
+      const users = userSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
+      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, combinedPeople, locations, users);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
       const locationMatches = await Promise.all(locationQueries.map(({ query }) => transaction.get(query)));
@@ -119,6 +126,12 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         if (write.operation === "delete") transaction.delete(reference);
         else transaction.set(reference, { ...write.data, id: write.id }, { merge: write.collection === "users" });
       });
+      const committedRecords: DirectoryCommittedRecord[] = validatedWrites.map(write => ({
+        collection: write.collection,
+        id: write.id,
+        operation: write.operation,
+        data: write.operation === "set" ? { ...write.data, id: write.id } : null,
+      }));
       if (audit) {
         const id = `aud-${Date.now()}-${randomUUID().slice(0, 8)}`;
         const previousState = snapshots.length === 1 && snapshots[0].exists ? snapshots[0].data() : undefined;
@@ -129,12 +142,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           exists: snapshot.exists,
           data: snapshot.exists ? snapshot.data() : null,
         }));
-        const newStates = validatedWrites.map(write => ({
-          collection: write.collection,
-          id: write.id,
-          operation: write.operation,
-          data: write.operation === "set" ? { ...write.data, id: write.id } : null,
-        }));
+        const newStates = committedRecords;
         transaction.set(this.firestore.collection("audit_logs").doc(id), {
           id,
           timestamp: new Date().toISOString(),
@@ -151,6 +159,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           newStates,
         });
       }
+      return { records: committedRecords };
     });
   }
 }
@@ -162,6 +171,7 @@ export function validateMetadataWrites(
   actor: Account,
   people: Array<{ id: string; fullName: string; status?: string; activeStatus?: boolean }> = [],
   locations: Array<Record<string, unknown>> = [],
+  users: Array<Record<string, unknown>> = [],
 ): DirectoryWrite[] {
   if (new Set(writes.map(write => `${write.collection}/${write.id}`)).size !== writes.length) throw new DirectoryValidationError('Duplicate writes are not allowed.');
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
@@ -242,13 +252,19 @@ export function validateMetadataWrites(
         throw new DirectoryConflict('Request has already been approved.');
       }
       if (data.status === 'Approved') {
-        const targetType = String(data.targetType || current?.targetType || '');
-        const targetId = String(data.targetId || current?.targetId || '');
+        if (!current) throw new DirectoryConflict('Request changed concurrently. Reload the directory before saving.');
+        const targetType = String(current.targetType || '');
+        const targetId = String(current.targetId || '');
+        if (String(data.targetType || '') !== targetType || String(data.targetId || '') !== targetId) {
+          throw new DirectoryValidationError('Approved correction requests must use the persisted request target.');
+        }
         const targetCollection = targetType === 'Location' ? 'locations' : targetType === 'Person' ? 'people' : '';
         const targetWrite = writes.find(candidate => candidate.collection === targetCollection && candidate.id === targetId && candidate.operation === 'set');
         if (!targetWrite) {
           throw new DirectoryValidationError('Approved correction requests must save the target record in the same transaction.');
         }
+        const targetPrevious = previous[writes.indexOf(targetWrite)];
+        assertApprovalTargetAppliesPersistedChanges(current, targetWrite, targetPrevious);
       }
       return { ...write, data };
     }
@@ -256,7 +272,7 @@ export function validateMetadataWrites(
     normalizePhoneWrite(data, current, 'phone', 'phoneExtension', write.collection === 'locations');
 
     if (write.collection === 'locations') {
-      const hierarchyTouched = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(field => Object.hasOwn(data, field));
+      const hierarchyTouched = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(field => Object.hasOwn(write.data || {}, field) && !isDeepStrictEqual(write.data?.[field], current?.[field]));
       const preserveField = (field: string) => {
         if (!Object.hasOwn(data, field) && current && Object.hasOwn(current, field)) {
           data[field] = current[field];
@@ -332,7 +348,7 @@ export function validateMetadataWrites(
     }
 
     if (write.collection === 'users') {
-      const personId = typeof data.personId === 'string' ? data.personId : undefined;
+      const personId = Object.hasOwn(data, 'personId') && typeof data.personId === 'string' ? data.personId : undefined;
       try {
         validateUserPersonLink(personId, combinedPeople);
       } catch (error) {
@@ -367,17 +383,39 @@ export function validateMetadataWrites(
     return { ...write, data };
   });
 
-  validateCombinedRelationshipState(validatedWrites, locations, combinedPeople);
+  validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
   return validatedWrites;
+}
+
+function assertApprovalTargetAppliesPersistedChanges(
+  persistedRequest: Record<string, unknown>,
+  targetWrite: DirectoryWrite,
+  targetPrevious: Record<string, unknown> | undefined,
+): void {
+  if (!targetPrevious) throw new DirectoryConflict('Request target changed concurrently. Reload the directory before saving.');
+  const requestedChanges = isPlainRecord(persistedRequest.requestedChanges) ? persistedRequest.requestedChanges : {};
+  const targetData = targetWrite.data || {};
+  const changedEntries = Object.entries(requestedChanges).filter(([key, value]) => !isDeepStrictEqual(targetPrevious[key], value));
+  if (changedEntries.length === 0) {
+    throw new DirectoryValidationError('Approved correction request does not change the target record.');
+  }
+  for (const [key, value] of changedEntries) {
+    if (!Object.hasOwn(targetData, key) || !isDeepStrictEqual(targetData[key], value)) {
+      throw new DirectoryValidationError('Approved correction request target update does not match the persisted requested changes.');
+    }
+  }
 }
 
 function validateCombinedRelationshipState(
   writes: DirectoryWrite[],
   currentLocations: Array<Record<string, unknown>>,
   people: Array<{ id: string; fullName: string; status?: string; activeStatus?: boolean }>,
+  users: Array<Record<string, unknown>>,
 ): void {
   const peopleById = new Map(people.map(person => [person.id, person]));
   const locationsById = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
+  const writtenLocationIds = new Set(writes.filter(write => write.collection === 'locations').map(write => write.id));
+  const changedPersonIds = new Set(writes.filter(write => write.collection === 'people').map(write => write.id));
 
   for (const write of writes) {
     if (write.collection !== 'locations') continue;
@@ -386,6 +424,7 @@ function validateCombinedRelationshipState(
   }
 
   for (const location of locationsById.values()) {
+    const locationId = String(location.id);
     const leadershipRefs = [
       ['storeManagerId', location.storeManagerId],
       ['districtManagerId', location.districtManagerId],
@@ -393,6 +432,8 @@ function validateCombinedRelationshipState(
       ...(Array.isArray(location.assistantStoreManagerIds) ? location.assistantStoreManagerIds.map(id => ['assistantStoreManagerIds', id] as const) : []),
       ...(Array.isArray(location.keyHolderIds) ? location.keyHolderIds.map(id => ['keyHolderIds', id] as const) : []),
     ] as const;
+    const affectedByChangedPerson = leadershipRefs.some(([, id]) => typeof id === 'string' && changedPersonIds.has(id));
+    if (!writtenLocationIds.has(locationId) && !affectedByChangedPerson) continue;
 
     for (const [field, id] of leadershipRefs) {
       if (typeof id !== 'string' || !id.trim()) continue;
@@ -400,6 +441,20 @@ function validateCombinedRelationshipState(
       if (!person) throw new DirectoryValidationError(`${field} references missing person ${id}.`);
       if ((person.status && person.status !== 'Active') || person.activeStatus === false) {
         throw new DirectoryValidationError(`${field} references inactive person ${person.fullName} (${id}).`);
+      }
+    }
+  }
+
+  for (const write of writes) {
+    if (write.collection !== 'people') continue;
+    const nextPerson = peopleById.get(write.id);
+    const deletingOrInactive = !nextPerson || (nextPerson.status && nextPerson.status !== 'Active') || nextPerson.activeStatus === false;
+    if (!deletingOrInactive) continue;
+    const incomingLinks = users.filter(user => user.personId === write.id);
+    if (incomingLinks.length > 0) {
+      const unresolvedLinks = incomingLinks.filter(user => !writes.some(candidate => candidate.collection === 'users' && candidate.id === user.id && candidate.operation === 'set' && candidate.data && Object.hasOwn(candidate.data, 'personId') && !candidate.data.personId));
+      if (unresolvedLinks.length > 0) {
+        throw new DirectoryValidationError(`Person ${write.id} has linked user account records that must be unlinked or reviewed before inactivation/deletion.`);
       }
     }
   }

@@ -239,3 +239,27 @@ test('CASE 2 — approval must validate every persisted requested field against 
   assert.equal(records.get('locations/loc-approve')?.name, 'Original');
   assert.equal(records.get('locations/loc-approve')?.city, 'Approved City');
 });
+
+test('directory commit validates canonical location hierarchy against saved Region and District records', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+
+  await store.commit([
+    { collection: 'regions', id: 'region-west', operation: 'set', data: { name: 'West Region', status: 'Active' } },
+    { collection: 'districts', id: 'district-west-1', operation: 'set', data: { name: 'West District 1', regionId: 'region-west', status: 'Active' } },
+  ], { action: 'Hierarchy Registry Created', entityType: 'Setting', entityId: 'region-west', entityName: 'West Region', details: 'Created Region and District.' }, actor);
+
+  await store.commit([
+    { collection: 'locations', id: 'loc-hierarchy', operation: 'set', data: { storeNumber: '91', name: 'Hierarchy Store', type: 'Street / Standalone Location', hierarchyApplicability: 'Applicable', regionId: 'region-west', districtId: 'district-west-1' } },
+  ], { action: 'Location Created', entityType: 'Location', entityId: 'loc-hierarchy', entityName: 'Hierarchy Store', details: 'Assigned controlled hierarchy.' }, actor);
+  assert.equal(records.get('locations/loc-hierarchy')?.districtId, 'district-west-1');
+
+  await assert.rejects(store.commit([
+    { collection: 'locations', id: 'loc-invalid-hierarchy', operation: 'set', data: { storeNumber: '92', name: 'Invalid Store', type: 'Street / Standalone Location', hierarchyApplicability: 'Applicable', regionId: 'region-west', districtId: 'missing-district' } },
+  ], { action: 'Location Created', entityType: 'Location', entityId: 'loc-invalid-hierarchy', entityName: 'Invalid Store', details: 'Invalid hierarchy.' }, actor), DirectoryValidationError);
+
+  await assert.rejects(store.commit([
+    { collection: 'districts', id: 'district-west-1', operation: 'set', expectedVersion: 1, data: { name: 'West District 1', regionId: 'region-west', status: 'Retired' } },
+  ], { action: 'District Retired', entityType: 'Setting', entityId: 'district-west-1', entityName: 'West District 1', details: 'Attempt retirement.' }, actor), DirectoryValidationError);
+  assert.equal(records.get('districts/district-west-1')?.status, 'Active');
+});

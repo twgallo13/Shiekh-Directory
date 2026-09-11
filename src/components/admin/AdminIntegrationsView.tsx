@@ -50,11 +50,13 @@ import { normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalizatio
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
 import { CustomFieldsPanel } from './CustomFieldsPanel';
+import { HierarchyRegistryPanel } from './HierarchyRegistryPanel';
 import { useAuth } from '../../context/AuthContext';
 import { downloadPreparedLocationExport, prepareLocationExport, type LocationExportMetadata } from '../../lib/locationExportClient';
 
 type AdminTab = 
   | 'custom-fields'
+  | 'hierarchy-registry'
   | 'csv' 
   | 'hours' 
   | 'gbp' 
@@ -595,6 +597,12 @@ export const AdminIntegrationsView: React.FC = () => {
           icon: Sliders,
           keywords: ['custom', 'fields', 'metadata', 'yelp', 'apple', 'urls']
         },
+        ...(currentUser.role === 'System Administrator' ? [{
+          id: 'hierarchy-registry' as AdminTab,
+          label: 'Region & Districts',
+          icon: Building,
+          keywords: ['region', 'district', 'hierarchy', 'territory', 'registry']
+        }] : []),
         {
           id: 'hours' as AdminTab,
           label: 'Hours Templates',
@@ -924,6 +932,7 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* Tab 2: Google Business Profile (GBP) */}
       {/* ======================================================== */}
       {activeTab === 'custom-fields' && <CustomFieldsPanel />}
+      {activeTab === 'hierarchy-registry' && <HierarchyRegistryPanel />}
       {activeTab === 'gbp' && (
         <div className="space-y-6">
           <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs">

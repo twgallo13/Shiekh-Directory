@@ -23,12 +23,14 @@ export interface RegionDefinition {
   id: string;
   name: string;
   code?: string;
+  status?: 'Active' | 'Retired';
 }
 
 export interface DistrictDefinition {
   id: string;
   name: string;
   regionId: string;
+  status?: 'Active' | 'Retired';
 }
 
 export interface HierarchyRegistry {
@@ -54,6 +56,8 @@ export function validateHierarchyRegistryReferences(
     region = registry?.regions.find(r => r.id === regionId);
     if (!region) {
       issues.push(`regionId ${regionId} is not a recognized controlled region ID.`);
+    } else if (region.status === 'Retired') {
+      issues.push(`regionId ${regionId} is retired and cannot be assigned.`);
     }
   }
 
@@ -61,6 +65,8 @@ export function validateHierarchyRegistryReferences(
     district = registry?.districts.find(d => d.id === districtId);
     if (!district) {
       issues.push(`districtId ${districtId} is not a recognized controlled district ID.`);
+    } else if (district.status === 'Retired') {
+      issues.push(`districtId ${districtId} is retired and cannot be assigned.`);
     }
   }
 

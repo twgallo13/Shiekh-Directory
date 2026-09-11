@@ -1,4 +1,4 @@
-import type { LocationRecord, Person, UserProfile, UpdateRequest, HoursTemplate, CorporateHoliday, AuditLogEntry, EmailTemplate, NotificationRule, OutboxLogEntry, SopRunbook } from '../types';
+import type { LocationRecord, Person, UserProfile, UpdateRequest, HoursTemplate, CorporateHoliday, AuditLogEntry, EmailTemplate, NotificationRule, OutboxLogEntry, SopRunbook, RegionRecord, DistrictRecord } from '../types';
 
 export interface DirectorySeed {
   locations: LocationRecord[];
@@ -12,5 +12,7 @@ export interface DirectorySeed {
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
   sopRunbooks: SopRunbook[];
+  regions?: RegionRecord[];
+  districts?: DistrictRecord[];
   customFieldDefinitions?: import('./customFields').CustomFieldDefinition[];
 }

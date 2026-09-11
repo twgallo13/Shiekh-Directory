@@ -16,6 +16,8 @@ const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   outbox_logs: [],
   sop_runbooks: ["System Administrator", "Directory Data Steward"],
   custom_field_definitions: ["System Administrator"],
+  regions: ["System Administrator"],
+  districts: ["System Administrator"],
 };
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const ENTITY_TYPES = new Set(["Location", "Person", "User", "Setting", "Request", "Communication"]);

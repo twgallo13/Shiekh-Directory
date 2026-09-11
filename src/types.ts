@@ -18,6 +18,21 @@ export type RecordStatus = 'Active' | 'Retired' | 'Draft';
 
 export type ContactPrivacyLevel = 'Public' | 'Internal' | 'Restricted';
 
+export interface RegionRecord {
+  id: string;
+  version?: number;
+  name: string;
+  status: 'Active' | 'Retired';
+}
+
+export interface DistrictRecord {
+  id: string;
+  version?: number;
+  name: string;
+  regionId: string;
+  status: 'Active' | 'Retired';
+}
+
 export type UserRole = 
   | 'Viewer'
   | 'Editor'
@@ -101,9 +116,14 @@ export interface LocationRecord {
   phoneExtension?: string;
   phonePrivacy?: ContactPrivacyLevel;
   timeZone: 'America/Los_Angeles' | 'America/Chicago' | 'America/New_York' | 'America/Denver' | string;
+  hierarchyApplicability?: 'Applicable' | 'Not Applicable' | 'Unknown';
+  regionId?: string;
+  districtId?: string;
   district?: string;
   districtManagerId?: string;
   districtManagerName?: string;
+  regionalManagerId?: string;
+  regionalManagerName?: string;
   storeManagerId?: string;
   storeManagerName?: string;
   storeManagerPhone?: string;

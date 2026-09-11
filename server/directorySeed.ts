@@ -13,4 +13,6 @@ export const directorySeed: DirectorySeed = {
   notificationRules: INITIAL_NOTIFICATION_RULES,
   outboxLogs: INITIAL_OUTBOX_LOGS,
   sopRunbooks: INITIAL_SOP_RUNBOOKS,
+  regions: [],
+  districts: [],
 };

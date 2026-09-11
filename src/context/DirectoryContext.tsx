@@ -14,6 +14,8 @@ import {
   NotificationRule,
   OutboxLogEntry,
   SopRunbook
+  ,RegionRecord,
+  DistrictRecord
 } from '../types';
 import type { DirectorySeed } from '../lib/directorySeed';
 import { migrateDirectoryRelationships } from '../lib/directoryMigration';
@@ -35,7 +37,11 @@ interface DirectoryContextType {
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
   sopRunbooks: SopRunbook[];
+  regions: RegionRecord[];
+  districts: DistrictRecord[];
   customFieldDefinitions: CustomFieldDefinition[];
+  saveRegion: (region: RegionRecord) => Promise<void>;
+  saveDistrict: (district: DistrictRecord) => Promise<void>;
   saveCustomFieldDefinition: (definition: CustomFieldDefinition) => Promise<void>;
   saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => Promise<void>;
   persistenceError: string | null;
@@ -97,6 +103,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const [notificationRules, setNotificationRules] = useState<NotificationRule[]>(seed.notificationRules);
   const [outboxLogs, setOutboxLogs] = useState<OutboxLogEntry[]>(seed.outboxLogs);
   const [sopRunbooks, setSopRunbooks] = useState<SopRunbook[]>(seed.sopRunbooks);
+  const [regions, setRegions] = useState<RegionRecord[]>(seed.regions || []);
+  const [districts, setDistricts] = useState<DistrictRecord[]>(seed.districts || []);
   const [customFieldDefinitions, setCustomFieldDefinitions] = useState<CustomFieldDefinition[]>(seed.customFieldDefinitions || []);
   const [requests, setRequests] = useState<UpdateRequest[]>(seed.requests);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => seed.auditLogs.map(scrubLegacyApiKeyAuditEntry));
@@ -135,6 +143,16 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
           : previous.some(item => item.id === record.id)
             ? previous.map(item => item.id === record.id ? record.data as unknown as UpdateRequest : item)
             : [record.data as unknown as UpdateRequest, ...previous]);
+      }
+      if (record.collection === 'regions') {
+        setRegions(previous => previous.some(item => item.id === record.id)
+          ? previous.map(item => item.id === record.id ? record.data as unknown as RegionRecord : item)
+          : [...previous, record.data as unknown as RegionRecord]);
+      }
+      if (record.collection === 'districts') {
+        setDistricts(previous => previous.some(item => item.id === record.id)
+          ? previous.map(item => item.id === record.id ? record.data as unknown as DistrictRecord : item)
+          : [...previous, record.data as unknown as DistrictRecord]);
       }
     }
   };
@@ -182,6 +200,20 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       newState
     };
     setAuditLogs(prev => [log, ...prev].slice(0, 200));
+  };
+
+  const saveRegion = async (region: RegionRecord) => {
+    const existing = regions.find(item => item.id === region.id);
+    await persist([{ collection: 'regions', id: region.id, operation: 'set', data: region as unknown as Record<string, unknown>, ...(existing ? { expectedVersion: expectedVersionOf(existing) } : {}) }], {
+      action: existing ? 'Region Updated' : 'Region Created', entityType: 'Setting', entityId: region.id, entityName: region.name, details: `Saved Region ${region.name}.`,
+    });
+  };
+
+  const saveDistrict = async (district: DistrictRecord) => {
+    const existing = districts.find(item => item.id === district.id);
+    await persist([{ collection: 'districts', id: district.id, operation: 'set', data: district as unknown as Record<string, unknown>, ...(existing ? { expectedVersion: expectedVersionOf(existing) } : {}) }], {
+      action: existing ? 'District Updated' : 'District Created', entityType: 'Setting', entityId: district.id, entityName: district.name, details: `Saved District ${district.name}.`,
+    });
   };
 
   const saveCustomFieldDefinition = async (input: CustomFieldDefinition) => {
@@ -825,7 +857,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         notificationRules,
         outboxLogs,
         sopRunbooks,
+        regions,
+        districts,
         customFieldDefinitions,
+        saveRegion,
+        saveDistrict,
         saveCustomFieldDefinition,
         saveLocationRecord,
         persistenceError,

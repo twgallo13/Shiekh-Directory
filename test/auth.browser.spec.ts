@@ -87,6 +87,17 @@ async function restore(page: Page, signedIn: boolean) {
   await page.evaluate(value => (window as any).__restore(value), signedIn);
 }
 
+function commitResponseFor(body: { writes: Array<{ collection: string; id: string; operation: string; data?: Record<string, unknown> }> }) {
+  return {
+    records: body.writes.map(write => ({
+      collection: write.collection,
+      id: write.id,
+      operation: write.operation,
+      data: write.operation === 'set' ? { ...write.data, id: write.id, version: ((write.data?.version as number | undefined) ?? 0) + 1 } : null,
+    })),
+  };
+}
+
 async function prepareCustomFields(page: Page, role = 'System Administrator') {
   await prepare(page, role);
   const field = { id: 'capacity', label: 'Capacity', type: 'number', helpText: '', options: [], order: 1, apiVisible: false, retired: false };
@@ -101,10 +112,32 @@ async function prepareCustomFields(page: Page, role = 'System Administrator') {
       const key = write.collection === 'custom_field_definitions' ? 'customFieldDefinitions' : 'locations';
       seed[key] = [...seed[key].filter((record: any) => record.id !== write.id), { ...write.data, id: write.id }];
     }
-    await route.fulfill({ status: 204, body: '' });
+    await route.fulfill({ json: commitResponseFor(body) });
   });
   return { seed, commits, failWrites: () => { fail = true; } };
 }
+
+test('Location edit reconciles committed versions across consecutive saves and reports stale conflicts', async ({ page }) => {
+  const fixture = await prepareCustomFields(page);
+  await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+
+  await page.getByLabel('Capacity', { exact: true }).fill('1');
+  await page.getByRole('button', { name: /Save.*Record/ }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(fixture.commits[0].writes[0].expectedVersion).toBe(0);
+
+  await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+  await page.getByLabel('Capacity', { exact: true }).fill('2');
+  await page.getByRole('button', { name: /Save.*Record/ }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(fixture.commits[1].writes[0].expectedVersion).toBe(1);
+
+  fixture.failWrites();
+  await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+  await page.getByLabel('Capacity', { exact: true }).fill('3');
+  await page.getByRole('button', { name: /Save.*Record/ }).click();
+  await expect(page.getByText('Custom metadata changed. Reload the directory before saving.')).toBeVisible();
+});
 
 for (const width of [1440, 390]) {
   test(`Custom Fields create, save, reload and retire at ${width}px`, async ({ page }, testInfo) => {
@@ -330,7 +363,7 @@ test("Add User provisions Firebase identity, sends SMTP signup email, and shows 
   await prepare(page, "System Administrator");
   let commit: any = null;
   let invitation: any = null;
-  await page.route("**/api/directory/commit", async route => { commit = route.request().postDataJSON(); await route.fulfill({ status: 204, body: "" }); });
+  await page.route("**/api/directory/commit", async route => { commit = route.request().postDataJSON(); await route.fulfill({ json: commitResponseFor(commit) }); });
   await page.route("**/api/mail/invitation-email", async route => { invitation = route.request().postDataJSON(); await route.fulfill({ json: { success: true, status: "accepted", transport: "smtp", requestId: "signup-request-1" } }); });
   await page.goto(`${origin}/admin`); await restore(page, true);
   await page.getByRole("button", { name: "User RBAC" }).click();
@@ -356,7 +389,7 @@ test("Add User supports copy-link and access-only onboarding without sending mai
   const commits: any[] = [];
   const linkRequests: any[] = [];
   let invitationEmails = 0;
-  await page.route("**/api/directory/commit", async route => { commits.push(route.request().postDataJSON()); await route.fulfill({ status: 204, body: "" }); });
+  await page.route("**/api/directory/commit", async route => { const body = route.request().postDataJSON(); commits.push(body); await route.fulfill({ json: commitResponseFor(body) }); });
   await page.route("**/api/mail/invitation-link", async route => { linkRequests.push(route.request().postDataJSON()); await route.fulfill({ json: { success: true, activationLink: "https://secure.example.test/firebase-action-code" } }); });
   await page.route("**/api/mail/invitation-email", async route => { invitationEmails++; await route.fulfill({ json: { success: true, status: "accepted", transport: "smtp", requestId: "unused" } }); });
   await page.goto(`${origin}/admin`); await restore(page, true);

@@ -94,6 +94,28 @@ test("canonical person relationships override stale copied names and missing ref
   } finally { await app.close(); }
 });
 
+test("inactive activeStatus managers and unmatched copied assistant names produce blanks and metadata", async () => {
+  const app = await harness({
+    account: companyAccount,
+    people: [person("mgr-inactive", "Inactive Manager", { activeStatus: false, phone: "555-1111" })],
+    locations: [location("07", {
+      storeManagerId: "mgr-inactive",
+      storeManagerName: "Copied Manager",
+      storeManagerPhone: "555-9999",
+      assistantStoreManagerIds: [],
+      assistantStoreManagerNames: ["Copied Assistant Without ID"],
+    })],
+  });
+  try {
+    const prepared = await prepare(app.baseUrl, "token");
+    assert.equal(prepared.metadata.missingCanonicalPersonReferences, 2);
+    const [row] = parse(await download(app.baseUrl, prepared.token, "token"), { columns: true }) as CsvRow[];
+    assert.equal(row.StoreManager, "");
+    assert.equal(row.StoreManagerPhone, "");
+    assert.equal(row.AssistantStoreManagers, "");
+  } finally { await app.close(); }
+});
+
 test("CSV output preserves textual values and escapes commas, quotes, CR/LF, and Unicode", async () => {
   const app = await harness({ locations: [location("001", { name: "Shiekh \"Downtown\", São José", address: "One Way\r\nSuite A", zipCode: "00123" })], people: [], account: companyAccount });
   try {

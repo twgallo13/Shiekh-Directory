@@ -29,6 +29,7 @@ export type UserRole =
 
 export interface UserProfile {
   id: string;
+  version?: number;
   name: string;
   email: string;
   role: UserRole;
@@ -87,6 +88,7 @@ export interface TemporaryNotice {
 
 export interface LocationRecord {
   id: string;
+  version?: number;
   storeNumber: string;
   name: string;
   type: LocationType;
@@ -131,6 +133,7 @@ export interface LocationRecord {
 
 export interface Person {
   id: string;
+  version?: number;
   firstName?: string;
   lastName?: string;
   fullName: string;
@@ -166,6 +169,7 @@ export type RequestStatus = 'Pending' | 'Approved' | 'Rejected';
 
 export interface UpdateRequest {
   id: string;
+  version?: number;
   targetId: string;
   targetType: 'Location' | 'Person';
   targetStoreNumber?: string;

@@ -18,8 +18,8 @@ test('definition writes require administrator, stable type, and current expected
 });
 
 test('metadata writes enforce permissions, expected values, definitions and URL validation', () => {
-  const location: DirectoryWrite = { collection: 'locations', id: 'loc-07', operation: 'set', data: { storeNumber: '07', customMetadata: { yelpUrl: 'https://example.test' } }, expectedCustomMetadata: {} };
-  const current = { storeNumber: '07' };
+  const location: DirectoryWrite = { collection: 'locations', id: 'loc-07', operation: 'set', data: { storeNumber: '07', customMetadata: { yelpUrl: 'https://example.test' } }, expectedCustomMetadata: {}, expectedVersion: 0 };
+  const current = { storeNumber: '07', version: 0 };
   assert.deepEqual(validateMetadataWrites([location], [current], [field], actor)[0].data?.customMetadata, location.data?.customMetadata);
   assert.throws(() => validateMetadataWrites([location], [current], [], actor), DirectoryValidationError);
   assert.throws(() => validateMetadataWrites([{ ...location, expectedCustomMetadata: undefined }], [current], [field], actor), DirectoryConflict);
@@ -30,8 +30,8 @@ test('metadata writes enforce permissions, expected values, definitions and URL 
 });
 
 test('ordinary location saves preserve omitted metadata and retired values', () => {
-  const current = { storeNumber: '07', customMetadata: { yelpUrl: 'https://example.test' } };
-  const location: DirectoryWrite = { collection: 'locations', id: 'loc-07', operation: 'set', data: { storeNumber: '07', name: 'Updated' } };
+  const current = { storeNumber: '07', customMetadata: { yelpUrl: 'https://example.test' }, version: 0 };
+  const location: DirectoryWrite = { collection: 'locations', id: 'loc-07', operation: 'set', data: { storeNumber: '07', name: 'Updated' }, expectedVersion: 0 };
   assert.deepEqual(validateMetadataWrites([location], [current], [{ ...field, retired: true }], actor)[0].data?.customMetadata, current.customMetadata);
   assert.throws(() => validateMetadataWrites([{ ...location, data: { ...location.data, customMetadata: {} }, expectedCustomMetadata: {} }], [current], [field], actor), DirectoryConflict);
 });

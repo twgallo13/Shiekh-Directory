@@ -24,8 +24,10 @@ export const DIRECTORY_COLLECTIONS = {
 } as const;
 
 export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRECTORY_COLLECTIONS];
-export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown> }
+export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
+export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
+export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
 export class DirectoryConflict extends Error {}
 export class DirectoryValidationError extends Error {}
 export class DirectoryWriteDenied extends Error {}
@@ -35,7 +37,7 @@ export interface DirectoryReader {
 }
 
 export interface DirectoryWriter {
-  commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<void>;
+  commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult>;
 }
 
 export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter {
@@ -49,17 +51,54 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
     return Object.fromEntries(entries) as unknown as DirectorySeed;
   }
 
-  async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<void> {
-    await this.firestore.runTransaction(async transaction => {
+  async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult> {
+    return this.firestore.runTransaction(async transaction => {
       const snapshots = await Promise.all(writes.map(write => transaction.get(this.firestore.collection(write.collection).doc(write.id))));
       const needsDefinitions = writes.some(write => write.collection === 'custom_field_definitions' || (write.collection === 'locations' && write.operation === 'set'));
       const definitionSnapshot = needsDefinitions ? await transaction.get(this.firestore.collection('custom_field_definitions').limit(101)) : null;
       const definitions = definitionSnapshot?.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id })) || [];
-      const peopleSnapshot = writes.some(write => ["locations", "users"].includes(write.collection) && write.operation === "set")
+      const needsRelationshipState = writes.some(write => ["locations", "people", "users", "requests"].includes(write.collection));
+      const peopleSnapshot = needsRelationshipState
         ? await transaction.get(this.firestore.collection("people"))
         : null;
-      const people = peopleSnapshot?.docs.map(document => ({ id: document.id, fullName: String(document.data().fullName || document.data().name || "Unknown Person"), status: document.data().status })) || [];
-      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people);
+      const locationSnapshot = needsRelationshipState
+        ? await transaction.get(this.firestore.collection("locations"))
+        : null;
+      const userSnapshot = needsRelationshipState
+        ? await transaction.get(this.firestore.collection("users"))
+        : null;
+
+      const peopleMap = new Map<string, { id: string; fullName: string; status?: string; activeStatus?: boolean }>(
+        peopleSnapshot?.docs.map(document => [
+          document.id,
+          {
+            id: document.id,
+            fullName: String(document.data().fullName || document.data().name || "Unknown Person"),
+            status: document.data().status as string | undefined,
+            activeStatus: document.data().activeStatus as boolean | undefined,
+          },
+        ]) || [],
+      );
+
+      for (const write of writes) {
+        if (write.collection === "people") {
+          if (write.operation === "delete") {
+            peopleMap.delete(write.id);
+          } else if (write.operation === "set" && write.data) {
+            peopleMap.set(write.id, {
+              id: write.id,
+              fullName: String(write.data.fullName || write.data.name || "Unknown Person"),
+              status: write.data.status as string | undefined,
+              activeStatus: write.data.activeStatus as boolean | undefined,
+            });
+          }
+        }
+      }
+
+      const combinedPeople = Array.from(peopleMap.values());
+      const locations = locationSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
+      const users = userSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
+      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, combinedPeople, locations, users);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
       const locationMatches = await Promise.all(locationQueries.map(({ query }) => transaction.get(query)));
@@ -87,10 +126,23 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         if (write.operation === "delete") transaction.delete(reference);
         else transaction.set(reference, { ...write.data, id: write.id }, { merge: write.collection === "users" });
       });
+      const committedRecords: DirectoryCommittedRecord[] = validatedWrites.map(write => ({
+        collection: write.collection,
+        id: write.id,
+        operation: write.operation,
+        data: write.operation === "set" ? { ...write.data, id: write.id } : null,
+      }));
       if (audit) {
         const id = `aud-${Date.now()}-${randomUUID().slice(0, 8)}`;
         const previousState = snapshots.length === 1 && snapshots[0].exists ? snapshots[0].data() : undefined;
         const nextState = validatedWrites.length === 1 && validatedWrites[0].operation === "set" ? { ...validatedWrites[0].data, id: validatedWrites[0].id } : undefined;
+        const previousStates = snapshots.map((snapshot, index) => ({
+          collection: validatedWrites[index].collection,
+          id: validatedWrites[index].id,
+          exists: snapshot.exists,
+          data: snapshot.exists ? snapshot.data() : null,
+        }));
+        const newStates = committedRecords;
         transaction.set(this.firestore.collection("audit_logs").doc(id), {
           id,
           timestamp: new Date().toISOString(),
@@ -103,8 +155,11 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           details: audit.details,
           ...(previousState ? { previousState } : {}),
           ...(nextState ? { newState: nextState } : {}),
+          previousStates,
+          newStates,
         });
       }
+      return { records: committedRecords };
     });
   }
 }
@@ -114,12 +169,59 @@ export function validateMetadataWrites(
   previous: (Record<string, unknown> | undefined)[],
   definitions: CustomFieldDefinition[],
   actor: Account,
-  people: Array<{ id: string; fullName: string; status?: string }> = [],
+  people: Array<{ id: string; fullName: string; status?: string; activeStatus?: boolean }> = [],
+  locations: Array<Record<string, unknown>> = [],
+  users: Array<Record<string, unknown>> = [],
 ): DirectoryWrite[] {
   if (new Set(writes.map(write => `${write.collection}/${write.id}`)).size !== writes.length) throw new DirectoryValidationError('Duplicate writes are not allowed.');
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
-  return writes.map((write, index) => {
+
+  const peopleMap = new Map<string, { id: string; fullName: string; status?: string; activeStatus?: boolean }>(
+    people.map(p => [
+      p.id,
+      {
+        id: p.id,
+        fullName: p.fullName || "Unknown Person",
+        status: p.status,
+        activeStatus: p.activeStatus,
+      },
+    ]),
+  );
+
+  for (const write of writes) {
+    if (write.collection === "people") {
+      if (write.operation === "delete") {
+        peopleMap.delete(write.id);
+      } else if (write.operation === "set" && write.data) {
+        peopleMap.set(write.id, {
+          id: write.id,
+          fullName: String(write.data.fullName || write.data.name || "Unknown Person"),
+          status: write.data.status as string | undefined,
+          activeStatus: write.data.activeStatus as boolean | undefined,
+        });
+      }
+    }
+  }
+
+  const combinedPeople = Array.from(peopleMap.values());
+
+  const validatedWrites = writes.map((write, index) => {
     const current = previous[index];
+
+    const expectedVer = write.expectedVersion ?? (typeof write.data?.expectedVersion === "number" ? write.data.expectedVersion : undefined);
+    if (current && ['locations', 'people', 'users', 'requests'].includes(write.collection)) {
+      if (expectedVer === undefined) {
+        throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
+      }
+      const currentVersion = typeof current.version === "number" ? current.version : 0;
+      if (currentVersion !== expectedVer) {
+        throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
+      }
+    }
+    if (!current && expectedVer !== undefined && expectedVer !== 0) {
+      throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
+    }
+
     if (write.collection === 'custom_field_definitions') {
       if (actor.role !== 'System Administrator') throw new DirectoryWriteDenied('Only system administrators can define custom fields.');
       if (write.operation !== 'set') throw new DirectoryValidationError('Retire custom fields instead of deleting them.');
@@ -136,29 +238,103 @@ export function validateMetadataWrites(
       }
       return { ...write, data: { ...definition } };
     }
-    if (write.operation !== 'set' || !['locations', 'people', 'users'].includes(write.collection)) return write;
+
+    if (write.operation !== 'set' || !['locations', 'people', 'users', 'requests'].includes(write.collection)) return write;
     const data = { ...write.data };
+
+    if (current || write.expectedVersion !== undefined || typeof data.version === 'number') {
+      data.version = ((current?.version as number) || 0) + 1;
+      data.updatedAt = new Date().toISOString();
+    }
+
+    if (write.collection === 'requests') {
+      if (data.status === 'Approved' && current?.status === 'Approved') {
+        throw new DirectoryConflict('Request has already been approved.');
+      }
+      if (data.status === 'Approved') {
+        if (!current) throw new DirectoryConflict('Request changed concurrently. Reload the directory before saving.');
+        const targetType = String(current.targetType || '');
+        const targetId = String(current.targetId || '');
+        if (String(data.targetType || '') !== targetType || String(data.targetId || '') !== targetId) {
+          throw new DirectoryValidationError('Approved correction requests must use the persisted request target.');
+        }
+        const targetCollection = targetType === 'Location' ? 'locations' : targetType === 'Person' ? 'people' : '';
+        const targetWrite = writes.find(candidate => candidate.collection === targetCollection && candidate.id === targetId && candidate.operation === 'set');
+        if (!targetWrite) {
+          throw new DirectoryValidationError('Approved correction requests must save the target record in the same transaction.');
+        }
+        const targetPrevious = previous[writes.indexOf(targetWrite)];
+        assertApprovalTargetAppliesPersistedChanges(current, targetWrite, targetPrevious);
+      }
+      return { ...write, data };
+    }
+
     normalizePhoneWrite(data, current, 'phone', 'phoneExtension', write.collection === 'locations');
 
     if (write.collection === 'locations') {
+      const originalData = write.data || {};
+      const isFieldChanged = (field: string) => Object.hasOwn(originalData, field) && !isDeepStrictEqual(originalData[field], current?.[field]);
+      const hierarchyTouched = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(isFieldChanged);
+      const preserveField = (field: string) => {
+        if (!Object.hasOwn(data, field) && current && Object.hasOwn(current, field)) {
+          data[field] = current[field];
+        }
+      };
+      [
+        'hierarchyApplicability',
+        'regionId',
+        'districtId',
+        'storeManagerId',
+        'districtManagerId',
+        'regionalManagerId',
+        'assistantStoreManagerIds',
+        'keyHolderIds',
+      ].forEach(preserveField);
+
       const hierarchyApplicability = data.hierarchyApplicability ?? current?.hierarchyApplicability;
       const normalizedApplicability = hierarchyApplicability === 'Applicable' || hierarchyApplicability === 'Not Applicable' || hierarchyApplicability === 'Unknown'
         ? hierarchyApplicability
         : undefined;
+
       const hierarchyInput: HierarchyFieldContract = {
         type: String(data.type ?? current?.type ?? 'Street / Standalone Location'),
-        hierarchyApplicability: normalizedApplicability,
-        regionId: typeof data.regionId === 'string' ? data.regionId : typeof current?.regionId === 'string' ? current.regionId : undefined,
-        districtId: typeof data.districtId === 'string' ? data.districtId : typeof current?.districtId === 'string' ? current.districtId : undefined,
-        storeManagerId: typeof data.storeManagerId === 'string' ? data.storeManagerId : typeof current?.storeManagerId === 'string' ? current.storeManagerId : undefined,
-        assistantStoreManagerIds: Array.isArray(data.assistantStoreManagerIds) ? data.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string') : Array.isArray(current?.assistantStoreManagerIds) ? current.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string') : undefined,
-        keyHolderIds: Array.isArray(data.keyHolderIds) ? data.keyHolderIds.filter((item): item is string => typeof item === 'string') : Array.isArray(current?.keyHolderIds) ? current.keyHolderIds.filter((item): item is string => typeof item === 'string') : undefined,
-        districtManagerId: typeof data.districtManagerId === 'string' ? data.districtManagerId : typeof current?.districtManagerId === 'string' ? current.districtManagerId : undefined,
-        regionalManagerId: typeof data.regionalManagerId === 'string' ? data.regionalManagerId : typeof current?.regionalManagerId === 'string' ? current.regionalManagerId : undefined,
+        hierarchyApplicability: hierarchyTouched ? normalizedApplicability : undefined,
+        regionId: hierarchyTouched && typeof data.regionId === 'string' && data.regionId.trim() ? data.regionId : undefined,
+        districtId: hierarchyTouched && typeof data.districtId === 'string' && data.districtId.trim() ? data.districtId : undefined,
+        storeManagerId: typeof data.storeManagerId === 'string' && data.storeManagerId.trim() ? data.storeManagerId : undefined,
+        assistantStoreManagerIds: Array.isArray(data.assistantStoreManagerIds)
+          ? data.assistantStoreManagerIds.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+          : undefined,
+        keyHolderIds: Array.isArray(data.keyHolderIds)
+          ? data.keyHolderIds.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()))
+          : undefined,
+        districtManagerId: typeof data.districtManagerId === 'string' && data.districtManagerId.trim() ? data.districtManagerId : undefined,
+        regionalManagerId: typeof data.regionalManagerId === 'string' && data.regionalManagerId.trim() ? data.regionalManagerId : undefined,
       };
+
       const hierarchyIssues = validateLocationHierarchyFields(hierarchyInput);
       if (hierarchyIssues.length > 0) {
         throw new DirectoryValidationError(hierarchyIssues.join('; '));
+      }
+
+      // Only validate leadership references that this write actually changed; unchanged legacy values are preserved as-is.
+      const leadershipRefs = [
+        ['storeManagerId', hierarchyInput.storeManagerId, isFieldChanged('storeManagerId')],
+        ['districtManagerId', hierarchyInput.districtManagerId, isFieldChanged('districtManagerId')],
+        ['regionalManagerId', hierarchyInput.regionalManagerId, isFieldChanged('regionalManagerId')],
+        ...((hierarchyInput.assistantStoreManagerIds || []).map(id => ['assistantStoreManagerIds', id, isFieldChanged('assistantStoreManagerIds')] as const)),
+        ...((hierarchyInput.keyHolderIds || []).map(id => ['keyHolderIds', id, isFieldChanged('keyHolderIds')] as const)),
+      ] as const;
+
+      for (const [field, id, changed] of leadershipRefs) {
+        if (!id || !changed) continue;
+        const personMatch = combinedPeople.find(p => p.id === id);
+        if (!personMatch) {
+          throw new DirectoryValidationError(`${field} references missing person ${id}.`);
+        }
+        if ((personMatch.status && personMatch.status !== "Active") || personMatch.activeStatus === false) {
+          throw new DirectoryValidationError(`${field} references inactive person ${personMatch.fullName} (${id}).`);
+        }
       }
     }
 
@@ -166,22 +342,24 @@ export function validateMetadataWrites(
       normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
       if (Object.hasOwn(data, 'personId')) {
         try {
-          validateUserPersonLink(typeof data.personId === 'string' ? data.personId : undefined, people);
+          validateUserPersonLink(typeof data.personId === 'string' ? data.personId : undefined, combinedPeople);
         } catch (error) {
           throw new DirectoryValidationError((error as Error).message);
         }
       }
       return { ...write, data };
     }
+
     if (write.collection === 'users') {
-      const personId = typeof data.personId === 'string' ? data.personId : undefined;
+      const personId = Object.hasOwn(data, 'personId') && typeof data.personId === 'string' ? data.personId : undefined;
       try {
-        validateUserPersonLink(personId, people);
+        validateUserPersonLink(personId, combinedPeople);
       } catch (error) {
         throw new DirectoryValidationError((error as Error).message);
       }
       return { ...write, data };
     }
+
     const existing = isPlainRecord(current?.customMetadata) ? current.customMetadata : {};
     const supplied = Object.hasOwn(data, 'customMetadata') ? data.customMetadata : existing;
     const changed = !isDeepStrictEqual(supplied, existing);
@@ -207,6 +385,90 @@ export function validateMetadataWrites(
     } catch (error) { throw new DirectoryValidationError((error as Error).message); }
     return { ...write, data };
   });
+
+  validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
+  return validatedWrites;
+}
+
+function assertApprovalTargetAppliesPersistedChanges(
+  persistedRequest: Record<string, unknown>,
+  targetWrite: DirectoryWrite,
+  targetPrevious: Record<string, unknown> | undefined,
+): void {
+  if (!targetPrevious) throw new DirectoryConflict('Request target changed concurrently. Reload the directory before saving.');
+  const requestedChanges = isPlainRecord(persistedRequest.requestedChanges) ? persistedRequest.requestedChanges : {};
+  const targetData = targetWrite.data || {};
+  const requestedEntries = Object.entries(requestedChanges);
+  if (requestedEntries.length === 0) {
+    throw new DirectoryValidationError('Approved correction request has no requested changes to apply.');
+  }
+  // Every persisted requested field must land in the final target state, not just the ones that moved.
+  let appliesAtLeastOneChange = false;
+  for (const [key, value] of requestedEntries) {
+    if (!Object.hasOwn(targetData, key) || !isDeepStrictEqual(targetData[key], value)) {
+      throw new DirectoryValidationError('Approved correction request target update does not match the persisted requested changes.');
+    }
+    if (!isDeepStrictEqual(targetPrevious[key], value)) appliesAtLeastOneChange = true;
+  }
+  if (!appliesAtLeastOneChange) {
+    throw new DirectoryValidationError('Approved correction request does not change the target record.');
+  }
+}
+
+function validateCombinedRelationshipState(
+  writes: DirectoryWrite[],
+  currentLocations: Array<Record<string, unknown>>,
+  people: Array<{ id: string; fullName: string; status?: string; activeStatus?: boolean }>,
+  users: Array<Record<string, unknown>>,
+): void {
+  const peopleById = new Map(people.map(person => [person.id, person]));
+  const changedPersonIds = new Set(writes.filter(write => write.collection === 'people').map(write => write.id));
+
+  // Final proposed Location state: pre-transaction snapshot overlaid with this transaction's writes.
+  const finalLocationsById = new Map(currentLocations.map(location => [String(location.id), location]));
+  for (const write of writes) {
+    if (write.collection !== 'locations') continue;
+    if (write.operation === 'delete') finalLocationsById.delete(write.id);
+    else if (write.data) finalLocationsById.set(write.id, { ...write.data, id: write.id });
+  }
+
+  // A leadership reference must stay valid whenever the relationship itself changed (checked at the
+  // per-write step) or the Person it points to changed/was removed in this same transaction, whether
+  // or not the owning Location document was written.
+  if (changedPersonIds.size > 0) {
+    for (const location of finalLocationsById.values()) {
+      const leadershipRefs = [
+        ['storeManagerId', location.storeManagerId],
+        ['districtManagerId', location.districtManagerId],
+        ['regionalManagerId', location.regionalManagerId],
+        ...(Array.isArray(location.assistantStoreManagerIds) ? location.assistantStoreManagerIds.map(id => ['assistantStoreManagerIds', id] as const) : []),
+        ...(Array.isArray(location.keyHolderIds) ? location.keyHolderIds.map(id => ['keyHolderIds', id] as const) : []),
+      ] as const;
+
+      for (const [field, id] of leadershipRefs) {
+        if (typeof id !== 'string' || !id.trim() || !changedPersonIds.has(id)) continue;
+        const person = peopleById.get(id);
+        if (!person) throw new DirectoryValidationError(`${field} references missing person ${id}.`);
+        if ((person.status && person.status !== 'Active') || person.activeStatus === false) {
+          throw new DirectoryValidationError(`${field} references inactive person ${person.fullName} (${id}).`);
+        }
+      }
+    }
+  }
+
+  for (const write of writes) {
+    if (write.collection !== 'people') continue;
+    const nextPerson = peopleById.get(write.id);
+    const deletingOrInactive = !nextPerson || (nextPerson.status && nextPerson.status !== 'Active') || nextPerson.activeStatus === false;
+    if (!deletingOrInactive) continue;
+    const incomingLinks = users.filter(user => user.personId === write.id);
+    if (incomingLinks.length > 0) {
+      const unresolvedLinks = incomingLinks.filter(user => !writes.some(candidate => candidate.collection === 'users' && candidate.id === user.id && candidate.operation === 'set' && candidate.data && Object.hasOwn(candidate.data, 'personId') && !candidate.data.personId));
+      if (unresolvedLinks.length > 0) {
+        throw new DirectoryValidationError(`Person ${write.id} has linked user account records that must be unlinked or reviewed before inactivation/deletion.`);
+      }
+    }
+  }
 }
 
 function normalizePhoneWrite(data: Record<string, unknown>, current: Record<string, unknown> | undefined, field: string, extensionField: string, required = false) {
@@ -235,6 +497,7 @@ function toRecord(snapshot: QueryDocumentSnapshot, collection: DirectoryCollecti
   const data = snapshot.data();
   if (collection === "users") return {
     id: snapshot.id,
+    version: data.version,
     name: data.name || data.displayName || data.email || "Directory user",
     email: data.email || "",
     role: data.role,

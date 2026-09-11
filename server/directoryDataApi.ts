@@ -41,8 +41,8 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
       return response.status(403).json({ error: { code: "write_not_allowed" } });
     }
     try {
-      await store.commit(writes, audit, account);
-      response.status(204).end();
+      const result = await store.commit(writes, audit, account);
+      response.status(200).json(result);
     } catch (error) {
       if (error instanceof DirectoryValidationError) return response.status(400).json({ error: { code: "invalid_metadata", message: error.message } });
       if (error instanceof DirectoryWriteDenied) return response.status(403).json({ error: { code: "write_not_allowed", message: error.message } });
@@ -72,14 +72,17 @@ function parseWrites(value: unknown): DirectoryWrite[] | null {
       if (!/^\S+@\S+\.\S+$/.test(email) || !name || !APPLICATION_ROLES.some(value => value === role)
         || !["Active", "Suspended", "Revoked"].includes(status) || !accessScope) return null;
       data = { email, name, displayName: name, role, status, accessScope,
-        ...(typeof data.personId === "string" && data.personId ? { personId: data.personId } : {}),
+        ...(Object.hasOwn(data, 'personId') && typeof data.personId === "string" ? { personId: data.personId } : {}),
         ...(typeof data.storeNumber === "string" && data.storeNumber ? { storeNumber: data.storeNumber } : {}) };
     }
     if (Object.hasOwn(candidate, 'expectedCustomMetadata') && !plainObject(candidate.expectedCustomMetadata)) return null;
     if (Object.hasOwn(candidate, 'expectedDefinition') && candidate.expectedDefinition !== null && !plainObject(candidate.expectedDefinition)) return null;
+    const expectedVersion = candidate.expectedVersion;
+    if (Object.hasOwn(candidate, 'expectedVersion') && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
     writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}),
       ...(Object.hasOwn(candidate, 'expectedCustomMetadata') ? { expectedCustomMetadata: candidate.expectedCustomMetadata as Record<string, unknown> } : {}),
-      ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}) });
+      ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}),
+      ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number } : {}) });
   }
   const locationNumbers = writes.filter(write => write.collection === "locations" && write.operation === "set").map(write => String(write.data?.storeNumber || ""));
   if (locationNumbers.some(number => !number.trim()) || new Set(locationNumbers).size !== locationNumbers.length) return null;

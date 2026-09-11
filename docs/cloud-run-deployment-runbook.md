@@ -13,11 +13,11 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 
 ## Current live revision
 
-- `latestReadyRevisionName`: `shiekh-location-company-directory-phasec9a91bcf`
-- Traffic: 100% to that revision, tag `phasec` (revision suffix appears to encode commit `9a91bcf` on `main`)
+- `latestReadyRevisionName`: `shiekh-location-company-directory-d5770f9` (deployed from commit `d5770f9405cfec92417946d669b7509000183e6a`, foundation repair branch, manually acceptance-tested 2026-09-11)
+- Traffic: 100%, confirmed via `gcloud run services describe` after promotion
 - Autoscaling: `minScale=0`, `maxScale=20`, `cpu-throttling=true`, `startup-cpu-boost=true`
 
-Many older tagged, no-traffic revisions exist for rollback/reference (`smtp`, `cfg`, `tpl`, `onboarding`, `msg`, `fbmail`, `rev-9ce8646`, `a14`, `a14b`, `smtp2`, `custom-fields`, plus the untagged canary-era revisions), each reachable at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+Previous production revision `shiekh-location-company-directory-phasec9a91bcf` (commit `9a91bcf`) is retained at 0% traffic, tag `phasec`, as the rollback target. Many other older tagged, no-traffic revisions also exist for rollback/reference (`smtp`, `cfg`, `tpl`, `onboarding`, `msg`, `fbmail`, `rev-9ce8646`, `a14`, `a14b`, `smtp2`, `custom-fields`), each reachable at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
 
 ## Runtime environment (names only; no secret values other than public Firebase config)
 
@@ -48,6 +48,28 @@ gcloud run services update-traffic shiekh-location-company-directory \
   --project gen-lang-client-0801664258 \
   --region us-west1 \
   --to-revisions <revision-name>=100
+```
+
+### 2026-09-11 deployment log (commit `d5770f9`)
+
+1. Deployed with `--revision-suffix=d5770f9`, no `--no-traffic` flag. This service's traffic spec pins revisions by explicit name rather than `latestRevision: true`, so `gcloud run deploy` created revision `shiekh-location-company-directory-d5770f9` but did **not** auto-shift traffic to it; the previous pinned revision kept serving 100%.
+2. Traffic was promoted explicitly in the same pass:
+   ```bash
+   gcloud run services update-traffic shiekh-location-company-directory \
+     --project gen-lang-client-0801664258 \
+     --region us-west1 \
+     --to-revisions=shiekh-location-company-directory-d5770f9=100
+   ```
+3. Verified: default Cloud Run URL and `https://shiekh-dir.ai.studio/` both returned `200`; `GET /api/auth/me` (no token) returned `401`; `GET /api/does-not-exist` returned structured JSON `404`.
+4. Manually acceptance-tested by the product owner on 2026-09-11 (sign-in, directory bootstrap, location edit/save, correction request approval, concurrent-save conflict, admin panels, CSV export) — approved.
+
+**Rollback command** (if a future deploy needs to revert to the pre-repair revision):
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-phasec9a91bcf=100
 ```
 
 ## Adjacent services — do not confuse with production

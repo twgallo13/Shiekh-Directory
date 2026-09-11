@@ -272,7 +272,9 @@ export function validateMetadataWrites(
     normalizePhoneWrite(data, current, 'phone', 'phoneExtension', write.collection === 'locations');
 
     if (write.collection === 'locations') {
-      const hierarchyTouched = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(field => Object.hasOwn(write.data || {}, field) && !isDeepStrictEqual(write.data?.[field], current?.[field]));
+      const originalData = write.data || {};
+      const isFieldChanged = (field: string) => Object.hasOwn(originalData, field) && !isDeepStrictEqual(originalData[field], current?.[field]);
+      const hierarchyTouched = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(isFieldChanged);
       const preserveField = (field: string) => {
         if (!Object.hasOwn(data, field) && current && Object.hasOwn(current, field)) {
           data[field] = current[field];
@@ -315,16 +317,17 @@ export function validateMetadataWrites(
         throw new DirectoryValidationError(hierarchyIssues.join('; '));
       }
 
+      // Only validate leadership references that this write actually changed; unchanged legacy values are preserved as-is.
       const leadershipRefs = [
-        ['storeManagerId', hierarchyInput.storeManagerId],
-        ['districtManagerId', hierarchyInput.districtManagerId],
-        ['regionalManagerId', hierarchyInput.regionalManagerId],
-        ...((hierarchyInput.assistantStoreManagerIds || []).map(id => ['assistantStoreManagerIds', id] as const)),
-        ...((hierarchyInput.keyHolderIds || []).map(id => ['keyHolderIds', id] as const)),
+        ['storeManagerId', hierarchyInput.storeManagerId, isFieldChanged('storeManagerId')],
+        ['districtManagerId', hierarchyInput.districtManagerId, isFieldChanged('districtManagerId')],
+        ['regionalManagerId', hierarchyInput.regionalManagerId, isFieldChanged('regionalManagerId')],
+        ...((hierarchyInput.assistantStoreManagerIds || []).map(id => ['assistantStoreManagerIds', id, isFieldChanged('assistantStoreManagerIds')] as const)),
+        ...((hierarchyInput.keyHolderIds || []).map(id => ['keyHolderIds', id, isFieldChanged('keyHolderIds')] as const)),
       ] as const;
 
-      for (const [field, id] of leadershipRefs) {
-        if (!id) continue;
+      for (const [field, id, changed] of leadershipRefs) {
+        if (!id || !changed) continue;
         const personMatch = combinedPeople.find(p => p.id === id);
         if (!personMatch) {
           throw new DirectoryValidationError(`${field} references missing person ${id}.`);
@@ -395,14 +398,20 @@ function assertApprovalTargetAppliesPersistedChanges(
   if (!targetPrevious) throw new DirectoryConflict('Request target changed concurrently. Reload the directory before saving.');
   const requestedChanges = isPlainRecord(persistedRequest.requestedChanges) ? persistedRequest.requestedChanges : {};
   const targetData = targetWrite.data || {};
-  const changedEntries = Object.entries(requestedChanges).filter(([key, value]) => !isDeepStrictEqual(targetPrevious[key], value));
-  if (changedEntries.length === 0) {
-    throw new DirectoryValidationError('Approved correction request does not change the target record.');
+  const requestedEntries = Object.entries(requestedChanges);
+  if (requestedEntries.length === 0) {
+    throw new DirectoryValidationError('Approved correction request has no requested changes to apply.');
   }
-  for (const [key, value] of changedEntries) {
+  // Every persisted requested field must land in the final target state, not just the ones that moved.
+  let appliesAtLeastOneChange = false;
+  for (const [key, value] of requestedEntries) {
     if (!Object.hasOwn(targetData, key) || !isDeepStrictEqual(targetData[key], value)) {
       throw new DirectoryValidationError('Approved correction request target update does not match the persisted requested changes.');
     }
+    if (!isDeepStrictEqual(targetPrevious[key], value)) appliesAtLeastOneChange = true;
+  }
+  if (!appliesAtLeastOneChange) {
+    throw new DirectoryValidationError('Approved correction request does not change the target record.');
   }
 }
 
@@ -413,34 +422,31 @@ function validateCombinedRelationshipState(
   users: Array<Record<string, unknown>>,
 ): void {
   const peopleById = new Map(people.map(person => [person.id, person]));
-  const locationsById = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
   const writtenLocationIds = new Set(writes.filter(write => write.collection === 'locations').map(write => write.id));
   const changedPersonIds = new Set(writes.filter(write => write.collection === 'people').map(write => write.id));
 
-  for (const write of writes) {
-    if (write.collection !== 'locations') continue;
-    if (write.operation === 'delete') locationsById.delete(write.id);
-    else if (write.data) locationsById.set(write.id, { ...write.data, id: write.id });
-  }
+  // Written locations already validate their own changed leadership fields at the per-write step.
+  // Here we only need the reverse case: a location that was NOT written but references a Person
+  // who WAS changed/removed in this same transaction.
+  if (changedPersonIds.size > 0) {
+    for (const location of currentLocations) {
+      const locationId = String(location.id);
+      if (writtenLocationIds.has(locationId)) continue;
+      const leadershipRefs = [
+        ['storeManagerId', location.storeManagerId],
+        ['districtManagerId', location.districtManagerId],
+        ['regionalManagerId', location.regionalManagerId],
+        ...(Array.isArray(location.assistantStoreManagerIds) ? location.assistantStoreManagerIds.map(id => ['assistantStoreManagerIds', id] as const) : []),
+        ...(Array.isArray(location.keyHolderIds) ? location.keyHolderIds.map(id => ['keyHolderIds', id] as const) : []),
+      ] as const;
 
-  for (const location of locationsById.values()) {
-    const locationId = String(location.id);
-    const leadershipRefs = [
-      ['storeManagerId', location.storeManagerId],
-      ['districtManagerId', location.districtManagerId],
-      ['regionalManagerId', location.regionalManagerId],
-      ...(Array.isArray(location.assistantStoreManagerIds) ? location.assistantStoreManagerIds.map(id => ['assistantStoreManagerIds', id] as const) : []),
-      ...(Array.isArray(location.keyHolderIds) ? location.keyHolderIds.map(id => ['keyHolderIds', id] as const) : []),
-    ] as const;
-    const affectedByChangedPerson = leadershipRefs.some(([, id]) => typeof id === 'string' && changedPersonIds.has(id));
-    if (!writtenLocationIds.has(locationId) && !affectedByChangedPerson) continue;
-
-    for (const [field, id] of leadershipRefs) {
-      if (typeof id !== 'string' || !id.trim()) continue;
-      const person = peopleById.get(id);
-      if (!person) throw new DirectoryValidationError(`${field} references missing person ${id}.`);
-      if ((person.status && person.status !== 'Active') || person.activeStatus === false) {
-        throw new DirectoryValidationError(`${field} references inactive person ${person.fullName} (${id}).`);
+      for (const [field, id] of leadershipRefs) {
+        if (typeof id !== 'string' || !id.trim() || !changedPersonIds.has(id)) continue;
+        const person = peopleById.get(id);
+        if (!person) throw new DirectoryValidationError(`${field} references missing person ${id}.`);
+        if ((person.status && person.status !== 'Active') || person.activeStatus === false) {
+          throw new DirectoryValidationError(`${field} references inactive person ${person.fullName} (${id}).`);
+        }
       }
     }
   }

@@ -181,3 +181,34 @@ test('directory commit supports person approval and handles linked users when in
   assert.equal(records.get('people/per-1')?.status, 'Inactive');
   assert.equal(records.get('users/usr-1')?.personId, '');
 });
+
+test('CASE 1 — an unrelated rename on a legacy record must not be blocked by a pre-existing invalid manager reference', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/loc-01', { id: 'loc-01', storeNumber: '01', name: 'Original', version: 0, recordStatus: 'Active', storeManagerId: 'legacy-missing-person' });
+
+  await store.commit([
+    { collection: 'locations', id: 'loc-01', operation: 'set', expectedVersion: 0, data: { storeNumber: '01', name: 'Renamed' } },
+  ], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-01', entityName: 'Original', details: 'Rename only, manager field omitted.' }, actor);
+
+  assert.equal(records.get('locations/loc-01')?.name, 'Renamed');
+  assert.equal(records.get('locations/loc-01')?.storeManagerId, 'legacy-missing-person');
+});
+
+test('CASE 2 — approval must validate every persisted requested field against the final proposed target state', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/loc-approve', { id: 'loc-approve', storeNumber: '09', name: 'Original', city: 'Approved City', version: 0, recordStatus: 'Active' });
+  records.set('requests/req-approve', { id: 'req-approve', targetType: 'Location', targetId: 'loc-approve', status: 'Pending', version: 0, requestedChanges: { name: 'Requested Name', city: 'Approved City' } });
+
+  const countBefore = records.size;
+  await assert.rejects(store.commit([
+    { collection: 'requests', id: 'req-approve', operation: 'set', expectedVersion: 0, data: { targetType: 'Location', targetId: 'loc-approve', status: 'Approved', requestedChanges: { name: 'Requested Name', city: 'Approved City' } } },
+    { collection: 'locations', id: 'loc-approve', operation: 'set', expectedVersion: 0, data: { storeNumber: '09', name: 'Requested Name', city: 'Wrong City' } },
+  ], { action: 'Request Approved', entityType: 'Request', entityId: 'req-approve', entityName: 'Name Change', details: 'Approval paired with an untouched-field mismatch.' }, actor), DirectoryValidationError);
+
+  assert.equal(records.size, countBefore);
+  assert.equal(records.get('requests/req-approve')?.status, 'Pending');
+  assert.equal(records.get('locations/loc-approve')?.name, 'Original');
+  assert.equal(records.get('locations/loc-approve')?.city, 'Approved City');
+});

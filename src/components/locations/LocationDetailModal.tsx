@@ -7,6 +7,7 @@ import { AuditLogView } from '../common/AuditLogView';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { formatUsPhone } from '../../lib/contactNormalization';
+import { resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
 import { 
   X, 
   MapPin, 
@@ -68,14 +69,10 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
 
   const todayStatus = getTodayHoursForLocation(location);
   const canEditDirectly = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
-  const storeManager = people.find(person => person.id === location.storeManagerId);
-  const districtManager = people.find(person => person.id === location.districtManagerId);
-  const assistantManagers = (location.assistantStoreManagerIds || [])
-    .map(id => people.find(person => person.id === id))
-    .filter((person): person is PersonRecord => Boolean(person));
-  const keyHolders = (location.keyHolderIds || [])
-    .map(id => people.find(person => person.id === id))
-    .filter((person): person is PersonRecord => Boolean(person));
+  const storeManager = resolveActivePerson(location.storeManagerId, people);
+  const districtManager = resolveActivePerson(location.districtManagerId, people);
+  const assistantManagers = resolveActivePersonList(location.assistantStoreManagerIds, people);
+  const keyHolders = resolveActivePersonList(location.keyHolderIds, people);
   const hoursTemplate = hoursTemplates.find(template => template.id === location.hoursTemplateId);
   const hoursSourceLabel = hoursTemplate
     ? location.hoursMode === 'template'
@@ -83,12 +80,9 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
       : `Modified from ${hoursTemplate.name}`
     : 'Custom weekly schedule';
 
-  const handleOpenPerson = (personId?: string, personName?: string) => {
-    if (!onSelectPerson) return;
-    let found = personId ? people.find(p => p.id === personId) : undefined;
-    if (!found && personName) {
-      found = people.find(p => p.fullName.toLowerCase() === personName.toLowerCase() || personName.toLowerCase().includes(p.fullName.toLowerCase()));
-    }
+  const handleOpenPerson = (personId?: string) => {
+    if (!onSelectPerson || !personId) return;
+    const found = people.find(p => p.id === personId);
     if (found) {
       onSelectPerson(found);
     }
@@ -462,7 +456,7 @@ Operating Status: ${location.operationalStatus}`;
                       {storeManager ? (
                         <button
                           type="button"
-                          onClick={() => handleOpenPerson(storeManager.id, storeManager.fullName)}
+                          onClick={() => handleOpenPerson(storeManager.id)}
                           className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
                         >
                           <span>{storeManager.fullName}</span>
@@ -492,7 +486,7 @@ Operating Status: ${location.operationalStatus}`;
                       {districtManager ? (
                         <button
                           type="button"
-                          onClick={() => handleOpenPerson(districtManager.id, districtManager.fullName)}
+                          onClick={() => handleOpenPerson(districtManager.id)}
                           className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
                         >
                           <span>{districtManager.fullName}</span>
@@ -515,7 +509,7 @@ Operating Status: ${location.operationalStatus}`;
                             <button
                               type="button"
                               key={person.id}
-                              onClick={() => handleOpenPerson(person.id, person.fullName)}
+                              onClick={() => handleOpenPerson(person.id)}
                               className="inline-flex cursor-pointer items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-medium text-neutral-800 transition-colors hover:bg-neutral-100"
                             >
                               <span>{person.fullName}</span>
@@ -536,7 +530,7 @@ Operating Status: ${location.operationalStatus}`;
                             <button
                               type="button"
                               key={person.id}
-                              onClick={() => handleOpenPerson(person.id, person.fullName)}
+                              onClick={() => handleOpenPerson(person.id)}
                               className="inline-flex cursor-pointer items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] text-neutral-700 transition-colors hover:bg-neutral-100"
                             >
                               <span>{person.fullName}</span>

@@ -5,6 +5,38 @@ export interface ReadProjectionPerson {
   activeStatus?: boolean;
 }
 
+/**
+ * Resolves a leadership reference to its canonical Person, applying the same
+ * missing/inactive rule as the CSV export and hierarchy validation: a stale ID
+ * or an inactive Person must never fall back to a copied display name.
+ */
+export function resolveActivePerson<T extends ReadProjectionPerson>(
+  id: string | undefined,
+  people: T[],
+): T | undefined {
+  if (!id) return undefined;
+  const person = people.find(candidate => candidate.id === id);
+  if (!person) return undefined;
+  if ((person.status && person.status !== "Active") || person.activeStatus === false) return undefined;
+  return person;
+}
+
+export function resolveActivePersonList<T extends ReadProjectionPerson>(
+  ids: string[] | undefined,
+  people: T[],
+): T[] {
+  return (ids || [])
+    .map(id => resolveActivePerson(id, people))
+    .filter((person): person is T => Boolean(person));
+}
+
+export function buildDistrictManagerGroupLabel(names: Array<string | undefined>): string {
+  const distinctNames = Array.from(new Set(names.filter((name): name is string => Boolean(name))));
+  if (distinctNames.length === 0) return "No canonical District Manager";
+  if (distinctNames.length === 1) return distinctNames[0];
+  return `Multiple District Managers: ${distinctNames.join(", ")}`;
+}
+
 export interface LocationReadProjectionInput {
   id: string;
   storeNumber: string;

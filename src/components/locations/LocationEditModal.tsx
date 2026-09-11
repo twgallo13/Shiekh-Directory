@@ -7,6 +7,7 @@ import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
+import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { 
   X, 
   Save, 
@@ -103,33 +104,10 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
   useDialogFocus(Boolean(location) && confirmation === null, requestClose, dialogRef);
 
-  // Extract District Managers and Store Managers for dropdowns
-  const districtManagers = useMemo(() => {
-    return people
-      .filter(p => p.jobTitle === 'District Manager' || p.role === 'District Manager' || (p.department && p.department.includes('District')))
-      .sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-  }, [people]);
-
-  const storeManagers = useMemo(() => {
-    return people
-      .filter(p => p.jobTitle === 'Store Manager' || p.role === 'Store Manager' || (p.department && p.department.includes('Store')))
-      .sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-  }, [people]);
-
-  const otherPersonnel = useMemo(() => {
-    return people
-      .filter(p => 
-        p.jobTitle !== 'District Manager' && 
-        p.role !== 'District Manager' && 
-        p.jobTitle !== 'Store Manager' && 
-        p.role !== 'Store Manager'
-      )
-      .sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-  }, [people]);
-
+  // Eligibility is Active status only; job title/department/role are descriptive, not an eligibility filter.
   const activePersonnel = useMemo(() => {
     return people
-      .filter(person => person.activeStatus !== false && person.status !== 'Inactive')
+      .filter(person => resolveActivePerson(person.id, people) !== undefined)
       .sort((left, right) => left.fullName.localeCompare(right.fullName));
   }, [people]);
 
@@ -401,14 +379,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     });
   };
 
-  // Find currently assigned manager IDs if matching names exist
-  const currentDmId = formData.districtManagerId || 
-    districtManagers.find(d => d.fullName?.toLowerCase() === (formData.districtManagerName || '').toLowerCase())?.id || 
-    '';
-
-  const currentSmId = formData.storeManagerId || 
-    storeManagers.find(s => s.fullName?.toLowerCase() === (formData.storeManagerName || '').toLowerCase())?.id || 
-    '';
+  // Currently assigned manager IDs are canonical; no legacy name-based fallback matching.
+  const currentDmId = formData.districtManagerId || '';
+  const currentSmId = formData.storeManagerId || '';
   const currentStoreManager = people.find(person => person.id === currentSmId);
   const activeHoursTemplate = hoursTemplates.find(template => template.id === formData.hoursTemplateId);
   const recommendedHoursTemplate = hoursTemplates.find(template =>
@@ -825,24 +798,15 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
                       <option value="">-- Unassigned / Vacant --</option>
-                      {districtManagers.map(dm => (
+                      {activePersonnel.map(dm => (
                         <option key={dm.id} value={dm.id}>
                           {dm.fullName} {dm.district ? `(${dm.district})` : ''}
                         </option>
                       ))}
-                      {formData.districtManagerName && !districtManagers.some(d => d.id === currentDmId || d.fullName === formData.districtManagerName) && (
+                      {currentDmId && formData.districtManagerName && !activePersonnel.some(d => d.id === currentDmId) && (
                         <option value={currentDmId || 'custom_dm'}>
                           {formData.districtManagerName} (Current Assignment)
                         </option>
-                      )}
-                      {otherPersonnel.length > 0 && (
-                        <optgroup label="Other Field Personnel">
-                          {otherPersonnel.map(p => (
-                            <option key={p.id} value={p.id}>
-                              {p.fullName} ({p.jobTitle || p.role || 'Staff'})
-                            </option>
-                          ))}
-                        </optgroup>
                       )}
                     </select>
                   </div>
@@ -889,24 +853,15 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
                       <option value="">-- Vacant / In Transition --</option>
-                      {storeManagers.map(sm => (
+                      {activePersonnel.map(sm => (
                         <option key={sm.id} value={sm.id}>
                           {sm.fullName}
                         </option>
                       ))}
-                      {formData.storeManagerName && !storeManagers.some(s => s.id === currentSmId || s.fullName === formData.storeManagerName) && (
+                      {currentSmId && formData.storeManagerName && !activePersonnel.some(s => s.id === currentSmId) && (
                         <option value={currentSmId || 'custom_sm'}>
                           {formData.storeManagerName} (Current Assignment)
                         </option>
-                      )}
-                      {otherPersonnel.length > 0 && (
-                        <optgroup label="Other Field Personnel">
-                          {otherPersonnel.map(p => (
-                            <option key={p.id} value={p.id}>
-                              {p.fullName} ({p.jobTitle || p.role || 'Staff'})
-                            </option>
-                          ))}
-                        </optgroup>
                       )}
                     </select>
                   </div>

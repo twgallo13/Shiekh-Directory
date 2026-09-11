@@ -2,11 +2,11 @@
 
 **Status:** Approved for Phases A–B Foundation & CSV Export Repair
 **Depends on:** Dispatch 3 architecture review and decision report
-**Implementation mode:** Additive contract, server validation, reconciliation tooling, and CSV export contract repair only; no wholesale rewrite or data migration of existing records in this dispatch
+**Implementation mode:** Additive contract, server validation, reconciliation tooling, and existing CSV export contract repair only; no wholesale rewrite, governed import, deployment, or data migration of existing records in this dispatch
 
 This dispatch defines the first implementation of the canonical hierarchy and assignment model approved in Dispatch 3.
-The active implementation scope is explicitly bounded to **Phases A–B** (Contract & Inventory, Additive Model & Server Validation), plus the targeted repair of the existing CSV export regression.
-Phases D–F (Manual Assignment UX Expansion, Governed CSV Import, Approved Cutover/Migration) are deferred to subsequent dispatches.
+The active implementation scope is explicitly bounded to **Phases A–B** (Contract & Inventory, Additive Model & Server Validation), plus the targeted repair of the existing CSV export/read-projection regression already introduced on this branch.
+Phase C is started only for that CSV/read-projection repair. The broader Phase C read-surface work, and Phases D–F (Manual Assignment UX Expansion, Governed CSV Import, Approved Cutover/Migration), are deferred to subsequent dispatches.
 
 ## Objective
 
@@ -30,6 +30,8 @@ The following decisions are now the implementation baseline:
 4. Non-retail locations do not need to be forced into retail hierarchy, but optional region/district support should remain available.
 5. User-to-People linkage will use the simplest safe model: one optional `personId` per user, with clear invalid/inactive handling.
 6. Public/private relationship field policy follows the recommended split below.
+
+The authoritative Region/District roster is **not yet available in this repository**. Synthetic Region/District IDs used in tests are fixtures only and must not become production reference data. Until an approved roster is supplied, new canonical `regionId`/`districtId` assignments are blocked while unrelated edits and legacy free-text district values remain usable.
 
 ## Scope
 
@@ -72,9 +74,10 @@ The canonical hierarchy is:
 
 Implementation rules:
 
-- Region and District are controlled values, not free-text-only values.
+- Region and District are controlled values, not free-text-only values, but the production roster is a required external dependency before new canonical hierarchy assignments can be saved.
 - Legacy free-text district values remain readable for compatibility but are not treated as authoritative for new writes.
 - Non-retail locations may omit Region and District without being forced into a retail hierarchy.
+- Non-retail locations may use `Applicable` only when explicit valid controlled hierarchy references are supplied; otherwise they default to `Not Applicable`.
 - “Unknown” is allowed only as a temporary compatibility state; “Not Applicable” is the preferred state for non-retail locations.
 - There is no silent reclassification of legacy non-retail records into retail hierarchy.
 
@@ -190,6 +193,8 @@ Stop gate:
 - user/person invalid states are fail-closed and auditable
 
 ### Phase C: compatibility and read projection layer
+
+Current status: **partially started**. CSV export/read-projection fallback behavior is repaired here because the regression already existed in this branch. Broader search, print/PDF, public API DTO, and UI compatibility work remains deferred.
 
 Goal: keep existing consumers working while switching reads to canonical values.
 

@@ -30,6 +30,19 @@ test("authenticated editor mutations are committed with the server-resolved acto
   } finally { await app.close(); }
 });
 
+test("commit API forwards expectedVersion and rejects malformed version values", async () => {
+  const app = await harness("Editor");
+  try {
+    const versionedWrite = { ...locationWrite, expectedVersion: 0 };
+    const response = await app.request({ writes: [versionedWrite], audit });
+    assert.equal(response.status, 204);
+    assert.equal(app.calls[0].writes[0].expectedVersion, 0);
+
+    const malformed = await app.request({ writes: [{ ...locationWrite, expectedVersion: -1 }], audit });
+    assert.equal(malformed.status, 403);
+  } finally { await app.close(); }
+});
+
 test("viewer writes and malformed or unauthenticated commits fail closed", async () => {
   const app = await harness("Viewer");
   try {

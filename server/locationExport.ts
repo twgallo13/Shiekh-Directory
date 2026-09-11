@@ -136,6 +136,7 @@ export async function prepareLocationExport(account: Account, store: LocationExp
       id: String(person.id),
       fullName: String(person.fullName ?? person.name ?? 'Unknown Person'),
       status: typeof person.status === 'string' ? person.status : 'Active',
+      activeStatus: typeof person.activeStatus === 'boolean' ? person.activeStatus : undefined,
     }));
   const authorizedLocations = scope.type === "company-wide"
     ? activeLocations

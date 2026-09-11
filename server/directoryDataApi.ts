@@ -77,9 +77,12 @@ function parseWrites(value: unknown): DirectoryWrite[] | null {
     }
     if (Object.hasOwn(candidate, 'expectedCustomMetadata') && !plainObject(candidate.expectedCustomMetadata)) return null;
     if (Object.hasOwn(candidate, 'expectedDefinition') && candidate.expectedDefinition !== null && !plainObject(candidate.expectedDefinition)) return null;
+    const expectedVersion = candidate.expectedVersion;
+    if (Object.hasOwn(candidate, 'expectedVersion') && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
     writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}),
       ...(Object.hasOwn(candidate, 'expectedCustomMetadata') ? { expectedCustomMetadata: candidate.expectedCustomMetadata as Record<string, unknown> } : {}),
-      ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}) });
+      ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}),
+      ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number } : {}) });
   }
   const locationNumbers = writes.filter(write => write.collection === "locations" && write.operation === "set").map(write => String(write.data?.storeNumber || ""));
   if (locationNumbers.some(number => !number.trim()) || new Set(locationNumbers).size !== locationNumbers.length) return null;

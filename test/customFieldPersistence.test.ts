@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Firestore } from '@google-cloud/firestore';
 import type { Account } from '../server/authAuthority';
-import { FirestoreDirectoryStore, DirectoryConflict } from '../server/firestoreDirectory';
+import { FirestoreDirectoryStore, DirectoryConflict, DirectoryValidationError } from '../server/firestoreDirectory';
 import type { CustomFieldDefinition } from '../src/lib/customFields';
 
 function databaseFixture() {
@@ -50,10 +50,52 @@ test('custom definitions and values round-trip through transactional storage, bo
   assert.equal(reloaded.auditLogs.length, 2);
   assert.ok(reloaded.auditLogs.some(entry => entry.newState?.customMetadata?.yelpUrl === location.customMetadata.yelpUrl));
   await store.commit([{ collection: 'custom_field_definitions', id: field.id, operation: 'set', data: { ...field, retired: true }, expectedDefinition: field }], audit, actor);
-  await store.commit([{ collection: 'locations', id: location.id, operation: 'set', data: { storeNumber: '07', name: 'Renamed' } }], { ...audit, entityType: 'Location' }, actor);
+  await store.commit([{ collection: 'locations', id: location.id, operation: 'set', data: { storeNumber: '07', name: 'Renamed' }, expectedVersion: 0 }], { ...audit, entityType: 'Location' }, actor);
   assert.deepEqual((await store.read()).locations[0].customMetadata, location.customMetadata);
   const count = records.size;
-  await assert.rejects(store.commit([{ collection: 'locations', id: location.id, operation: 'set', data: { ...location, customMetadata: {} }, expectedCustomMetadata: {} }], audit, actor), DirectoryConflict);
+  await assert.rejects(store.commit([{ collection: 'locations', id: location.id, operation: 'set', data: { ...location, customMetadata: {} }, expectedCustomMetadata: {}, expectedVersion: 1 }], audit, actor), DirectoryConflict);
   assert.equal(records.size, count);
   assert.deepEqual(records.get('locations/loc-07')?.customMetadata, location.customMetadata);
+});
+
+test('directory commit rejects stale correction approvals without partial target changes', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/loc-07', { id: 'loc-07', storeNumber: '07', name: 'Original Store', version: 2, recordStatus: 'Active' });
+  records.set('requests/req-1', { id: 'req-1', targetType: 'Location', targetId: 'loc-07', status: 'Pending', version: 3, requestedChanges: { name: 'Approved Name' } });
+
+  await assert.rejects(store.commit([
+    { collection: 'requests', id: 'req-1', operation: 'set', expectedVersion: 2, data: { targetType: 'Location', targetId: 'loc-07', status: 'Approved', requestedChanges: { name: 'Approved Name' } } },
+    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 2, data: { storeNumber: '07', name: 'Approved Name' } },
+  ], { action: 'Request Approved', entityType: 'Request', entityId: 'req-1', entityName: 'Name Change', details: 'Approved request.' }, actor), DirectoryConflict);
+
+  assert.equal(records.get('requests/req-1')?.status, 'Pending');
+  assert.equal(records.get('locations/loc-07')?.name, 'Original Store');
+  assert.equal([...records.keys()].filter(key => key.startsWith('audit_logs/')).length, 0);
+});
+
+test('directory commit validates combined Person and Location state and writes multi-record audit evidence', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('people/per-1', { id: 'per-1', fullName: 'Existing Manager', status: 'Active', version: 0 });
+  records.set('locations/loc-07', { id: 'loc-07', storeNumber: '07', name: 'Original Store', storeManagerId: 'per-1', version: 0, recordStatus: 'Active' });
+
+  await assert.rejects(store.commit([
+    { collection: 'people', id: 'per-1', operation: 'delete', expectedVersion: 0 },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'per-1', entityName: 'Existing Manager', details: 'Delete person.' }, actor), DirectoryValidationError);
+  assert.ok(records.has('people/per-1'));
+  assert.equal(records.get('locations/loc-07')?.storeManagerId, 'per-1');
+
+  await store.commit([
+    { collection: 'people', id: 'per-1', operation: 'delete', expectedVersion: 0 },
+    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 0, data: { storeNumber: '07', name: 'Original Store', storeManagerId: '' } },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'per-1', entityName: 'Existing Manager', details: 'Delete person and clear assignment.' }, actor);
+
+  assert.ok(!records.has('people/per-1'));
+  assert.equal(records.get('locations/loc-07')?.storeManagerId, '');
+  const auditRecord = [...records.entries()].find(([key]) => key.startsWith('audit_logs/'))?.[1];
+  assert.equal(Array.isArray(auditRecord?.previousStates), true);
+  assert.equal(Array.isArray(auditRecord?.newStates), true);
+  assert.equal((auditRecord?.previousStates as unknown[]).length, 2);
+  assert.equal((auditRecord?.newStates as unknown[]).length, 2);
 });

@@ -24,15 +24,17 @@ test('server preserves explicitly-entered HTTP and rejects invalid bypass attemp
 });
 
 test('unchanged legacy phones remain writable during unrelated saves', () => {
-  const current = { storeNumber: '01', phone: 'legacy extension 42', phoneExtension: '42' };
-  const write: DirectoryWrite = { collection: 'locations', id: 'loc-1', operation: 'set', data: { ...current, name: 'Renamed store' } };
-  assert.deepEqual(validateMetadataWrites([write], [current], [], actor)[0].data, write.data);
+  const current = { storeNumber: '01', phone: 'legacy extension 42', phoneExtension: '42', version: 0 };
+  const write: DirectoryWrite = { collection: 'locations', id: 'loc-1', operation: 'set', data: { ...current, name: 'Renamed store' }, expectedVersion: 0 };
+  const result = validateMetadataWrites([write], [current], [], actor)[0].data;
+  assert.deepEqual({ ...result, updatedAt: undefined }, { ...write.data, version: 1, updatedAt: undefined });
 });
 
 test('unchanged legacy custom URLs remain writable during unrelated saves', () => {
-  const current = { storeNumber: '01', phone: '+12125550100', customMetadata: { yelpUrl: 'not a URL' } };
-  const write: DirectoryWrite = { collection: 'locations', id: 'loc-1', operation: 'set', data: { ...current, name: 'Renamed store' }, expectedCustomMetadata: current.customMetadata };
-  assert.deepEqual(validateMetadataWrites([write], [current], [urlField], actor)[0].data, write.data);
+  const current = { storeNumber: '01', phone: '+12125550100', customMetadata: { yelpUrl: 'not a URL' }, version: 0 };
+  const write: DirectoryWrite = { collection: 'locations', id: 'loc-1', operation: 'set', data: { ...current, name: 'Renamed store' }, expectedCustomMetadata: current.customMetadata, expectedVersion: 0 };
+  const result = validateMetadataWrites([write], [current], [urlField], actor)[0].data;
+  assert.deepEqual({ ...result, updatedAt: undefined }, { ...write.data, version: 1, updatedAt: undefined });
 });
 
 test('server independently validates person phone fields', () => {

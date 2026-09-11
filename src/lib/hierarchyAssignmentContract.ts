@@ -31,54 +31,34 @@ export interface DistrictDefinition {
   regionId: string;
 }
 
-export const CONTROLLED_REGIONS: RegionDefinition[] = [
-  { id: "reg-west", name: "West Region", code: "WEST" },
-  { id: "reg-east", name: "East Region", code: "EAST" },
-  { id: "reg-central", name: "Central Region", code: "CENT" },
-  { id: "reg-corp", name: "Corporate & Administrative", code: "CORP" },
-];
-
-export const CONTROLLED_DISTRICTS: DistrictDefinition[] = [
-  { id: "dist-01", name: "District 1", regionId: "reg-west" },
-  { id: "dist-02", name: "District 2", regionId: "reg-west" },
-  { id: "dist-03", name: "District 3", regionId: "reg-east" },
-  { id: "dist-04", name: "District 4", regionId: "reg-central" },
-  { id: "dist-corp", name: "Corporate District", regionId: "reg-corp" },
-];
-
-export function getControlledRegions(): RegionDefinition[] {
-  return [...CONTROLLED_REGIONS];
-}
-
-export function getControlledDistricts(): DistrictDefinition[] {
-  return [...CONTROLLED_DISTRICTS];
-}
-
-export function findRegionById(id: string): RegionDefinition | undefined {
-  return CONTROLLED_REGIONS.find(r => r.id === id);
-}
-
-export function findDistrictById(id: string): DistrictDefinition | undefined {
-  return CONTROLLED_DISTRICTS.find(d => d.id === id);
+export interface HierarchyRegistry {
+  regions: RegionDefinition[];
+  districts: DistrictDefinition[];
 }
 
 export function validateHierarchyRegistryReferences(
   regionId?: string,
   districtId?: string,
+  registry?: HierarchyRegistry,
 ): string[] {
   const issues: string[] = [];
   let region: RegionDefinition | undefined;
   let district: DistrictDefinition | undefined;
 
+  if ((regionId || districtId) && (!registry || registry.regions.length === 0 || registry.districts.length === 0)) {
+    issues.push("Canonical hierarchy assignment requires an approved Region/District roster before saving.");
+    return issues;
+  }
+
   if (regionId) {
-    region = findRegionById(regionId);
+    region = registry?.regions.find(r => r.id === regionId);
     if (!region) {
       issues.push(`regionId ${regionId} is not a recognized controlled region ID.`);
     }
   }
 
   if (districtId) {
-    district = findDistrictById(districtId);
+    district = registry?.districts.find(d => d.id === districtId);
     if (!district) {
       issues.push(`districtId ${districtId} is not a recognized controlled district ID.`);
     }
@@ -118,22 +98,31 @@ export interface HierarchyReconciliationReport {
   issues: HierarchyReconciliationIssue[];
 }
 
-export function validateLocationHierarchyFields(input: HierarchyFieldContract): string[] {
+export function validateLocationHierarchyFields(input: HierarchyFieldContract, registry?: HierarchyRegistry): string[] {
   const issues: string[] = [];
   const retailTypes = new Set([
     "Enclosed Mall",
     "Strip Center / Shopping Center",
     "Street / Standalone Location",
   ]);
+  const hasHierarchyAssignment = Boolean(input.regionId || input.districtId);
 
   if (retailTypes.has(input.type)) {
     const applicable = input.hierarchyApplicability ?? "Applicable";
     if (applicable === "Not Applicable") {
       issues.push(`${input.type} is a retail location and must not be marked Not Applicable.`);
     }
+  } else {
+    const applicable = input.hierarchyApplicability ?? (hasHierarchyAssignment ? "Applicable" : "Not Applicable");
+    if (hasHierarchyAssignment && applicable !== "Applicable") {
+      issues.push(`${input.type} has hierarchy references and must use Applicable hierarchy semantics.`);
+    }
+    if (!hasHierarchyAssignment && applicable === "Applicable") {
+      issues.push(`${input.type} is marked Applicable but has no controlled hierarchy assignment.`);
+    }
   }
 
-  const registryIssues = validateHierarchyRegistryReferences(input.regionId, input.districtId);
+  const registryIssues = validateHierarchyRegistryReferences(input.regionId, input.districtId, registry);
   issues.push(...registryIssues);
 
   const arrays = [
@@ -218,6 +207,7 @@ export interface PersonReconciliationInput extends PersonReference {
 export function collectHierarchyReconciliationIssues(
   locations: LocationReconciliationInput[],
   people: PersonReconciliationInput[],
+  registry?: HierarchyRegistry,
 ): HierarchyReconciliationIssue[] {
   const issues: HierarchyReconciliationIssue[] = [];
 
@@ -261,7 +251,7 @@ export function collectHierarchyReconciliationIssues(
   }
 
   for (const location of locations) {
-    const hierarchyIssues = validateHierarchyRegistryReferences(location.regionId, location.districtId);
+    const hierarchyIssues = validateHierarchyRegistryReferences(location.regionId, location.districtId, registry);
     for (const hIssue of hierarchyIssues) {
       issues.push({
         kind: "invalid-hierarchy-reference",
@@ -290,6 +280,12 @@ export function collectHierarchyReconciliationIssues(
             kind: "missing-person-reference",
             locationId: location.id,
             detail: `${field} references inactive person ${p.fullName} (${id}) on ${location.name} (${location.storeNumber})`,
+          });
+        } else if (p.assignedLocations && !matchesAnyLocationReference(p.assignedLocations, location)) {
+          issues.push({
+            kind: "reverse-assignment-mismatch",
+            locationId: location.id,
+            detail: `${field} references ${p.fullName} (${id}), but that Person record does not include ${location.name} (${location.storeNumber}) as an assigned location`,
           });
         }
       } else if (legacyName && legacyName.trim()) {
@@ -331,6 +327,12 @@ export function collectHierarchyReconciliationIssues(
             kind: "missing-person-reference",
             locationId: location.id,
             detail: `${field} references inactive person ${p.fullName} (${id}) on ${location.name} (${location.storeNumber})`,
+          });
+        } else if (p.assignedLocations && !matchesAnyLocationReference(p.assignedLocations, location)) {
+          issues.push({
+            kind: "reverse-assignment-mismatch",
+            locationId: location.id,
+            detail: `${field} references ${p.fullName} (${id}), but that Person record does not include ${location.name} (${location.storeNumber}) as an assigned location`,
           });
         }
       }
@@ -393,8 +395,9 @@ export function buildHierarchyReconciliationReport(
   locations: LocationReconciliationInput[],
   people: PersonReconciliationInput[],
   userLinks: Array<{ userId: string; personId: string }> = [],
+  registry?: HierarchyRegistry,
 ): HierarchyReconciliationReport {
-  const issues = collectHierarchyReconciliationIssues(locations, people);
+  const issues = collectHierarchyReconciliationIssues(locations, people, registry);
 
   const invalidUserLinks = userLinks.filter(link => {
     const matches = people.filter(person => person.id === link.personId);
@@ -427,4 +430,9 @@ export function buildHierarchyReconciliationReport(
     },
     issues,
   };
+}
+
+function matchesAnyLocationReference(references: string[], location: LocationReconciliationInput): boolean {
+  const normalizedStoreNumber = location.storeNumber.replace(/^0+(?=\d)/, "");
+  return references.some(reference => reference === location.id || reference === location.storeNumber || reference.replace(/^0+(?=\d)/, "") === normalizedStoreNumber);
 }

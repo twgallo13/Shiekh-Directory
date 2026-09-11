@@ -3,10 +3,22 @@ import { describe, it } from "node:test";
 import {
   buildHierarchyReconciliationReport,
   collectHierarchyReconciliationIssues,
+  type HierarchyRegistry,
   validateLocationHierarchyFields,
   validateUserPersonLink,
 } from "../src/lib/hierarchyAssignmentContract";
 import { validateMetadataWrites, DirectoryValidationError, DirectoryConflict } from "../server/firestoreDirectory";
+
+const testRegistry: HierarchyRegistry = {
+  regions: [
+    { id: "reg-west", name: "West Region" },
+    { id: "reg-east", name: "East Region" },
+  ],
+  districts: [
+    { id: "dist-01", name: "District 1", regionId: "reg-west" },
+    { id: "dist-03", name: "District 3", regionId: "reg-east" },
+  ],
+};
 
 describe("hierarchy assignment contract", () => {
   it("allows non-retail locations to have optional controlled hierarchy assignments", () => {
@@ -15,7 +27,7 @@ describe("hierarchy assignment contract", () => {
       hierarchyApplicability: "Applicable",
       districtId: "dist-01",
       regionId: "reg-west",
-    });
+    }, testRegistry);
 
     assert.equal(result.length, 0);
   });
@@ -26,7 +38,7 @@ describe("hierarchy assignment contract", () => {
       hierarchyApplicability: "Applicable",
       districtId: "dist-03", // belongs to reg-east
       regionId: "reg-west", // mismatch!
-    });
+    }, testRegistry);
 
     assert.ok(result.some(issue => issue.includes("does not match")));
   });
@@ -38,6 +50,17 @@ describe("hierarchy assignment contract", () => {
     });
 
     assert.ok(result.some(issue => issue.includes("retail location") && issue.includes("Not Applicable")));
+  });
+
+  it("blocks new canonical hierarchy assignments when no authoritative registry is supplied", () => {
+    const result = validateLocationHierarchyFields({
+      type: "Street / Standalone Location",
+      hierarchyApplicability: "Applicable",
+      districtId: "dist-01",
+      regionId: "reg-west",
+    });
+
+    assert.ok(result.some(issue => issue.includes("approved Region/District roster")));
   });
 
   it("rejects duplicate assignment ids within the same leadership arrays", () => {
@@ -137,6 +160,7 @@ describe("hierarchy assignment contract", () => {
         { id: "person-1", fullName: "Existing Person", status: "Active", assignedLocations: ["missing-loc-99"] },
       ],
       [{ userId: "user-1", personId: "person-missing" }],
+      testRegistry,
     );
 
     assert.equal(report.source, "read-only hierarchy reconciliation report");
@@ -213,6 +237,7 @@ describe("hierarchy assignment contract", () => {
         collection: "locations",
         id: "loc-1",
         operation: "set",
+        expectedVersion: 1,
         data: {
           storeNumber: "07",
           name: "Updated Store Name",

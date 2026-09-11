@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
+import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
@@ -94,17 +95,25 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
   const canAdd = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
-  const handleOpenPerson = (e: React.MouseEvent, personId?: string, personName?: string) => {
+  const handleOpenPerson = (e: React.MouseEvent, personId?: string) => {
     e.stopPropagation();
-    if (!onSelectPerson) return;
-    let found = personId ? people.find(p => p.id === personId) : undefined;
-    if (!found && personName) {
-      found = people.find(p => p.fullName.toLowerCase() === personName.toLowerCase() || personName.toLowerCase().includes(p.fullName.toLowerCase()));
-    }
+    if (!onSelectPerson || !personId) return;
+    const found = people.find(p => p.id === personId);
     if (found) {
       onSelectPerson(found);
     }
   };
+
+  const leadershipByLocationId = useMemo(() => {
+    const map = new Map<string, { storeManager?: PersonRecord; districtManager?: PersonRecord }>();
+    locations.forEach(loc => {
+      map.set(loc.id, {
+        storeManager: resolveActivePerson(loc.storeManagerId, people),
+        districtManager: resolveActivePerson(loc.districtManagerId, people),
+      });
+    });
+    return map;
+  }, [locations, people]);
 
   const districts = useMemo(() => {
     return Array.from(new Set(locations.map(l => l.district).filter(Boolean))).sort() as string[];
@@ -126,17 +135,18 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
       if (typeFilter !== 'all' && loc.type !== typeFilter) return false;
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
+      const leadership = leadershipByLocationId.get(loc.id);
       return (
         loc.storeNumber.includes(term) ||
         loc.name.toLowerCase().includes(term) ||
         loc.city.toLowerCase().includes(term) ||
         loc.state.toLowerCase().includes(term) ||
         loc.type.toLowerCase().includes(term) ||
-        loc.storeManagerName?.toLowerCase().includes(term) ||
-        loc.districtManagerName?.toLowerCase().includes(term)
+        leadership?.storeManager?.fullName.toLowerCase().includes(term) ||
+        leadership?.districtManager?.fullName.toLowerCase().includes(term)
       );
     });
-  }, [locations, includeRetired, districtFilter, stateFilter, statusFilter, typeFilter, searchTerm]);
+  }, [locations, includeRetired, districtFilter, stateFilter, statusFilter, typeFilter, searchTerm, leadershipByLocationId]);
 
   // District Groups calculation
   const districtGroups = useMemo(() => {
@@ -582,13 +592,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                         </td>
 
                         <td className="py-3 px-4">
-                          {loc.districtManagerName ? (
+                          {leadershipByLocationId.get(loc.id)?.districtManager ? (
                             <button
                               type="button"
-                              onClick={(e) => handleOpenPerson(e, loc.districtManagerId, loc.districtManagerName)}
+                              onClick={(e) => handleOpenPerson(e, leadershipByLocationId.get(loc.id)?.districtManager?.id)}
                               className="hover:text-red-600 hover:underline text-left cursor-pointer flex items-center gap-1 font-medium text-neutral-800"
                             >
-                              <span>{loc.districtManagerName}</span>
+                              <span>{leadershipByLocationId.get(loc.id)?.districtManager?.fullName}</span>
                               <ExternalLink className="w-3 h-3 text-neutral-400" />
                             </button>
                           ) : (
@@ -597,13 +607,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                         </td>
 
                         <td className="py-3 px-4">
-                          {loc.storeManagerName ? (
+                          {leadershipByLocationId.get(loc.id)?.storeManager ? (
                             <button
                               type="button"
-                              onClick={(e) => handleOpenPerson(e, loc.storeManagerId, loc.storeManagerName)}
+                              onClick={(e) => handleOpenPerson(e, leadershipByLocationId.get(loc.id)?.storeManager?.id)}
                               className="hover:text-red-600 hover:underline text-left cursor-pointer flex items-center gap-1 font-medium text-neutral-800"
                             >
-                              <span>{loc.storeManagerName}</span>
+                              <span>{leadershipByLocationId.get(loc.id)?.storeManager?.fullName}</span>
                               <ExternalLink className="w-3 h-3 text-neutral-400" />
                             </button>
                           ) : (
@@ -635,8 +645,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
             districtGroups.map(([districtName, distLocs]) => {
               const allInDistSelected = distLocs.every(l => selectedStoreIds.includes(l.id));
               const someInDistSelected = !allInDistSelected && distLocs.some(l => selectedStoreIds.includes(l.id));
-              const dmName = distLocs.find(l => l.districtManagerName)?.districtManagerName;
-              const dmId = distLocs.find(l => l.districtManagerId)?.districtManagerId;
+              const districtManager = distLocs.map(l => leadershipByLocationId.get(l.id)?.districtManager).find(Boolean);
 
               return (
                 <div key={districtName} className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-xs">
@@ -664,13 +673,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
                     <div className="text-xs text-neutral-600 flex items-center gap-1.5">
                       <span className="text-neutral-400">District Manager:</span>
-                      {dmName ? (
+                      {districtManager ? (
                         <button
                           type="button"
-                          onClick={(e) => handleOpenPerson(e, dmId, dmName)}
+                          onClick={(e) => handleOpenPerson(e, districtManager.id)}
                           className="font-semibold text-neutral-800 hover:text-red-600 hover:underline flex items-center gap-1 cursor-pointer"
                         >
-                          <span>{dmName}</span>
+                          <span>{districtManager.fullName}</span>
                           <ExternalLink className="w-3 h-3 text-neutral-400" />
                         </button>
                       ) : (
@@ -721,7 +730,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                                 <OperationalStatusBadge status={loc.operationalStatus} />
                               </td>
                               <td className="py-2.5 px-4">
-                                <span className="text-neutral-600">{loc.storeManagerName || 'Vacant'}</span>
+                                <span className="text-neutral-600">{leadershipByLocationId.get(loc.id)?.storeManager?.fullName || 'Vacant'}</span>
                               </td>
                               <td className="py-2.5 px-4 text-right">
                                 <ChevronRight className="w-4 h-4 text-neutral-400 inline-block" />
@@ -808,7 +817,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                     <div className="border-t border-neutral-100 pt-2 flex items-center justify-between text-[11px] text-neutral-500">
                       <span className="truncate max-w-[140px]">{loc.district || 'Unassigned District'}</span>
                       <span className="font-medium text-neutral-700 truncate max-w-[130px]">
-                        {loc.storeManagerName ? `Mgr: ${loc.storeManagerName}` : 'Vacant'}
+                        {leadershipByLocationId.get(loc.id)?.storeManager?.fullName ? `Mgr: ${leadershipByLocationId.get(loc.id)?.storeManager?.fullName}` : 'Vacant'}
                       </span>
                     </div>
                   </div>

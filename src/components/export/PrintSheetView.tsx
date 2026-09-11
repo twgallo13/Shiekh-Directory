@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
+import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
 
@@ -14,6 +15,17 @@ export const PrintSheetView: React.FC = () => {
     window.print();
   };
 
+  const leadershipByLocationId = useMemo(() => {
+    const map = new Map<string, { storeManagerName?: string; districtManagerName?: string }>();
+    locations.forEach(loc => {
+      map.set(loc.id, {
+        storeManagerName: resolveActivePerson(loc.storeManagerId, people)?.fullName,
+        districtManagerName: resolveActivePerson(loc.districtManagerId, people)?.fullName,
+      });
+    });
+    return map;
+  }, [locations, people]);
+
   // Get distinct districts sorted
   const distinctDistricts = Array.from(
     new Set(locations.map(l => l.district).filter(Boolean))
@@ -24,14 +36,15 @@ export const PrintSheetView: React.FC = () => {
     if (districtFilter !== 'all' && loc.district !== districtFilter) return false;
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
+    const leadership = leadershipByLocationId.get(loc.id);
     return (
       loc.storeNumber.includes(term) ||
       loc.name.toLowerCase().includes(term) ||
       loc.city.toLowerCase().includes(term) ||
       loc.state.toLowerCase().includes(term) ||
       loc.phone.toLowerCase().includes(term) ||
-      loc.storeManagerName?.toLowerCase().includes(term) ||
-      loc.districtManagerName?.toLowerCase().includes(term)
+      leadership?.storeManagerName?.toLowerCase().includes(term) ||
+      leadership?.districtManagerName?.toLowerCase().includes(term)
     );
   });
 
@@ -54,9 +67,9 @@ export const PrintSheetView: React.FC = () => {
       });
 
     if (storesInDistrict.length > 0) {
-      const dmName = storesInDistrict[0].districtManagerName || 
-        people.find(p => p.district === districtName && (p.jobTitle?.includes('District') || p.role?.includes('District')))?.fullName || 
-        'Unassigned DM';
+      const dmName = storesInDistrict
+        .map(store => leadershipByLocationId.get(store.id)?.districtManagerName)
+        .find(Boolean) || 'Unassigned DM';
       groupedByDistrict.set(districtName, { dmName, stores: storesInDistrict });
     }
   });
@@ -208,10 +221,10 @@ export const PrintSheetView: React.FC = () => {
                           {loc.phone}
                         </td>
                         <td className="py-1 px-1.5 text-neutral-700 truncate max-w-[140px]">
-                          {loc.storeManagerName || <span className="text-neutral-400 italic">Open Position</span>}
+                          {leadershipByLocationId.get(loc.id)?.storeManagerName || <span className="text-neutral-400 italic">Open Position</span>}
                         </td>
                         <td className="py-1 px-1.5 text-neutral-700 truncate max-w-[130px]">
-                          {loc.districtManagerName || dmName}
+                          {leadershipByLocationId.get(loc.id)?.districtManagerName || dmName}
                         </td>
                       </tr>
                     );

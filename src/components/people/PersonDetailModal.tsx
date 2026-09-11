@@ -27,9 +27,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
     l.storeManagerId === person.id || 
     l.districtManagerId === person.id ||
     l.assistantStoreManagerIds?.includes(person.id) ||
-    l.keyHolderIds?.includes(person.id) ||
-    l.storeManagerName?.toLowerCase() === person.fullName?.toLowerCase() ||
-    l.districtManagerName?.toLowerCase() === person.fullName?.toLowerCase()
+    l.keyHolderIds?.includes(person.id)
   );
 
   const canEditPrivacy = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';

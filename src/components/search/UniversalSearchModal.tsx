@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord } from '../../types';
+import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { Search, Store, User, X, ArrowRight } from 'lucide-react';
 import { useDialogFocus } from '../common/useDialogFocus';
 
@@ -96,29 +97,33 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
                 Store Locations
               </div>
               <div className="space-y-1">
-                {matchingLocations.map(loc => (
-                  <button
-                    key={loc.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectLocation(loc);
-                    }}
-                    className="w-full p-2.5 rounded-lg hover:bg-neutral-50 flex items-center justify-between text-left cursor-pointer transition-colors border border-transparent hover:border-neutral-200"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Store className="w-4 h-4 text-red-600" />
-                      <div>
-                        <div className="font-semibold text-neutral-900">
-                          #{loc.storeNumber} — {loc.name}
-                        </div>
-                        <div className="text-[11px] text-neutral-500">
-                          {loc.city}, {loc.state} • {loc.phone}
+                {matchingLocations.map(loc => {
+                  const storeManager = resolveActivePerson(loc.storeManagerId, people);
+                  return (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => {
+                        onSelectLocation(loc);
+                      }}
+                      className="w-full p-2.5 rounded-lg hover:bg-neutral-50 flex items-center justify-between text-left cursor-pointer transition-colors border border-transparent hover:border-neutral-200"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Store className="w-4 h-4 text-red-600" />
+                        <div>
+                          <div className="font-semibold text-neutral-900">
+                            #{loc.storeNumber} — {loc.name}
+                          </div>
+                          <div className="text-[11px] text-neutral-500">
+                            {loc.city}, {loc.state} • {loc.phone}
+                            {storeManager ? ` • Mgr: ${storeManager.fullName}` : ''}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-neutral-400" />
-                  </button>
-                ))}
+                      <ArrowRight className="w-3.5 h-3.5 text-neutral-400" />
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
-import { resolveActivePerson } from '../../lib/readProjectionContract';
+import { buildDistrictManagerGroupLabel, resolveActivePerson } from '../../lib/readProjectionContract';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
 
@@ -49,7 +49,7 @@ export const PrintSheetView: React.FC = () => {
   });
 
   // Group filtered locations by district
-  const groupedByDistrict = new Map<string, { dmName: string; stores: LocationRecord[] }>();
+  const groupedByDistrict = new Map<string, { dmLabel: string; stores: LocationRecord[] }>();
 
   // Ensure consistent district ordering
   const sortedDistricts = Array.from(
@@ -67,10 +67,10 @@ export const PrintSheetView: React.FC = () => {
       });
 
     if (storesInDistrict.length > 0) {
-      const dmName = storesInDistrict
-        .map(store => leadershipByLocationId.get(store.id)?.districtManagerName)
-        .find(Boolean) || 'Unassigned DM';
-      groupedByDistrict.set(districtName, { dmName, stores: storesInDistrict });
+      const dmLabel = buildDistrictManagerGroupLabel(
+        storesInDistrict.map(store => leadershipByLocationId.get(store.id)?.districtManagerName),
+      );
+      groupedByDistrict.set(districtName, { dmLabel, stores: storesInDistrict });
     }
   });
 
@@ -159,7 +159,7 @@ export const PrintSheetView: React.FC = () => {
 
         {/* Directory Tables Grouped By District */}
         <div className="print-sheet-groups space-y-4 print:space-y-1">
-          {Array.from(groupedByDistrict.entries()).map(([districtName, { dmName, stores }]) => (
+          {Array.from(groupedByDistrict.entries()).map(([districtName, { dmLabel, stores }]) => (
             <div key={districtName} className="print-district break-inside-avoid">
               
               {/* District Sub-Header Bar */}
@@ -168,7 +168,7 @@ export const PrintSheetView: React.FC = () => {
                   {districtName} ({stores.length} Locations)
                 </span>
                 <span className="text-neutral-700 text-[10px] font-medium">
-                  District Manager: <strong className="text-neutral-900 font-semibold">{dmName}</strong>
+                  District Manager: <strong className="text-neutral-900 font-semibold">{dmLabel}</strong>
                 </span>
               </div>
 
@@ -224,7 +224,7 @@ export const PrintSheetView: React.FC = () => {
                           {leadershipByLocationId.get(loc.id)?.storeManagerName || <span className="text-neutral-400 italic">Open Position</span>}
                         </td>
                         <td className="py-1 px-1.5 text-neutral-700 truncate max-w-[130px]">
-                          {leadershipByLocationId.get(loc.id)?.districtManagerName || dmName}
+                          {leadershipByLocationId.get(loc.id)?.districtManagerName || <span className="text-neutral-400 italic">Unassigned</span>}
                         </td>
                       </tr>
                     );

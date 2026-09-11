@@ -7,6 +7,7 @@ import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
+import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { 
   X, 
   Save, 
@@ -106,7 +107,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   // Eligibility is Active status only; job title/department/role are descriptive, not an eligibility filter.
   const activePersonnel = useMemo(() => {
     return people
-      .filter(person => person.activeStatus !== false && person.status !== 'Inactive')
+      .filter(person => resolveActivePerson(person.id, people) !== undefined)
       .sort((left, right) => left.fullName.localeCompare(right.fullName));
   }, [people]);
 
@@ -802,7 +803,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                           {dm.fullName} {dm.district ? `(${dm.district})` : ''}
                         </option>
                       ))}
-                      {formData.districtManagerName && !activePersonnel.some(d => d.id === currentDmId) && (
+                      {currentDmId && formData.districtManagerName && !activePersonnel.some(d => d.id === currentDmId) && (
                         <option value={currentDmId || 'custom_dm'}>
                           {formData.districtManagerName} (Current Assignment)
                         </option>
@@ -857,7 +858,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                           {sm.fullName}
                         </option>
                       ))}
-                      {formData.storeManagerName && !activePersonnel.some(s => s.id === currentSmId) && (
+                      {currentSmId && formData.storeManagerName && !activePersonnel.some(s => s.id === currentSmId) && (
                         <option value={currentSmId || 'custom_sm'}>
                           {formData.storeManagerName} (Current Assignment)
                         </option>

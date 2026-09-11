@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildLocationReadProjection, resolveActivePerson, resolveActivePersonList } from "../src/lib/readProjectionContract";
+import { buildDistrictManagerGroupLabel, buildLocationReadProjection, resolveActivePerson, resolveActivePersonList } from "../src/lib/readProjectionContract";
 
 describe("read projection contract", () => {
   it("prefers canonical person IDs over stale copied names when the reference is valid", () => {
@@ -111,5 +111,11 @@ describe("resolveActivePerson / resolveActivePersonList", () => {
 
   it("returns an empty list for undefined ids", () => {
     assert.deepEqual(resolveActivePersonList(undefined, people), []);
+  });
+
+  it("labels zero, one, and multiple distinct District Managers without selecting a first manager", () => {
+    assert.equal(buildDistrictManagerGroupLabel([]), "No canonical District Manager");
+    assert.equal(buildDistrictManagerGroupLabel(["District Manager A", undefined, "District Manager A"]), "District Manager A");
+    assert.equal(buildDistrictManagerGroupLabel(["District Manager A", "District Manager B"]), "Multiple District Managers: District Manager A, District Manager B");
   });
 });

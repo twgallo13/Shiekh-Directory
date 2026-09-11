@@ -115,6 +115,33 @@ test('directory commit allows person-only changes when unrelated location manage
   assert.equal(records.get('locations/loc-07')?.storeManagerId, 'per-2');
 });
 
+test('directory commit rejects an unchanged manager reference when its Person is deleted in the same transaction, but allows the reference to be cleared', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('people/p1', { id: 'p1', fullName: 'Active Manager', status: 'Active', version: 0 });
+  records.set('locations/l1', { id: 'l1', storeNumber: '01', name: 'Original Name', storeManagerId: 'p1', version: 0, recordStatus: 'Active' });
+
+  const countBefore = records.size;
+  await assert.rejects(store.commit([
+    { collection: 'people', id: 'p1', operation: 'delete', expectedVersion: 0 },
+    { collection: 'locations', id: 'l1', operation: 'set', expectedVersion: 0, data: { storeNumber: '01', name: 'Renamed Name' } },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'p1', entityName: 'Active Manager', details: 'Delete manager without reassigning the location.' }, actor), DirectoryValidationError);
+
+  assert.equal(records.size, countBefore);
+  assert.ok(records.has('people/p1'));
+  assert.equal(records.get('locations/l1')?.name, 'Original Name');
+  assert.equal(records.get('locations/l1')?.storeManagerId, 'p1');
+
+  await store.commit([
+    { collection: 'people', id: 'p1', operation: 'delete', expectedVersion: 0 },
+    { collection: 'locations', id: 'l1', operation: 'set', expectedVersion: 0, data: { storeNumber: '01', name: 'Renamed Name', storeManagerId: '' } },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'p1', entityName: 'Active Manager', details: 'Delete manager and clear the location reference.' }, actor);
+
+  assert.ok(!records.has('people/p1'));
+  assert.equal(records.get('locations/l1')?.name, 'Renamed Name');
+  assert.equal(records.get('locations/l1')?.storeManagerId, '');
+});
+
 test('directory commit preserves unrelated legacy hierarchy defects but rejects newly introduced canonical hierarchy', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };

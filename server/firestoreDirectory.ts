@@ -422,16 +422,21 @@ function validateCombinedRelationshipState(
   users: Array<Record<string, unknown>>,
 ): void {
   const peopleById = new Map(people.map(person => [person.id, person]));
-  const writtenLocationIds = new Set(writes.filter(write => write.collection === 'locations').map(write => write.id));
   const changedPersonIds = new Set(writes.filter(write => write.collection === 'people').map(write => write.id));
 
-  // Written locations already validate their own changed leadership fields at the per-write step.
-  // Here we only need the reverse case: a location that was NOT written but references a Person
-  // who WAS changed/removed in this same transaction.
+  // Final proposed Location state: pre-transaction snapshot overlaid with this transaction's writes.
+  const finalLocationsById = new Map(currentLocations.map(location => [String(location.id), location]));
+  for (const write of writes) {
+    if (write.collection !== 'locations') continue;
+    if (write.operation === 'delete') finalLocationsById.delete(write.id);
+    else if (write.data) finalLocationsById.set(write.id, { ...write.data, id: write.id });
+  }
+
+  // A leadership reference must stay valid whenever the relationship itself changed (checked at the
+  // per-write step) or the Person it points to changed/was removed in this same transaction, whether
+  // or not the owning Location document was written.
   if (changedPersonIds.size > 0) {
-    for (const location of currentLocations) {
-      const locationId = String(location.id);
-      if (writtenLocationIds.has(locationId)) continue;
+    for (const location of finalLocationsById.values()) {
       const leadershipRefs = [
         ['storeManagerId', location.storeManagerId],
         ['districtManagerId', location.districtManagerId],

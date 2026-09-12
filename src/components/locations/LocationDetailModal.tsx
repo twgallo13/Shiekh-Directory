@@ -71,6 +71,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   const canEditDirectly = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const storeManager = resolveActivePerson(location.storeManagerId, people);
   const districtManager = resolveActivePerson(location.districtManagerId, people);
+  const regionalManager = resolveActivePerson(location.regionalManagerId, people);
   const assistantManagers = resolveActivePersonList(location.assistantStoreManagerIds, people);
   const keyHolders = resolveActivePersonList(location.keyHolderIds, people);
   const hoursTemplate = hoursTemplates.find(template => template.id === location.hoursTemplateId);
@@ -499,6 +500,24 @@ Operating Status: ${location.operationalStatus}`;
                     <span className="max-w-64 truncate text-[11px] font-medium text-neutral-600" title={location.district}>
                         {location.district || 'Unassigned District'}
                     </span>
+                  </div>
+
+                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Regional Manager</span>
+                    <div>
+                      {regionalManager ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPerson(regionalManager.id)}
+                          className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
+                        >
+                          <span>{regionalManager.fullName}</span>
+                          <ExternalLink className="w-3 h-3 text-neutral-400" />
+                        </button>
+                      ) : (
+                        <span className="text-neutral-400 italic text-xs">Unassigned</span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">

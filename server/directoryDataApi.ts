@@ -16,6 +16,8 @@ const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   outbox_logs: [],
   sop_runbooks: ["System Administrator", "Directory Data Steward"],
   custom_field_definitions: ["System Administrator"],
+  regions: ["System Administrator"],
+  districts: ["System Administrator"],
 };
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const ENTITY_TYPES = new Set(["Location", "Person", "User", "Setting", "Request", "Communication"]);
@@ -78,11 +80,12 @@ function parseWrites(value: unknown): DirectoryWrite[] | null {
     if (Object.hasOwn(candidate, 'expectedCustomMetadata') && !plainObject(candidate.expectedCustomMetadata)) return null;
     if (Object.hasOwn(candidate, 'expectedDefinition') && candidate.expectedDefinition !== null && !plainObject(candidate.expectedDefinition)) return null;
     const expectedVersion = candidate.expectedVersion;
-    if (Object.hasOwn(candidate, 'expectedVersion') && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
+    if (Object.hasOwn(candidate, 'expectedVersion') && expectedVersion !== null
+      && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
     writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}),
       ...(Object.hasOwn(candidate, 'expectedCustomMetadata') ? { expectedCustomMetadata: candidate.expectedCustomMetadata as Record<string, unknown> } : {}),
       ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}),
-      ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number } : {}) });
+      ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number | null } : {}) });
   }
   const locationNumbers = writes.filter(write => write.collection === "locations" && write.operation === "set").map(write => String(write.data?.storeNumber || ""));
   if (locationNumbers.some(number => !number.trim()) || new Set(locationNumbers).size !== locationNumbers.length) return null;

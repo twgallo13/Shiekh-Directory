@@ -5,7 +5,7 @@ import type { DirectorySeed } from "../src/lib/directorySeed";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 import { isPlainRecord, parseCustomFieldDefinition, validateCustomMetadata, type CustomFieldDefinition } from "../src/lib/customFields";
 import { normalizeUsPhone, normalizeWebUrl } from "../src/lib/contactNormalization";
-import { type HierarchyFieldContract, validateLocationHierarchyFields, validateUserPersonLink } from "../src/lib/hierarchyAssignmentContract";
+import { type HierarchyFieldContract, type HierarchyRegistry, validateLocationHierarchyFields, validateUserPersonLink } from "../src/lib/hierarchyAssignmentContract";
 import { isDeepStrictEqual } from "node:util";
 
 export const DIRECTORY_COLLECTIONS = {
@@ -21,10 +21,12 @@ export const DIRECTORY_COLLECTIONS = {
   outboxLogs: "outbox_logs",
   sopRunbooks: "sop_runbooks",
   customFieldDefinitions: "custom_field_definitions",
+  regions: "regions",
+  districts: "districts",
 } as const;
 
 export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRECTORY_COLLECTIONS];
-export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number }
+export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
 export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
@@ -57,7 +59,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const needsDefinitions = writes.some(write => write.collection === 'custom_field_definitions' || (write.collection === 'locations' && write.operation === 'set'));
       const definitionSnapshot = needsDefinitions ? await transaction.get(this.firestore.collection('custom_field_definitions').limit(101)) : null;
       const definitions = definitionSnapshot?.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id })) || [];
-      const needsRelationshipState = writes.some(write => ["locations", "people", "users", "requests"].includes(write.collection));
+      const needsRelationshipState = writes.some(write => ["locations", "people", "users", "requests", "regions", "districts"].includes(write.collection));
       const peopleSnapshot = needsRelationshipState
         ? await transaction.get(this.firestore.collection("people"))
         : null;
@@ -66,6 +68,12 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         : null;
       const userSnapshot = needsRelationshipState
         ? await transaction.get(this.firestore.collection("users"))
+        : null;
+      const hierarchySnapshot = writes.some(write => write.collection === "locations" || write.collection === "regions" || write.collection === "districts")
+        ? await Promise.all([
+          transaction.get(this.firestore.collection("regions")),
+          transaction.get(this.firestore.collection("districts")),
+        ])
         : null;
 
       const peopleMap = new Map<string, { id: string; fullName: string; status?: string; activeStatus?: boolean }>(
@@ -98,7 +106,12 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const combinedPeople = Array.from(peopleMap.values());
       const locations = locationSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
       const users = userSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
-      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, combinedPeople, locations, users);
+      const hierarchyRegistry: HierarchyRegistry = {
+        regions: hierarchySnapshot?.[0].docs.map(document => ({ id: document.id, name: String(document.data().name || ""), status: document.data().status })) || [],
+        districts: hierarchySnapshot?.[1].docs.map(document => ({ id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })) || [],
+      };
+      applyHierarchyRegistryWrites(hierarchyRegistry, writes);
+      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, combinedPeople, locations, users, hierarchyRegistry);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
       const locationMatches = await Promise.all(locationQueries.map(({ query }) => transaction.get(query)));
@@ -172,6 +185,7 @@ export function validateMetadataWrites(
   people: Array<{ id: string; fullName: string; status?: string; activeStatus?: boolean }> = [],
   locations: Array<Record<string, unknown>> = [],
   users: Array<Record<string, unknown>> = [],
+  hierarchyRegistry?: HierarchyRegistry,
 ): DirectoryWrite[] {
   if (new Set(writes.map(write => `${write.collection}/${write.id}`)).size !== writes.length) throw new DirectoryValidationError('Duplicate writes are not allowed.');
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
@@ -209,7 +223,12 @@ export function validateMetadataWrites(
     const current = previous[index];
 
     const expectedVer = write.expectedVersion ?? (typeof write.data?.expectedVersion === "number" ? write.data.expectedVersion : undefined);
-    if (current && ['locations', 'people', 'users', 'requests'].includes(write.collection)) {
+    if (write.collection === 'regions' || write.collection === 'districts') {
+      if (!Object.hasOwn(write, 'expectedVersion') || (write.expectedVersion === null ? Boolean(current) : !current)) {
+        throw new DirectoryConflict("Hierarchy registry record changed concurrently. Reload the directory before saving.");
+      }
+    }
+    if (current && ['locations', 'people', 'users', 'requests', 'regions', 'districts'].includes(write.collection)) {
       if (expectedVer === undefined) {
         throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
       }
@@ -237,6 +256,19 @@ export function validateMetadataWrites(
         throw new DirectoryValidationError('Field types and existing choices cannot change. Retire the field and create a new one.');
       }
       return { ...write, data: { ...definition } };
+    }
+
+    if (write.collection === 'regions' || write.collection === 'districts') {
+      if (actor.role !== 'System Administrator') throw new DirectoryWriteDenied('Only system administrators can manage hierarchy registry records.');
+      if (write.operation !== 'set') throw new DirectoryValidationError('Retire hierarchy registry records instead of deleting them.');
+      const data: Record<string, unknown> = { ...write.data, version: ((current?.version as number) || 0) + 1, updatedAt: new Date().toISOString() };
+      if (typeof data.name !== 'string' || !data.name.trim()) throw new DirectoryValidationError('Hierarchy registry records require a name.');
+      if (data.status !== 'Active' && data.status !== 'Retired') throw new DirectoryValidationError('Hierarchy registry status must be Active or Retired.');
+      if (write.collection === 'districts') {
+        if (typeof data.regionId !== 'string' || !data.regionId.trim()) throw new DirectoryValidationError('Districts require a Region.');
+        if (!hierarchyRegistry?.regions.some(region => region.id === data.regionId)) throw new DirectoryValidationError('District references a missing Region.');
+      }
+      return { ...write, data };
     }
 
     if (write.operation !== 'set' || !['locations', 'people', 'users', 'requests'].includes(write.collection)) return write;
@@ -290,6 +322,9 @@ export function validateMetadataWrites(
         'assistantStoreManagerIds',
         'keyHolderIds',
       ].forEach(preserveField);
+      for (const field of ['regionId', 'districtId', 'regionalManagerId']) {
+        if (data[field] === null) delete data[field];
+      }
 
       const hierarchyApplicability = data.hierarchyApplicability ?? current?.hierarchyApplicability;
       const normalizedApplicability = hierarchyApplicability === 'Applicable' || hierarchyApplicability === 'Not Applicable' || hierarchyApplicability === 'Unknown'
@@ -312,7 +347,7 @@ export function validateMetadataWrites(
         regionalManagerId: typeof data.regionalManagerId === 'string' && data.regionalManagerId.trim() ? data.regionalManagerId : undefined,
       };
 
-      const hierarchyIssues = validateLocationHierarchyFields(hierarchyInput);
+      const hierarchyIssues = validateLocationHierarchyFields(hierarchyInput, hierarchyRegistry);
       if (hierarchyIssues.length > 0) {
         throw new DirectoryValidationError(hierarchyIssues.join('; '));
       }
@@ -387,7 +422,92 @@ export function validateMetadataWrites(
   });
 
   validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
+  validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry);
+  validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry);
   return validatedWrites;
+}
+
+function applyHierarchyRegistryWrites(registry: HierarchyRegistry, writes: DirectoryWrite[]): void {
+  for (const write of writes) {
+    if (write.operation !== 'set' || !write.data) continue;
+    if (write.collection === 'regions') {
+      registry.regions = [...registry.regions.filter(region => region.id !== write.id), {
+        id: write.id,
+        name: String(write.data.name || ''),
+        status: write.data.status as 'Active' | 'Retired',
+      }];
+    }
+    if (write.collection === 'districts') {
+      registry.districts = [...registry.districts.filter(district => district.id !== write.id), {
+        id: write.id,
+        name: String(write.data.name || ''),
+        regionId: String(write.data.regionId || ''),
+        status: write.data.status as 'Active' | 'Retired',
+      }];
+    }
+  }
+}
+
+function validateFinalHierarchyState(
+  writes: DirectoryWrite[],
+  currentLocations: Array<Record<string, unknown>>,
+  registry: HierarchyRegistry | undefined,
+): void {
+  if (!registry) return;
+  const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
+  const affectedLocationIds = new Set<string>();
+  const affectedRegistryIds = new Set<string>();
+
+  for (const write of writes) {
+    if (write.collection === 'locations') {
+      const current = currentLocations.find(location => String(location.id) === write.id);
+      const hierarchyChanged = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(field =>
+        Object.hasOwn(write.data || {}, field) && !isDeepStrictEqual(write.data?.[field], current?.[field]),
+      );
+      if (hierarchyChanged) affectedLocationIds.add(write.id);
+      if (write.operation === 'delete') finalLocations.delete(write.id);
+      else if (write.data) finalLocations.set(write.id, { ...write.data, id: write.id });
+    }
+    if (write.collection === 'regions' || write.collection === 'districts') affectedRegistryIds.add(write.id);
+  }
+
+  for (const location of finalLocations.values()) {
+    const affected = affectedLocationIds.has(String(location.id))
+      || affectedRegistryIds.has(String(location.regionId || ''))
+      || affectedRegistryIds.has(String(location.districtId || ''));
+    if (!affected) continue;
+    const issues = validateLocationHierarchyFields({
+      type: String(location.type || 'Street / Standalone Location'),
+      hierarchyApplicability: location.hierarchyApplicability as HierarchyFieldContract['hierarchyApplicability'],
+      regionId: typeof location.regionId === 'string' ? location.regionId : undefined,
+      districtId: typeof location.districtId === 'string' ? location.districtId : undefined,
+    }, registry);
+    if (issues.length > 0) throw new DirectoryValidationError(issues.join('; '));
+  }
+}
+
+function validateRegistryRetirement(
+  writes: DirectoryWrite[],
+  currentLocations: Array<Record<string, unknown>>,
+  registry: HierarchyRegistry | undefined,
+): void {
+  if (!registry) return;
+  const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
+  for (const write of writes) {
+    if (write.collection !== 'locations') continue;
+    if (write.operation === 'delete') finalLocations.delete(write.id);
+    else if (write.data) finalLocations.set(write.id, { ...write.data, id: write.id });
+  }
+  for (const write of writes) {
+    if ((write.collection !== 'regions' && write.collection !== 'districts') || write.operation !== 'set' || write.data?.status !== 'Retired') continue;
+    const referenceField = write.collection === 'regions' ? 'regionId' : 'districtId';
+    const locationReferenced = Array.from(finalLocations.values()).some(location => location[referenceField] === write.id);
+    const districtReferenced = write.collection === 'regions'
+      && registry.districts.some(district => district.regionId === write.id && district.status !== 'Retired');
+    if (locationReferenced || districtReferenced) {
+      throw new DirectoryValidationError(`Cannot retire this ${write.collection.slice(0, -1)} while Locations still reference it.`);
+    }
+  }
 }
 
 function assertApprovalTargetAppliesPersistedChanges(

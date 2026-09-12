@@ -26,6 +26,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   const assignedLocs = locations.filter(l => 
     l.storeManagerId === person.id || 
     l.districtManagerId === person.id ||
+    l.regionalManagerId === person.id ||
     l.assistantStoreManagerIds?.includes(person.id) ||
     l.keyHolderIds?.includes(person.id)
   );

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Firestore } from '@google-cloud/firestore';
 import type { Account } from '../server/authAuthority';
-import { FirestoreDirectoryStore, DirectoryConflict, DirectoryValidationError } from '../server/firestoreDirectory';
+import { FirestoreDirectoryStore, DirectoryConflict, DirectoryValidationError, validateMetadataWrites } from '../server/firestoreDirectory';
 import type { CustomFieldDefinition } from '../src/lib/customFields';
 
 function databaseFixture() {
@@ -238,4 +238,91 @@ test('CASE 2 — approval must validate every persisted requested field against 
   assert.equal(records.get('requests/req-approve')?.status, 'Pending');
   assert.equal(records.get('locations/loc-approve')?.name, 'Original');
   assert.equal(records.get('locations/loc-approve')?.city, 'Approved City');
+});
+
+test('directory commit validates canonical location hierarchy against saved Region and District records', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+
+  await store.commit([
+    { collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: null, data: { name: 'West Region', status: 'Active' } },
+    { collection: 'districts', id: 'district-west-1', operation: 'set', expectedVersion: null, data: { name: 'West District 1', regionId: 'region-west', status: 'Active' } },
+  ], { action: 'Hierarchy Registry Created', entityType: 'Setting', entityId: 'region-west', entityName: 'West Region', details: 'Created Region and District.' }, actor);
+
+  await store.commit([
+    { collection: 'locations', id: 'loc-hierarchy', operation: 'set', data: { storeNumber: '91', name: 'Hierarchy Store', type: 'Street / Standalone Location', hierarchyApplicability: 'Applicable', regionId: 'region-west', districtId: 'district-west-1' } },
+  ], { action: 'Location Created', entityType: 'Location', entityId: 'loc-hierarchy', entityName: 'Hierarchy Store', details: 'Assigned controlled hierarchy.' }, actor);
+  assert.equal(records.get('locations/loc-hierarchy')?.districtId, 'district-west-1');
+
+  await assert.rejects(store.commit([
+    { collection: 'locations', id: 'loc-invalid-hierarchy', operation: 'set', data: { storeNumber: '92', name: 'Invalid Store', type: 'Street / Standalone Location', hierarchyApplicability: 'Applicable', regionId: 'region-west', districtId: 'missing-district' } },
+  ], { action: 'Location Created', entityType: 'Location', entityId: 'loc-invalid-hierarchy', entityName: 'Invalid Store', details: 'Invalid hierarchy.' }, actor), DirectoryValidationError);
+
+  await assert.rejects(store.commit([
+    { collection: 'districts', id: 'district-west-1', operation: 'set', expectedVersion: 1, data: { name: 'West District 1', regionId: 'region-west', status: 'Retired' } },
+  ], { action: 'District Retired', entityType: 'Setting', entityId: 'district-west-1', entityName: 'West District 1', details: 'Attempt retirement.' }, actor), DirectoryValidationError);
+  assert.equal(records.get('districts/district-west-1')?.status, 'Active');
+});
+
+test('directory commit serializes canonical clears and clears District when Region changes', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('regions/region-west', { id: 'region-west', name: 'West', status: 'Active', version: 0 });
+  records.set('regions/region-east', { id: 'region-east', name: 'East', status: 'Active', version: 0 });
+  records.set('districts/district-west', { id: 'district-west', name: 'West District', regionId: 'region-west', status: 'Active', version: 0 });
+  records.set('districts/district-east', { id: 'district-east', name: 'East District', regionId: 'region-east', status: 'Active', version: 0 });
+  records.set('locations/loc-clear', { id: 'loc-clear', storeNumber: '93', name: 'Clearable Store', type: 'Street / Standalone Location', regionId: 'region-west', districtId: 'district-west', regionalManagerId: 'rm-1', hierarchyApplicability: 'Applicable', version: 0 });
+
+  const result = validateMetadataWrites(
+    [{ collection: 'locations', id: 'loc-clear', operation: 'set', expectedVersion: 0, data: { storeNumber: '93', name: 'Clearable Store', regionId: 'region-east', districtId: null, regionalManagerId: null, hierarchyApplicability: 'Applicable' } }],
+    [records.get('locations/loc-clear')],
+    [],
+    actor,
+    [],
+    [records.get('locations/loc-clear')!],
+    [],
+    { regions: [{ id: 'region-west', name: 'West', status: 'Active' }, { id: 'region-east', name: 'East', status: 'Active' }], districts: [{ id: 'district-west', name: 'West District', regionId: 'region-west', status: 'Active' }, { id: 'district-east', name: 'East District', regionId: 'region-east', status: 'Active' }] },
+  );
+
+  assert.equal(Object.hasOwn(result[0].data || {}, 'districtId'), false);
+  assert.equal(Object.hasOwn(result[0].data || {}, 'regionalManagerId'), false);
+  assert.equal(result[0].data?.regionId, 'region-east');
+});
+
+test('registry Add rejects an existing ID without mutation and Update remains version-protected', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('regions/region-west', { id: 'region-west', name: 'West', status: 'Active', version: 1 });
+
+  const original = structuredClone(records.get('regions/region-west'));
+  await assert.rejects(store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: null, data: { name: 'Replacement West', status: 'Retired' } }], { action: 'Region Created', entityType: 'Setting', entityId: 'region-west', entityName: 'Replacement West', details: 'Duplicate Add attempt.' }, actor), DirectoryConflict);
+  assert.deepEqual(records.get('regions/region-west'), original);
+  assert.equal([...records.keys()].filter(key => key.startsWith('audit_logs/')).length, 0);
+
+  await store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: 1, data: { name: 'Updated West', status: 'Active' } }], { action: 'Region Updated', entityType: 'Setting', entityId: 'region-west', entityName: 'Updated West', details: 'Intentional update.' }, actor);
+  assert.equal(records.get('regions/region-west')?.name, 'Updated West');
+  assert.equal(records.get('regions/region-west')?.version, 2);
+
+  await assert.rejects(store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: 1, data: { name: 'Stale West', status: 'Active' } }], { action: 'Region Updated', entityType: 'Setting', entityId: 'region-west', entityName: 'Stale West', details: 'Stale expected version.' }, actor), DirectoryConflict);
+  assert.equal(records.get('regions/region-west')?.name, 'Updated West');
+  assert.equal(records.get('regions/region-west')?.version, 2);
+});
+
+test('District parent changes validate affected Location final state and allow same-transaction resolution', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('regions/region-west', { id: 'region-west', name: 'West', status: 'Active', version: 0 });
+  records.set('regions/region-east', { id: 'region-east', name: 'East', status: 'Active', version: 0 });
+  records.set('districts/district-shared', { id: 'district-shared', name: 'Shared District', regionId: 'region-west', status: 'Active', version: 0 });
+  records.set('locations/loc-parent', { id: 'loc-parent', storeNumber: '94', name: 'Parent Store', type: 'Street / Standalone Location', regionId: 'region-west', districtId: 'district-shared', hierarchyApplicability: 'Applicable', version: 0 });
+
+  await assert.rejects(store.commit([{ collection: 'districts', id: 'district-shared', operation: 'set', expectedVersion: 0, data: { name: 'Shared District', regionId: 'region-east', status: 'Active' } }], { action: 'District Updated', entityType: 'Setting', entityId: 'district-shared', entityName: 'Shared District', details: 'Change parent only.' }, actor), DirectoryValidationError);
+  assert.equal(records.get('districts/district-shared')?.regionId, 'region-west');
+
+  await store.commit([
+    { collection: 'districts', id: 'district-shared', operation: 'set', expectedVersion: 0, data: { name: 'Shared District', regionId: 'region-east', status: 'Active' } },
+    { collection: 'locations', id: 'loc-parent', operation: 'set', expectedVersion: 0, data: { storeNumber: '94', name: 'Parent Store', regionId: 'region-east', districtId: 'district-shared', hierarchyApplicability: 'Applicable' } },
+  ], { action: 'Hierarchy Reassigned', entityType: 'Setting', entityId: 'district-shared', entityName: 'Shared District', details: 'Change parent and resolve Location in one transaction.' }, actor);
+  assert.equal(records.get('districts/district-shared')?.regionId, 'region-east');
+  assert.equal(records.get('locations/loc-parent')?.regionId, 'region-east');
 });

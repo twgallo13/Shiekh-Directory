@@ -66,7 +66,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     customFieldDefinitions,
     hoursTemplates, 
     corporateHolidays,
-    people 
+    people,
+    regions,
+    districts,
   } = useDirectory();
 
   const [formData, setFormData] = useState<LocationRecord | null>(() => location ? normalizeLocation(location) : null);
@@ -110,6 +112,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       .filter(person => resolveActivePerson(person.id, people) !== undefined)
       .sort((left, right) => left.fullName.localeCompare(right.fullName));
   }, [people]);
+  const activeRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort((left, right) => left.name.localeCompare(right.name)), [regions]);
+  const activeDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === formData?.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, formData?.regionId]);
 
   if (!location || !formData) return null;
 
@@ -130,6 +134,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     }
     const districtManager = people.find(person => person.id === formData.districtManagerId);
     const storeManager = people.find(person => person.id === formData.storeManagerId);
+    const regionalManager = people.find(person => person.id === formData.regionalManagerId);
     const assistantStoreManagerIds = (formData.assistantStoreManagerIds || []).filter(Boolean);
     const keyHolderIds = (formData.keyHolderIds || []).filter(Boolean);
     const sanitizedData: LocationRecord = {
@@ -139,6 +144,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       ...(normalizedGoogleReviewUrl ? { googleReviewUrl: normalizedGoogleReviewUrl } : {}),
       districtManagerName: districtManager?.fullName || '',
       district: districtManager?.district || formData.district,
+      regionalManagerName: regionalManager?.fullName || '',
       storeManagerName: storeManager?.fullName || '',
       storeManagerPhone: storeManager?.phone || storeManager?.workPhone || '',
       storeManagerPhonePrivacy: storeManager?.phonePrivacy || formData.storeManagerPhonePrivacy,
@@ -382,6 +388,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   // Currently assigned manager IDs are canonical; no legacy name-based fallback matching.
   const currentDmId = formData.districtManagerId || '';
   const currentSmId = formData.storeManagerId || '';
+  const currentRmId = formData.regionalManagerId || '';
   const currentStoreManager = people.find(person => person.id === currentSmId);
   const activeHoursTemplate = hoursTemplates.find(template => template.id === formData.hoursTemplateId);
   const recommendedHoursTemplate = hoursTemplates.find(template =>
@@ -813,15 +820,59 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                      District / Region Name
+                      Region
                     </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Northern California, Nevada & Texas"
-                      value={formData.district || ''}
-                      onChange={(e) => setFormData({ ...formData, district: e.target.value })}
+                    <select
+                      value={formData.regionId || ''}
+                      onChange={(e) => setFormData({ ...formData, regionId: e.target.value || undefined, districtId: undefined, hierarchyApplicability: e.target.value ? 'Applicable' : formData.hierarchyApplicability })}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
-                    />
+                    >
+                      <option value="">No controlled Region selected</option>
+                      {activeRegions.map(region => <option key={region.id} value={region.id}>{region.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">
+                      District
+                    </label>
+                    <select
+                      value={formData.districtId || ''}
+                      disabled={!formData.regionId}
+                      onChange={(e) => {
+                        const district = districts.find(item => item.id === e.target.value);
+                        setFormData({ ...formData, districtId: e.target.value || undefined, district: district?.name || formData.district, hierarchyApplicability: e.target.value ? 'Applicable' : formData.hierarchyApplicability });
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 disabled:cursor-not-allowed disabled:bg-neutral-100"
+                    >
+                      <option value="">{formData.regionId ? 'No controlled District selected' : 'Select a Region first'}</option>
+                      {activeDistricts.map(district => <option key={district.id} value={district.id}>{district.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">
+                      Regional Manager
+                    </label>
+                    <select
+                      value={currentRmId}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        const manager = people.find(person => person.id === selectedId);
+                        setFormData(prev => prev ? ({
+                          ...prev,
+                          regionalManagerId: manager?.id,
+                          regionalManagerName: manager?.fullName || '',
+                        }) : null);
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
+                    >
+                      <option value="">-- Unassigned / Vacant --</option>
+                      {activePersonnel.map(person => <option key={person.id} value={person.id}>{person.fullName}</option>)}
+                      {currentRmId && formData.regionalManagerName && !activePersonnel.some(person => person.id === currentRmId) && (
+                        <option value={currentRmId}>{formData.regionalManagerName} (Current Assignment)</option>
+                      )}
+                    </select>
                   </div>
 
                   <div>

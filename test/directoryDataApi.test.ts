@@ -31,13 +31,17 @@ test("authenticated editor mutations are committed with the server-resolved acto
   } finally { await app.close(); }
 });
 
-test("commit API forwards expectedVersion and rejects malformed version values", async () => {
+test("commit API forwards create and update version expectations and rejects malformed values", async () => {
   const app = await harness("Editor");
   try {
     const versionedWrite = { ...locationWrite, expectedVersion: 0 };
     const response = await app.request({ writes: [versionedWrite], audit });
     assert.equal(response.status, 200);
     assert.equal(app.calls[0].writes[0].expectedVersion, 0);
+
+    const createOnly = await app.request({ writes: [{ ...locationWrite, expectedVersion: null }], audit });
+    assert.equal(createOnly.status, 200);
+    assert.equal(app.calls[1].writes[0].expectedVersion, null);
 
     const malformed = await app.request({ writes: [{ ...locationWrite, expectedVersion: -1 }], audit });
     assert.equal(malformed.status, 403);
@@ -72,6 +76,21 @@ test("administrator user writes preserve explicit person unlinking through the A
     const response = await app.request({ writes: [{ collection: "users", id: "usr-2", operation: "set", expectedVersion: 0, data: { name: "Editor", email: "editor@example.test", role: "Editor", status: "Active", accessScope: "Company-wide", personId: "" } }], audit: userAudit });
     assert.equal(response.status, 200);
     assert.equal(app.calls[0].writes[0].data?.personId, "");
+  } finally { await app.close(); }
+});
+
+test("directory API preserves explicit null hierarchy clears and does not invent omitted fields", async () => {
+  const app = await harness("Editor");
+  try {
+    const response = await app.request({
+      writes: [{ collection: "locations", id: "loc-1", operation: "set", expectedVersion: 0, data: { storeNumber: "01", name: "Cleared", regionId: null, districtId: null, regionalManagerId: null } }],
+      audit,
+    });
+    assert.equal(response.status, 200);
+    assert.equal(app.calls[0].writes[0].data?.regionId, null);
+    assert.equal(app.calls[0].writes[0].data?.districtId, null);
+    assert.equal(app.calls[0].writes[0].data?.regionalManagerId, null);
+    assert.equal(Object.hasOwn(app.calls[0].writes[0].data || {}, "storeManagerId"), false);
   } finally { await app.close(); }
 });
 

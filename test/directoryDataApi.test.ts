@@ -75,6 +75,21 @@ test("administrator user writes preserve explicit person unlinking through the A
   } finally { await app.close(); }
 });
 
+test("directory API preserves explicit null hierarchy clears and does not invent omitted fields", async () => {
+  const app = await harness("Editor");
+  try {
+    const response = await app.request({
+      writes: [{ collection: "locations", id: "loc-1", operation: "set", expectedVersion: 0, data: { storeNumber: "01", name: "Cleared", regionId: null, districtId: null, regionalManagerId: null } }],
+      audit,
+    });
+    assert.equal(response.status, 200);
+    assert.equal(app.calls[0].writes[0].data?.regionId, null);
+    assert.equal(app.calls[0].writes[0].data?.districtId, null);
+    assert.equal(app.calls[0].writes[0].data?.regionalManagerId, null);
+    assert.equal(Object.hasOwn(app.calls[0].writes[0].data || {}, "storeManagerId"), false);
+  } finally { await app.close(); }
+});
+
 test("duplicate location conflicts return a stable 409 without leaking internals", async () => {
   const app = await harness("System Administrator", async () => { throw new DirectoryConflict("A location with that store number already exists."); });
   try {

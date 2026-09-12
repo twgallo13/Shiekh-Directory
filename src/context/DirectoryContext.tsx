@@ -230,8 +230,15 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     const timestamp = new Date().toISOString();
     const saved = { ...location, updatedAt: timestamp, ...(create ? { id: `loc-${crypto.randomUUID()}`, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
     const previous = locations.find(record => record.id === saved.id);
+    const serialized = { ...saved } as Record<string, unknown>;
+    if (!create && previous) {
+      for (const field of ['regionId', 'districtId', 'regionalManagerId'] as const) {
+        if (saved[field] === undefined && previous[field] !== undefined) serialized[field] = null;
+      }
+      if (previous.regionId !== saved.regionId) serialized.districtId = saved.districtId ?? null;
+    }
     const action = create ? 'Location Created' : 'Location Updated';
-    await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: saved as unknown as Record<string, unknown>, expectedCustomMetadata, ...(!create ? { expectedVersion: expectedVersionOf(previous) } : {}) }], {
+    await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: serialized, expectedCustomMetadata, ...(!create ? { expectedVersion: expectedVersionOf(previous) } : {}) }], {
       action, entityType: 'Location', entityId: saved.id, entityName: `Store #${saved.storeNumber}`, details: 'Saved location record and custom metadata.',
     });
     addAuditLog(action, 'Location', saved.id, `Store #${saved.storeNumber}`, 'Saved location record and custom metadata.', previous, saved);

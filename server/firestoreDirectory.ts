@@ -223,7 +223,7 @@ export function validateMetadataWrites(
     const current = previous[index];
 
     const expectedVer = write.expectedVersion ?? (typeof write.data?.expectedVersion === "number" ? write.data.expectedVersion : undefined);
-    if (current && ['locations', 'people', 'users', 'requests'].includes(write.collection)) {
+    if (current && ['locations', 'people', 'users', 'requests', 'regions', 'districts'].includes(write.collection)) {
       if (expectedVer === undefined) {
         throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
       }
@@ -317,6 +317,9 @@ export function validateMetadataWrites(
         'assistantStoreManagerIds',
         'keyHolderIds',
       ].forEach(preserveField);
+      for (const field of ['regionId', 'districtId', 'regionalManagerId']) {
+        if (data[field] === null) delete data[field];
+      }
 
       const hierarchyApplicability = data.hierarchyApplicability ?? current?.hierarchyApplicability;
       const normalizedApplicability = hierarchyApplicability === 'Applicable' || hierarchyApplicability === 'Not Applicable' || hierarchyApplicability === 'Unknown'
@@ -414,7 +417,8 @@ export function validateMetadataWrites(
   });
 
   validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
-  validateRegistryRetirement(validatedWrites, locations);
+  validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry);
+  validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry);
   return validatedWrites;
 }
 
@@ -439,11 +443,63 @@ function applyHierarchyRegistryWrites(registry: HierarchyRegistry, writes: Direc
   }
 }
 
-function validateRegistryRetirement(writes: DirectoryWrite[], locations: Array<Record<string, unknown>>): void {
+function validateFinalHierarchyState(
+  writes: DirectoryWrite[],
+  currentLocations: Array<Record<string, unknown>>,
+  registry: HierarchyRegistry | undefined,
+): void {
+  if (!registry) return;
+  const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
+  const affectedLocationIds = new Set<string>();
+  const affectedRegistryIds = new Set<string>();
+
+  for (const write of writes) {
+    if (write.collection === 'locations') {
+      const current = currentLocations.find(location => String(location.id) === write.id);
+      const hierarchyChanged = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(field =>
+        Object.hasOwn(write.data || {}, field) && !isDeepStrictEqual(write.data?.[field], current?.[field]),
+      );
+      if (hierarchyChanged) affectedLocationIds.add(write.id);
+      if (write.operation === 'delete') finalLocations.delete(write.id);
+      else if (write.data) finalLocations.set(write.id, { ...write.data, id: write.id });
+    }
+    if (write.collection === 'regions' || write.collection === 'districts') affectedRegistryIds.add(write.id);
+  }
+
+  for (const location of finalLocations.values()) {
+    const affected = affectedLocationIds.has(String(location.id))
+      || affectedRegistryIds.has(String(location.regionId || ''))
+      || affectedRegistryIds.has(String(location.districtId || ''));
+    if (!affected) continue;
+    const issues = validateLocationHierarchyFields({
+      type: String(location.type || 'Street / Standalone Location'),
+      hierarchyApplicability: location.hierarchyApplicability as HierarchyFieldContract['hierarchyApplicability'],
+      regionId: typeof location.regionId === 'string' ? location.regionId : undefined,
+      districtId: typeof location.districtId === 'string' ? location.districtId : undefined,
+    }, registry);
+    if (issues.length > 0) throw new DirectoryValidationError(issues.join('; '));
+  }
+}
+
+function validateRegistryRetirement(
+  writes: DirectoryWrite[],
+  currentLocations: Array<Record<string, unknown>>,
+  registry: HierarchyRegistry | undefined,
+): void {
+  if (!registry) return;
+  const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
+  for (const write of writes) {
+    if (write.collection !== 'locations') continue;
+    if (write.operation === 'delete') finalLocations.delete(write.id);
+    else if (write.data) finalLocations.set(write.id, { ...write.data, id: write.id });
+  }
   for (const write of writes) {
     if ((write.collection !== 'regions' && write.collection !== 'districts') || write.operation !== 'set' || write.data?.status !== 'Retired') continue;
     const referenceField = write.collection === 'regions' ? 'regionId' : 'districtId';
-    if (locations.some(location => location[referenceField] === write.id)) {
+    const locationReferenced = Array.from(finalLocations.values()).some(location => location[referenceField] === write.id);
+    const districtReferenced = write.collection === 'regions'
+      && registry.districts.some(district => district.regionId === write.id && district.status !== 'Retired');
+    if (locationReferenced || districtReferenced) {
       throw new DirectoryValidationError(`Cannot retire this ${write.collection.slice(0, -1)} while Locations still reference it.`);
     }
   }

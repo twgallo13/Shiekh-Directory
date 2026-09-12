@@ -214,6 +214,8 @@ Stop gate:
 
 ### Phase D: UI and assignment workflow
 
+Current status: **substantially implemented through Dispatches 5–7**. Dispatch 5 added canonical read surfaces and controlled interim retail-leadership selectors; Dispatch 6 added the Region/District registry and Regional Manager coverage; Dispatch 7 added Person-owned Works at/Supports editing and bidirectional profile views. Product-owner manual acceptance remains a stop gate, and stricter assignment eligibility/cardinality policy remains deferred.
+
 Goal: make assignments usable without ambiguous free-text behavior.
 
 Tasks:

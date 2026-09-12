@@ -10,13 +10,14 @@ import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { formatUsPhone, normalizeUsPhone } from '../../lib/contactNormalization';
+import { PersonLocationRelationshipFields } from './PersonLocationRelationshipFields';
 
 interface PeopleViewProps {
   onSelectPerson: (person: Person) => void;
 }
 
 export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
-  const { people, currentUser, addPerson } = useDirectory();
+  const { people, locations, currentUser, addPerson } = useDirectory();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [isAddingPerson, setIsAddingPerson] = useState(false);
@@ -27,7 +28,11 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newDistrict, setNewDistrict] = useState('');
-    const [phoneError, setPhoneError] = useState('');
+  const [newPrimaryLocationId, setNewPrimaryLocationId] = useState<string>();
+  const [newSupportedLocationIds, setNewSupportedLocationIds] = useState<string[]>([]);
+  const [phoneError, setPhoneError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   const canAdd = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
@@ -36,6 +41,8 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
     newPhone.trim() ||
     newEmail.trim() ||
     newDistrict.trim() ||
+    newPrimaryLocationId ||
+    newSupportedLocationIds.length > 0 ||
     newTitle !== 'Store Manager'
   );
 
@@ -45,6 +52,10 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
     setNewPhone('');
     setNewEmail('');
     setNewDistrict('');
+    setNewPrimaryLocationId(undefined);
+    setNewSupportedLocationIds([]);
+    setPhoneError('');
+    setSaveError('');
   };
 
   const requestClosePersonModal = () => {
@@ -69,7 +80,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
     );
   });
 
-  const handleCreatePerson = (e: React.FormEvent) => {
+  const handleCreatePerson = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
     const phone = newPhone ? normalizeUsPhone(newPhone) : null;
@@ -78,24 +89,33 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
       return;
     }
 
-    addPerson({
-      fullName: newName.trim(),
-      name: newName.trim(),
-      jobTitle: newTitle,
-      role: newTitle,
-      phone: phone?.e164 || '',
-      workPhone: phone?.e164 || '',
-      ...(phone?.extension ? { phoneExtension: phone.extension, workPhoneExtension: phone.extension } : {}),
-      email: newEmail.trim(),
-      workEmail: newEmail.trim(),
-      district: newDistrict.trim() || undefined,
-      status: 'Active',
-      activeStatus: true,
-      phonePrivacy: 'Internal'
-    });
-
-    resetPersonDraft();
-    setIsAddingPerson(false);
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      await addPerson({
+        fullName: newName.trim(),
+        name: newName.trim(),
+        jobTitle: newTitle,
+        role: newTitle,
+        phone: phone?.e164 || '',
+        workPhone: phone?.e164 || '',
+        ...(phone?.extension ? { phoneExtension: phone.extension, workPhoneExtension: phone.extension } : {}),
+        email: newEmail.trim(),
+        workEmail: newEmail.trim(),
+        district: newDistrict.trim() || undefined,
+        status: 'Active',
+        activeStatus: true,
+        phonePrivacy: 'Internal',
+        ...(newPrimaryLocationId ? { primaryLocationId: newPrimaryLocationId } : {}),
+        supportedLocationIds: newSupportedLocationIds,
+      });
+      resetPersonDraft();
+      setIsAddingPerson(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Person could not be saved.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -254,6 +274,16 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
                 />
               </div>
 
+              <PersonLocationRelationshipFields
+                locations={locations}
+                primaryLocationId={newPrimaryLocationId}
+                supportedLocationIds={newSupportedLocationIds}
+                onPrimaryLocationChange={setNewPrimaryLocationId}
+                onSupportedLocationIdsChange={setNewSupportedLocationIds}
+              />
+
+              {saveError && <p role="alert" className="text-xs text-red-700">{saveError}</p>}
+
               <div className="pt-3 flex items-center justify-end gap-2">
                 <Button
                   size="sm"
@@ -265,6 +295,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
                   type="submit"
                   size="sm"
                   variant="primary"
+                  isLoading={isSaving}
                 >
                   Save Record
                 </Button>

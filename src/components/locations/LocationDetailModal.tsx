@@ -24,7 +24,8 @@ import {
   Info,
   Calendar,
   Copy,
-  Check
+  Check,
+  Users
 } from 'lucide-react';
 
 interface LocationDetailModalProps {
@@ -74,6 +75,8 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   const regionalManager = resolveActivePerson(location.regionalManagerId, people);
   const assistantManagers = resolveActivePersonList(location.assistantStoreManagerIds, people);
   const keyHolders = resolveActivePersonList(location.keyHolderIds, people);
+  const primaryEmployees = people.filter(person => person.primaryLocationId === location.id);
+  const supportingEmployees = people.filter(person => person.supportedLocationIds?.includes(location.id));
   const hoursTemplate = hoursTemplates.find(template => template.id === location.hoursTemplateId);
   const hoursSourceLabel = hoursTemplate
     ? location.hoursMode === 'template'
@@ -439,6 +442,39 @@ Operating Status: ${location.operationalStatus}`;
                   </div>
                 </div>
 
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                    <Users className="h-3.5 w-3.5" /> Employment Relationships
+                  </div>
+                  <span className="text-[10px] text-neutral-400">Derived from People records</span>
+                </div>
+                <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+                  {[
+                    { label: 'Works at this Location', records: primaryEmployees, empty: 'No primary employees assigned' },
+                    { label: 'Supports this Location', records: supportingEmployees, empty: 'No supporting employees assigned' },
+                  ].map((group, index) => (
+                    <div key={group.label} className={`grid gap-2 p-3 sm:grid-cols-[10rem_1fr] sm:items-start ${index === 0 ? 'border-b border-neutral-200' : ''}`}>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">{group.label}</span>
+                      {group.records.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {group.records.map(person => (
+                            <button
+                              type="button"
+                              key={person.id}
+                              onClick={() => handleOpenPerson(person.id)}
+                              className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-medium text-neutral-800 hover:bg-neutral-100 hover:text-red-700"
+                            >
+                              {person.fullName}<ExternalLink className="h-3 w-3 text-neutral-400" />
+                            </button>
+                          ))}
+                        </div>
+                      ) : <span className="text-xs italic text-neutral-400">{group.empty}</span>}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* 2. Canonical Leadership Roster */}

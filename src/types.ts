@@ -170,11 +170,14 @@ export interface Person {
   workEmail?: string;
   activeStatus?: boolean;
   assignedLocations?: string[];
+  primaryLocationId?: string;
+  supportedLocationIds?: string[];
   district?: string;
   phonePrivacy?: ContactPrivacyLevel;
 }
 
 export type PersonRecord = Person;
+export type PersonUpdate = Omit<Partial<Person>, 'primaryLocationId'> & { primaryLocationId?: string | null };
 
 export type RequestChangeType = 
   | 'Phone Number Correction'
@@ -206,8 +209,8 @@ export interface UpdateRequest {
   reviewedBy?: string;
   reviewedAt?: string;
   reviewerNotes?: string;
-  requestedChanges: Partial<LocationRecord> & { hoursSource?: string };
-  currentSnapshot: Partial<LocationRecord>;
+  requestedChanges: (Partial<LocationRecord> & PersonUpdate) & { hoursSource?: string };
+  currentSnapshot: Partial<LocationRecord> & Partial<Person>;
   reason?: string;
 }
 

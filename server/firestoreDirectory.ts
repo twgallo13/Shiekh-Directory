@@ -34,6 +34,15 @@ export class DirectoryConflict extends Error {}
 export class DirectoryValidationError extends Error {}
 export class DirectoryWriteDenied extends Error {}
 
+type RelationshipPerson = {
+  id: string;
+  fullName: string;
+  status?: string;
+  activeStatus?: boolean;
+  primaryLocationId?: unknown;
+  supportedLocationIds?: unknown;
+};
+
 export interface DirectoryReader {
   read(): Promise<DirectorySeed>;
 }
@@ -76,34 +85,11 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         ])
         : null;
 
-      const peopleMap = new Map<string, { id: string; fullName: string; status?: string; activeStatus?: boolean }>(
-        peopleSnapshot?.docs.map(document => [
-          document.id,
-          {
-            id: document.id,
-            fullName: String(document.data().fullName || document.data().name || "Unknown Person"),
-            status: document.data().status as string | undefined,
-            activeStatus: document.data().activeStatus as boolean | undefined,
-          },
-        ]) || [],
-      );
-
-      for (const write of writes) {
-        if (write.collection === "people") {
-          if (write.operation === "delete") {
-            peopleMap.delete(write.id);
-          } else if (write.operation === "set" && write.data) {
-            peopleMap.set(write.id, {
-              id: write.id,
-              fullName: String(write.data.fullName || write.data.name || "Unknown Person"),
-              status: write.data.status as string | undefined,
-              activeStatus: write.data.activeStatus as boolean | undefined,
-            });
-          }
-        }
-      }
-
-      const combinedPeople = Array.from(peopleMap.values());
+      const people: RelationshipPerson[] = peopleSnapshot?.docs.map(document => ({
+        ...document.data(),
+        id: document.id,
+        fullName: String(document.data().fullName || document.data().name || "Unknown Person"),
+      })) || [];
       const locations = locationSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
       const users = userSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
       const hierarchyRegistry: HierarchyRegistry = {
@@ -111,7 +97,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         districts: hierarchySnapshot?.[1].docs.map(document => ({ id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })) || [],
       };
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
-      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, combinedPeople, locations, users, hierarchyRegistry);
+      const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
       const locationMatches = await Promise.all(locationQueries.map(({ query }) => transaction.get(query)));
@@ -182,7 +168,7 @@ export function validateMetadataWrites(
   previous: (Record<string, unknown> | undefined)[],
   definitions: CustomFieldDefinition[],
   actor: Account,
-  people: Array<{ id: string; fullName: string; status?: string; activeStatus?: boolean }> = [],
+  people: RelationshipPerson[] = [],
   locations: Array<Record<string, unknown>> = [],
   users: Array<Record<string, unknown>> = [],
   hierarchyRegistry?: HierarchyRegistry,
@@ -190,28 +176,19 @@ export function validateMetadataWrites(
   if (new Set(writes.map(write => `${write.collection}/${write.id}`)).size !== writes.length) throw new DirectoryValidationError('Duplicate writes are not allowed.');
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
 
-  const peopleMap = new Map<string, { id: string; fullName: string; status?: string; activeStatus?: boolean }>(
-    people.map(p => [
-      p.id,
-      {
-        id: p.id,
-        fullName: p.fullName || "Unknown Person",
-        status: p.status,
-        activeStatus: p.activeStatus,
-      },
-    ]),
-  );
+  const peopleMap = new Map<string, RelationshipPerson>(people.map(person => [person.id, { ...person }]));
 
   for (const write of writes) {
     if (write.collection === "people") {
       if (write.operation === "delete") {
         peopleMap.delete(write.id);
       } else if (write.operation === "set" && write.data) {
+        const currentPerson = peopleMap.get(write.id);
         peopleMap.set(write.id, {
+          ...currentPerson,
+          ...write.data,
           id: write.id,
           fullName: String(write.data.fullName || write.data.name || "Unknown Person"),
-          status: write.data.status as string | undefined,
-          activeStatus: write.data.activeStatus as boolean | undefined,
         });
       }
     }
@@ -374,6 +351,22 @@ export function validateMetadataWrites(
     }
 
     if (write.collection === 'people') {
+      const originalData = write.data || {};
+      for (const field of ['primaryLocationId', 'supportedLocationIds'] as const) {
+        if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
+      }
+      if (Object.hasOwn(originalData, 'primaryLocationId')) {
+        if (data.primaryLocationId === null) delete data.primaryLocationId;
+        else if (typeof data.primaryLocationId !== 'string' || !data.primaryLocationId.trim()) {
+          throw new DirectoryValidationError('Works at must reference a Location ID or be explicitly cleared.');
+        }
+      }
+      if (Object.hasOwn(originalData, 'supportedLocationIds')) {
+        if (!Array.isArray(data.supportedLocationIds) || data.supportedLocationIds.some(id => typeof id !== 'string' || !id.trim())) {
+          throw new DirectoryValidationError('Supports must be a list of Location IDs.');
+        }
+        data.supportedLocationIds = [...data.supportedLocationIds];
+      }
       normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
       if (Object.hasOwn(data, 'personId')) {
         try {
@@ -422,9 +415,71 @@ export function validateMetadataWrites(
   });
 
   validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
+  validateEmploymentRelationshipState(validatedWrites, people, locations);
   validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry);
   validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry);
   return validatedWrites;
+}
+
+function validateEmploymentRelationshipState(
+  writes: DirectoryWrite[],
+  currentPeople: RelationshipPerson[],
+  currentLocations: Array<Record<string, unknown>>,
+): void {
+  const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
+  for (const write of writes) {
+    if (write.collection !== 'locations') continue;
+    if (write.operation === 'delete') finalLocations.delete(write.id);
+    else if (write.data) finalLocations.set(write.id, { ...write.data, id: write.id });
+  }
+
+  const finalPeople = new Map(currentPeople.map(person => [person.id, { ...person }]));
+  for (const write of writes) {
+    if (write.collection !== 'people') continue;
+    if (write.operation === 'delete') finalPeople.delete(write.id);
+    else if (write.data) finalPeople.set(write.id, { ...write.data, id: write.id, fullName: String(write.data.fullName || write.data.name || 'Unknown Person') });
+  }
+
+  for (const write of writes) {
+    if (write.collection !== 'people' || write.operation !== 'set') continue;
+    const current = currentPeople.find(person => person.id === write.id);
+    const next = finalPeople.get(write.id);
+    if (!next) continue;
+    const primaryChanged = !isDeepStrictEqual(next.primaryLocationId, current?.primaryLocationId);
+    const supportsChanged = !isDeepStrictEqual(next.supportedLocationIds, current?.supportedLocationIds);
+    if (!primaryChanged && !supportsChanged) continue;
+
+    const primaryLocationId = typeof next.primaryLocationId === 'string' && next.primaryLocationId.trim() ? next.primaryLocationId : undefined;
+    const supportedLocationIds = Array.isArray(next.supportedLocationIds) ? next.supportedLocationIds as string[] : [];
+    if (supportsChanged && new Set(supportedLocationIds).size !== supportedLocationIds.length) {
+      throw new DirectoryValidationError('Supports cannot contain duplicate Locations.');
+    }
+    if (primaryLocationId && supportedLocationIds.includes(primaryLocationId)) {
+      throw new DirectoryValidationError('Works at cannot also be selected as a Supports Location.');
+    }
+
+    const changedReferences = [
+      ...(primaryChanged && primaryLocationId ? [['Works at', primaryLocationId] as const] : []),
+      ...(supportsChanged ? supportedLocationIds.map(id => ['Supports', id] as const) : []),
+    ];
+    for (const [label, locationId] of changedReferences) {
+      const location = finalLocations.get(locationId);
+      if (!location) throw new DirectoryValidationError(`${label} references missing Location ${locationId}.`);
+      if (location.recordStatus === 'Retired') throw new DirectoryValidationError(`${label} references retired Location ${locationId}.`);
+    }
+  }
+
+  for (const write of writes) {
+    if (write.collection !== 'locations') continue;
+    const current = currentLocations.find(location => String(location.id) === write.id);
+    const retiring = write.operation === 'set' && write.data?.recordStatus === 'Retired' && current?.recordStatus !== 'Retired';
+    if (write.operation !== 'delete' && !retiring) continue;
+    const referenced = Array.from(finalPeople.values()).some(person => person.primaryLocationId === write.id
+      || (Array.isArray(person.supportedLocationIds) && person.supportedLocationIds.includes(write.id)));
+    if (referenced) {
+      throw new DirectoryValidationError(`Location ${write.id} has incoming Works at or Supports relationships that must be reassigned or cleared before retirement/deletion.`);
+    }
+  }
 }
 
 function applyHierarchyRegistryWrites(registry: HierarchyRegistry, writes: DirectoryWrite[]): void {

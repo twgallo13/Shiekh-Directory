@@ -40,8 +40,8 @@ interface DirectoryContextType {
   regions: RegionRecord[];
   districts: DistrictRecord[];
   customFieldDefinitions: CustomFieldDefinition[];
-  saveRegion: (region: RegionRecord) => Promise<void>;
-  saveDistrict: (district: DistrictRecord) => Promise<void>;
+  saveRegion: (region: RegionRecord, create: boolean) => Promise<void>;
+  saveDistrict: (district: DistrictRecord, create: boolean) => Promise<void>;
   saveCustomFieldDefinition: (definition: CustomFieldDefinition) => Promise<void>;
   saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => Promise<void>;
   persistenceError: string | null;
@@ -202,17 +202,17 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     setAuditLogs(prev => [log, ...prev].slice(0, 200));
   };
 
-  const saveRegion = async (region: RegionRecord) => {
+  const saveRegion = async (region: RegionRecord, create: boolean) => {
     const existing = regions.find(item => item.id === region.id);
-    await persist([{ collection: 'regions', id: region.id, operation: 'set', data: region as unknown as Record<string, unknown>, ...(existing ? { expectedVersion: expectedVersionOf(existing) } : {}) }], {
-      action: existing ? 'Region Updated' : 'Region Created', entityType: 'Setting', entityId: region.id, entityName: region.name, details: `Saved Region ${region.name}.`,
+    await persist([{ collection: 'regions', id: region.id, operation: 'set', data: region as unknown as Record<string, unknown>, expectedVersion: create ? null : expectedVersionOf(existing) }], {
+      action: create ? 'Region Created' : 'Region Updated', entityType: 'Setting', entityId: region.id, entityName: region.name, details: `Saved Region ${region.name}.`,
     });
   };
 
-  const saveDistrict = async (district: DistrictRecord) => {
+  const saveDistrict = async (district: DistrictRecord, create: boolean) => {
     const existing = districts.find(item => item.id === district.id);
-    await persist([{ collection: 'districts', id: district.id, operation: 'set', data: district as unknown as Record<string, unknown>, ...(existing ? { expectedVersion: expectedVersionOf(existing) } : {}) }], {
-      action: existing ? 'District Updated' : 'District Created', entityType: 'Setting', entityId: district.id, entityName: district.name, details: `Saved District ${district.name}.`,
+    await persist([{ collection: 'districts', id: district.id, operation: 'set', data: district as unknown as Record<string, unknown>, expectedVersion: create ? null : expectedVersionOf(existing) }], {
+      action: create ? 'District Created' : 'District Updated', entityType: 'Setting', entityId: district.id, entityName: district.name, details: `Saved District ${district.name}.`,
     });
   };
 

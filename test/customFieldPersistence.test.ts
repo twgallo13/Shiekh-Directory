@@ -245,8 +245,8 @@ test('directory commit validates canonical location hierarchy against saved Regi
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
 
   await store.commit([
-    { collection: 'regions', id: 'region-west', operation: 'set', data: { name: 'West Region', status: 'Active' } },
-    { collection: 'districts', id: 'district-west-1', operation: 'set', data: { name: 'West District 1', regionId: 'region-west', status: 'Active' } },
+    { collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: null, data: { name: 'West Region', status: 'Active' } },
+    { collection: 'districts', id: 'district-west-1', operation: 'set', expectedVersion: null, data: { name: 'West District 1', regionId: 'region-west', status: 'Active' } },
   ], { action: 'Hierarchy Registry Created', entityType: 'Setting', entityId: 'region-west', entityName: 'West Region', details: 'Created Region and District.' }, actor);
 
   await store.commit([
@@ -289,14 +289,23 @@ test('directory commit serializes canonical clears and clears District when Regi
   assert.equal(result[0].data?.regionId, 'region-east');
 });
 
-test('registry updates reject stale writes and duplicate creation attempts', async () => {
+test('registry Add rejects an existing ID without mutation and Update remains version-protected', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
   records.set('regions/region-west', { id: 'region-west', name: 'West', status: 'Active', version: 1 });
 
-  await assert.rejects(store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', data: { name: 'Stale West', status: 'Active' } }], { action: 'Region Updated', entityType: 'Setting', entityId: 'region-west', entityName: 'West', details: 'Missing expected version.' }, actor), DirectoryConflict);
-  await assert.rejects(store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: 0, data: { name: 'Stale West', status: 'Active' } }], { action: 'Region Updated', entityType: 'Setting', entityId: 'region-west', entityName: 'West', details: 'Stale expected version.' }, actor), DirectoryConflict);
-  assert.equal(records.get('regions/region-west')?.name, 'West');
+  const original = structuredClone(records.get('regions/region-west'));
+  await assert.rejects(store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: null, data: { name: 'Replacement West', status: 'Retired' } }], { action: 'Region Created', entityType: 'Setting', entityId: 'region-west', entityName: 'Replacement West', details: 'Duplicate Add attempt.' }, actor), DirectoryConflict);
+  assert.deepEqual(records.get('regions/region-west'), original);
+  assert.equal([...records.keys()].filter(key => key.startsWith('audit_logs/')).length, 0);
+
+  await store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: 1, data: { name: 'Updated West', status: 'Active' } }], { action: 'Region Updated', entityType: 'Setting', entityId: 'region-west', entityName: 'Updated West', details: 'Intentional update.' }, actor);
+  assert.equal(records.get('regions/region-west')?.name, 'Updated West');
+  assert.equal(records.get('regions/region-west')?.version, 2);
+
+  await assert.rejects(store.commit([{ collection: 'regions', id: 'region-west', operation: 'set', expectedVersion: 1, data: { name: 'Stale West', status: 'Active' } }], { action: 'Region Updated', entityType: 'Setting', entityId: 'region-west', entityName: 'Stale West', details: 'Stale expected version.' }, actor), DirectoryConflict);
+  assert.equal(records.get('regions/region-west')?.name, 'Updated West');
+  assert.equal(records.get('regions/region-west')?.version, 2);
 });
 
 test('District parent changes validate affected Location final state and allow same-transaction resolution', async () => {

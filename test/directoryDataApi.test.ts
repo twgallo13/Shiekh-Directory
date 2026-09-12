@@ -31,13 +31,17 @@ test("authenticated editor mutations are committed with the server-resolved acto
   } finally { await app.close(); }
 });
 
-test("commit API forwards expectedVersion and rejects malformed version values", async () => {
+test("commit API forwards create and update version expectations and rejects malformed values", async () => {
   const app = await harness("Editor");
   try {
     const versionedWrite = { ...locationWrite, expectedVersion: 0 };
     const response = await app.request({ writes: [versionedWrite], audit });
     assert.equal(response.status, 200);
     assert.equal(app.calls[0].writes[0].expectedVersion, 0);
+
+    const createOnly = await app.request({ writes: [{ ...locationWrite, expectedVersion: null }], audit });
+    assert.equal(createOnly.status, 200);
+    assert.equal(app.calls[1].writes[0].expectedVersion, null);
 
     const malformed = await app.request({ writes: [{ ...locationWrite, expectedVersion: -1 }], audit });
     assert.equal(malformed.status, 403);

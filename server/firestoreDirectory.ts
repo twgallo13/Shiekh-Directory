@@ -26,7 +26,7 @@ export const DIRECTORY_COLLECTIONS = {
 } as const;
 
 export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRECTORY_COLLECTIONS];
-export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number }
+export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
 export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
@@ -223,6 +223,11 @@ export function validateMetadataWrites(
     const current = previous[index];
 
     const expectedVer = write.expectedVersion ?? (typeof write.data?.expectedVersion === "number" ? write.data.expectedVersion : undefined);
+    if (write.collection === 'regions' || write.collection === 'districts') {
+      if (!Object.hasOwn(write, 'expectedVersion') || (write.expectedVersion === null ? Boolean(current) : !current)) {
+        throw new DirectoryConflict("Hierarchy registry record changed concurrently. Reload the directory before saving.");
+      }
+    }
     if (current && ['locations', 'people', 'users', 'requests', 'regions', 'districts'].includes(write.collection)) {
       if (expectedVer === undefined) {
         throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");

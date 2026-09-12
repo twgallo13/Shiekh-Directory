@@ -25,7 +25,7 @@ export function HierarchyRegistryPanel() {
       return;
     }
     try {
-      await saveRegion({ id: regionId.trim(), name: regionName.trim(), status: 'Active' });
+      await saveRegion({ id: regionId.trim(), name: regionName.trim(), status: 'Active' }, true);
       setRegionId(''); setRegionName(''); setMessage('Region saved.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Region could not be saved.'); }
   };
@@ -36,18 +36,18 @@ export function HierarchyRegistryPanel() {
       return;
     }
     try {
-      await saveDistrict({ id: districtId.trim(), name: districtName.trim(), regionId: districtRegionId, status: 'Active' });
+      await saveDistrict({ id: districtId.trim(), name: districtName.trim(), regionId: districtRegionId, status: 'Active' }, true);
       setDistrictId(''); setDistrictName(''); setDistrictRegionId(''); setMessage('District saved.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'District could not be saved.'); }
   };
 
   const setRegionStatus = async (region: RegionRecord, status: RegionRecord['status']) => {
-    try { await saveRegion({ ...region, status }); setMessage(`${region.name} ${status.toLowerCase()}.`); }
+    try { await saveRegion({ ...region, status }, false); setMessage(`${region.name} ${status.toLowerCase()}.`); }
     catch (error) { setMessage(error instanceof Error ? error.message : 'Region status could not be updated.'); }
   };
 
   const setDistrictStatus = async (district: DistrictRecord, status: DistrictRecord['status']) => {
-    try { await saveDistrict({ ...district, status }); setMessage(`${district.name} ${status.toLowerCase()}.`); }
+    try { await saveDistrict({ ...district, status }, false); setMessage(`${district.name} ${status.toLowerCase()}.`); }
     catch (error) { setMessage(error instanceof Error ? error.message : 'District status could not be updated.'); }
   };
 

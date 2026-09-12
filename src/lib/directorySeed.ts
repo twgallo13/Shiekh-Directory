@@ -12,7 +12,7 @@ export interface DirectorySeed {
   notificationRules: NotificationRule[];
   outboxLogs: OutboxLogEntry[];
   sopRunbooks: SopRunbook[];
-  regions?: RegionRecord[];
-  districts?: DistrictRecord[];
+  regions: RegionRecord[];
+  districts: DistrictRecord[];
   customFieldDefinitions?: import('./customFields').CustomFieldDefinition[];
 }

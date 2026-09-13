@@ -30,21 +30,29 @@ test('Location import template and preview are authenticated, read-only operatio
     const template = await fetch(`${app.baseUrl}/api/imports/locations/template`, { headers: { Authorization: 'Bearer token' } });
     assert.equal(template.status, 200);
     assert.match(template.headers.get('content-disposition') || '', /shiekh_locations_import_v1\.csv/);
-    assert.deepEqual((parse(await template.text()) as string[][])[0], LOCATION_IMPORT_COLUMNS);
+    const templateBytes = new Uint8Array(await template.arrayBuffer());
+    assert.deepEqual([...templateBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    assert.deepEqual((parse(new TextDecoder().decode(templateBytes), { bom: true }) as string[][])[0], LOCATION_IMPORT_COLUMNS);
 
     const example = await fetch(`${app.baseUrl}/api/imports/locations/example`, { headers: { Authorization: 'Bearer token' } });
     assert.equal(example.status, 200);
-    assert.equal((parse(await example.text(), { columns: true }) as unknown[]).length, 4);
+    const exampleBytes = new Uint8Array(await example.arrayBuffer());
+    assert.deepEqual([...exampleBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    assert.equal((parse(new TextDecoder().decode(exampleBytes), { bom: true, columns: true }) as unknown[]).length, 4);
 
     const fields = await fetch(`${app.baseUrl}/api/imports/locations/fields`, { headers: { Authorization: 'Bearer token' } });
     assert.equal(fields.status, 200);
-    assert.deepEqual((parse(await fields.text(), { columns: true }) as Array<{ Header: string }>).map(field => field.Header), LOCATION_IMPORT_COLUMNS);
+    const fieldBytes = new Uint8Array(await fields.arrayBuffer());
+    assert.deepEqual([...fieldBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    assert.deepEqual((parse(new TextDecoder().decode(fieldBytes), { bom: true, columns: true }) as Array<{ Header: string }>).map(field => field.Header), LOCATION_IMPORT_COLUMNS);
 
     const references = await fetch(`${app.baseUrl}/api/imports/locations/references`, { headers: { Authorization: 'Bearer token' } });
     assert.equal(references.status, 200);
     assert.equal(references.headers.get('x-snapshot-read-at'), '2026-09-13T12:00:00.000Z');
-    const referenceText = await references.text();
-    const referenceRows = parse(referenceText, { columns: true }) as Array<Record<string, string>>;
+    const referenceBytes = new Uint8Array(await references.arrayBuffer());
+    assert.deepEqual([...referenceBytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    const referenceText = new TextDecoder().decode(referenceBytes);
+    const referenceRows = parse(referenceText, { bom: true, columns: true }) as Array<Record<string, string>>;
     assert.deepEqual(referenceRows.find(row => row.RecordType === 'Location'), { RecordType: 'Location', Id: 'loc-1', Name: 'Original', LifecycleStatus: 'Active', StoreNumber: '001', ParentRegionId: '', ParentRegionName: '' });
     assert.deepEqual(referenceRows.find(row => row.RecordType === 'Person'), { RecordType: 'Person', Id: 'person-1', Name: 'Reference Person', LifecycleStatus: 'Inactive', StoreNumber: '', ParentRegionId: '', ParentRegionName: '' });
     assert.deepEqual(referenceRows.find(row => row.RecordType === 'Region'), { RecordType: 'Region', Id: 'reg-west', Name: 'West', LifecycleStatus: 'Active', StoreNumber: '', ParentRegionId: '', ParentRegionName: '' });
@@ -81,9 +89,11 @@ test('Location import preview rejects viewers, invalid templates, and unavailabl
 
   const authorized = await harness(account, { async readLocationImportSnapshot() { return seed; } });
   try {
-    const response = await fetch(`${authorized.baseUrl}/api/imports/locations/preview`, { method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify({ csv: 'StoreNumber,StoreName\r\n001,Unsupported\r\n' }) });
+    const response = await fetch(`${authorized.baseUrl}/api/imports/locations/preview`, { method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify({ csv: 'StoreNumber,StoreName,Type,Address,City,State,ZipCode,Phone,District,StoreManager,StoreManagerPhone,DistrictManager,AssistantStoreManagers,OperationalStatus,RecordStatus,GoogleReviewUrl,StorePageUrl\r\n' }) });
     assert.equal(response.status, 400);
-    assert.equal((await response.json()).error.code, 'unsupported_template');
+    const body = await response.json();
+    assert.equal(body.error.code, 'directory_export_not_importable');
+    assert.equal(body.error.message, 'This is a directory export. Download the Blank Template to preview Location changes.');
   } finally { await authorized.close(); }
 
   let oversizedReads = 0;

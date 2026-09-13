@@ -19,7 +19,9 @@ The admin panel provides four authenticated downloads:
 
 The example is synthetic. `SYNTHETIC-*` IDs only produce update/unchanged results against the test fixtures defining those records. Every `REPLACE_WITH_*` value must be replaced with a canonical ID from Reference IDs. Downloads never seed or modify records.
 
-`Export All Stores` is a presentation export, not an import-compatible file and not a complete backup. It omits canonical IDs and many fields needed for deterministic re-import. See [dispatch-08-csv-coverage-matrix.md](dispatch-08-csv-coverage-matrix.md).
+All user-facing CSV downloads use UTF-8 with a BOM for spreadsheet compatibility. Preview accepts supported templates with or without that BOM.
+
+`Export All Stores` is a presentation export, not an import-compatible file and not a complete backup. It omits canonical IDs and many fields needed for deterministic re-import. Uploading its headers returns: “This is a directory export. Download the Blank Template to preview Location changes.” The error includes a direct Blank Template action. See [dispatch-08-csv-coverage-matrix.md](dispatch-08-csv-coverage-matrix.md).
 
 ## Schema contract
 
@@ -59,7 +61,7 @@ Only touched fields, plus required fields for additions, are revalidated. An unr
 
 ## Actionable results
 
-Each issue reports severity, CSV row, field, supplied value, current value when available, reason, correction, and identity candidates when relevant. Errors block the row; warnings permit the proposed action but require review.
+Each issue reports severity, CSV row, field, supplied value, current value when available, reason, correction, and identity candidates when relevant. Errors block the row; warnings permit the proposed action but require review. The upload panel keeps the selected filename visible, announces loading and disabled-control reasons, and resets the file input after every attempt so the same file can be selected again.
 
 - Missing reference: correct the ID or create the real record separately, then preview again.
 - Duplicate or ambiguous identity: inspect all candidates, repair source duplication, and explicitly correct the CSV.

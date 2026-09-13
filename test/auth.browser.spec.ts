@@ -330,6 +330,8 @@ test("Export All Stores shows server failures visibly and does not download", as
 test("Location CSV template upload shows a no-write field-level preview", async ({ page }) => {
   await prepare(page, 'System Administrator');
   let previewCalls = 0;
+  let releasePreview: () => void = () => {};
+  const previewGate = new Promise<void>(resolve => { releasePreview = resolve; });
   await page.route('**/api/imports/locations/template', route => route.fulfill({
     status: 200,
     contentType: 'text/csv; charset=utf-8',
@@ -341,6 +343,7 @@ test("Location CSV template upload shows a no-write field-level preview", async 
     expect(route.request().method()).toBe('POST');
     expect(route.request().headers().authorization).toBe('Bearer synthetic-token');
     expect(route.request().postDataJSON().csv).toContain('locations-v1');
+    await previewGate;
     await route.fulfill({ json: {
       schemaVersion: 'locations-v1',
       summary: { totalRows: 2, additions: 0, updates: 1, unchanged: 0, blocked: 1 },
@@ -354,15 +357,49 @@ test("Location CSV template upload shows a no-write field-level preview", async 
   await page.goto(`${origin}/admin`); await restore(page, true);
   await page.getByRole('button', { name: 'Fleet CSV' }).click();
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download Template' }).click();
+  await page.getByRole('button', { name: 'Blank Template' }).click();
   expect((await download).suggestedFilename()).toBe('shiekh_locations_import_v1.csv');
   await page.getByLabel('Upload Location CSV').setInputFiles({ name: 'locations.csv', mimeType: 'text/csv', buffer: Buffer.from('SchemaVersion\r\nlocations-v1\r\n') });
+  await expect(page.getByText('locations.csv', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Building Preview...' })).toBeDisabled();
+  await expect(page.getByRole('status')).toContainText('Controls are disabled until the request finishes.');
+  releasePreview();
   await expect(page.getByText('Preview only. No directory records were saved.')).toBeVisible();
   await expect(page.getByText('Original Store')).toBeVisible();
   await expect(page.getByText('Renamed Store')).toBeVisible();
   await expect(page.getByText('storeManagerId references missing Person ID missing-person.')).toBeVisible();
   await expect(page.getByRole('button', { name: /Confirm Import/i })).toHaveCount(0);
   expect(previewCalls).toBe(1);
+});
+
+test('Location CSV upload identifies directory exports and retries the same file visibly', async ({ page }) => {
+  await prepare(page, 'System Administrator');
+  let previewCalls = 0;
+  await page.route('**/api/imports/locations/preview', async route => {
+    previewCalls += 1;
+    if (previewCalls === 1) {
+      return route.fulfill({ status: 400, json: { error: { code: 'directory_export_not_importable', message: 'This is a directory export. Download the Blank Template to preview Location changes.' } } });
+    }
+    return route.fulfill({ json: {
+      schemaVersion: 'locations-v1', snapshotReadAt: '2026-09-13T12:00:00.000Z',
+      summary: { totalRows: 0, additions: 0, updates: 0, unchanged: 0, blocked: 0, warnings: 0 }, rows: [],
+    } });
+  });
+
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Fleet CSV' }).click();
+  const upload = page.getByLabel('Upload Location CSV');
+  const file = { name: 'shiekh_active_store_directory.csv', mimeType: 'text/csv', buffer: Buffer.from('StoreNumber,StoreName\r\n001,Store One\r\n') };
+  await upload.setInputFiles(file);
+  await expect(page.getByText(file.name, { exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('This is a directory export. Download the Blank Template to preview Location changes.');
+  await expect(page.getByRole('button', { name: 'Download Blank Template' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose File Again' })).toBeEnabled();
+
+  await upload.setInputFiles(file);
+  await expect(page.getByText('Preview only. No directory records were saved.')).toBeVisible();
+  await expect(page.getByText('The CSV contains no data rows.')).toBeVisible();
+  expect(previewCalls).toBe(2);
 });
 
 test("diagnostic mail uses the account session without separate sign-in controls", async ({ page }) => {

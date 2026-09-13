@@ -3,7 +3,7 @@ import { AlertCircle, BookOpen, Download, FileSpreadsheet, Plus, Upload } from '
 import type { SessionUser } from '../../lib/authSession';
 import type { LocationImportPreview } from '../../lib/locationImportPreview';
 import { LOCATION_IMPORT_FIELDS } from '../../lib/locationImportSchema';
-import { downloadLocationImportResource, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
+import { downloadLocationImportResource, LocationImportRequestError, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
 
 interface LocationImportPreviewPanelProps {
   user: SessionUser | null;
@@ -16,35 +16,52 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
   const [filename, setFilename] = useState('');
   const [busy, setBusy] = useState<LocationImportDownload | 'preview' | null>(null);
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
 
   const downloadResource = async (resource: LocationImportDownload) => {
     if (!user || busy) return;
     setBusy(resource);
     setError('');
+    setErrorCode('');
     try {
       await downloadLocationImportResource(user, resource);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The Location import guidance could not be downloaded.');
+      setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'download_failed');
     } finally {
       setBusy(null);
     }
   };
 
   const selectFile = async (file: File | undefined) => {
-    if (!user || !file || busy) return;
+    if (!file || busy) return;
+    setFilename(file.name);
+    setPreview(null);
+    if (!user) {
+      setError('Sign in again before previewing this file.');
+      setErrorCode('authentication_required');
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
     setBusy('preview');
     setError('');
-    setPreview(null);
-    setFilename(file.name);
+    setErrorCode('');
     try {
       setPreview(await previewLocationImport(user, file));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The Location import preview could not be generated.');
+      setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'preview_failed');
     } finally {
       setBusy(null);
       if (inputRef.current) inputRef.current.value = '';
     }
   };
+
+  const disabledReason = !user
+    ? 'Sign in to download resources or preview a Location CSV.'
+    : busy
+      ? busy === 'preview' ? `Previewing ${filename}. Controls are disabled until the request finishes.` : 'A download is in progress. Controls are disabled until it finishes.'
+      : '';
 
   return (
     <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs md:col-span-2">
@@ -90,29 +107,36 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
       </section>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={!user || Boolean(busy)} onClick={() => void downloadResource('template')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
+        <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => void downloadResource('template')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
           <Download className="w-4 h-4" />
           <span>{busy === 'template' ? 'Downloading...' : 'Blank Template'}</span>
         </button>
-        <button type="button" disabled={!user || Boolean(busy)} onClick={() => void downloadResource('example')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
+        <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => void downloadResource('example')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
           <Download className="w-4 h-4" />
           <span>{busy === 'example' ? 'Downloading...' : 'Worked Example'}</span>
         </button>
-        <button type="button" disabled={!user || Boolean(busy)} onClick={() => void downloadResource('fields')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
+        <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => void downloadResource('fields')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
           <Download className="w-4 h-4" />
           <span>{busy === 'fields' ? 'Downloading...' : 'Field Dictionary'}</span>
         </button>
-        <button type="button" disabled={!user || Boolean(busy)} onClick={() => void downloadResource('references')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
+        <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => void downloadResource('references')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
           <Download className="w-4 h-4" />
           <span>{busy === 'references' ? 'Downloading...' : 'Reference IDs'}</span>
         </button>
-        <button type="button" disabled={!user || Boolean(busy)} onClick={() => inputRef.current?.click()} className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+        <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => inputRef.current?.click()} className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
           <FileSpreadsheet className="w-4 h-4" />
           <span>{busy === 'preview' ? 'Building Preview...' : 'Upload CSV'}</span>
         </button>
-        <input ref={inputRef} type="file" accept=".csv,text/csv" className="sr-only" aria-label="Upload Location CSV" onChange={event => void selectFile(event.target.files?.[0])} />
+        <input ref={inputRef} type="file" accept=".csv,text/csv" disabled={!user || Boolean(busy)} className="sr-only" aria-label="Upload Location CSV" onChange={event => void selectFile(event.target.files?.[0])} />
         <span className="self-center text-[11px] text-neutral-500">Schema locations-v1 · Maximum 2 MB</span>
       </div>
+
+      {(disabledReason || filename) && (
+        <div role="status" aria-live="polite" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-600">
+          {filename && <span className="font-semibold text-neutral-900">{filename}</span>}
+          <span>{disabledReason || (preview ? 'Preview ready.' : error ? 'Preview failed. Correct the file and retry.' : 'File selected.')}</span>
+        </div>
+      )}
 
       <details className="border-t border-neutral-200 pt-3">
         <summary className="cursor-pointer text-xs font-semibold text-neutral-800">View field dictionary</summary>
@@ -124,7 +148,14 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
         </div>
       </details>
 
-      {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
+      {error && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span className="grow">{error}</span>
+          {errorCode === 'directory_export_not_importable' && <button type="button" disabled={!user || Boolean(busy)} onClick={() => void downloadResource('template')} className="font-semibold underline disabled:opacity-50">Download Blank Template</button>}
+          <button type="button" disabled={!user || Boolean(busy)} onClick={() => inputRef.current?.click()} className="font-semibold underline disabled:opacity-50">Choose File Again</button>
+        </div>
+      )}
 
       {preview && (
         <div className="space-y-4" aria-live="polite">

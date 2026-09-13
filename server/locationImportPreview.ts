@@ -127,7 +127,7 @@ export function buildReferenceCsv(snapshot: LocationImportSnapshot): string {
     ...snapshot.regions.map(region => ({ RecordType: 'Region', Id: region.id, Name: region.name, LifecycleStatus: region.status, StoreNumber: '', ParentRegionId: '', ParentRegionName: '' })),
     ...snapshot.districts.map(district => ({ RecordType: 'District', Id: district.id, Name: district.name, LifecycleStatus: district.status, StoreNumber: '', ParentRegionId: district.regionId, ParentRegionName: regionsById.get(district.regionId) || '' })),
   ].sort((left, right) => left.RecordType.localeCompare(right.RecordType) || left.Name.localeCompare(right.Name) || left.Id.localeCompare(right.Id));
-  return stringify(rows, { header: true, columns: ['RecordType', 'Id', 'Name', 'LifecycleStatus', 'StoreNumber', 'ParentRegionId', 'ParentRegionName'], record_delimiter: '\r\n', bom: false });
+  return stringify(rows, { header: true, columns: ['RecordType', 'Id', 'Name', 'LifecycleStatus', 'StoreNumber', 'ParentRegionId', 'ParentRegionName'], record_delimiter: '\r\n', bom: true });
 }
 
 function toRecord(snapshot: QueryDocumentSnapshot): Record<string, unknown> {

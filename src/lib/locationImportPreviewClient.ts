@@ -4,6 +4,12 @@ import { LOCATION_IMPORT_MAX_BYTES } from './locationImportSchema';
 
 export type LocationImportDownload = 'template' | 'example' | 'fields' | 'references';
 
+export class LocationImportRequestError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+  }
+}
+
 const downloadNames: Record<LocationImportDownload, string> = {
   template: 'shiekh_locations_import_v1.csv',
   example: 'shiekh_locations_import_v1_worked_example.csv',
@@ -21,7 +27,7 @@ export async function downloadLocationImportResource(user: SessionUser, resource
     cache: 'no-store',
     redirect: 'error',
   });
-  if (!response.ok) throw new Error(await previewErrorMessage(response, 'The Location import guidance could not be downloaded.'));
+  if (!response.ok) throw await previewRequestError(response, 'The Location import guidance could not be downloaded.');
   const blob = await response.blob();
   const href = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -46,7 +52,7 @@ export async function previewLocationImport(user: SessionUser, file: File): Prom
     cache: 'no-store',
     redirect: 'error',
   });
-  if (!response.ok) throw new Error(await previewErrorMessage(response, 'The Location import preview could not be generated.'));
+  if (!response.ok) throw await previewRequestError(response, 'The Location import preview could not be generated.');
   const preview = await response.json() as LocationImportPreview;
   if (preview.schemaVersion !== 'locations-v1' || !preview.summary || !Array.isArray(preview.rows)) {
     throw new Error('The server returned an invalid Location import preview.');
@@ -54,7 +60,7 @@ export async function previewLocationImport(user: SessionUser, file: File): Prom
   return preview;
 }
 
-async function previewErrorMessage(response: Response, fallback: string) {
-  const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-  return body?.error?.message || fallback;
+async function previewRequestError(response: Response, fallback: string) {
+  const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string } } | null;
+  return new LocationImportRequestError(body?.error?.code || 'preview_request_failed', body?.error?.message || fallback);
 }

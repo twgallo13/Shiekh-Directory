@@ -31,11 +31,31 @@ const snapshot: Pick<DirectorySeed, 'locations' | 'people' | 'regions' | 'distri
 
 describe('Location CSV import preview', () => {
   it('downloads the exact supported locations-v1 header', () => {
-    const [headers] = parse(buildLocationImportTemplate()) as string[][];
+    const [headers] = parse(buildLocationImportTemplate(), { bom: true }) as string[][];
     assert.deepEqual(headers, LOCATION_IMPORT_COLUMNS);
-    const dictionary = parse(buildLocationImportFieldDictionary(), { columns: true }) as Array<{ Header: string }>;
+    const dictionary = parse(buildLocationImportFieldDictionary(), { bom: true, columns: true }) as Array<{ Header: string }>;
     assert.deepEqual(dictionary.map(field => field.Header), LOCATION_IMPORT_COLUMNS);
     assert.deepEqual(LOCATION_IMPORT_FIELDS.map(field => field.column), LOCATION_IMPORT_COLUMNS);
+    assert.equal(buildLocationImportTemplate().codePointAt(0), 0xfeff);
+    assert.equal(buildLocationImportWorkedExample().codePointAt(0), 0xfeff);
+    assert.equal(buildLocationImportFieldDictionary().codePointAt(0), 0xfeff);
+  });
+
+  it('accepts the supported template with and without a UTF-8 BOM', () => {
+    const templateWithBom = buildLocationImportTemplate();
+    const templateWithoutBom = templateWithBom.replace(/^\uFEFF/, '');
+    assert.equal(previewLocationImport(templateWithBom, snapshot).summary.totalRows, 0);
+    assert.equal(previewLocationImport(templateWithoutBom, snapshot).summary.totalRows, 0);
+  });
+
+  it('identifies a directory export and points directly to the Blank Template', () => {
+    const exportHeaders = 'StoreNumber,StoreName,Type,Address,City,State,ZipCode,Phone,District,StoreManager,StoreManagerPhone,DistrictManager,AssistantStoreManagers,OperationalStatus,RecordStatus,GoogleReviewUrl,StorePageUrl\r\n';
+    assert.throws(
+      () => previewLocationImport(exportHeaders, snapshot),
+      (error: unknown) => error instanceof LocationImportPreviewError
+        && error.code === 'directory_export_not_importable'
+        && error.message === 'This is a directory export. Download the Blank Template to preview Location changes.',
+    );
   });
 
   it('shows exact updates while preserving blank fields and without mutating the snapshot', () => {

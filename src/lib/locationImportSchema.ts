@@ -66,7 +66,7 @@ export const LOCATION_IMPORT_FIELDS: readonly LocationImportFieldDefinition[] = 
 export const LOCATION_IMPORT_COLUMNS = LOCATION_IMPORT_FIELDS.map(field => field.column);
 
 export function buildLocationImportTemplate(): string {
-  return stringify([], { header: true, columns: LOCATION_IMPORT_COLUMNS, record_delimiter: '\r\n', bom: false });
+  return stringify([], { header: true, columns: LOCATION_IMPORT_COLUMNS, record_delimiter: '\r\n', bom: true });
 }
 
 export function buildLocationImportFieldDictionary(): string {
@@ -80,7 +80,7 @@ export function buildLocationImportFieldDictionary(): string {
     BlankBehavior: field.column === 'SchemaVersion' ? 'Not allowed' : 'Preserves an existing value; explicit clearing is not supported',
     Example: field.example,
   }));
-  return stringify(rows, { header: true, record_delimiter: '\r\n', bom: false });
+  return stringify(rows, { header: true, record_delimiter: '\r\n', bom: true });
 }
 
 export function buildLocationImportWorkedExample(): string {
@@ -100,7 +100,7 @@ export function buildLocationImportWorkedExample(): string {
       OperationalStatus: 'Open — Normal Operations', RecordStatus: 'Active',
     }),
   ];
-  return stringify(rows, { header: true, columns: LOCATION_IMPORT_COLUMNS, record_delimiter: '\r\n', bom: false });
+  return stringify(rows, { header: true, columns: LOCATION_IMPORT_COLUMNS, record_delimiter: '\r\n', bom: true });
 }
 
 function exampleRow(values: Record<string, string>): Record<string, string> {

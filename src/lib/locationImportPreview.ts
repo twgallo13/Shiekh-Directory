@@ -89,7 +89,7 @@ export interface LocationImportPreview {
 }
 
 export class LocationImportPreviewError extends Error {
-  constructor(public readonly code: 'invalid_csv' | 'unsupported_template', message: string) {
+  constructor(public readonly code: 'invalid_csv' | 'unsupported_template' | 'directory_export_not_importable', message: string) {
     super(message);
   }
 }
@@ -367,6 +367,9 @@ function parseImportRows(csv: string): ImportRow[] {
   const duplicateHeaders = [...duplicateValues(headers)];
   const missingColumns = LOCATION_IMPORT_COLUMNS.filter(column => !headers.includes(column));
   const extraColumns = headers.filter(column => !LOCATION_IMPORT_COLUMNS.includes(column));
+  if (isDirectoryExport(headers)) {
+    throw new LocationImportPreviewError('directory_export_not_importable', 'This is a directory export. Download the Blank Template to preview Location changes.');
+  }
   if (duplicateHeaders.length || missingColumns.length || extraColumns.length || headers.length !== LOCATION_IMPORT_COLUMNS.length) {
     throw new LocationImportPreviewError('unsupported_template', [
       `Use the supported ${LOCATION_IMPORT_SCHEMA_VERSION} template.`,
@@ -376,6 +379,12 @@ function parseImportRows(csv: string): ImportRow[] {
     ].join(' '));
   }
   return matrix.slice(1).map(values => Object.fromEntries(headers.map((header, index) => [header, values[index] || ''])));
+}
+
+function isDirectoryExport(headers: string[]): boolean {
+  return !headers.includes('SchemaVersion')
+    && ['StoreNumber', 'StoreName', 'StoreManager', 'StoreManagerPhone', 'DistrictManager', 'AssistantStoreManagers']
+      .every(header => headers.includes(header));
 }
 
 function validateRowIdentitySyntax(row: ImportRow, issues: LocationImportIssue[]): void {

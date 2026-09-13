@@ -1,8 +1,22 @@
-# Dispatch 8: CSV Coverage Matrix
+# Dispatch 8–9: CSV Coverage Matrix
 
 ## Reading the matrix
 
-`Preview` means the `locations-v1` dry-run contract. `Export` means the current **Export All Stores** CSV, not the Reference IDs guidance file or Directory API. `Writable` describes ordinary manual application behavior; Dispatch 8 writes nothing.
+`Preview` means the `locations-v1` dry-run contract. `Confirm` means Dispatch 9 can atomically persist an eligible preview using the same column and validation contract. `Export` means the current **Export All Stores** CSV, not the Reference IDs guidance file or Directory API. Dispatch 8 preview and guidance routes remain read-only.
+
+## Dispatch 9 confirmation coverage
+
+| Data group | Confirm | Boundary |
+|---|---|---|
+| Supported Location identity, profile, lifecycle, hierarchy, and Location-owned leadership columns listed below | Yes | Entire eligible batch only; additions are create-only and updates require reviewed versions |
+| Unchanged Location rows | Verified, not written | Signed target identity and expected version must still match at confirmation |
+| Blank supported cells | Preserve only | Existing Dispatch 8 behavior; no explicit clearing syntax |
+| Person `Works at` / `Supports` | Dependency check only | Person-owned fields are never written by this import |
+| Regions, Districts, and People | Reference check only | Existing active canonical records are required; names never create or select records |
+| Unsupported Location fields and every non-Location group below | No | Preserved on updates where already present; no new CSV columns |
+| Export All Stores | No | Presentation export remains non-importable |
+
+Confirmation binds the actor, schema, exact CSV digest, target identities, expected versions, normalized changed records, and unchanged-row assertions in a 10-minute signed manifest. The server revalidates the complete batch in one transaction and writes changed Locations, correlated before/after audits, and one idempotent receipt together. Limits are 100 total rows, 40 changed rows, a 1,000,000-byte signed token, and an 8,000,000-byte estimated atomic payload including audit and receipt data.
 
 Recommended future bulk exchange uses separate linked Location and People CSV contracts. Canonical IDs join those contracts. Leadership is organizational data owned by Locations; application role/access scope is authorization data owned by user accounts. The application models `Works at`, `Supports`, Store Manager, Assistant Manager, Key Holder, District Manager, and Regional Manager. It does not model a general employee supervisor/reporting tree.
 

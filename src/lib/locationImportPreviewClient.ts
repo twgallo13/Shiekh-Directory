@@ -1,5 +1,5 @@
 import type { SessionUser } from './authSession';
-import type { LocationImportPreview } from './locationImportPreview';
+import type { LocationImportPreview, LocationImportReceipt } from './locationImportPreview';
 import { LOCATION_IMPORT_MAX_BYTES } from './locationImportSchema';
 
 export type LocationImportDownload = 'template' | 'example' | 'fields' | 'references';
@@ -39,28 +39,104 @@ export async function downloadLocationImportResource(user: SessionUser, resource
   URL.revokeObjectURL(href);
 }
 
-export async function previewLocationImport(user: SessionUser, file: File): Promise<LocationImportPreview> {
+export interface LocationImportPreviewRequest {
+  preview: LocationImportPreview;
+  csv: string;
+}
+
+export async function previewLocationImport(user: SessionUser, file: File): Promise<LocationImportPreviewRequest> {
   if (!file.name.toLowerCase().endsWith('.csv')) throw new Error('Choose a CSV file created from the supported template.');
   if (file.size === 0 || file.size > LOCATION_IMPORT_MAX_BYTES) throw new Error('Choose a non-empty CSV file no larger than 2 MB.');
+  const csv = await file.text();
   const response = await fetch('/api/imports/locations/preview', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${await user.getIdToken()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ csv: await file.text() }),
+    body: JSON.stringify({ csv }),
     cache: 'no-store',
     redirect: 'error',
   });
   if (!response.ok) throw await previewRequestError(response, 'The Location import preview could not be generated.');
   const preview = await response.json() as LocationImportPreview;
-  if (preview.schemaVersion !== 'locations-v1' || !preview.summary || !Array.isArray(preview.rows)) {
+  if (!isLocationImportPreview(preview)) {
     throw new Error('The server returned an invalid Location import preview.');
   }
-  return preview;
+  return { preview, csv };
+}
+
+export async function confirmLocationImport(
+  user: SessionUser,
+  request: { csv: string; confirmationToken: string; operationId: string; warningsReviewed: boolean },
+): Promise<LocationImportReceipt> {
+  const token = await user.getIdToken();
+  let response: Response;
+  try {
+    response = await fetch('/api/imports/locations/confirm', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      cache: 'no-store',
+      redirect: 'error',
+    });
+  } catch {
+    throw uncertainConfirmation();
+  }
+  if (!response.ok) throw await confirmationRequestError(response);
+  const receipt = await response.json() as LocationImportReceipt;
+  if (!isLocationImportReceipt(receipt)) throw uncertainConfirmation();
+  return receipt;
+}
+
+async function confirmationRequestError(response: Response) {
+  const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string } } | null;
+  if (body?.error?.code) return new LocationImportRequestError(body.error.code, body.error.message || 'The Location import could not be confirmed.');
+  return uncertainConfirmation();
+}
+
+function uncertainConfirmation() {
+  return new LocationImportRequestError('confirmation_uncertain', 'The import outcome could not be confirmed. Retry the same operation.');
 }
 
 async function previewRequestError(response: Response, fallback: string) {
   const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string } } | null;
   return new LocationImportRequestError(body?.error?.code || 'preview_request_failed', body?.error?.message || fallback);
+}
+
+function isLocationImportPreview(value: LocationImportPreview): boolean {
+  return value?.schemaVersion === 'locations-v1'
+    && typeof value.snapshotReadAt === 'string'
+    && isCountSummary(value.summary)
+    && Array.isArray(value.rows)
+    && optionalString(value.confirmationToken)
+    && optionalString(value.operationId)
+    && optionalString(value.batchId)
+    && optionalString(value.expiresAt);
+}
+
+function isLocationImportReceipt(value: LocationImportReceipt): boolean {
+  return Boolean(value)
+    && typeof value.operationId === 'string'
+    && typeof value.batchId === 'string'
+    && typeof value.committedAt === 'string'
+    && ['additions', 'updates', 'unchanged'].every(key => Number.isInteger(value[key as keyof LocationImportReceipt]))
+    && typeof value.replayed === 'boolean'
+    && Array.isArray(value.locations)
+    && value.locations.every(location => typeof location?.id === 'string'
+      && typeof location.name === 'string'
+      && typeof location.storeNumber === 'string'
+      && Boolean(location.record) && typeof location.record === 'object' && !Array.isArray(location.record));
+}
+
+function isCountSummary(value: LocationImportPreview['summary']): boolean {
+  return Boolean(value) && ['totalRows', 'additions', 'updates', 'unchanged', 'blocked', 'warnings']
+    .every(key => Number.isInteger(value[key as keyof typeof value]));
+}
+
+function optionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
 }

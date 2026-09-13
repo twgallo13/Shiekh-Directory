@@ -92,6 +92,7 @@ export const AdminIntegrationsView: React.FC = () => {
     notificationRules,
     outboxLogs,
     createLocation,
+    reconcileConfirmedLocations,
     updateLocation,
     createHoursTemplate,
     updateHoursTemplate,
@@ -1269,7 +1270,7 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
             </div>
 
-            <LocationImportPreviewPanel user={user} onAddStore={() => setIsAddStoreOpen(true)} />
+            <LocationImportPreviewPanel user={user} onAddStore={() => setIsAddStoreOpen(true)} onLocationsConfirmed={reconcileConfirmedLocations} />
           </div>
           <ConfirmDialog
             isOpen={Boolean(pendingExport)}

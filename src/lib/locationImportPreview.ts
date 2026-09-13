@@ -1,4 +1,5 @@
 import { parse } from 'csv-parse/sync';
+import type { LocationRecord } from '../types';
 import type { DirectorySeed } from './directorySeed';
 import { validateLocationHierarchyFields, type HierarchyFieldContract, type HierarchyRegistry } from './hierarchyAssignmentContract';
 import {
@@ -71,6 +72,10 @@ export interface LocationImportPreviewRow {
 export interface LocationImportPreview {
   schemaVersion: typeof LOCATION_IMPORT_SCHEMA_VERSION;
   snapshotReadAt: string;
+  confirmationToken?: string;
+  operationId?: string;
+  batchId?: string;
+  expiresAt?: string;
   summary: {
     totalRows: number;
     additions: number;
@@ -80,6 +85,43 @@ export interface LocationImportPreview {
     warnings: number;
   };
   rows: LocationImportPreviewRow[];
+}
+
+export interface LocationImportReceiptLocation {
+  id: string;
+  name: string;
+  storeNumber: string;
+  record: LocationRecord;
+}
+
+export interface LocationImportReceipt {
+  operationId: string;
+  batchId: string;
+  committedAt: string;
+  additions: number;
+  updates: number;
+  unchanged: number;
+  locations: LocationImportReceiptLocation[];
+  replayed: boolean;
+}
+
+export interface LocationImportPlannedWrite {
+  id: string;
+  action: 'add' | 'update';
+  expectedVersion: number | null;
+  data: Record<string, unknown>;
+}
+
+export interface LocationImportUnchangedAssertion {
+  id: string;
+  expectedVersion: number;
+  storeNumber: string;
+}
+
+export interface LocationImportPlan {
+  preview: LocationImportPreview;
+  writes: LocationImportPlannedWrite[];
+  unchanged: LocationImportUnchangedAssertion[];
 }
 
 export class LocationImportPreviewError extends Error {
@@ -144,7 +186,17 @@ export function previewLocationImport(
   snapshot: PreviewSnapshot,
   snapshotReadAt = new Date().toISOString(),
 ): LocationImportPreview {
+  return buildLocationImportPlan(csv, snapshot, snapshotReadAt).preview;
+}
+
+export function buildLocationImportPlan(
+  csv: string,
+  snapshot: PreviewSnapshot,
+  snapshotReadAt = new Date().toISOString(),
+  createLocationId: () => string = () => '',
+): LocationImportPlan {
   const rows = parseImportRows(csv);
+  const proposedWrites = new Map<number, Record<string, unknown>>();
   const locationsById = groupBy(snapshot.locations, location => location.id);
   const locationsByStore = groupBy(snapshot.locations, location => normalizeStoreNumber(location.storeNumber));
   const peopleById = groupBy(snapshot.people, person => person.id);
@@ -227,9 +279,6 @@ export function previewLocationImport(
       for (const [column, field] of requiredAdditionFields) {
         if (!proposedInput[field]) issues.push(issue('error', 'missing_required_field', column, row[column], null, `${column} is required for a new Location.`, `Enter ${fieldDefinition(column)?.format || 'a valid value'} and preview again.`));
       }
-      if (row.LocationId) {
-        issues.push(issue('warning', 'new_id_not_reserved', 'LocationId', row.LocationId, null, 'Preview does not reserve a new Location ID.', 'Before any future save, revalidate that the ID is still available.'));
-      }
     }
 
     const normalized = normalizeLocationWriteValues(proposedInput, existing as unknown as Record<string, unknown> | undefined);
@@ -238,6 +287,7 @@ export function previewLocationImport(
       issues.push(issue('error', 'invalid_attribute', column, row[column], existing?.[normalizationIssue.field as keyof typeof existing] ?? null, normalizationIssue.message, `Use ${fieldDefinition(column)?.format || 'an accepted value'} and preview again.`, undefined, normalized.values[normalizationIssue.field] ?? null));
     }
     const proposed = normalized.values;
+    if (intendedAddition) proposed.id = createLocationId() || row.LocationId;
 
     const hierarchyChanged = !existing || hierarchyFields.some(field => !sameValue(existing[field], proposed[field]));
     const assignmentListsChanged = !existing || Object.values(listFields).some(field => !sameValue(existing?.[field], proposed[field]));
@@ -294,10 +344,11 @@ export function previewLocationImport(
 
     const changes = importedChanges(row, proposed, existing as unknown as Record<string, unknown> | undefined);
     const action = issues.some(item => item.severity === 'error') ? 'blocked' : existing ? changes.length ? 'update' : 'unchanged' : 'add';
+    proposedWrites.set(rowNumber, proposed);
     return {
       rowNumber,
       action,
-      locationId: existing?.id || row.LocationId || null,
+      locationId: existing?.id || (typeof proposed.id === 'string' && proposed.id ? proposed.id : null),
       currentVersion: existing && typeof existing.version === 'number' ? existing.version : existing ? 0 : null,
       matchedBy,
       storeNumber: String(proposed.storeNumber || row.StoreNumber),
@@ -333,18 +384,33 @@ export function previewLocationImport(
     };
   });
 
+  const preview: LocationImportPreview = {
+      schemaVersion: LOCATION_IMPORT_SCHEMA_VERSION,
+      snapshotReadAt,
+      summary: {
+        totalRows: evaluatedRows.length,
+        additions: evaluatedRows.filter(row => row.action === 'add').length,
+        updates: evaluatedRows.filter(row => row.action === 'update').length,
+        unchanged: evaluatedRows.filter(row => row.action === 'unchanged').length,
+        blocked: evaluatedRows.filter(row => row.action === 'blocked').length,
+        warnings: evaluatedRows.flatMap(row => row.issues).filter(item => item.severity === 'warning').length,
+      },
+      rows: evaluatedRows,
+    };
   return {
-    schemaVersion: LOCATION_IMPORT_SCHEMA_VERSION,
-    snapshotReadAt,
-    summary: {
-      totalRows: evaluatedRows.length,
-      additions: evaluatedRows.filter(row => row.action === 'add').length,
-      updates: evaluatedRows.filter(row => row.action === 'update').length,
-      unchanged: evaluatedRows.filter(row => row.action === 'unchanged').length,
-      blocked: evaluatedRows.filter(row => row.action === 'blocked').length,
-      warnings: evaluatedRows.flatMap(row => row.issues).filter(item => item.severity === 'warning').length,
-    },
-    rows: evaluatedRows,
+    preview,
+    writes: evaluatedRows.flatMap(row => {
+      if ((row.action !== 'add' && row.action !== 'update') || !row.locationId) return [];
+      return [{
+        id: row.locationId,
+        action: row.action,
+        expectedVersion: row.action === 'add' ? null : row.currentVersion,
+        data: proposedWrites.get(row.rowNumber) || {},
+      } satisfies LocationImportPlannedWrite];
+    }),
+    unchanged: evaluatedRows.flatMap(row => row.action === 'unchanged' && row.locationId
+      ? [{ id: row.locationId, expectedVersion: row.currentVersion ?? 0, storeNumber: row.storeNumber }]
+      : []),
   };
 }
 
@@ -432,7 +498,7 @@ function validateAllowed(
 
 function importedChanges(row: ImportRow, proposed: Record<string, unknown>, existing?: Record<string, unknown>): LocationImportChange[] {
   const fields = [
-    ...(row.LocationId && !existing ? ['id'] : []),
+    ...(!existing && proposed.id ? ['id'] : []),
     ...Object.entries(scalarFields).filter(([column]) => row[column]).map(([, field]) => field),
     ...Object.entries(listFields).filter(([column]) => row[column]).map(([, field]) => field),
     ...(row.Phone && proposed.phoneExtension !== existing?.phoneExtension ? ['phoneExtension'] : []),

@@ -63,14 +63,16 @@ describe('Location CSV import preview', () => {
 
   it('blocks duplicate leadership assignments without revalidating untouched legacy hierarchy', () => {
     const legacySnapshot = structuredClone(snapshot);
-    legacySnapshot.locations[0] = { ...legacySnapshot.locations[0], regionId: 'missing-region', districtId: 'missing-district' };
+    legacySnapshot.locations[0] = { ...legacySnapshot.locations[0], regionId: 'missing-region', districtId: 'missing-district', assistantStoreManagerIds: ['person-inactive'] };
     const result = previewLocationImport(csvRow({
       LocationId: 'loc-007',
       AssistantStoreManagerIds: 'person-active;person-active',
     }), legacySnapshot);
 
     assert.equal(result.rows[0].action, 'blocked');
-    assert.ok(result.rows[0].issues.some(item => item.field === 'AssistantStoreManagerIds' && /duplicate assignment/.test(item.reason)));
+    const duplicateIssue = result.rows[0].issues.find(item => item.field === 'AssistantStoreManagerIds' && /duplicate assignment/.test(item.reason));
+    assert.deepEqual(duplicateIssue?.currentValue, ['person-inactive']);
+    assert.deepEqual(duplicateIssue?.proposedValue, ['person-active', 'person-active']);
     assert.ok(result.rows[0].issues.every(item => !/missing-region|missing-district/.test(item.reason)));
   });
 
@@ -141,6 +143,78 @@ describe('Location CSV import preview', () => {
     assert.equal(result.rows[0].action, 'update');
     assert.deepEqual(result.rows[0].issues, []);
     assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: 'Safe Rename' }]);
+  });
+
+  it('preserves unchanged invalid hierarchy and Person IDs repeated in a name-only CSV update', () => {
+    const legacySnapshot = structuredClone(snapshot);
+    legacySnapshot.locations[0] = {
+      ...legacySnapshot.locations[0],
+      type: 'Legacy Location Type' as typeof baseLocation.type,
+      hierarchyApplicability: 'Legacy Applicability' as typeof baseLocation.hierarchyApplicability,
+      regionId: 'missing-region',
+      districtId: 'missing-district',
+      storeManagerId: 'legacy missing person',
+      districtManagerId: 'person-inactive',
+      assistantStoreManagerIds: ['missing-assistant'],
+      keyHolderIds: ['missing-key-holder'],
+    };
+    const result = previewLocationImport(csvRow({
+      LocationId: 'loc-007',
+      StoreName: 'Safe Rename With Repeated Legacy Values',
+      Type: 'Legacy Location Type',
+      HierarchyApplicability: 'Legacy Applicability',
+      RegionId: 'missing-region',
+      DistrictId: 'missing-district',
+      StoreManagerId: 'legacy missing person',
+      DistrictManagerId: 'person-inactive',
+      AssistantStoreManagerIds: 'missing-assistant',
+      KeyHolderIds: 'missing-key-holder',
+    }), legacySnapshot);
+
+    assert.equal(result.rows[0].action, 'update');
+    assert.deepEqual(result.rows[0].issues, []);
+    assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: 'Safe Rename With Repeated Legacy Values' }]);
+  });
+
+  it('rejects delimiter-only assignment lists without proposing empty-array clears', () => {
+    const assignedSnapshot = structuredClone(snapshot);
+    assignedSnapshot.locations[0] = {
+      ...assignedSnapshot.locations[0],
+      assistantStoreManagerIds: ['person-active'],
+      keyHolderIds: ['person-inactive'],
+    };
+    const result = previewLocationImport(csvRow({
+      LocationId: 'loc-007',
+      AssistantStoreManagerIds: ' ; ; ',
+      KeyHolderIds: ';;;',
+    }), assignedSnapshot);
+
+    assert.equal(result.rows[0].action, 'blocked');
+    assert.deepEqual(result.rows[0].changes, []);
+    for (const field of ['AssistantStoreManagerIds', 'KeyHolderIds']) {
+      const assignmentIssue = result.rows[0].issues.find(issue => issue.field === field);
+      const current = field === 'AssistantStoreManagerIds' ? ['person-active'] : ['person-inactive'];
+      assert.equal(assignmentIssue?.code, 'invalid_attribute');
+      assert.deepEqual(assignmentIssue?.currentValue, current);
+      assert.deepEqual(assignmentIssue?.proposedValue, current);
+      assert.match(assignmentIssue?.reason || '', /not an explicit clear/);
+    }
+  });
+
+  it('reports authoritative current State and ZIP separately from invalid supplied proposals', () => {
+    const result = previewLocationImport(csvRow({ LocationId: 'loc-007', State: 'california', ZipCode: 'invalid-zip' }), snapshot);
+    const stateIssue = result.rows[0].issues.find(issue => issue.field === 'State');
+    const zipIssue = result.rows[0].issues.find(issue => issue.field === 'ZipCode');
+
+    assert.equal(result.rows[0].action, 'blocked');
+    assert.deepEqual(
+      { supplied: stateIssue?.suppliedValue, current: stateIssue?.currentValue, proposed: stateIssue?.proposedValue },
+      { supplied: 'california', current: 'CA', proposed: 'california' },
+    );
+    assert.deepEqual(
+      { supplied: zipIssue?.suppliedValue, current: zipIssue?.currentValue, proposed: zipIssue?.proposedValue },
+      { supplied: 'invalid-zip', current: '90001', proposed: 'invalid-zip' },
+    );
   });
 
   it('validates the synthetic worked example against fixtures without claiming live matches', () => {

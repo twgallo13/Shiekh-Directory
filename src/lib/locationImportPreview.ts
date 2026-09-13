@@ -50,6 +50,7 @@ export interface LocationImportIssue {
   field: string;
   suppliedValue: unknown;
   currentValue: unknown;
+  proposedValue: unknown;
   reason: string;
   correction: string;
   candidates?: string[];
@@ -134,7 +135,7 @@ const requiredAdditionFields = [
   ['RecordStatus', 'recordStatus'],
 ] as const;
 
-const hierarchyColumns = ['Type', 'HierarchyApplicability', 'RegionId', 'DistrictId'] as const;
+const hierarchyFields = ['type', 'hierarchyApplicability', 'regionId', 'districtId'] as const;
 const personColumns = {
   StoreManagerId: 'storeManagerId',
   DistrictManagerId: 'districtManagerId',
@@ -207,10 +208,26 @@ export function previewLocationImport(
       if (row[column]) proposedInput[field] = row[column];
     }
     for (const [column, field] of Object.entries(listFields)) {
-      if (row[column]) proposedInput[field] = parseIdList(row[column]);
+      if (!row[column]) continue;
+      const ids = parseIdList(row[column]);
+      if (ids.length === 0) {
+        issues.push(issue(
+          'error',
+          'invalid_attribute',
+          column,
+          row[column],
+          existing?.[field as keyof typeof existing] ?? null,
+          'A populated assignment-list cell must contain at least one Person ID; delimiters and whitespace alone are not an explicit clear.',
+          'Enter one or more canonical Person IDs separated by semicolons, or leave the cell blank to preserve the current value.',
+          undefined,
+          existing?.[field as keyof typeof existing] ?? null,
+        ));
+        continue;
+      }
+      proposedInput[field] = ids;
     }
 
-    validateImportedAttributes(row, proposedInput, issues);
+    validateImportedAttributes(row, proposedInput, existing as unknown as Record<string, unknown> | undefined, issues);
     const intendedAddition = !existing && !issues.some(item => ['conflicting_identity', 'duplicate_existing_identity'].includes(item.code));
     if (intendedAddition) {
       for (const [column, field] of requiredAdditionFields) {
@@ -224,19 +241,19 @@ export function previewLocationImport(
     const normalized = normalizeLocationWriteValues(proposedInput, existing as unknown as Record<string, unknown> | undefined);
     for (const normalizationIssue of normalized.issues) {
       const column = columnForField(normalizationIssue.field);
-      issues.push(issue('error', 'invalid_attribute', column, row[column], existing?.[normalizationIssue.field as keyof typeof existing] ?? null, normalizationIssue.message, `Use ${fieldDefinition(column)?.format || 'an accepted value'} and preview again.`));
+      issues.push(issue('error', 'invalid_attribute', column, row[column], existing?.[normalizationIssue.field as keyof typeof existing] ?? null, normalizationIssue.message, `Use ${fieldDefinition(column)?.format || 'an accepted value'} and preview again.`, undefined, normalized.values[normalizationIssue.field] ?? null));
     }
     const proposed = normalized.values;
 
-    const hierarchyTouched = !existing || hierarchyColumns.some(column => Boolean(row[column]));
-    const assignmentListsTouched = Boolean(row.AssistantStoreManagerIds || row.KeyHolderIds);
-    if (hierarchyTouched || assignmentListsTouched) {
-      const validationInput: HierarchyFieldContract = hierarchyTouched
+    const hierarchyChanged = !existing || hierarchyFields.some(field => !sameValue(existing[field], proposed[field]));
+    const assignmentListsChanged = !existing || Object.values(listFields).some(field => !sameValue(existing?.[field], proposed[field]));
+    if (hierarchyChanged || assignmentListsChanged) {
+      const validationInput: HierarchyFieldContract = hierarchyChanged
         ? proposed as unknown as HierarchyFieldContract
         : {
           type: String(proposed.type),
-          assistantStoreManagerIds: row.AssistantStoreManagerIds ? proposed.assistantStoreManagerIds as string[] : undefined,
-          keyHolderIds: row.KeyHolderIds ? proposed.keyHolderIds as string[] : undefined,
+          assistantStoreManagerIds: !sameValue(existing?.assistantStoreManagerIds, proposed.assistantStoreManagerIds) ? proposed.assistantStoreManagerIds as string[] : undefined,
+          keyHolderIds: !sameValue(existing?.keyHolderIds, proposed.keyHolderIds) ? proposed.keyHolderIds as string[] : undefined,
         };
       const hierarchyIssues = validateLocationHierarchyFields(validationInput, registry);
       for (const reason of hierarchyIssues) {
@@ -246,24 +263,30 @@ export function previewLocationImport(
           'invalid_hierarchy',
           duplicateAssignment ? (reason.startsWith('assistantStoreManagerIds') ? 'AssistantStoreManagerIds' : 'KeyHolderIds') : 'RegionId / DistrictId',
           duplicateAssignment ? (reason.startsWith('assistantStoreManagerIds') ? row.AssistantStoreManagerIds : row.KeyHolderIds) : `${row.RegionId || '(blank)'} / ${row.DistrictId || '(blank)'}`,
-          duplicateAssignment ? null : existing ? `${existing.regionId || '(blank)'} / ${existing.districtId || '(blank)'}` : null,
+          duplicateAssignment
+            ? (reason.startsWith('assistantStoreManagerIds') ? existing?.assistantStoreManagerIds : existing?.keyHolderIds) ?? null
+            : existing ? `${existing.regionId || '(blank)'} / ${existing.districtId || '(blank)'}` : null,
           reason,
           duplicateAssignment ? 'Remove the repeated Person ID and preview again.' : 'Correct the CSV IDs using Reference IDs, or intentionally repair the hierarchy registry and affected records before previewing again.',
+          undefined,
+          duplicateAssignment
+            ? (reason.startsWith('assistantStoreManagerIds') ? proposed.assistantStoreManagerIds : proposed.keyHolderIds)
+            : `${proposed.regionId || '(blank)'} / ${proposed.districtId || '(blank)'}`,
         ));
       }
     }
 
     for (const [column, field] of Object.entries(personColumns)) {
-      if (existing && !row[column]) continue;
+      if (existing && sameValue(existing[field as keyof typeof existing], proposed[field])) continue;
       const ids = Array.isArray(proposed[field]) ? proposed[field] as string[] : proposed[field] ? [String(proposed[field])] : [];
       for (const personId of ids) {
         const matches = peopleById.get(personId) || [];
         if (matches.length === 0) {
-          issues.push(issue('error', 'missing_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'No Person has this canonical ID.', 'Correct the ID or create the real Person separately, then preview again.'));
+          issues.push(issue('error', 'missing_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'No Person has this canonical ID.', 'Correct the ID or create the real Person separately, then preview again.', undefined, proposed[field]));
         } else if (matches.length > 1) {
-          issues.push(issue('error', 'ambiguous_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'Multiple People have this canonical ID.', 'Repair the duplicate Person identities and explicitly correct the CSV before previewing again.', matches.map(person => `${person.id} — ${person.fullName} (${personStatus(person)})`)));
+          issues.push(issue('error', 'ambiguous_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'Multiple People have this canonical ID.', 'Repair the duplicate Person identities and explicitly correct the CSV before previewing again.', matches.map(person => `${person.id} — ${person.fullName} (${personStatus(person)})`), proposed[field]));
         } else if (!isActivePerson(matches[0])) {
-          issues.push(issue('error', 'inactive_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, `The referenced Person is ${personStatus(matches[0])}.`, 'Choose an Active Person ID, or intentionally correct the Person lifecycle separately, then preview again.', [`${matches[0].id} — ${matches[0].fullName}`]));
+          issues.push(issue('error', 'inactive_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, `The referenced Person is ${personStatus(matches[0])}.`, 'Choose an Active Person ID, or intentionally correct the Person lifecycle separately, then preview again.', [`${matches[0].id} — ${matches[0].fullName}`], proposed[field]));
         }
       }
     }
@@ -367,29 +390,41 @@ function validateRowIdentitySyntax(row: ImportRow, issues: LocationImportIssue[]
   }
 }
 
-function validateImportedAttributes(row: ImportRow, proposed: Record<string, unknown>, issues: LocationImportIssue[]): void {
-  validateAllowed(row, 'Type', LOCATION_TYPES, issues);
-  validateAllowed(row, 'OperationalStatus', LOCATION_OPERATIONAL_STATUSES, issues);
-  validateAllowed(row, 'RecordStatus', LOCATION_RECORD_STATUSES, issues);
-  validateAllowed(row, 'TimeZone', LOCATION_TIME_ZONES, issues);
-  validateAllowed(row, 'HierarchyApplicability', LOCATION_HIERARCHY_APPLICABILITY, issues);
+function validateImportedAttributes(row: ImportRow, proposed: Record<string, unknown>, existing: Record<string, unknown> | undefined, issues: LocationImportIssue[]): void {
+  validateAllowed(row, 'Type', LOCATION_TYPES, proposed, existing, issues, true);
+  validateAllowed(row, 'OperationalStatus', LOCATION_OPERATIONAL_STATUSES, proposed, existing, issues);
+  validateAllowed(row, 'RecordStatus', LOCATION_RECORD_STATUSES, proposed, existing, issues);
+  validateAllowed(row, 'TimeZone', LOCATION_TIME_ZONES, proposed, existing, issues);
+  validateAllowed(row, 'HierarchyApplicability', LOCATION_HIERARCHY_APPLICABILITY, proposed, existing, issues, true);
   if (row.State && !/^[A-Z]{2}$/.test(row.State)) {
-    issues.push(issue('error', 'invalid_attribute', 'State', row.State, proposed.state, 'State must be a two-letter uppercase abbreviation.', 'Use a value such as CA.'));
+    issues.push(issue('error', 'invalid_attribute', 'State', row.State, existing?.state ?? null, 'State must be a two-letter uppercase abbreviation.', 'Use a value such as CA.', undefined, proposed.state));
   }
   if (row.ZipCode && !/^\d{5}(?:-\d{4})?$/.test(row.ZipCode)) {
-    issues.push(issue('error', 'invalid_attribute', 'ZipCode', row.ZipCode, proposed.zipCode, 'ZipCode must be 5 digits or ZIP+4.', 'Use a value such as 90001 or 90001-1234.'));
+    issues.push(issue('error', 'invalid_attribute', 'ZipCode', row.ZipCode, existing?.zipCode ?? null, 'ZipCode must be 5 digits or ZIP+4.', 'Use a value such as 90001 or 90001-1234.', undefined, proposed.zipCode));
   }
   for (const column of Object.keys(personColumns)) {
     if (!row[column]) continue;
+    const field = personColumns[column as keyof typeof personColumns];
+    if (existing && sameValue(existing[field], proposed[field])) continue;
     for (const personId of parseIdList(row[column])) {
-      if (!ID_PATTERN.test(personId)) issues.push(issue('error', 'invalid_attribute', column, personId, null, 'Person IDs may contain only letters, numbers, periods, underscores, and hyphens.', 'Copy the canonical ID from Reference IDs.'));
+      if (!ID_PATTERN.test(personId)) issues.push(issue('error', 'invalid_attribute', column, personId, existing?.[field] ?? null, 'Person IDs may contain only letters, numbers, periods, underscores, and hyphens.', 'Copy the canonical ID from Reference IDs.', undefined, proposed[field]));
     }
   }
 }
 
-function validateAllowed(row: ImportRow, column: string, allowed: readonly string[], issues: LocationImportIssue[]): void {
+function validateAllowed(
+  row: ImportRow,
+  column: string,
+  allowed: readonly string[],
+  proposed: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+  issues: LocationImportIssue[],
+  onlyWhenChanged = false,
+): void {
   if (!row[column] || allowed.includes(row[column])) return;
-  issues.push(issue('error', 'invalid_attribute', column, row[column], null, `${column} is not an accepted value.`, `Use one of: ${allowed.join(' | ')}.`));
+  const field = fieldDefinition(column)?.field;
+  if (onlyWhenChanged && field && existing && sameValue(existing[field], proposed[field])) return;
+  issues.push(issue('error', 'invalid_attribute', column, row[column], field ? existing?.[field] ?? null : null, `${column} is not an accepted value.`, `Use one of: ${allowed.join(' | ')}.`, undefined, field ? proposed[field] : row[column]));
 }
 
 function importedChanges(row: ImportRow, proposed: Record<string, unknown>, existing?: Record<string, unknown>): LocationImportChange[] {
@@ -466,6 +501,7 @@ function issue(
   reason: string,
   correction: string,
   candidates?: string[],
+  proposedValue: unknown = suppliedValue,
 ): LocationImportIssue {
-  return { severity, code, field, suppliedValue, currentValue, reason, correction, ...(candidates?.length ? { candidates } : {}) };
+  return { severity, code, field, suppliedValue, currentValue, proposedValue, reason, correction, ...(candidates?.length ? { candidates } : {}) };
 }

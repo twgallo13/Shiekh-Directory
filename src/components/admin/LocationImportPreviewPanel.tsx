@@ -163,6 +163,7 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
                             <div className="font-semibold">{issue.severity === 'error' ? 'Blocking error' : 'Warning'} · {issue.field}</div>
                             <div>Supplied: {formatValue(issue.suppliedValue)}</div>
                             {issue.currentValue !== null && <div>Current: {formatValue(issue.currentValue)}</div>}
+                            <div>Proposed: {formatValue(issue.proposedValue)}</div>
                             <div>{issue.reason}</div>
                             {issue.candidates && <div>Candidates: {issue.candidates.join(' | ')}</div>}
                             <div className="font-medium">Next: {issue.correction}</div>

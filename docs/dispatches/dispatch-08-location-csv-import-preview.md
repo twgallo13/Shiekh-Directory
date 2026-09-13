@@ -29,7 +29,7 @@ Exact headers, in order:
 
 `SchemaVersion`, `LocationId`, `StoreNumber`, `StoreName`, `Type`, `Address`, `City`, `State`, `ZipCode`, `Phone`, `TimeZone`, `HierarchyApplicability`, `RegionId`, `DistrictId`, `StoreManagerId`, `DistrictManagerId`, `RegionalManagerId`, `AssistantStoreManagerIds`, `KeyHolderIds`, `OperationalStatus`, `RecordStatus`, `GoogleReviewUrl`, `StorePageUrl`.
 
-The parser rejects malformed CSV, duplicate headers, missing headers, unsupported columns, and malformed row widths. Uploads must be non-empty `.csv` files no larger than 2,000,000 bytes. Multi-person fields use semicolon-separated canonical Person IDs with no duplicates.
+The parser rejects malformed CSV, duplicate headers, missing headers, unsupported columns, and malformed row widths. Uploads must be non-empty `.csv` files no larger than 2,000,000 bytes. Populated multi-person fields require one or more semicolon-separated canonical Person IDs with no duplicates; delimiters or whitespace alone are invalid and cannot clear an assignment list.
 
 New Locations require Store Number, Store Name, Type, Address, City, State, ZIP Code, Phone, Time Zone, Operational Status, and Record Status. Location ID is optional for an addition, but preview does not reserve it. Updates require an exact Location ID or, when Location ID is blank, a uniquely matched numeric Store Number. Other fields are optional.
 

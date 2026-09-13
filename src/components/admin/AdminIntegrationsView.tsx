@@ -7,7 +7,6 @@ import {
   Clock, 
   ShieldCheck, 
   Download, 
-  Upload, 
   RefreshCw, 
   CheckCircle2, 
   AlertCircle, 
@@ -53,6 +52,7 @@ import { CustomFieldsPanel } from './CustomFieldsPanel';
 import { HierarchyRegistryPanel } from './HierarchyRegistryPanel';
 import { useAuth } from '../../context/AuthContext';
 import { downloadPreparedLocationExport, prepareLocationExport, type LocationExportMetadata } from '../../lib/locationExportClient';
+import { LocationImportPreviewPanel } from './LocationImportPreviewPanel';
 
 type AdminTab = 
   | 'custom-fields'
@@ -152,7 +152,6 @@ export const AdminIntegrationsView: React.FC = () => {
   const [csvError, setCsvError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [pendingExport, setPendingExport] = useState<(LocationExportMetadata & { token: string }) | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
   const [isAddStoreOpen, setIsAddStoreOpen] = useState(false);
   const [newStoreForm, setNewStoreForm] = useState({
     storeNumber: '',
@@ -257,14 +256,6 @@ export const AdminIntegrationsView: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  };
-
-  const handleSimulateImport = () => {
-    setIsImporting(true);
-    setTimeout(() => {
-      setIsImporting(false);
-      setCsvStatus(`Successfully parsed and validated directory import.`);
-    }, 1000);
   };
 
   // Quick Add Store Handler
@@ -1278,49 +1269,7 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Import / Re-seed Card */}
-            <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4 shadow-xs flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-blue-50 text-blue-600 border border-blue-200">
-                      <Upload className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-neutral-900">Import & Sync CSV</h3>
-                      <p className="text-xs text-neutral-500">Bulk update store hours, phone numbers, and district managers</p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsAddStoreOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Add Store</span>
-                  </button>
-                </div>
-
-                <div 
-                  onClick={handleSimulateImport}
-                  className="border-2 border-dashed border-neutral-300 hover:border-neutral-400 rounded-xl p-6 text-center space-y-2 cursor-pointer transition-colors bg-neutral-50"
-                >
-                  <FileSpreadsheet className="w-8 h-8 text-neutral-400 mx-auto" />
-                  <div className="text-xs font-medium text-neutral-800">
-                    {isImporting ? 'Processing & Validating CSV...' : 'Drag & drop master directory CSV or click to sync'}
-                  </div>
-                  <div className="text-[11px] text-neutral-500">
-                    Supports .csv format with store numbers and phone numbers
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-neutral-500 pt-1">
-                <span>Schema version: v3.2</span>
-                <span className="text-emerald-600 font-medium">Automatic deduplication active</span>
-              </div>
-            </div>
+            <LocationImportPreviewPanel user={user} onAddStore={() => setIsAddStoreOpen(true)} />
           </div>
           <ConfirmDialog
             isOpen={Boolean(pendingExport)}

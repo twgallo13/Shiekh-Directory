@@ -4,6 +4,7 @@ import { stringify } from "csv-stringify/sync";
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
+import { formatUsPhone } from "../src/lib/contactNormalization";
 import { buildLocationReadProjection, type ReadProjectionPerson } from "../src/lib/readProjectionContract";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
@@ -145,7 +146,7 @@ export async function prepareLocationExport(account: Account, store: LocationExp
   const storeNumbers = sortedLocations.map(location => stringField(location.storeNumber));
   const missingReferences = new Set<string>();
   const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences, people));
-  const csv = stringify(rows, { header: true, columns: [...LOCATION_EXPORT_COLUMNS], record_delimiter: "\r\n", bom: false });
+  const csv = stringify(rows, { header: true, columns: [...LOCATION_EXPORT_COLUMNS], record_delimiter: "\r\n", bom: true });
   const generatedIso = generatedAt.toISOString();
   const expiresAt = new Date(generatedAt.getTime() + EXPORT_TOKEN_TTL_MS).toISOString();
   const metadata: LocationExportMetadata = {
@@ -278,7 +279,7 @@ function toCsvRow(
     City: stringField(location.city),
     State: stringField(location.state),
     ZipCode: stringField(location.zipCode),
-    Phone: stringField(location.phone),
+    Phone: formatUsPhone(location.phone, location.phoneExtension),
     District: projection.district,
     StoreManager: projection.storeManager,
     StoreManagerPhone: storeManagerPhone,
@@ -350,7 +351,8 @@ function resolvePersonPhoneFromCanonical(
       const personRecord = peopleById.get(id);
       if (personRecord) {
         const phone = personRecord.phone || personRecord.workPhone;
-        if (typeof phone === 'string' && phone.trim()) return phone;
+        const extension = personRecord.phone ? personRecord.phoneExtension : personRecord.workPhoneExtension;
+        if (typeof phone === 'string' && phone.trim()) return formatUsPhone(phone, extension);
       }
     }
   }

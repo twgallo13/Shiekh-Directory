@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { ContactPrivacyLevel, LocationRecord, PersonRecord, PersonUpdate } from '../../types';
 import { formatUsPhone, normalizeUsPhone } from '../../lib/contactNormalization';
+import { resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } from '../../lib/personContacts';
 import { Button } from '../common/Button';
 import { FormLabel } from '../common/FormLabel';
 import { PersonLocationRelationshipFields } from './PersonLocationRelationshipFields';
@@ -15,13 +16,16 @@ interface PersonEditorFormProps {
 }
 
 export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onCancel, children }: PersonEditorFormProps) {
-  const currentPhone = person?.workPhone || person?.phone || '';
+  const currentPhone = resolvePersonPhone(person);
+  const currentEmail = resolvePersonEmail(person);
   const [fullName, setFullName] = useState(person?.fullName || '');
   const [jobTitle, setJobTitle] = useState(person?.jobTitle || person?.role || '');
   const [department, setDepartment] = useState(person?.department || '');
-  const [phone, setPhone] = useState(formatUsPhone(currentPhone));
-  const [phoneExtension, setPhoneExtension] = useState(person?.workPhoneExtension || person?.phoneExtension || '');
-  const [email, setEmail] = useState(person?.workEmail || person?.email || '');
+  const [phone, setPhone] = useState(formatUsPhone(currentPhone.value));
+  const [phoneExtension, setPhoneExtension] = useState(currentPhone.extension);
+  const [email, setEmail] = useState(currentEmail.value);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
   const [district, setDistrict] = useState(person?.district || '');
   const [status, setStatus] = useState(person?.status === 'Inactive' || person?.activeStatus === false ? 'Inactive' : 'Active');
   const [phonePrivacy, setPhonePrivacy] = useState<ContactPrivacyLevel>(person?.phonePrivacy || 'Internal');
@@ -35,8 +39,9 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     event.preventDefault();
     if (!fullName.trim()) return;
     const phoneInput = phone.trim() ? `${phone.trim()}${phoneExtension.trim() ? ` ext. ${phoneExtension.trim()}` : ''}` : '';
-    const normalizedPhone = phoneInput ? normalizeUsPhone(phoneInput) : null;
-    if (phoneInput && !normalizedPhone) {
+    const shouldValidatePhone = !person || phoneTouched;
+    const normalizedPhone = shouldValidatePhone && phoneInput ? normalizeUsPhone(phoneInput) : null;
+    if (shouldValidatePhone && phoneInput && !normalizedPhone) {
       setPhoneError('Enter a valid US phone number and numeric extension.');
       return;
     }
@@ -50,18 +55,13 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
         jobTitle: jobTitle.trim(),
         role: jobTitle.trim(),
         department: department.trim(),
-        phone: normalizedPhone?.e164 || '',
-        workPhone: normalizedPhone?.e164 || '',
-        phoneExtension: normalizedPhone?.extension || '',
-        workPhoneExtension: normalizedPhone?.extension || '',
-        email: email.trim(),
-        workEmail: email.trim(),
         district: district.trim(),
         status,
         activeStatus: status === 'Active',
         phonePrivacy,
         primaryLocationId: primaryLocationId || null,
         supportedLocationIds,
+        ...serializePersonContactEdits(person, normalizedPhone, email.trim(), phoneTouched, emailTouched),
       });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Person could not be saved.');
@@ -91,18 +91,18 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
       <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
         <div>
           <FormLabel>Work Phone</FormLabel>
-          <input value={phone} onChange={event => { setPhone(event.target.value); setPhoneError(''); }} onBlur={event => { const normalized = normalizeUsPhone(event.target.value); if (normalized) setPhone(normalized.display); }} placeholder="(555) 000-0000" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+          <input value={phone} onChange={event => { setPhone(event.target.value); setPhoneTouched(true); setPhoneError(''); }} onBlur={event => { const normalized = normalizeUsPhone(event.target.value); if (normalized) setPhone(normalized.display); }} placeholder="(555) 000-0000" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
         </div>
         <div>
           <FormLabel>Extension</FormLabel>
-          <input value={phoneExtension} onChange={event => { setPhoneExtension(event.target.value.replace(/\D/g, '')); setPhoneError(''); }} inputMode="numeric" placeholder="123" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+          <input value={phoneExtension} onChange={event => { setPhoneExtension(event.target.value.replace(/\D/g, '')); setPhoneTouched(true); setPhoneError(''); }} inputMode="numeric" placeholder="123" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
         </div>
       </div>
       {phoneError && <p role="alert" className="text-xs text-red-700">{phoneError}</p>}
 
       <div>
         <FormLabel>Work Email</FormLabel>
-        <input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="name@shiekhshoes.com" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+        <input type="email" value={email} onChange={event => { setEmail(event.target.value); setEmailTouched(true); }} placeholder="name@shiekhshoes.com" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

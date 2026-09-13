@@ -7,6 +7,7 @@ import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
+import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { 
   X, 
@@ -146,7 +147,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       district: districtManager?.district || formData.district,
       regionalManagerName: regionalManager?.fullName || '',
       storeManagerName: storeManager?.fullName || '',
-      storeManagerPhone: storeManager?.phone || storeManager?.workPhone || '',
+      storeManagerPhone: resolvePersonPhone(storeManager).value,
       storeManagerPhonePrivacy: storeManager?.phonePrivacy || formData.storeManagerPhonePrivacy,
       assistantStoreManagerIds,
       assistantStoreManagerNames: assistantStoreManagerIds
@@ -896,7 +897,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                             ...prev,
                             storeManagerId: sm?.id,
                             storeManagerName: sm?.fullName || '',
-                            storeManagerPhone: sm?.phone || sm?.workPhone || '',
+                            storeManagerPhone: resolvePersonPhone(sm).value,
                             storeManagerPhonePrivacy: sm?.phonePrivacy || prev.storeManagerPhonePrivacy,
                           }) : null);
                         }
@@ -923,7 +924,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <div className="flex min-h-10 items-center justify-between rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
                       <span className="font-mono text-sm text-neutral-900">
-                        {currentStoreManager ? formatUsPhone(currentStoreManager.phone || currentStoreManager.workPhone, currentStoreManager.phone ? currentStoreManager.phoneExtension : currentStoreManager.workPhoneExtension) || 'No phone on directory record' : 'No phone on directory record'}
+                        {currentStoreManager ? formatPersonPhone(currentStoreManager) || 'No phone on directory record' : 'No phone on directory record'}
                       </span>
                       <span className="text-[10px] font-semibold uppercase text-neutral-400">From People Directory</span>
                     </div>

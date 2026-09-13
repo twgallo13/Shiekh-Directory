@@ -299,7 +299,7 @@ export function validateMetadataWrites(
         'assistantStoreManagerIds',
         'keyHolderIds',
       ].forEach(preserveField);
-      for (const field of ['regionId', 'districtId', 'regionalManagerId']) {
+      for (const field of ['regionId', 'districtId', 'storeManagerId', 'districtManagerId', 'regionalManagerId']) {
         if (data[field] === null) delete data[field];
       }
 

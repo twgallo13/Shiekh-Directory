@@ -1,4 +1,27 @@
+import type { LocationRecord } from '../types';
+
 export type HierarchyApplicability = "Applicable" | "Not Applicable" | "Unknown";
+
+const nullableLocationReferenceFields = [
+  'regionId',
+  'districtId',
+  'storeManagerId',
+  'districtManagerId',
+  'regionalManagerId',
+] as const;
+
+export function serializeLocationReferenceClears(
+  location: LocationRecord,
+  previous: LocationRecord | undefined,
+): Record<string, unknown> {
+  const serialized = { ...location } as Record<string, unknown>;
+  if (!previous) return serialized;
+  for (const field of nullableLocationReferenceFields) {
+    if (location[field] === undefined && previous[field] !== undefined) serialized[field] = null;
+  }
+  if (previous.regionId !== location.regionId) serialized.districtId = location.districtId ?? null;
+  return serialized;
+}
 
 export interface HierarchyFieldContract {
   type: string;

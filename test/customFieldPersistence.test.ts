@@ -100,6 +100,30 @@ test('directory commit validates combined Person and Location state and writes m
   assert.equal((auditRecord?.newStates as unknown[]).length, 2);
 });
 
+test('Location manager omission preserves assignments while explicit null clears them and permits Person deletion', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('people/per-manager', { id: 'per-manager', fullName: 'Assigned Manager', status: 'Active', version: 0 });
+  records.set('locations/loc-07', { id: 'loc-07', storeNumber: '07', name: 'Original Store', storeManagerId: 'per-manager', districtManagerId: 'per-manager', version: 0, recordStatus: 'Active' });
+
+  await store.commit([
+    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 0, data: { storeNumber: '07', name: 'Renamed Store' } },
+  ], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-07', entityName: 'Store #07', details: 'Rename without touching assignments.' }, actor);
+  assert.equal(records.get('locations/loc-07')?.storeManagerId, 'per-manager');
+  assert.equal(records.get('locations/loc-07')?.districtManagerId, 'per-manager');
+
+  await store.commit([
+    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 1, data: { storeNumber: '07', name: 'Renamed Store', storeManagerId: null, districtManagerId: null } },
+  ], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-07', entityName: 'Store #07', details: 'Clear Store and District Manager assignments.' }, actor);
+  assert.equal(Object.hasOwn(records.get('locations/loc-07') || {}, 'storeManagerId'), false);
+  assert.equal(Object.hasOwn(records.get('locations/loc-07') || {}, 'districtManagerId'), false);
+
+  await store.commit([
+    { collection: 'people', id: 'per-manager', operation: 'delete', expectedVersion: 0 },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'per-manager', entityName: 'Assigned Manager', details: 'Delete unlinked manager.' }, actor);
+  assert.equal(records.has('people/per-manager'), false);
+});
+
 test('directory commit allows person-only changes when unrelated location manager remains valid', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
@@ -142,6 +166,21 @@ test('directory commit persists a complete Person create, update, and versioned 
 
   assert.equal(records.has('people/per-new'), false);
   assert.ok([...records.values()].some(record => record.action === 'Person Deleted' && record.entityId === 'per-new'));
+});
+
+test('name-only Person persistence preserves differing phone, extension, and email aliases', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const contacts = { phone: '+12125550100', phoneExtension: '10', workPhone: '+13105550100', workPhoneExtension: '20', email: 'legacy@example.test', workEmail: 'work@example.test' };
+  records.set('people/per-contact', { id: 'per-contact', fullName: 'Original Name', status: 'Active', version: 0, ...contacts });
+
+  await store.commit([
+    { collection: 'people', id: 'per-contact', operation: 'set', expectedVersion: 0, data: { fullName: 'Renamed Person', status: 'Active', ...contacts } },
+  ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-contact', entityName: 'Original Name', details: 'Rename only.' }, actor);
+
+  const saved = records.get('people/per-contact');
+  for (const [field, value] of Object.entries(contacts)) assert.equal(saved?.[field], value, field);
+  assert.equal(saved?.fullName, 'Renamed Person');
 });
 
 test('directory commit rejects an unchanged manager reference when its Person is deleted in the same transaction, but allows the reference to be cleared', async () => {

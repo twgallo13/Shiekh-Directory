@@ -28,6 +28,8 @@
 11. Added separate Person inactivation and deletion actions. Both expose linked leadership Locations and user accounts before submission; Location blockers open the owning Location editor and user blockers open the focused Admin access-control record.
 12. Person deletion requires the exact full name, uses the current expected version, writes audit evidence, and keeps the Person profile and confirmation state intact when the server rejects the transaction.
 13. Explicit numeric work-phone extensions now survive server phone normalization instead of being discarded.
+14. Store Manager and District Manager removals serialize as explicit clears, while omitted assignment fields remain unchanged. Clearing both assignments permits deletion of an otherwise unlinked Person.
+15. Person contact display and editing consistently prefer the complete work contact pair, then fall back to the legacy pair. Untouched phone, extension, and email aliases survive edits without being collapsed.
 
 ## Compatibility and boundaries
 
@@ -53,6 +55,8 @@
 - One grouped Person Location row carrying multiple employment and leadership labels.
 - Actionable Location and linked-user blocker projection without treating employment relationships as deletion blockers.
 - Complete Person create, full update, extension persistence, expected-version delete, and audit lifecycle.
+- Store/District Manager omission versus explicit clearing, followed by successful deletion of the unlinked Person.
+- Name-only Person serialization and persistence with differing legacy/work phone, extension, and email values.
 
 ## Verification
 

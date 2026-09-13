@@ -7,7 +7,7 @@ import { Button } from '../common/Button';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
-import { formatUsPhone } from '../../lib/contactNormalization';
+import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
 import { PersonEditorForm } from './PersonEditorForm';
 
 interface PeopleViewProps {
@@ -31,7 +31,9 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
     return (
       p.fullName?.toLowerCase().includes(term) ||
       p.phone?.toLowerCase().includes(term) ||
+      p.workPhone?.toLowerCase().includes(term) ||
       p.email?.toLowerCase().includes(term) ||
+      p.workEmail?.toLowerCase().includes(term) ||
       p.district?.toLowerCase().includes(term)
     );
   });
@@ -99,11 +101,11 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
             <div className="space-y-1.5 text-xs pt-2 border-t border-neutral-100">
               <div className="flex items-center gap-2 text-neutral-500">
                 <Phone className="w-3.5 h-3.5 text-neutral-400" />
-                <span className="font-mono text-neutral-700">{formatUsPhone(person.phone || person.workPhone, person.phone ? person.phoneExtension : person.workPhoneExtension) || 'No direct phone'}</span>
+                <span className="font-mono text-neutral-700">{formatPersonPhone(person) || 'No direct phone'}</span>
               </div>
               <div className="flex items-center gap-2 text-neutral-500">
                 <Mail className="w-3.5 h-3.5 text-neutral-400" />
-                <span className="text-neutral-700 truncate">{person.email || person.workEmail || 'No email'}</span>
+                <span className="text-neutral-700 truncate">{resolvePersonEmail(person).value || 'No email'}</span>
               </div>
               {person.district && (
                 <div className="flex items-center gap-2 text-neutral-500">

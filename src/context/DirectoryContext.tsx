@@ -24,6 +24,8 @@ import { commitDirectory, type DirectoryAudit, type DirectoryWrite, type Directo
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
 import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
+import { resolvePersonPhone, serializePersonUpdate } from '../lib/personContacts';
+import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -232,13 +234,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     const timestamp = new Date().toISOString();
     const saved = { ...location, updatedAt: timestamp, ...(create ? { id: `loc-${crypto.randomUUID()}`, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
     const previous = locations.find(record => record.id === saved.id);
-    const serialized = { ...saved } as Record<string, unknown>;
-    if (!create && previous) {
-      for (const field of ['regionId', 'districtId', 'regionalManagerId'] as const) {
-        if (saved[field] === undefined && previous[field] !== undefined) serialized[field] = null;
-      }
-      if (previous.regionId !== saved.regionId) serialized.districtId = saved.districtId ?? null;
-    }
+    const serialized = serializeLocationReferenceClears(saved, previous);
     const action = create ? 'Location Created' : 'Location Updated';
     await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: serialized, expectedCustomMetadata, ...(!create ? { expectedVersion: expectedVersionOf(previous) } : {}) }], {
       action, entityType: 'Location', entityId: saved.id, entityName: `Store #${saved.storeNumber}`, details: 'Saved location record and custom metadata.',
@@ -346,12 +342,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     const currentPerson = people.find(person => person.id === id);
     if (!currentPerson) return;
 
-    const updatedPerson: Person = { ...currentPerson, ...updates, primaryLocationId: updates.primaryLocationId ?? currentPerson.primaryLocationId };
-    if (Object.hasOwn(updates, 'primaryLocationId') && updates.primaryLocationId === null) delete updatedPerson.primaryLocationId;
-    const serializedPerson = {
-      ...updatedPerson,
-      ...(Object.hasOwn(updates, 'primaryLocationId') && updates.primaryLocationId === null ? { primaryLocationId: null } : {}),
-    } as unknown as Record<string, unknown>;
+    const { person: updatedPerson, data: serializedPerson } = serializePersonUpdate(currentPerson, updates);
     const personById = (personId: string) => personId === id
       ? updatedPerson
       : people.find(person => person.id === personId);
@@ -364,7 +355,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       ...location,
       ...(location.storeManagerId === id ? {
         storeManagerName: updatedPerson.fullName,
-        storeManagerPhone: updatedPerson.phone || updatedPerson.workPhone || '',
+        storeManagerPhone: resolvePersonPhone(updatedPerson).value,
         storeManagerPhonePrivacy: updatedPerson.phonePrivacy,
       } : {}),
       ...(location.districtManagerId === id ? {

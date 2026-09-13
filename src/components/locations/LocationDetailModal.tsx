@@ -7,6 +7,7 @@ import { AuditLogView } from '../common/AuditLogView';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { formatUsPhone } from '../../lib/contactNormalization';
+import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
 import { 
   X, 
@@ -504,12 +505,12 @@ Operating Status: ${location.operationalStatus}`;
                       )}
                     </div>
                     <div className="text-left sm:text-right">
-                      {storeManager?.phone || storeManager?.workPhone ? (
+                      {resolvePersonPhone(storeManager).value ? (
                         <a 
-                          href={`tel:${(storeManager.phone || storeManager.workPhone || '').replace(/[^0-9+]/g, '')}`}
+                          href={`tel:${resolvePersonPhone(storeManager).value.replace(/[^0-9+]/g, '')}`}
                           className="font-mono text-[11px] font-medium text-red-600 hover:underline"
                         >
-                          {formatUsPhone(storeManager.phone || storeManager.workPhone, storeManager.phone ? storeManager.phoneExtension : storeManager.workPhoneExtension)}
+                          {formatPersonPhone(storeManager)}
                         </a>
                       ) : (
                         <span className="font-mono text-[11px] text-neutral-400">No phone on record</span>

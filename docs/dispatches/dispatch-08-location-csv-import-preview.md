@@ -1,5 +1,11 @@
 # Dispatch 8: Location CSV Guidance and Preview Accuracy
 
+**Status:** Manually accepted for merge on 2026-09-13
+
+## Manual acceptance
+
+The product owner verified the deployed CSV preview and corrections from application commit `002ac13b85bbde1f4ddb83feb8c5606e74f5ccef` on Cloud Run revision `shiekh-location-company-directory-dispatch8-002ac13` and approved PR #5 for merge. This acceptance does not enable import execution, authorize data writes or repairs, or begin another implementation phase.
+
 ## Delivered scope
 
 Dispatch 8 is **Locations only** and **preview only**. It downloads guidance, reads one authoritative snapshot, and reports proposed additions, updates, unchanged rows, warnings, and blocking errors. It has no import executor, Confirm Import endpoint, write call, migration, batch mutation, audit event, rollback action, or deployment change.

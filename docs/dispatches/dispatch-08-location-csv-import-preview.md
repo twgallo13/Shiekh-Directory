@@ -25,7 +25,7 @@ All user-facing CSV downloads use UTF-8 with a BOM for spreadsheet compatibility
 
 ## Schema contract
 
-Every row uses `SchemaVersion=locations-v1`. The shared schema in `src/lib/locationImportSchema.ts` owns header order, accepted values, guidance, blank behavior, and all three generated guidance CSVs.
+Every row uses `SchemaVersion=locations-v1`. The browser-safe shared schema in `src/lib/locationImportSchema.ts` owns header order, accepted values, guidance, blank behavior, version, and size limits. Server-only builders in `server/locationImportCsv.ts` serialize the template, worked example, field dictionary, and reference CSV with the shared schema; browser imports do not load CSV parser or serializer packages.
 
 Exact headers, in order:
 

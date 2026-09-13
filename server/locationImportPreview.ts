@@ -4,9 +4,9 @@ import { Firestore, type QueryDocumentSnapshot } from '@google-cloud/firestore';
 import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticate } from './authAuthority';
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from './firestoreLocations';
 import type { DirectorySeed } from '../src/lib/directorySeed';
-import { stringify } from 'csv-stringify/sync';
-import { buildLocationImportFieldDictionary, buildLocationImportTemplate, buildLocationImportWorkedExample, LocationImportPreviewError, previewLocationImport } from '../src/lib/locationImportPreview';
+import { LocationImportPreviewError, previewLocationImport } from '../src/lib/locationImportPreview';
 import { LOCATION_IMPORT_MAX_BYTES } from '../src/lib/locationImportSchema';
+import { buildLocationImportFieldDictionary, buildLocationImportReferenceCsv, buildLocationImportTemplate, buildLocationImportWorkedExample } from './locationImportCsv';
 
 const PREVIEW_ROLES: Account['role'][] = ['System Administrator', 'Directory Data Steward', 'Editor'];
 export type LocationImportSnapshot = Pick<DirectorySeed, 'locations' | 'people' | 'regions' | 'districts'>;
@@ -68,7 +68,7 @@ export function createLocationImportPreviewRouter(
       response.status(200).type('text/csv; charset=utf-8')
         .set('Content-Disposition', 'attachment; filename="shiekh_location_import_reference_ids.csv"')
         .set('X-Snapshot-Read-At', snapshotReadAt)
-        .send(buildReferenceCsv(snapshot));
+        .send(buildLocationImportReferenceCsv(snapshot));
     } catch (error) {
       sendPreviewError(response, error);
     }
@@ -117,17 +117,6 @@ export function createFirestoreLocationImportPreviewStore(): FirestoreLocationIm
   const databaseId = process.env.FIRESTORE_DATABASE_ID || DEFAULT_FIRESTORE_DATABASE;
   if (databaseId === '(default)') throw new Error('A named Firestore database is required.');
   return new FirestoreLocationImportPreviewStore(new Firestore({ projectId, databaseId }));
-}
-
-export function buildReferenceCsv(snapshot: LocationImportSnapshot): string {
-  const regionsById = new Map(snapshot.regions.map(region => [region.id, region.name]));
-  const rows = [
-    ...snapshot.locations.map(location => ({ RecordType: 'Location', Id: location.id, Name: location.name, LifecycleStatus: location.recordStatus, StoreNumber: location.storeNumber, ParentRegionId: '', ParentRegionName: '' })),
-    ...snapshot.people.map(person => ({ RecordType: 'Person', Id: person.id, Name: person.fullName, LifecycleStatus: person.activeStatus === false || (person.status && person.status !== 'Active') ? 'Inactive' : 'Active', StoreNumber: '', ParentRegionId: '', ParentRegionName: '' })),
-    ...snapshot.regions.map(region => ({ RecordType: 'Region', Id: region.id, Name: region.name, LifecycleStatus: region.status, StoreNumber: '', ParentRegionId: '', ParentRegionName: '' })),
-    ...snapshot.districts.map(district => ({ RecordType: 'District', Id: district.id, Name: district.name, LifecycleStatus: district.status, StoreNumber: '', ParentRegionId: district.regionId, ParentRegionName: regionsById.get(district.regionId) || '' })),
-  ].sort((left, right) => left.RecordType.localeCompare(right.RecordType) || left.Name.localeCompare(right.Name) || left.Id.localeCompare(right.Id));
-  return stringify(rows, { header: true, columns: ['RecordType', 'Id', 'Name', 'LifecycleStatus', 'StoreNumber', 'ParentRegionId', 'ParentRegionName'], record_delimiter: '\r\n', bom: true });
 }
 
 function toRecord(snapshot: QueryDocumentSnapshot): Record<string, unknown> {

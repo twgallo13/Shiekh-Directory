@@ -6,6 +6,8 @@ import { FirestoreDirectoryStore, DirectoryConflict, DirectoryValidationError, v
 import { prepareLocationExport, type LocationExportRecord } from '../server/locationExport';
 import type { CustomFieldDefinition } from '../src/lib/customFields';
 import { parse } from 'csv-parse/sync';
+import { serializeLocationReferenceClears } from '../src/lib/hierarchyAssignmentContract';
+import type { LocationRecord } from '../src/types';
 
 function databaseFixture() {
   const records = new Map<string, Record<string, unknown>>();
@@ -146,8 +148,16 @@ test('Location manager omission preserves assignments while explicit null clears
   assert.equal(records.get('locations/loc-07')?.storeManagerId, 'per-manager');
   assert.equal(records.get('locations/loc-07')?.districtManagerId, 'per-manager');
 
+  const previousLocation = records.get('locations/loc-07') as unknown as LocationRecord;
+  const clearedLocation = { ...previousLocation };
+  delete clearedLocation.storeManagerId;
+  delete clearedLocation.districtManagerId;
+  const serializedLocation = serializeLocationReferenceClears(clearedLocation, previousLocation);
+  assert.equal(serializedLocation.storeManagerId, null);
+  assert.equal(serializedLocation.districtManagerId, null);
+
   await store.commit([
-    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 1, data: { storeNumber: '07', name: 'Renamed Store', storeManagerId: null, districtManagerId: null } },
+    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 1, data: serializedLocation },
   ], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-07', entityName: 'Store #07', details: 'Clear Store and District Manager assignments.' }, actor);
   assert.equal(Object.hasOwn(records.get('locations/loc-07') || {}, 'storeManagerId'), false);
   assert.equal(Object.hasOwn(records.get('locations/loc-07') || {}, 'districtManagerId'), false);
@@ -209,12 +219,25 @@ test('name-only Person persistence preserves differing phone, extension, and ema
   records.set('people/per-contact', { id: 'per-contact', fullName: 'Original Name', status: 'Active', version: 0, ...contacts });
 
   await store.commit([
-    { collection: 'people', id: 'per-contact', operation: 'set', expectedVersion: 0, data: { fullName: 'Renamed Person', status: 'Active', ...contacts } },
+    { collection: 'people', id: 'per-contact', operation: 'set', expectedVersion: 0, data: { fullName: 'Renamed Person', status: 'Active' } },
   ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-contact', entityName: 'Original Name', details: 'Rename only.' }, actor);
 
   const saved = records.get('people/per-contact');
   for (const [field, value] of Object.entries(contacts)) assert.equal(saved?.[field], value, field);
   assert.equal(saved?.fullName, 'Renamed Person');
+
+  await store.commit([
+    { collection: 'people', id: 'per-contact', operation: 'set', expectedVersion: 1, data: { fullName: 'Renamed Person', status: 'Active', phone: '', phoneExtension: '', workPhone: '', workPhoneExtension: '', email: '', workEmail: '' } },
+  ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-contact', entityName: 'Renamed Person', details: 'Explicitly clear contact fields.' }, actor);
+
+  const cleared = records.get('people/per-contact');
+  assert.equal(cleared?.phone, '');
+  assert.equal(cleared?.workPhone, '');
+  assert.equal(cleared?.email, '');
+  assert.equal(cleared?.workEmail, '');
+  assert.equal(Object.hasOwn(cleared || {}, 'phoneExtension'), false);
+  assert.equal(Object.hasOwn(cleared || {}, 'workPhoneExtension'), false);
+  assert.equal(cleared?.version, 2);
 });
 
 test('directory commit rejects an unchanged manager reference when its Person is deleted in the same transaction, but allows the reference to be cleared', async () => {

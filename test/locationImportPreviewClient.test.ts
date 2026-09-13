@@ -47,6 +47,12 @@ test('confirm sends only the bound confirmation fields and validates authoritati
     () => confirmLocationImport(user, { csv: 'exact', confirmationToken: 'signed-token', operationId: 'operation-1', warningsReviewed: true }),
     (error: unknown) => error instanceof LocationImportRequestError && error.code === 'confirmation_uncertain',
   );
+
+  globalThis.fetch = async () => Response.json({ ...result, operationId: 'different-operation' });
+  await assert.rejects(
+    () => confirmLocationImport(user, { csv: 'exact', confirmationToken: 'signed-token', operationId: 'operation-1', warningsReviewed: true }),
+    (error: unknown) => error instanceof LocationImportRequestError && error.code === 'confirmation_uncertain',
+  );
 });
 
 test('client rejects invalid preview metadata and preserves uncertain confirmation errors', async () => {
@@ -75,6 +81,18 @@ test('client rejects invalid preview metadata and preserves uncertain confirmati
     () => confirmLocationImport(user, { csv: 'exact', confirmationToken: 'signed-token', operationId: 'operation-1', warningsReviewed: true }),
     (error: unknown) => error instanceof LocationImportRequestError
       && error.code === 'confirmation_uncertain',
+  );
+
+  globalThis.fetch = async () => new Response('{not-json', { status: 200, headers: { 'Content-Type': 'application/json' } });
+  await assert.rejects(
+    () => confirmLocationImport(user, { csv: 'exact', confirmationToken: 'signed-token', operationId: 'operation-1', warningsReviewed: true }),
+    (error: unknown) => error instanceof LocationImportRequestError && error.code === 'confirmation_uncertain',
+  );
+
+  globalThis.fetch = async () => ({ ok: true, json: async () => { throw new TypeError('body stream failed'); } }) as unknown as Response;
+  await assert.rejects(
+    () => confirmLocationImport(user, { csv: 'exact', confirmationToken: 'signed-token', operationId: 'operation-1', warningsReviewed: true }),
+    (error: unknown) => error instanceof LocationImportRequestError && error.code === 'confirmation_uncertain',
   );
 });
 

@@ -107,12 +107,14 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     ? 'This import is already confirmed.'
     : requiresNewPreview
       ? 'The preview is stale or expired. Choose the CSV again to create a new preview.'
+      : preview?.confirmationDisabledReason
+        ? preview.confirmationDisabledReason
       : preview?.summary.blocked
         ? 'Resolve every blocked row and preview the entire batch again. Partial imports are not available.'
         : changedRows === 0
           ? 'There are no additions or updates to import.'
           : !preview?.confirmationToken || !preview.operationId
-            ? 'This preview cannot be confirmed. Preview the CSV again.'
+            ? 'This preview is read-only and cannot be confirmed.'
             : preview.summary.warnings > 0 && !warningsReviewed
               ? 'Review and acknowledge all warnings before confirming.'
               : busy ? 'Another import action is in progress.' : '';
@@ -271,6 +273,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           )}
           {!receipt && (
             <div className="space-y-3 border-y border-neutral-200 py-4">
+              {preview.confirmationDisabledReason && <p className="text-xs font-medium text-amber-800">{preview.confirmationDisabledReason}</p>}
               {preview.summary.warnings > 0 && (
                 <label className="flex items-start gap-2 text-xs text-neutral-700">
                   <input type="checkbox" checked={warningsReviewed} disabled={Boolean(busy)} onChange={event => setWarningsReviewed(event.target.checked)} className="mt-0.5" />

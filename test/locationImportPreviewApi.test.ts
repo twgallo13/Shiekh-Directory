@@ -205,15 +205,34 @@ test('preview reserves generated addition IDs, enforces batch limits, and only r
     assert.equal(blocked.status, 200);
     assert.equal((await blocked.json()).summary.blocked, 1);
     const eligible = await post(unavailable.baseUrl, 'preview', { csv: row({ LocationId: 'loc-1', StoreName: 'Rename' }) });
-    assert.equal(eligible.status, 503);
-    assert.equal((await eligible.json()).error.code, 'confirmation_unavailable');
+    assert.equal(eligible.status, 200);
+    const readOnlyPreview = await eligible.json();
+    assert.equal(readOnlyPreview.summary.updates, 1);
+    assert.match(readOnlyPreview.confirmationDisabledReason, /not configured/);
+    assert.equal(readOnlyPreview.confirmationToken, undefined);
   } finally { await unavailable.close(); }
+
+  const noExecutor = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } }, { confirmationExecutor: false });
+  try {
+    const response = await post(noExecutor.baseUrl, 'preview', { csv: row({ LocationId: 'loc-1', StoreName: 'Rename' }) });
+    assert.equal(response.status, 200);
+    const readOnlyPreview = await response.json();
+    assert.equal(readOnlyPreview.summary.updates, 1);
+    assert.match(readOnlyPreview.confirmationDisabledReason, /not configured/);
+    assert.equal(readOnlyPreview.operationId, undefined);
+  } finally { await noExecutor.close(); }
 
   const app = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } });
   try {
     const addition = validAdditionRow('002');
     const preview = await (await post(app.baseUrl, 'preview', { csv: addition })).json();
     assert.match(preview.rows[0].locationId, /^loc-[0-9a-f-]{36}$/);
+    const suppliedCsv = row({ ...additionValues('003'), LocationId: 'loc-supplied' });
+    const suppliedPreview = await (await post(app.baseUrl, 'preview', { csv: suppliedCsv })).json();
+    const suppliedManifest = verifyLocationImportManifest(suppliedPreview.confirmationToken, 'test-location-import-secret', new Date('2026-09-13T12:00:00.000Z'));
+    assert.equal(suppliedPreview.rows[0].locationId, 'loc-supplied');
+    assert.equal(suppliedManifest.writes[0].id, 'loc-supplied');
+    assert.equal(suppliedManifest.writes[0].data.id, 'loc-supplied');
     const tooManyRows = csvRows(Array.from({ length: 101 }, (_, index) => ({ StoreNumber: String(index + 1000) })));
     const response = await post(app.baseUrl, 'preview', { csv: tooManyRows });
     assert.equal(response.status, 400);
@@ -261,12 +280,12 @@ test('confirmation secret configuration fails closed for weak values', () => {
 async function harness(
   authenticatedAccount: Account,
   store: LocationImportPreviewStore,
-  options: { now?: () => Date; tokenSecret?: string; authenticate?: (token: string) => Promise<Account> } = {},
+  options: { now?: () => Date; tokenSecret?: string; authenticate?: (token: string) => Promise<Account>; confirmationExecutor?: false } = {},
 ) {
   const app = express();
   const capableStore: LocationImportPreviewStore = {
     ...store,
-    confirmLocationImport: store.confirmLocationImport || (async manifest => receipt(manifest)),
+    ...(options.confirmationExecutor === false ? {} : { confirmLocationImport: store.confirmLocationImport || (async manifest => receipt(manifest)) }),
   };
   app.use('/api/imports', express.json({ limit: '12mb' }), createLocationImportPreviewRouter(options.authenticate || (async () => authenticatedAccount), capableStore, {
     rateLimit: false,

@@ -208,6 +208,13 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         transaction.get(this.firestore.collection("districts")),
       ]);
 
+      manifest.writes.forEach((write, index) => {
+        const exists = targetSnapshots[index].exists;
+        if ((write.action === "add" && exists) || (write.action === "update" && !exists)) {
+          throw new DirectoryConflict("A Location was created or deleted after preview.");
+        }
+      });
+
       manifest.unchanged.forEach((assertion, index) => {
         const snapshot = unchangedSnapshots[index];
         const current = snapshot.data();

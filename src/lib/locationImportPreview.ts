@@ -76,6 +76,7 @@ export interface LocationImportPreview {
   operationId?: string;
   batchId?: string;
   expiresAt?: string;
+  confirmationDisabledReason?: string;
   summary: {
     totalRows: number;
     additions: number;
@@ -287,7 +288,7 @@ export function buildLocationImportPlan(
       issues.push(issue('error', 'invalid_attribute', column, row[column], existing?.[normalizationIssue.field as keyof typeof existing] ?? null, normalizationIssue.message, `Use ${fieldDefinition(column)?.format || 'an accepted value'} and preview again.`, undefined, normalized.values[normalizationIssue.field] ?? null));
     }
     const proposed = normalized.values;
-    if (intendedAddition) proposed.id = createLocationId() || row.LocationId;
+    if (intendedAddition) proposed.id = row.LocationId || createLocationId();
 
     const hierarchyChanged = !existing || hierarchyFields.some(field => !sameValue(existing[field], proposed[field]));
     const assignmentListsChanged = !existing || Object.values(listFields).some(field => !sameValue(existing?.[field], proposed[field]));

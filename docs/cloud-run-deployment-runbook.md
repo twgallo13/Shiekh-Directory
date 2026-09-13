@@ -28,6 +28,9 @@ Known-working revision `shiekh-location-company-directory-dispatch8-002ac13` (co
 - `FIREBASE_WEB_API_KEY` — public Firebase web config (same class of value as `VITE_FIREBASE_API_KEY` in `.env.example`)
 - `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_FROM_EMAIL`, `SMTP_ALLOWED_RECIPIENTS`, `DIRECTORY_STEWARD_EMAIL` — all `theo@shiekhshoes.org`
 - `SMTP_PASSWORD` — sourced from Secret Manager secret `Shiekh_Location`, version `latest` (value not read)
+- `LOCATION_IMPORT_TOKEN_SECRET` — required before deploying Dispatch 9; server-only random value of at least 32 bytes, securely provisioned with the same value on every service instance. Never log or commit the value. Prefer a dedicated Secret Manager binding rather than a plaintext environment value.
+
+Rotating `LOCATION_IMPORT_TOKEN_SECRET` invalidates every outstanding signed confirmation token, including the browser's ability to replay an already-committed operation with its old token. Allow the 10-minute confirmation window to drain before planned rotation when practical. Durable import receipts and correlated audits remain in Firestore for operator investigation, but the user must create a new preview for any uncommitted operation after rotation.
 
 ## Deployment command (recovered pattern)
 

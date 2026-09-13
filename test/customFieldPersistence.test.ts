@@ -132,6 +132,33 @@ test('Location import confirmation rejects stale versions, changed references, a
   assert.equal([...records.keys()].some(key => key.startsWith('audit_logs/') || key.startsWith('location_import_receipts/')), false);
 });
 
+test('Location import action intent rejects supplied-ID collisions and deleted legacy version-zero updates', async () => {
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+
+  const legacy = databaseFixture();
+  legacy.records.set('locations/loc-legacy', { id: 'loc-legacy', storeNumber: '03', name: 'Legacy' });
+  const updated = await legacy.store.confirmLocationImport(importManifest([
+    { id: 'loc-legacy', action: 'update', expectedVersion: 0, data: { storeNumber: '03', name: 'Updated Legacy' } },
+  ]), actor);
+  assert.equal(updated.updates, 1);
+  assert.equal(legacy.records.get('locations/loc-legacy')?.name, 'Updated Legacy');
+
+  const collision = databaseFixture();
+  collision.records.set('locations/loc-supplied', { id: 'loc-supplied', storeNumber: '99', name: 'Concurrent Create', version: 0, recordStatus: 'Active' });
+
+  await assert.rejects(collision.store.confirmLocationImport(importManifest([
+    { id: 'loc-supplied', action: 'add', expectedVersion: null, data: { id: 'loc-supplied', storeNumber: '02', name: 'Reviewed Addition' } },
+  ]), actor), DirectoryConflict);
+
+  const deleted = databaseFixture();
+  await assert.rejects(deleted.store.confirmLocationImport(importManifest([
+    { id: 'loc-legacy', action: 'update', expectedVersion: 0, data: { storeNumber: '03', name: 'Deleted Legacy Update' } },
+  ]), actor), DirectoryConflict);
+
+  assert.equal([...collision.records.keys()].some(key => key.startsWith('audit_logs/') || key.startsWith('location_import_receipts/')), false);
+  assert.equal(deleted.records.size, 0);
+});
+
 test('Location import confirmation rejects an oversized estimated atomic payload before writes', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };

@@ -105,7 +105,10 @@ export function createLocationImportPreviewRouter(
       const eligible = plan.preview.summary.blocked === 0 && plan.writes.length > 0;
       if (!eligible) return response.status(200).json(plan.preview);
       if (!options.tokenSecret || !store.confirmLocationImport) {
-        throw new PreviewHttpError(503, 'confirmation_unavailable', 'Location import confirmation is not configured.');
+        return response.status(200).json({
+          ...plan.preview,
+          confirmationDisabledReason: 'Location import confirmation is not configured. You can still review this preview, but no changes can be saved.',
+        });
       }
       const operationId = `locimp-${randomUUID()}`;
       const batchId = `batch-${randomUUID()}`;

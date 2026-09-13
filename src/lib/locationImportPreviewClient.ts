@@ -87,8 +87,13 @@ export async function confirmLocationImport(
     throw uncertainConfirmation();
   }
   if (!response.ok) throw await confirmationRequestError(response);
-  const receipt = await response.json() as LocationImportReceipt;
-  if (!isLocationImportReceipt(receipt)) throw uncertainConfirmation();
+  let receipt: LocationImportReceipt;
+  try {
+    receipt = await response.json() as LocationImportReceipt;
+  } catch {
+    throw uncertainConfirmation();
+  }
+  if (!isLocationImportReceipt(receipt) || receipt.operationId !== request.operationId) throw uncertainConfirmation();
   return receipt;
 }
 
@@ -115,7 +120,8 @@ function isLocationImportPreview(value: LocationImportPreview): boolean {
     && optionalString(value.confirmationToken)
     && optionalString(value.operationId)
     && optionalString(value.batchId)
-    && optionalString(value.expiresAt);
+    && optionalString(value.expiresAt)
+    && optionalString(value.confirmationDisabledReason);
 }
 
 function isLocationImportReceipt(value: LocationImportReceipt): boolean {

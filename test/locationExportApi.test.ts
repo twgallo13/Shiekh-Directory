@@ -11,7 +11,7 @@ const now = new Date("2026-09-09T12:00:00.000Z");
 const companyAccount: Account = { uid: "uid-company", email: "company@example.test", emailVerified: true, name: "Company User", role: "Viewer", status: "Active", accessScope: "Company-wide", personId: null, authenticationMethod: "password" };
 const otherCompanyAccount: Account = { ...companyAccount, uid: "uid-company-2", email: "company2@example.test" };
 const exactStoreAccount: Account = { ...companyAccount, uid: "uid-store", accessScope: "Store 007" };
-interface CsvRow { StoreNumber: string; ZipCode: string; StoreName: string; StoreManager: string; StoreManagerPhone: string; DistrictManager: string; AssistantStoreManagers: string }
+interface CsvRow { StoreNumber: string; ZipCode: string; StoreName: string; Phone: string; StoreManager: string; StoreManagerPhone: string; DistrictManager: string; AssistantStoreManagers: string; OperationalStatus: string }
 interface PreparedBody { token: string; metadata: { recordCount: number; authorizationScope: { label: string; type: string; storeNumber?: string }; storeNumberSetDigest: string; missingCanonicalPersonReferences: number } }
 
 test("Export All prepares and downloads every active authorized location from the authoritative snapshot", async () => {
@@ -116,17 +116,30 @@ test("inactive activeStatus managers and unmatched copied assistant names produc
   } finally { await app.close(); }
 });
 
-test("CSV output preserves textual values and escapes commas, quotes, CR/LF, and Unicode", async () => {
-  const app = await harness({ locations: [location("001", { name: "Shiekh \"Downtown\", São José", address: "One Way\r\nSuite A", zipCode: "00123" })], people: [], account: companyAccount });
+test("CSV output has a UTF-8 BOM, preserves Unicode, and formats phones with extensions and blanks", async () => {
+  const app = await harness({
+    locations: [
+      location("150", { name: "Broadway LA", address: "One Way\r\nSuite A", phone: "+12136220658", phoneExtension: "42", zipCode: "00123" }),
+      location("086", { name: "", phone: "" }),
+    ],
+    people: [person("mgr-150", "Manager", { workPhone: "+13105550123", workPhoneExtension: "9" })],
+    account: companyAccount,
+  });
+  (app.snapshot.locations[0] as LocationExportRecord).storeManagerId = "mgr-150";
   try {
     const prepared = await prepare(app.baseUrl, "token");
-    const csv = await download(app.baseUrl, prepared.token, "token");
-    assert.match(csv, /"Shiekh ""Downtown"", São José"/);
+    const bytes = await downloadBytes(app.baseUrl, prepared.token, "token");
+    assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
+    const csv = new TextDecoder().decode(bytes);
     assert.match(csv, /"One Way\r\nSuite A"/);
-    const [row] = parse(csv, { columns: true }) as CsvRow[];
-    assert.equal(row.StoreNumber, "001");
-    assert.equal(row.ZipCode, "00123");
-    assert.equal(row.StoreName, "Shiekh \"Downtown\", São José");
+    const rows = parse(csv, { bom: true, columns: true }) as CsvRow[];
+    assert.equal(rows[0].StoreNumber, "086");
+    assert.equal(rows[0].StoreName, "");
+    assert.equal(rows[0].Phone, "");
+    assert.equal(rows[1].StoreNumber, "150");
+    assert.equal(rows[1].Phone, "(213) 622-0658 ext. 42");
+    assert.equal(rows[1].StoreManagerPhone, "(310) 555-0123 ext. 9");
+    assert.equal(rows[1].OperationalStatus, "Open — Normal Operations");
   } finally { await app.close(); }
 });
 
@@ -196,9 +209,10 @@ function person(id: string, fullName: string, overrides: Partial<LocationExportR
 
 async function harness(options: { locations: LocationExportRecord[]; people: LocationExportRecord[]; account: Account; failRead?: boolean; authFailure?: Error; tokenAccounts?: Record<string, Account> }) {
   const app = express();
+  const snapshot = { locations: options.locations, people: options.people };
   const store: LocationExportStore = { async readLocationExportSnapshot() {
     if (options.failRead) throw new Error("read failed");
-    return { locations: options.locations, people: options.people };
+    return snapshot;
   } };
   app.use("/api/exports", createLocationExportRouter(async token => {
     if (options.authFailure) throw options.authFailure;
@@ -207,6 +221,7 @@ async function harness(options: { locations: LocationExportRecord[]; people: Loc
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   return {
+    snapshot,
     baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     async close() { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); },
   };
@@ -222,6 +237,12 @@ async function download(baseUrl: string, exportToken: string, authToken: string)
   const response = await fetch(`${baseUrl}/api/exports/locations/${exportToken}`, { headers: { Authorization: `Bearer ${authToken}` } });
   if (response.status !== 200) assert.fail(await response.text());
   return response.text();
+}
+
+async function downloadBytes(baseUrl: string, exportToken: string, authToken: string) {
+  const response = await fetch(`${baseUrl}/api/exports/locations/${exportToken}`, { headers: { Authorization: `Bearer ${authToken}` } });
+  if (response.status !== 200) assert.fail(await response.text());
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 function digest(storeNumbers: string[]) {

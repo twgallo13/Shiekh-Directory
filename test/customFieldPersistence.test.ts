@@ -3,7 +3,9 @@ import { test } from 'node:test';
 import type { Firestore } from '@google-cloud/firestore';
 import type { Account } from '../server/authAuthority';
 import { FirestoreDirectoryStore, DirectoryConflict, DirectoryValidationError, validateMetadataWrites } from '../server/firestoreDirectory';
+import { prepareLocationExport, type LocationExportRecord } from '../server/locationExport';
 import type { CustomFieldDefinition } from '../src/lib/customFields';
+import { parse } from 'csv-parse/sync';
 import { serializeLocationReferenceClears } from '../src/lib/hierarchyAssignmentContract';
 import type { LocationRecord } from '../src/types';
 
@@ -58,6 +60,38 @@ test('custom definitions and values round-trip through transactional storage, bo
   await assert.rejects(store.commit([{ collection: 'locations', id: location.id, operation: 'set', data: { ...location, customMetadata: {} }, expectedCustomMetadata: {}, expectedVersion: 1 }], audit, actor), DirectoryConflict);
   assert.equal(records.size, count);
   assert.deepEqual(records.get('locations/loc-07')?.customMetadata, location.customMetadata);
+});
+
+test('created Location phone survives save and reload and exports in readable form with its extension', async () => {
+  const { store } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  await store.commit([{
+    collection: 'locations',
+    id: 'loc-150',
+    operation: 'set',
+    data: {
+      storeNumber: '150', name: 'Broadway LA', type: 'Other Company Location', address: '150 Broadway', city: 'Los Angeles', state: 'CA', zipCode: '90012',
+      phone: '(213) 622-0658 ext. 42', timeZone: 'America/Los_Angeles', hierarchyApplicability: 'Not Applicable', operationalStatus: 'Open — Normal Operations', recordStatus: 'Active',
+    },
+  }], { action: 'Location Created', entityType: 'Location', entityId: 'loc-150', entityName: 'Broadway LA', details: 'Create Location.' }, actor);
+
+  const reloaded = await store.read();
+  const saved = reloaded.locations.find(location => location.id === 'loc-150');
+  assert.equal(saved?.phone, '+12136220658');
+  assert.equal(saved?.phoneExtension, '42');
+
+  const prepared = await prepareLocationExport(actor, {
+    async readLocationExportSnapshot() {
+      return {
+        locations: reloaded.locations.map(location => ({ ...location }) as LocationExportRecord),
+        people: reloaded.people.map(person => ({ ...person }) as LocationExportRecord),
+      };
+    },
+  }, new Date('2026-09-13T12:00:00.000Z'));
+  const [row] = parse(prepared.csv, { bom: true, columns: true }) as Array<{ StoreName: string; Phone: string; OperationalStatus: string }>;
+  assert.equal(row.StoreName, 'Broadway LA');
+  assert.equal(row.Phone, '(213) 622-0658 ext. 42');
+  assert.equal(row.OperationalStatus, 'Open — Normal Operations');
 });
 
 test('directory commit rejects stale correction approvals without partial target changes', async () => {
@@ -191,6 +225,19 @@ test('name-only Person persistence preserves differing phone, extension, and ema
   const saved = records.get('people/per-contact');
   for (const [field, value] of Object.entries(contacts)) assert.equal(saved?.[field], value, field);
   assert.equal(saved?.fullName, 'Renamed Person');
+
+  await store.commit([
+    { collection: 'people', id: 'per-contact', operation: 'set', expectedVersion: 1, data: { fullName: 'Renamed Person', status: 'Active', phone: '', phoneExtension: '', workPhone: '', workPhoneExtension: '', email: '', workEmail: '' } },
+  ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-contact', entityName: 'Renamed Person', details: 'Explicitly clear contact fields.' }, actor);
+
+  const cleared = records.get('people/per-contact');
+  assert.equal(cleared?.phone, '');
+  assert.equal(cleared?.workPhone, '');
+  assert.equal(cleared?.email, '');
+  assert.equal(cleared?.workEmail, '');
+  assert.equal(Object.hasOwn(cleared || {}, 'phoneExtension'), false);
+  assert.equal(Object.hasOwn(cleared || {}, 'workPhoneExtension'), false);
+  assert.equal(cleared?.version, 2);
 });
 
 test('directory commit rejects an unchanged manager reference when its Person is deleted in the same transaction, but allows the reference to be cleared', async () => {

@@ -9,6 +9,7 @@ import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { FormLabel } from '../common/FormLabel';
 import { Modal } from '../common/Modal';
+import { resolvePersonPhone } from '../../lib/personContacts';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -63,7 +64,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     } else if (changeType === 'Store Manager Change') {
       requestedChanges.storeManagerId = newManager?.id;
       requestedChanges.storeManagerName = newManager?.fullName || '';
-      requestedChanges.storeManagerPhone = newManager?.phone || newManager?.workPhone || '';
+      requestedChanges.storeManagerPhone = resolvePersonPhone(newManager || undefined).value;
       currentSnapshot.storeManagerId = targetLoc.storeManagerId;
       currentSnapshot.storeManagerName = targetLoc.storeManagerName;
     } else if (changeType === 'Operational Status Change') {

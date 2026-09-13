@@ -250,6 +250,8 @@ function AppContent() {
             person={selectedPerson}
             onClose={() => navigateBack('/people')}
             onSelectLocation={location => navigate(locationPath(location))}
+            onEditLocation={handleEditLocation}
+            onSelectUser={user => navigate(`/admin?tab=rbac&userId=${encodeURIComponent(user.id)}`)}
           />
         )}
 

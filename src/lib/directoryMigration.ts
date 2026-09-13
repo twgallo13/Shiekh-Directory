@@ -1,4 +1,5 @@
 import type { HoursTemplate, LocationRecord, Person, WeeklySchedule } from '../types';
+import { resolvePersonPhone } from './personContacts';
 
 const normalizeName = (value?: string) => value?.trim().toLocaleLowerCase() || '';
 
@@ -111,7 +112,7 @@ export const migrateDirectoryRelationships = (
       districtManagerName: districtManager?.fullName || location.districtManagerName,
       storeManagerId: storeManager?.id || location.storeManagerId,
       storeManagerName: storeManager?.fullName || location.storeManagerName,
-      storeManagerPhone: storeManager?.phone || storeManager?.workPhone || location.storeManagerPhone,
+      storeManagerPhone: resolvePersonPhone(storeManager).value || location.storeManagerPhone,
       assistantStoreManagerIds,
       assistantStoreManagerNames: assistantStoreManagerIds
         .map(id => peopleById.get(id)?.fullName)

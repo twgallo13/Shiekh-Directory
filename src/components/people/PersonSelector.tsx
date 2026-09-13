@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
 import { Search, User, X } from 'lucide-react';
-import { formatUsPhone } from '../../lib/contactNormalization';
+import { formatPersonPhone } from '../../lib/personContacts';
 
 export interface PersonSelectorProps {
   label?: string;
@@ -36,7 +36,9 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
         p.fullName?.toLowerCase().includes(term) ||
         p.name?.toLowerCase().includes(term) ||
         p.email?.toLowerCase().includes(term) ||
+        p.workEmail?.toLowerCase().includes(term) ||
         p.phone?.toLowerCase().includes(term) ||
+        p.workPhone?.toLowerCase().includes(term) ||
         p.district?.toLowerCase().includes(term)
       );
     });
@@ -111,7 +113,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
                   >
                     <div>
                       <div className="font-semibold text-neutral-900 text-xs">{p.fullName}</div>
-                      <div className="text-[11px] text-neutral-500">{p.jobTitle || p.role} • {formatUsPhone(p.phone || p.workPhone, p.phone ? p.phoneExtension : p.workPhoneExtension)}</div>
+                      <div className="text-[11px] text-neutral-500">{p.jobTitle || p.role} • {formatPersonPhone(p)}</div>
                     </div>
                     {p.district && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 font-medium">

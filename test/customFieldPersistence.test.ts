@@ -100,6 +100,30 @@ test('directory commit validates combined Person and Location state and writes m
   assert.equal((auditRecord?.newStates as unknown[]).length, 2);
 });
 
+test('Location manager omission preserves assignments while explicit null clears them and permits Person deletion', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('people/per-manager', { id: 'per-manager', fullName: 'Assigned Manager', status: 'Active', version: 0 });
+  records.set('locations/loc-07', { id: 'loc-07', storeNumber: '07', name: 'Original Store', storeManagerId: 'per-manager', districtManagerId: 'per-manager', version: 0, recordStatus: 'Active' });
+
+  await store.commit([
+    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 0, data: { storeNumber: '07', name: 'Renamed Store' } },
+  ], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-07', entityName: 'Store #07', details: 'Rename without touching assignments.' }, actor);
+  assert.equal(records.get('locations/loc-07')?.storeManagerId, 'per-manager');
+  assert.equal(records.get('locations/loc-07')?.districtManagerId, 'per-manager');
+
+  await store.commit([
+    { collection: 'locations', id: 'loc-07', operation: 'set', expectedVersion: 1, data: { storeNumber: '07', name: 'Renamed Store', storeManagerId: null, districtManagerId: null } },
+  ], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-07', entityName: 'Store #07', details: 'Clear Store and District Manager assignments.' }, actor);
+  assert.equal(Object.hasOwn(records.get('locations/loc-07') || {}, 'storeManagerId'), false);
+  assert.equal(Object.hasOwn(records.get('locations/loc-07') || {}, 'districtManagerId'), false);
+
+  await store.commit([
+    { collection: 'people', id: 'per-manager', operation: 'delete', expectedVersion: 0 },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'per-manager', entityName: 'Assigned Manager', details: 'Delete unlinked manager.' }, actor);
+  assert.equal(records.has('people/per-manager'), false);
+});
+
 test('directory commit allows person-only changes when unrelated location manager remains valid', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
@@ -113,6 +137,50 @@ test('directory commit allows person-only changes when unrelated location manage
 
   assert.equal(records.get('people/per-1')?.workPhone, '+12125550100');
   assert.equal(records.get('locations/loc-07')?.storeManagerId, 'per-2');
+});
+
+test('directory commit persists a complete Person create, update, and versioned delete lifecycle', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/corp-1', { id: 'corp-1', storeNumber: 'HQ', name: 'Corporate Office', type: 'Corporate Office', version: 0, recordStatus: 'Active' });
+
+  await store.commit([
+    { collection: 'people', id: 'per-new', operation: 'set', data: { fullName: 'New Employee', jobTitle: 'Accountant', department: 'Finance', workPhone: '2125550100', workPhoneExtension: '42', workEmail: 'employee@example.test', status: 'Active', activeStatus: true, phonePrivacy: 'Internal', primaryLocationId: 'corp-1', supportedLocationIds: [] } },
+  ], { action: 'Person Created', entityType: 'Person', entityId: 'per-new', entityName: 'New Employee', details: 'Create full Person.' }, actor);
+
+  assert.equal(records.get('people/per-new')?.version, undefined);
+  assert.equal(records.get('people/per-new')?.workPhone, '+12125550100');
+  assert.equal(records.get('people/per-new')?.department, 'Finance');
+
+  await store.commit([
+    { collection: 'people', id: 'per-new', operation: 'set', expectedVersion: 0, data: { fullName: 'Updated Employee', jobTitle: 'Senior Accountant', department: 'Finance', workPhone: '+12125550100', workPhoneExtension: '84', workEmail: 'updated@example.test', status: 'Active', activeStatus: true, phonePrivacy: 'Restricted', primaryLocationId: 'corp-1', supportedLocationIds: [] } },
+  ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-new', entityName: 'New Employee', details: 'Update full Person.' }, actor);
+
+  assert.equal(records.get('people/per-new')?.version, 1);
+  assert.equal(records.get('people/per-new')?.fullName, 'Updated Employee');
+  assert.equal(records.get('people/per-new')?.workPhoneExtension, '84');
+
+  await store.commit([
+    { collection: 'people', id: 'per-new', operation: 'delete', expectedVersion: 1 },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'per-new', entityName: 'Updated Employee', details: 'Delete unlinked Person.' }, actor);
+
+  assert.equal(records.has('people/per-new'), false);
+  assert.ok([...records.values()].some(record => record.action === 'Person Deleted' && record.entityId === 'per-new'));
+});
+
+test('name-only Person persistence preserves differing phone, extension, and email aliases', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const contacts = { phone: '+12125550100', phoneExtension: '10', workPhone: '+13105550100', workPhoneExtension: '20', email: 'legacy@example.test', workEmail: 'work@example.test' };
+  records.set('people/per-contact', { id: 'per-contact', fullName: 'Original Name', status: 'Active', version: 0, ...contacts });
+
+  await store.commit([
+    { collection: 'people', id: 'per-contact', operation: 'set', expectedVersion: 0, data: { fullName: 'Renamed Person', status: 'Active', ...contacts } },
+  ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-contact', entityName: 'Original Name', details: 'Rename only.' }, actor);
+
+  const saved = records.get('people/per-contact');
+  for (const [field, value] of Object.entries(contacts)) assert.equal(saved?.[field], value, field);
+  assert.equal(saved?.fullName, 'Renamed Person');
 });
 
 test('directory commit rejects an unchanged manager reference when its Person is deleted in the same transaction, but allows the reference to be cleared', async () => {
@@ -207,6 +275,99 @@ test('directory commit supports person approval and handles linked users when in
   ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-1', entityName: 'Approved Person', details: 'Inactivate person and unlink user.' }, actor);
   assert.equal(records.get('people/per-1')?.status, 'Inactive');
   assert.equal(records.get('users/usr-1')?.personId, '');
+});
+
+test('Person employment relationships support ordinary Corporate/DC assignments, omission, explicit clears, and approval', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/corp-1', { id: 'corp-1', storeNumber: 'HQ', name: 'Corporate Office', type: 'Corporate Office', recordStatus: 'Active', version: 0 });
+  records.set('locations/dc-1', { id: 'dc-1', storeNumber: 'DC-1', name: 'Distribution Center', type: 'Warehouse / Distribution Center', recordStatus: 'Active', version: 0 });
+  records.set('locations/store-1', { id: 'store-1', storeNumber: '01', name: 'Store One', type: 'Mall / Shopping Center', recordStatus: 'Active', version: 0 });
+  records.set('people/per-corp', { id: 'per-corp', fullName: 'Corporate Employee', jobTitle: 'Accountant', status: 'Active', version: 0 });
+
+  await store.commit([{ collection: 'people', id: 'per-corp', operation: 'set', expectedVersion: 0, data: { fullName: 'Corporate Employee', jobTitle: 'Accountant', status: 'Active', primaryLocationId: 'corp-1', supportedLocationIds: ['dc-1', 'store-1'] } }], { action: 'Person Updated', entityType: 'Person', entityId: 'per-corp', entityName: 'Corporate Employee', details: 'Set employment relationships.' }, actor);
+  assert.equal(records.get('people/per-corp')?.primaryLocationId, 'corp-1');
+  assert.deepEqual(records.get('people/per-corp')?.supportedLocationIds, ['dc-1', 'store-1']);
+  const firstReload = await store.read();
+  assert.equal(firstReload.people.find(person => person.id === 'per-corp')?.primaryLocationId, 'corp-1');
+  assert.deepEqual(firstReload.people.find(person => person.id === 'per-corp')?.supportedLocationIds, ['dc-1', 'store-1']);
+
+  await store.commit([{ collection: 'people', id: 'per-corp', operation: 'set', expectedVersion: 1, data: { fullName: 'Renamed Employee', jobTitle: 'Accountant', status: 'Active' } }], { action: 'Person Updated', entityType: 'Person', entityId: 'per-corp', entityName: 'Corporate Employee', details: 'Older client rename.' }, actor);
+  assert.equal(records.get('people/per-corp')?.primaryLocationId, 'corp-1');
+  assert.deepEqual(records.get('people/per-corp')?.supportedLocationIds, ['dc-1', 'store-1']);
+  assert.equal(records.get('people/per-corp')?.version, 2);
+
+  records.set('requests/req-employment', { id: 'req-employment', targetType: 'Person', targetId: 'per-corp', status: 'Pending', version: 0, requestedChanges: { primaryLocationId: null, supportedLocationIds: [] } });
+  await store.commit([
+    { collection: 'requests', id: 'req-employment', operation: 'set', expectedVersion: 0, data: { targetType: 'Person', targetId: 'per-corp', status: 'Approved', requestedChanges: { primaryLocationId: null, supportedLocationIds: [] } } },
+    { collection: 'people', id: 'per-corp', operation: 'set', expectedVersion: 2, data: { fullName: 'Renamed Employee', jobTitle: 'Accountant', status: 'Active', primaryLocationId: null, supportedLocationIds: [] } },
+  ], { action: 'Request Approved', entityType: 'Request', entityId: 'req-employment', entityName: 'Employment Relationships', details: 'Clear employment relationships.' }, actor);
+  assert.equal(Object.hasOwn(records.get('people/per-corp') || {}, 'primaryLocationId'), false);
+  assert.deepEqual(records.get('people/per-corp')?.supportedLocationIds, []);
+});
+
+test('Person employment relationships reject duplicate, overlapping, invalid, and stale assignments without mutation', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/corp-1', { id: 'corp-1', storeNumber: 'HQ', name: 'Corporate Office', type: 'Corporate Office', recordStatus: 'Active', version: 0 });
+  records.set('locations/retired-1', { id: 'retired-1', storeNumber: '99', name: 'Retired Store', type: 'Mall / Shopping Center', recordStatus: 'Retired', version: 0 });
+  records.set('people/per-1', { id: 'per-1', fullName: 'Employee', status: 'Active', version: 3 });
+  const original = structuredClone(records.get('people/per-1'));
+
+  const cases = [
+    { primaryLocationId: 'corp-1', supportedLocationIds: ['corp-1'] },
+    { supportedLocationIds: ['corp-1', 'corp-1'] },
+    { primaryLocationId: 'missing-location', supportedLocationIds: [] },
+    { primaryLocationId: 'retired-1', supportedLocationIds: [] },
+  ];
+  for (const relationship of cases) {
+    await assert.rejects(store.commit([{ collection: 'people', id: 'per-1', operation: 'set', expectedVersion: 3, data: { fullName: 'Employee', status: 'Active', ...relationship } }], { action: 'Person Updated', entityType: 'Person', entityId: 'per-1', entityName: 'Employee', details: 'Invalid employment relationship.' }, actor), DirectoryValidationError);
+    assert.deepEqual(records.get('people/per-1'), original);
+  }
+  await assert.rejects(store.commit([{ collection: 'people', id: 'per-1', operation: 'set', expectedVersion: 2, data: { fullName: 'Employee', status: 'Active', primaryLocationId: 'corp-1', supportedLocationIds: [] } }], { action: 'Person Updated', entityType: 'Person', entityId: 'per-1', entityName: 'Employee', details: 'Stale employment relationship.' }, actor), DirectoryConflict);
+  assert.deepEqual(records.get('people/per-1'), original);
+});
+
+test('unrelated Person edits preserve unchanged legacy employment relationship defects', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('people/per-legacy', { id: 'per-legacy', fullName: 'Legacy Employee', status: 'Active', primaryLocationId: 'missing-primary', supportedLocationIds: ['missing-support', 'missing-support'], version: 0 });
+
+  await store.commit([{ collection: 'people', id: 'per-legacy', operation: 'set', expectedVersion: 0, data: { fullName: 'Renamed Legacy Employee', status: 'Active' } }], { action: 'Person Updated', entityType: 'Person', entityId: 'per-legacy', entityName: 'Legacy Employee', details: 'Rename only.' }, actor);
+
+  assert.equal(records.get('people/per-legacy')?.fullName, 'Renamed Legacy Employee');
+  assert.equal(records.get('people/per-legacy')?.primaryLocationId, 'missing-primary');
+  assert.deepEqual(records.get('people/per-legacy')?.supportedLocationIds, ['missing-support', 'missing-support']);
+});
+
+test('Location lifecycle rejects incoming employment references and allows same-transaction reassignment', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/corp-old', { id: 'corp-old', storeNumber: 'HQ-1', name: 'Old Office', type: 'Corporate Office', recordStatus: 'Active', version: 0 });
+  records.set('locations/corp-new', { id: 'corp-new', storeNumber: 'HQ-2', name: 'New Office', type: 'Corporate Office', recordStatus: 'Active', version: 0 });
+  records.set('people/per-primary', { id: 'per-primary', fullName: 'Primary Employee', status: 'Active', primaryLocationId: 'corp-old', supportedLocationIds: [], version: 0 });
+  records.set('people/per-support', { id: 'per-support', fullName: 'Support Employee', status: 'Active', supportedLocationIds: ['corp-old'], version: 0 });
+
+  await assert.rejects(store.commit([{ collection: 'locations', id: 'corp-old', operation: 'set', expectedVersion: 0, data: { storeNumber: 'HQ-1', name: 'Old Office', type: 'Corporate Office', recordStatus: 'Retired' } }], { action: 'Location Retired', entityType: 'Location', entityId: 'corp-old', entityName: 'Old Office', details: 'Retire referenced office.' }, actor), DirectoryValidationError);
+  assert.equal(records.get('locations/corp-old')?.recordStatus, 'Active');
+  await assert.rejects(store.commit([{ collection: 'locations', id: 'corp-old', operation: 'delete', expectedVersion: 0 }], { action: 'Location Deleted', entityType: 'Location', entityId: 'corp-old', entityName: 'Old Office', details: 'Delete referenced office.' }, actor), DirectoryValidationError);
+  assert.equal(records.has('locations/corp-old'), true);
+
+  await store.commit([
+    { collection: 'locations', id: 'corp-old', operation: 'set', expectedVersion: 0, data: { storeNumber: 'HQ-1', name: 'Old Office', type: 'Corporate Office', recordStatus: 'Retired' } },
+    { collection: 'people', id: 'per-primary', operation: 'set', expectedVersion: 0, data: { fullName: 'Primary Employee', status: 'Active', primaryLocationId: 'corp-new', supportedLocationIds: [] } },
+    { collection: 'people', id: 'per-support', operation: 'set', expectedVersion: 0, data: { fullName: 'Support Employee', status: 'Active', primaryLocationId: null, supportedLocationIds: [] } },
+  ], { action: 'Location Retired', entityType: 'Location', entityId: 'corp-old', entityName: 'Old Office', details: 'Reassign employees and retire office.' }, actor);
+  assert.equal(records.get('locations/corp-old')?.recordStatus, 'Retired');
+  assert.equal(records.get('people/per-primary')?.primaryLocationId, 'corp-new');
+  assert.deepEqual(records.get('people/per-support')?.supportedLocationIds, []);
+
+  await store.commit([
+    { collection: 'locations', id: 'corp-new', operation: 'delete', expectedVersion: 0 },
+    { collection: 'people', id: 'per-primary', operation: 'set', expectedVersion: 1, data: { fullName: 'Primary Employee', status: 'Active', primaryLocationId: null, supportedLocationIds: [] } },
+  ], { action: 'Location Deleted', entityType: 'Location', entityId: 'corp-new', entityName: 'New Office', details: 'Unlink employee and delete office.' }, actor);
+  assert.equal(records.has('locations/corp-new'), false);
+  assert.equal(Object.hasOwn(records.get('people/per-primary') || {}, 'primaryLocationId'), false);
 });
 
 test('CASE 1 — an unrelated rename on a legacy record must not be blocked by a pre-existing invalid manager reference', async () => {

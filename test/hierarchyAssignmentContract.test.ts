@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildHierarchyReconciliationReport,
   collectHierarchyReconciliationIssues,
+  serializeLocationReferenceClears,
   type HierarchyRegistry,
   validateLocationHierarchyFields,
   validateUserPersonLink,
@@ -259,5 +260,18 @@ describe("hierarchy assignment contract", () => {
     assert.equal(preserved[0].data?.storeManagerId, "p-existing");
     assert.equal(preserved[0].data?.districtId, "dist-01");
     assert.equal(preserved[0].data?.regionId, "reg-west");
+  });
+
+  it("serializes removed Store and District Manager assignments as explicit clears", () => {
+    const previous = {
+      id: 'loc-1', storeNumber: '01', name: 'Store', type: 'Enclosed Mall', address: '', city: '', state: 'CA', zipCode: '', phone: '', timeZone: 'America/Los_Angeles', operationalStatus: 'Open — Normal Operations', standardHours: {}, recordStatus: 'Active', storeManagerId: 'per-sm', districtManagerId: 'per-dm',
+    } as unknown as import('../src/types').LocationRecord;
+    const saved = { ...previous };
+    delete saved.storeManagerId;
+    delete saved.districtManagerId;
+
+    const serialized = serializeLocationReferenceClears(saved, previous);
+    assert.equal(serialized.storeManagerId, null);
+    assert.equal(serialized.districtManagerId, null);
   });
 });

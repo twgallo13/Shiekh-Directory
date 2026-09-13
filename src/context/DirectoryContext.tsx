@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   LocationRecord, 
   Person, 
+  PersonUpdate,
   UserProfile, 
   UserOnboardingChoice,
   UpdateRequest, 
@@ -23,6 +24,8 @@ import { commitDirectory, type DirectoryAudit, type DirectoryWrite, type Directo
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
 import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
+import { resolvePersonPhone, serializePersonUpdate } from '../lib/personContacts';
+import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -54,8 +57,9 @@ interface DirectoryContextType {
   verifyLocation: (id: string) => void;
   verifyManagerPhone: (id: string) => void;
   toggleLocationPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
-  addPerson: (person: Omit<Person, 'id'>) => Person;
-  updatePerson: (id: string, updates: Partial<Person>) => void;
+  addPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
+  updatePerson: (id: string, updates: PersonUpdate) => Promise<void>;
+  deletePerson: (id: string) => Promise<void>;
   togglePersonPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
   submitRequest: (request: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => void;
   approveRequest: (requestId: string, reviewerNotes?: string) => void;
@@ -230,13 +234,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     const timestamp = new Date().toISOString();
     const saved = { ...location, updatedAt: timestamp, ...(create ? { id: `loc-${crypto.randomUUID()}`, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
     const previous = locations.find(record => record.id === saved.id);
-    const serialized = { ...saved } as Record<string, unknown>;
-    if (!create && previous) {
-      for (const field of ['regionId', 'districtId', 'regionalManagerId'] as const) {
-        if (saved[field] === undefined && previous[field] !== undefined) serialized[field] = null;
-      }
-      if (previous.regionId !== saved.regionId) serialized.districtId = saved.districtId ?? null;
-    }
+    const serialized = serializeLocationReferenceClears(saved, previous);
     const action = create ? 'Location Created' : 'Location Updated';
     await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: serialized, expectedCustomMetadata, ...(!create ? { expectedVersion: expectedVersionOf(previous) } : {}) }], {
       action, entityType: 'Location', entityId: saved.id, entityName: `Store #${saved.storeNumber}`, details: 'Saved location record and custom metadata.',
@@ -324,33 +322,40 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     updateLocation(id, { phonePrivacy: privacy });
   };
 
-  const addPerson = (personData: Omit<Person, 'id'>): Person => {
+  const addPerson = async (personData: Omit<Person, 'id'>): Promise<Person> => {
     const newPerson: Person = {
       ...personData,
       id: `per-${Date.now()}`,
     };
     setPeople(prev => [...prev, newPerson]);
-    addAuditLog('Person Created', 'Person', newPerson.id, newPerson.fullName, `Added person record for ${newPerson.fullName}`, undefined, newPerson);
-    persist([{ collection: 'people', id: newPerson.id, operation: 'set', data: newPerson as unknown as Record<string, unknown> }], { action: 'Person Created', entityType: 'Person', entityId: newPerson.id, entityName: newPerson.fullName, details: `Added person record for ${newPerson.fullName}` });
+    try {
+      await persist([{ collection: 'people', id: newPerson.id, operation: 'set', data: newPerson as unknown as Record<string, unknown> }], { action: 'Person Created', entityType: 'Person', entityId: newPerson.id, entityName: newPerson.fullName, details: `Added person record for ${newPerson.fullName}` });
+      addAuditLog('Person Created', 'Person', newPerson.id, newPerson.fullName, `Added person record for ${newPerson.fullName}`, undefined, newPerson);
+    } catch (error) {
+      setPeople(previous => previous.filter(person => person.id !== newPerson.id));
+      throw error;
+    }
     return newPerson;
   };
 
-  const updatePerson = (id: string, updates: Partial<Person>) => {
+  const updatePerson = async (id: string, updates: PersonUpdate): Promise<void> => {
     const currentPerson = people.find(person => person.id === id);
     if (!currentPerson) return;
 
-    const updatedPerson = { ...currentPerson, ...updates };
+    const { person: updatedPerson, data: serializedPerson } = serializePersonUpdate(currentPerson, updates);
     const personById = (personId: string) => personId === id
       ? updatedPerson
       : people.find(person => person.id === personId);
 
-    const affectsLocation = (location: LocationRecord) => location.storeManagerId === id || location.districtManagerId === id
-      || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id);
+    const updatesLeadershipCopies = ['fullName', 'name', 'phone', 'workPhone', 'phonePrivacy', 'district']
+      .some(field => Object.hasOwn(updates, field));
+    const affectsLocation = (location: LocationRecord) => updatesLeadershipCopies && (location.storeManagerId === id || location.districtManagerId === id
+      || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id));
     const updatedLocations = locations.map(location => affectsLocation(location) ? ({
       ...location,
       ...(location.storeManagerId === id ? {
         storeManagerName: updatedPerson.fullName,
-        storeManagerPhone: updatedPerson.phone || updatedPerson.workPhone || '',
+        storeManagerPhone: resolvePersonPhone(updatedPerson).value,
         storeManagerPhonePrivacy: updatedPerson.phonePrivacy,
       } : {}),
       ...(location.districtManagerId === id ? {
@@ -366,22 +371,40 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     }) : location);
     setPeople(previous => previous.map(person => person.id === id ? updatedPerson : person));
     setLocations(updatedLocations);
-    addAuditLog('Person Updated', 'Person', currentPerson.id, currentPerson.fullName, `Updated attributes: ${Object.keys(updates).join(', ')}`, currentPerson, updatedPerson);
-    void persist([
-      { collection: 'people', id, operation: 'set', data: updatedPerson as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(currentPerson) },
+    try {
+      await persist([
+      { collection: 'people', id, operation: 'set', data: serializedPerson, expectedVersion: expectedVersionOf(currentPerson) },
       ...updatedLocations.filter(affectsLocation).map(location => {
         const currentLocation = locations.find(item => item.id === location.id);
         return { collection: 'locations' as const, id: location.id, operation: 'set' as const, data: location as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(currentLocation) };
       }),
-    ], { action: 'Person Updated', entityType: 'Person', entityId: id, entityName: currentPerson.fullName, details: `Updated attributes: ${Object.keys(updates).join(', ')}` })
-      .catch(() => {
-        setPeople(previous => previous.map(person => person.id === id ? currentPerson : person));
-        setLocations(locations);
-      });
+      ], { action: 'Person Updated', entityType: 'Person', entityId: id, entityName: currentPerson.fullName, details: `Updated attributes: ${Object.keys(updates).join(', ')}` });
+      addAuditLog('Person Updated', 'Person', currentPerson.id, currentPerson.fullName, `Updated attributes: ${Object.keys(updates).join(', ')}`, currentPerson, updatedPerson);
+    } catch (error) {
+      setPeople(previous => previous.map(person => person.id === id ? currentPerson : person));
+      setLocations(locations);
+      throw error;
+    }
+  };
+
+  const deletePerson = async (id: string): Promise<void> => {
+    const currentPerson = people.find(person => person.id === id);
+    if (!currentPerson) return;
+
+    await persist([
+      { collection: 'people', id, operation: 'delete', expectedVersion: expectedVersionOf(currentPerson) },
+    ], {
+      action: 'Person Deleted',
+      entityType: 'Person',
+      entityId: id,
+      entityName: currentPerson.fullName,
+      details: `Deleted person record for ${currentPerson.fullName}.`,
+    });
+    addAuditLog('Person Deleted', 'Person', id, currentPerson.fullName, `Deleted person record for ${currentPerson.fullName}.`, currentPerson, undefined);
   };
 
   const togglePersonPhonePrivacy = (id: string, privacy: ContactPrivacyLevel) => {
-    updatePerson(id, { phonePrivacy: privacy });
+    void updatePerson(id, { phonePrivacy: privacy });
   };
 
   const submitRequest = (reqData: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => {
@@ -419,9 +442,13 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     if (req.targetType === 'Person') {
       const person = people.find(item => item.id === req.targetId);
       if (person) {
-        const updatedPerson = { ...person, ...req.requestedChanges };
+        const updatedPerson: Person = { ...person, ...req.requestedChanges, primaryLocationId: req.requestedChanges.primaryLocationId ?? person.primaryLocationId };
+        if (Object.hasOwn(req.requestedChanges, 'primaryLocationId') && req.requestedChanges.primaryLocationId === null) delete updatedPerson.primaryLocationId;
         setPeople(previous => previous.map(item => item.id === person.id ? updatedPerson : item));
-        writes.push({ collection: 'people', id: person.id, operation: 'set', data: updatedPerson as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(person) });
+        writes.push({ collection: 'people', id: person.id, operation: 'set', data: {
+          ...updatedPerson,
+          ...(Object.hasOwn(req.requestedChanges, 'primaryLocationId') && req.requestedChanges.primaryLocationId === null ? { primaryLocationId: null } : {}),
+        } as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(person) });
       }
     }
     setRequests(previous => previous.map(item => item.id === requestId ? updatedRequest : item));
@@ -883,6 +910,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         toggleLocationPhonePrivacy,
         addPerson,
         updatePerson,
+        deletePerson,
         togglePersonPhonePrivacy,
         submitRequest,
         approveRequest,

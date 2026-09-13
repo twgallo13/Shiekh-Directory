@@ -1,9 +1,13 @@
 # Dispatch 7: Employee Works at and Supports Relationships
 
-**Status:** Full Person workflow follow-up complete; review and manual acceptance pending
+**Status:** Full Person workflow follow-up manually accepted for merge on 2026-09-13
 **Starting SHA:** `6bea5ec8e138c2b3478084d3b2725e9fb76f46c7`
 **Depends on:** Dispatch 6 Region/District registry and Regional Manager coverage
 **Implementation mode:** Additive Person-owned employment relationships; no inference, migration, bulk cleanup, or public contract expansion
+
+## Manual acceptance
+
+The product owner tested and approved the Person edit field-preservation correction from application commit `800ffc12aa9c3f0695255ff360bcbae3b54ef4d3` on Cloud Run revision `shiekh-location-company-directory-pr6-800ffc12`. PR #6 is approved for merge without data repair, import execution, migration, or additional feature work.
 
 ## Approved model
 

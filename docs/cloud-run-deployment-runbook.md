@@ -153,7 +153,7 @@ gcloud run services update-traffic shiekh-location-company-directory \
      --region us-west1 \
      --to-revisions=shiekh-location-company-directory-dispatch7-f73b277=100
    ```
-5. Two verifier implementation errors triggered the safety rollback before final acceptance: the first failed to extract the nested JSON error code, and a later independent check read service identity from the wrong JSON path. Each guard automatically restored `dispatch7-9b9853b` to 100%. The actual response shape and the service/revision identity paths were confirmed before retrying.
+5. Three verifier implementation errors triggered the safety rollback before final acceptance: the first failed to extract the nested JSON error code, a later independent check read service identity from the wrong JSON path, and a final wrapper reported an authenticated response while testing the unauthenticated endpoint. Each guard automatically restored `dispatch7-9b9853b` to 100%. The final promotion used direct unauthenticated requests with the confirmed response shape and service/revision identity paths.
 6. The final corrected guard confirmed `dispatch7-f73b277` is Ready and receives 100% traffic. Service identity, secret binding, and runtime configuration matched the rollback revision. Default and branded roots returned `200`; unauthenticated `/api/auth/me` returned structured JSON `401` with `invalid_token` on both hosts; branded `/api/does-not-exist` returned structured JSON `404` with `api_route_not_found`. No rollback was needed after this successful promotion. No migration or browser automation was run.
 
 **Dispatch 7 Person workflow correction rollback command:**

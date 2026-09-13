@@ -13,11 +13,11 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 
 ## Current live revision
 
-- `latestReadyRevisionName`: `shiekh-location-company-directory-pr6-800ffc12` (deployed from commit `800ffc12aa9c3f0695255ff360bcbae3b54ef4d3`, PR #6 Person edit field-preservation correction, 2026-09-13)
+- `latestReadyRevisionName`: `shiekh-location-company-directory-pr7-94301a6-v2` (deployed from application commit `94301a6512d88db4df3d22ebaaef12f5cc5a6705`, PR #7 Dispatch 9 Location import confirmation, 2026-09-13)
 - Traffic: 100%, confirmed via `gcloud run services describe` after promotion
 - Autoscaling: `minScale=0`, `maxScale=20`, `cpu-throttling=true`, `startup-cpu-boost=true`
 
-Known-working revision `shiekh-location-company-directory-dispatch8-002ac13` (commit `002ac13b85bbde1f4ddb83feb8c5606e74f5ccef`) is retained as the rollback target. The PR #6 tag `pr6-800ffc12`, Dispatch 8 tags `d8-002ac13` and `d8-d2e64bd`, and earlier tagged revisions remain available for direct revision checks at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+Known-working revision `shiekh-location-company-directory-pr6-800ffc12` (commit `800ffc12aa9c3f0695255ff360bcbae3b54ef4d3`) is retained as the rollback target. The PR #7 tag `p7-94301v2`, PR #6 tag `pr6-800ffc12`, Dispatch 8 tags `d8-002ac13` and `d8-d2e64bd`, and earlier tagged revisions remain available for direct revision checks at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
 
 ## Runtime environment (names only; no secret values other than public Firebase config)
 
@@ -225,6 +225,26 @@ gcloud run services update-traffic shiekh-location-company-directory \
   --project gen-lang-client-0801664258 \
   --region us-west1 \
   --to-revisions=shiekh-location-company-directory-dispatch8-002ac13=100
+```
+
+### 2026-09-13 PR #7 Dispatch 9 Location import confirmation (application commit `94301a6`)
+
+1. Verified the clean checkout exactly matched `94301a6512d88db4df3d22ebaaef12f5cc5a6705`. PR #7 remained draft and unmerged during deployment. Recorded `shiekh-location-company-directory-pr6-800ffc12` at 100% traffic as the rollback target.
+2. Created dedicated automatic-replication Secret Manager secret `LOCATION_IMPORT_TOKEN_SECRET` and granted `roles/secretmanager.secretAccessor` on that secret only to the existing Cloud Run identity `1063064400866-compute@developer.gserviceaccount.com`. The initial random binary version was not valid for an environment binding because Cloud Run requires UTF-8 secret data; candidate `shiekh-location-company-directory-pr7-94301a6` failed closed at 0% and production traffic did not change. Added a text-encoded value with at least 32 bytes of cryptographic entropy as enabled version `2` and disabled unusable version `1`. No secret value was printed, logged, or committed.
+3. A retry with tag `pr7-94301a6-v2` was rejected during configuration validation because the service name and tag exceeded Cloud Run's combined length limit. No source upload or revision occurred. Deployed the same exact application commit with `--revision-suffix=pr7-94301a6-v2 --tag=p7-94301v2 --no-traffic` and additive binding `LOCATION_IMPORT_TOKEN_SECRET=LOCATION_IMPORT_TOKEN_SECRET:latest`.
+4. Candidate revision `shiekh-location-company-directory-pr7-94301a6-v2` became Ready at 0%. Compared it with the rollback revision: service identity, all existing environment settings and `SMTP_PASSWORD -> Shiekh_Location:latest`, resources, timeout, concurrency, ingress, autoscaling, CPU settings, probes, volumes, and VPC settings matched. The only intended configuration addition was `LOCATION_IMPORT_TOKEN_SECRET -> LOCATION_IMPORT_TOKEN_SECRET:latest`. The branded domain mapping remained Ready and routed to this service.
+5. The tagged candidate returned `200` at `/`, structured `401` with `invalid_token` at unauthenticated `/api/auth/me`, and structured `404` with `api_route_not_found` at `/api/does-not-exist`. No import endpoint or write workflow was used as a deployment check.
+6. The first explicit promotion passed URL checks, but a verifier read Cloud Run's tag-only traffic entry instead of its serving entry and restored PR #6 through the rollback guard. Repeated promotion with a JSON assertion selecting the entry whose percentage is 100.
+7. Confirmed `shiekh-location-company-directory-pr7-94301a6-v2` is Ready and receives 100% traffic. Both the default URL and `https://shiekh-dir.ai.studio` returned the expected `200`, `401`/`invalid_token`, and `404`/`api_route_not_found` responses. The required import confirmation secret binding and domain mapping were present. Rollback was not needed after the corrected verification.
+8. The product owner manually accepted the deployed workflow on 2026-09-13. No production import, data repair, migration, browser automation, or additional feature work was performed by the deployment agent.
+
+**PR #7 rollback command:**
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-pr6-800ffc12=100
 ```
 
 ## Adjacent services — do not confuse with production

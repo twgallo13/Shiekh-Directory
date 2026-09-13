@@ -2,15 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Firestore } from '@google-cloud/firestore';
 import type { Account } from '../server/authAuthority';
-import { FirestoreDirectoryStore, DirectoryConflict, DirectoryValidationError, validateMetadataWrites } from '../server/firestoreDirectory';
+import { FirestoreDirectoryStore, DirectoryConflict, DirectoryValidationError, LocationImportPayloadTooLarge, validateMetadataWrites } from '../server/firestoreDirectory';
 import { prepareLocationExport, type LocationExportRecord } from '../server/locationExport';
 import type { CustomFieldDefinition } from '../src/lib/customFields';
 import { parse } from 'csv-parse/sync';
 import { serializeLocationReferenceClears } from '../src/lib/hierarchyAssignmentContract';
 import type { LocationRecord } from '../src/types';
+import type { LocationImportManifest } from '../server/locationImportConfirmation';
 
 function databaseFixture() {
   const records = new Map<string, Record<string, unknown>>();
+  let transactionQueue = Promise.resolve();
   const snapshot = (path: string) => ({ id: path.split('/')[1], exists: records.has(path), data: () => records.has(path) ? structuredClone(records.get(path)) : undefined });
   class Query {
     field?: string;
@@ -27,17 +29,149 @@ function databaseFixture() {
   }
   const firestore = {
     collection: (name: string) => new Query(name),
-    async runTransaction(callback: (transaction: unknown) => Promise<void>) {
+    async runTransaction(callback: (transaction: unknown) => Promise<unknown>) {
+      const previousTransaction = transactionQueue;
+      let releaseTransaction!: () => void;
+      transactionQueue = new Promise<void>(resolve => { releaseTransaction = resolve; });
+      await previousTransaction;
       const pending: (() => void)[] = [];
-      await callback({
-        get: async (target: Query | { path: string }) => { assert.equal(pending.length, 0, 'all reads precede writes'); return target instanceof Query ? target.get() : snapshot(target.path); },
-        set: (target: { path: string }, value: Record<string, unknown>) => pending.push(() => records.set(target.path, structuredClone(value))),
-        delete: (target: { path: string }) => pending.push(() => records.delete(target.path)),
-      });
-      pending.forEach(write => write());
+      try {
+        const result = await callback({
+          get: async (target: Query | { path: string }) => { assert.equal(pending.length, 0, 'all reads precede writes'); return target instanceof Query ? target.get() : snapshot(target.path); },
+          set: (target: { path: string }, value: Record<string, unknown>) => pending.push(() => records.set(target.path, structuredClone(value))),
+          delete: (target: { path: string }) => pending.push(() => records.delete(target.path)),
+        });
+        pending.forEach(write => write());
+        return result;
+      } finally {
+        releaseTransaction();
+      }
     },
   };
   return { records, store: new FirestoreDirectoryStore(firestore as unknown as Firestore) };
+}
+
+test('Location import confirmation atomically writes mixed changes, correlated audits, receipt, and idempotent replay', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/loc-existing', { id: 'loc-existing', storeNumber: '01', name: 'Original', storeManagerId: 'per-1', version: 2, recordStatus: 'Active' });
+  records.set('locations/loc-unchanged', { id: 'loc-unchanged', storeNumber: '03', name: 'Unchanged', version: 4, recordStatus: 'Active' });
+  records.set('people/per-1', { id: 'per-1', fullName: 'Manager', status: 'Active', version: 0 });
+  const manifest = importManifest([
+    { id: 'loc-existing', action: 'update', expectedVersion: 2, data: { storeNumber: '01', name: 'Renamed' } },
+    { id: 'loc-new', action: 'add', expectedVersion: null, data: { storeNumber: '02', name: 'New Store', type: 'Other Company Location', address: '2 Main', city: 'LA', state: 'CA', zipCode: '90002', phone: '2135550100', timeZone: 'America/Los_Angeles', hierarchyApplicability: 'Not Applicable', operationalStatus: 'Open — Normal Operations', recordStatus: 'Active' } },
+  ], [{ id: 'loc-unchanged', expectedVersion: 4, storeNumber: '03' }]);
+
+  const result = await store.confirmLocationImport(manifest, actor);
+  assert.deepEqual({ additions: result.additions, updates: result.updates, unchanged: result.unchanged, replayed: result.replayed }, { additions: 1, updates: 1, unchanged: 1, replayed: false });
+  assert.equal(records.get('locations/loc-existing')?.name, 'Renamed');
+  assert.equal(records.get('locations/loc-existing')?.storeManagerId, 'per-1');
+  assert.equal(records.get('locations/loc-new')?.version, 1);
+  assert.deepEqual(result.locations.find(location => location.id === 'loc-existing')?.record, records.get('locations/loc-existing'));
+  assert.deepEqual(result.locations.find(location => location.id === 'loc-new')?.record, records.get('locations/loc-new'));
+  assert.equal([...records.keys()].filter(key => key.startsWith('audit_logs/aud-locimp-')).length, 2);
+  const audits = [...records.entries()].filter(([key]) => key.startsWith('audit_logs/aud-locimp-')).map(([, value]) => value);
+  assert.ok(audits.every(audit => audit.operationId === manifest.operationId && audit.batchId === manifest.batchId));
+  assert.ok(audits.every(audit => Object.hasOwn(audit, 'previousState') && Object.hasOwn(audit, 'newState')));
+  assert.equal(audits.find(audit => audit.entityId === 'loc-existing')?.previousState && (audits.find(audit => audit.entityId === 'loc-existing')?.previousState as Record<string, unknown>).name, 'Original');
+  assert.equal((audits.find(audit => audit.entityId === 'loc-existing')?.newState as Record<string, unknown>).name, 'Renamed');
+  assert.equal(audits.find(audit => audit.entityId === 'loc-new')?.previousState, null);
+  assert.equal(records.get('location_import_receipts/op-test')?.batchId, 'batch-test');
+
+  const recordCount = records.size;
+  const replay = await store.confirmLocationImport(manifest, actor);
+  assert.equal(replay.replayed, true);
+  assert.deepEqual(replay.locations, result.locations);
+  assert.equal(records.size, recordCount);
+  await assert.rejects(store.confirmLocationImport({ ...manifest, sourceDigest: 'different' }, actor), /different import content/);
+  assert.equal(records.size, recordCount);
+});
+
+test('concurrent Location import confirmations create one receipt and one audit set', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const manifest = importManifest([
+    { id: 'loc-new', action: 'add', expectedVersion: null, data: { storeNumber: '02', name: 'New Store', type: 'Other Company Location', address: '2 Main', city: 'LA', state: 'CA', zipCode: '90002', phone: '2135550100', timeZone: 'America/Los_Angeles', hierarchyApplicability: 'Not Applicable', operationalStatus: 'Open — Normal Operations', recordStatus: 'Active' } },
+  ]);
+
+  const results = await Promise.all([
+    store.confirmLocationImport(manifest, actor),
+    store.confirmLocationImport(manifest, actor),
+  ]);
+
+  assert.deepEqual(results.map(result => result.replayed).sort(), [false, true]);
+  assert.equal([...records.keys()].filter(key => key.startsWith('locations/loc-new')).length, 1);
+  assert.equal([...records.keys()].filter(key => key.startsWith('audit_logs/aud-locimp-')).length, 1);
+  assert.equal([...records.keys()].filter(key => key.startsWith('location_import_receipts/op-test')).length, 1);
+});
+
+test('Location import confirmation rejects stale versions, changed references, and identity collisions without partial writes', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/loc-existing', { id: 'loc-existing', storeNumber: '01', name: 'Original', version: 3, recordStatus: 'Active' });
+  records.set('locations/loc-collision', { id: 'loc-collision', storeNumber: '002', name: 'Collision', version: 0, recordStatus: 'Active' });
+  const initial = structuredClone([...records]);
+
+  await assert.rejects(store.confirmLocationImport(importManifest([
+    { id: 'loc-existing', action: 'update', expectedVersion: 2, data: { storeNumber: '01', name: 'Stale' } },
+  ]), actor), DirectoryConflict);
+  await assert.rejects(store.confirmLocationImport(importManifest([
+    { id: 'loc-existing', action: 'add', expectedVersion: null, data: { storeNumber: '03', name: 'ID Collision' } },
+  ]), actor), DirectoryConflict);
+  await assert.rejects(store.confirmLocationImport(importManifest([
+    { id: 'loc-new', action: 'add', expectedVersion: null, data: { storeNumber: '02', name: 'Duplicate' } },
+  ]), actor), DirectoryConflict);
+  await assert.rejects(store.confirmLocationImport(importManifest([
+    { id: 'loc-existing', action: 'update', expectedVersion: 3, data: { storeNumber: '01', name: 'Changed Ref', storeManagerId: 'missing-person' } },
+  ]), actor), DirectoryValidationError);
+  await assert.rejects(store.confirmLocationImport(importManifest([], [
+    { id: 'loc-existing', expectedVersion: 2, storeNumber: '01' },
+  ]), actor), DirectoryConflict);
+
+  assert.deepEqual([...records], initial);
+  assert.equal([...records.keys()].some(key => key.startsWith('audit_logs/') || key.startsWith('location_import_receipts/')), false);
+});
+
+test('Location import action intent rejects supplied-ID collisions and deleted legacy version-zero updates', async () => {
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+
+  const legacy = databaseFixture();
+  legacy.records.set('locations/loc-legacy', { id: 'loc-legacy', storeNumber: '03', name: 'Legacy' });
+  const updated = await legacy.store.confirmLocationImport(importManifest([
+    { id: 'loc-legacy', action: 'update', expectedVersion: 0, data: { storeNumber: '03', name: 'Updated Legacy' } },
+  ]), actor);
+  assert.equal(updated.updates, 1);
+  assert.equal(legacy.records.get('locations/loc-legacy')?.name, 'Updated Legacy');
+
+  const collision = databaseFixture();
+  collision.records.set('locations/loc-supplied', { id: 'loc-supplied', storeNumber: '99', name: 'Concurrent Create', version: 0, recordStatus: 'Active' });
+
+  await assert.rejects(collision.store.confirmLocationImport(importManifest([
+    { id: 'loc-supplied', action: 'add', expectedVersion: null, data: { id: 'loc-supplied', storeNumber: '02', name: 'Reviewed Addition' } },
+  ]), actor), DirectoryConflict);
+
+  const deleted = databaseFixture();
+  await assert.rejects(deleted.store.confirmLocationImport(importManifest([
+    { id: 'loc-legacy', action: 'update', expectedVersion: 0, data: { storeNumber: '03', name: 'Deleted Legacy Update' } },
+  ]), actor), DirectoryConflict);
+
+  assert.equal([...collision.records.keys()].some(key => key.startsWith('audit_logs/') || key.startsWith('location_import_receipts/')), false);
+  assert.equal(deleted.records.size, 0);
+});
+
+test('Location import confirmation rejects an oversized estimated atomic payload before writes', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  await assert.rejects(store.confirmLocationImport(importManifest([
+    { id: 'loc-huge', action: 'add', expectedVersion: null, data: { storeNumber: '99', name: 'x'.repeat(8_000_000), type: 'Other Company Location' } },
+  ]), actor), LocationImportPayloadTooLarge);
+  assert.equal(records.size, 0);
+});
+
+function importManifest(writes: LocationImportManifest['writes'], unchanged: LocationImportManifest['unchanged'] = []): LocationImportManifest {
+  const additions = writes.filter(write => write.action === 'add').length;
+  const updates = writes.filter(write => write.action === 'update').length;
+  return { version: 1, schema: 'locations-v1', actorDigest: 'actor', sourceDigest: 'source', operationId: 'op-test', batchId: 'batch-test', issuedAt: '2026-09-13T12:00:00.000Z', expiresAt: '2026-09-13T12:10:00.000Z', summary: { totalRows: writes.length + unchanged.length, additions, updates, unchanged: unchanged.length, blocked: 0, warnings: 0 }, warningCount: 0, writes, unchanged };
 }
 
 test('custom definitions and values round-trip through transactional storage, bootstrap and audit history', async () => {

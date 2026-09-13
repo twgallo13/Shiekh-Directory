@@ -10,6 +10,7 @@ import {
   LOCATION_IMPORT_COLUMNS,
   LOCATION_IMPORT_FIELDS,
   LocationImportPreviewError,
+  buildLocationImportPlan,
   previewLocationImport,
 } from '../src/lib/locationImportPreview';
 import type { DirectorySeed } from '../src/lib/directorySeed';
@@ -66,6 +67,21 @@ describe('Location CSV import preview', () => {
     assert.deepEqual(result.summary, { totalRows: 1, additions: 0, updates: 1, unchanged: 0, blocked: 0, warnings: 0 });
     assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: 'Renamed Store' }]);
     assert.deepEqual(snapshot, before);
+  });
+
+  it('preserves a supplied addition ID and generates one only when omitted', () => {
+    const supplied = buildLocationImportPlan(csvRow({
+      LocationId: 'loc-supplied', StoreNumber: '008', StoreName: 'Supplied ID', Type: 'Other Company Location', Address: '8 Main', City: 'LA', State: 'CA', ZipCode: '90008', Phone: '2135550108', TimeZone: 'America/Los_Angeles', HierarchyApplicability: 'Not Applicable', OperationalStatus: 'Open — Normal Operations', RecordStatus: 'Active',
+    }), snapshot, '2026-09-13T12:00:00.000Z', () => 'loc-generated');
+    const generated = buildLocationImportPlan(csvRow({
+      StoreNumber: '009', StoreName: 'Generated ID', Type: 'Other Company Location', Address: '9 Main', City: 'LA', State: 'CA', ZipCode: '90009', Phone: '2135550109', TimeZone: 'America/Los_Angeles', HierarchyApplicability: 'Not Applicable', OperationalStatus: 'Open — Normal Operations', RecordStatus: 'Active',
+    }), snapshot, '2026-09-13T12:00:00.000Z', () => 'loc-generated');
+
+    assert.equal(supplied.preview.rows[0].locationId, 'loc-supplied');
+    assert.equal(supplied.writes[0].id, 'loc-supplied');
+    assert.equal(supplied.writes[0].data.id, 'loc-supplied');
+    assert.equal(generated.preview.rows[0].locationId, 'loc-generated');
+    assert.equal(generated.writes[0].id, 'loc-generated');
   });
 
   it('blocks duplicate CSV identities, invalid hierarchy, and missing or inactive Person references', () => {

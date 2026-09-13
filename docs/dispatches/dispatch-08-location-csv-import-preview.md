@@ -2,13 +2,15 @@
 
 **Status:** Manually accepted for merge on 2026-09-13
 
+Dispatch 8 defines the read-only preview contract. Dispatch 9 extends an eligible preview with a separate, atomic Confirm Import operation; see [dispatch-09-confirm-location-import.md](dispatch-09-confirm-location-import.md).
+
 ## Manual acceptance
 
 The product owner verified the deployed CSV preview and corrections from application commit `002ac13b85bbde1f4ddb83feb8c5606e74f5ccef` on Cloud Run revision `shiekh-location-company-directory-dispatch8-002ac13` and approved PR #5 for merge. This acceptance does not enable import execution, authorize data writes or repairs, or begin another implementation phase.
 
 ## Delivered scope
 
-Dispatch 8 is **Locations only** and **preview only**. It downloads guidance, reads one authoritative snapshot, and reports proposed additions, updates, unchanged rows, warnings, and blocking errors. It has no import executor, Confirm Import endpoint, write call, migration, batch mutation, audit event, rollback action, or deployment change.
+Dispatch 8 is **Locations only** and its preview route remains **read-only**. It downloads guidance, reads one authoritative snapshot, and reports proposed additions, updates, unchanged rows, warnings, and blocking errors. Dispatch 9 consumes this unchanged preview contract for a separately authorized atomic confirmation; no migration or automatic rollback is added.
 
 System Administrators, Directory Data Stewards, and Editors with `Company` or `Company-wide` scope may use the workflow. Store-scoped and read-only accounts fail closed. The server reads Locations, People, Regions, and Districts in one read-only Firestore transaction. Results include the snapshot time and matched Location version. Preview does not reserve an ID or guarantee a future save: any future save must rebuild the preview and revalidate current records, versions, and authorization.
 
@@ -88,12 +90,13 @@ Focused fixtures prove the worked example yields one addition, one update, one u
 - `GET /api/imports/locations/fields`
 - `GET /api/imports/locations/references`
 - `POST /api/imports/locations/preview` with `{ "csv": "..." }`
+- `POST /api/imports/locations/confirm` is defined by Dispatch 9 and consumes a server-signed eligible preview.
 
-All routes require the current Firebase ID token, company-wide preview authority, rate limiting, and `Cache-Control: no-store`. Reference and preview routes read authoritative data; none receives a directory writer.
+All routes require the current Firebase ID token, company-wide preview authority, rate limiting, and `Cache-Control: no-store`. Reference and preview routes remain read-only and receive no directory writer.
 
 ## Remaining limitations
 
-- No Confirm Import, writes, batch ID, audit, backup, recovery, rollback, or import execution.
+- No partial import, automatic rollback/restore, or import-compatible backup export. Dispatch 9 adds atomic confirmation, receipts, and audit evidence.
 - No explicit clearing syntax and no nonnumeric Store Number matching.
 - No People import/export contract or import-compatible Location/backup export.
 - No import of `Works at`, `Supports`, custom fields, hours, templates, overrides, notices, privacy settings, account permissions, credentials, audits, or configuration.

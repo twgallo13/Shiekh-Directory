@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Firestore, type QueryDocumentSnapshot } from "@google-cloud/firestore";
 import type { Account } from "./authAuthority";
 import type { DirectorySeed } from "../src/lib/directorySeed";
@@ -8,6 +8,13 @@ import { normalizeUsPhone } from "../src/lib/contactNormalization";
 import { type HierarchyFieldContract, type HierarchyRegistry, validateLocationHierarchyFields, validateUserPersonLink } from "../src/lib/hierarchyAssignmentContract";
 import { normalizeLocationWriteValues } from "../src/lib/locationWriteContract";
 import { isDeepStrictEqual } from "node:util";
+import {
+  LOCATION_IMPORT_MAX_ATOMIC_BYTES,
+  digestLocationImportManifest,
+  expiredConfirmation,
+  type LocationImportManifest,
+  type LocationImportReceipt,
+} from "./locationImportConfirmation";
 
 export const DIRECTORY_COLLECTIONS = {
   locations: "locations",
@@ -34,6 +41,8 @@ export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
 export class DirectoryConflict extends Error {}
 export class DirectoryValidationError extends Error {}
 export class DirectoryWriteDenied extends Error {}
+export class LocationImportIdempotencyConflict extends Error {}
+export class LocationImportPayloadTooLarge extends Error {}
 
 type RelationshipPerson = {
   id: string;
@@ -162,6 +171,146 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       return { records: committedRecords };
     });
   }
+
+  async confirmLocationImport(manifest: LocationImportManifest, actor: Account, options: { replayOnly?: boolean } = {}): Promise<LocationImportReceipt> {
+    const manifestDigest = digestLocationImportManifest(manifest);
+    const receiptReference = this.firestore.collection("location_import_receipts").doc(manifest.operationId);
+    return this.firestore.runTransaction(async transaction => {
+      const receiptSnapshot = await transaction.get(receiptReference);
+      if (receiptSnapshot.exists) {
+        const receipt = receiptSnapshot.data() as LocationImportReceipt & { manifestDigest?: string };
+        if (receipt.manifestDigest !== manifestDigest) throw new LocationImportIdempotencyConflict("This operation ID was already used for different import content.");
+        return toLocationImportReceipt(receipt, true);
+      }
+      if (options.replayOnly) throw expiredConfirmation();
+
+      const writes: DirectoryWrite[] = manifest.writes.map(write => ({
+        collection: "locations",
+        id: write.id,
+        operation: "set",
+        expectedVersion: write.expectedVersion,
+        data: write.data,
+      }));
+      const reviewedIdentities = [
+        ...writes.map(write => ({ id: write.id, storeNumber: String(write.data?.storeNumber || "") })),
+        ...manifest.unchanged.map(assertion => ({ id: assertion.id, storeNumber: assertion.storeNumber })),
+      ];
+      if (new Set(reviewedIdentities.map(target => target.id)).size !== reviewedIdentities.length) {
+        throw new DirectoryValidationError("Each reviewed Location must appear exactly once.");
+      }
+      const [targetSnapshots, unchangedSnapshots, definitionSnapshot, peopleSnapshot, locationSnapshot, regionSnapshot, districtSnapshot] = await Promise.all([
+        Promise.all(writes.map(write => transaction.get(this.firestore.collection("locations").doc(write.id)))),
+        Promise.all(manifest.unchanged.map(assertion => transaction.get(this.firestore.collection("locations").doc(assertion.id)))),
+        transaction.get(this.firestore.collection("custom_field_definitions").limit(101)),
+        transaction.get(this.firestore.collection("people")),
+        transaction.get(this.firestore.collection("locations")),
+        transaction.get(this.firestore.collection("regions")),
+        transaction.get(this.firestore.collection("districts")),
+      ]);
+
+      manifest.writes.forEach((write, index) => {
+        const exists = targetSnapshots[index].exists;
+        if ((write.action === "add" && exists) || (write.action === "update" && !exists)) {
+          throw new DirectoryConflict("A Location was created or deleted after preview.");
+        }
+      });
+
+      manifest.unchanged.forEach((assertion, index) => {
+        const snapshot = unchangedSnapshots[index];
+        const current = snapshot.data();
+        const currentVersion = typeof current?.version === "number" ? current.version : 0;
+        if (!snapshot.exists || currentVersion !== assertion.expectedVersion || current?.storeNumber !== assertion.storeNumber) {
+          throw new DirectoryConflict("An unchanged Location changed after preview.");
+        }
+      });
+      const finalLocations = new Map<string, Record<string, unknown>>(locationSnapshot.docs.map(document => [document.id, { ...document.data(), id: document.id }]));
+      writes.forEach(write => finalLocations.set(write.id, { ...finalLocations.get(write.id), ...write.data, id: write.id }));
+      reviewedIdentities.forEach(target => {
+        const normalizedStoreNumber = normalizeImportStoreNumber(target.storeNumber);
+        const matches = [...finalLocations.values()].filter(location => normalizeImportStoreNumber(location.storeNumber) === normalizedStoreNumber);
+        if (!normalizedStoreNumber || matches.length !== 1 || matches[0].id !== target.id) {
+          throw new DirectoryConflict("A reviewed Location identity changed after preview.");
+        }
+      });
+      const definitions = definitionSnapshot.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id }));
+      const people: RelationshipPerson[] = peopleSnapshot.docs.map(document => ({
+        ...document.data(), id: document.id, fullName: String(document.data().fullName || document.data().name || "Unknown Person"),
+      }));
+      const locations = locationSnapshot.docs.map(document => ({ ...document.data(), id: document.id }));
+      const hierarchyRegistry: HierarchyRegistry = {
+        regions: regionSnapshot.docs.map(document => ({ id: document.id, name: String(document.data().name || ""), status: document.data().status })),
+        districts: districtSnapshot.docs.map(document => ({ id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })),
+      };
+      const validatedWrites = validateMetadataWrites(writes, targetSnapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, [], hierarchyRegistry);
+      const committedAt = new Date().toISOString();
+      const savedLocations = validatedWrites.map(write => {
+        const record = { ...write.data, id: write.id };
+        return {
+          id: write.id,
+          name: String(write.data?.name || ""),
+          storeNumber: String(write.data?.storeNumber || ""),
+          record: record as LocationImportReceipt['locations'][number]['record'],
+        };
+      });
+      const receipt = {
+        operationId: manifest.operationId,
+        batchId: manifest.batchId,
+        manifestDigest,
+        sourceDigest: manifest.sourceDigest,
+        actorId: actor.uid,
+        additions: manifest.writes.filter(write => write.action === "add").length,
+        updates: manifest.writes.filter(write => write.action === "update").length,
+        unchanged: manifest.summary.unchanged,
+        locations: savedLocations,
+        committedAt,
+        replayed: false,
+      };
+      const audits = validatedWrites.map((write, index) => ({
+        id: `aud-locimp-${createHash("sha256").update(`${manifest.operationId}\0${write.id}`).digest("hex").slice(0, 32)}`,
+        value: {
+          timestamp: committedAt,
+          userId: actor.uid,
+          userName: actor.name,
+          action: manifest.writes[index].action === "add" ? "Location Imported" : "Location Updated by Import",
+          entityType: "Location",
+          entityId: write.id,
+          entityName: String(write.data?.name || write.id),
+          details: `Location import batch ${manifest.batchId}.`,
+          operationId: manifest.operationId,
+          batchId: manifest.batchId,
+          previousState: targetSnapshots[index].exists ? targetSnapshots[index].data() : null,
+          newState: { ...write.data, id: write.id },
+        },
+      }));
+      const estimatedBytes = Buffer.byteLength(JSON.stringify({
+        locations: savedLocations.map(location => location.record), audits, receipt,
+      }), "utf8");
+      if (estimatedBytes > LOCATION_IMPORT_MAX_ATOMIC_BYTES) throw new LocationImportPayloadTooLarge("The import exceeds the atomic write payload limit.");
+
+      validatedWrites.forEach(write => transaction.set(this.firestore.collection("locations").doc(write.id), { ...write.data, id: write.id }));
+      audits.forEach(audit => transaction.set(this.firestore.collection("audit_logs").doc(audit.id), { id: audit.id, ...audit.value }));
+      transaction.set(receiptReference, receipt);
+      return toLocationImportReceipt(receipt, false);
+    });
+  }
+}
+
+function normalizeImportStoreNumber(value: unknown): string {
+  const text = String(value || '').trim();
+  return /^\d+$/.test(text) ? text.replace(/^0+(?=\d)/, '') : '';
+}
+
+function toLocationImportReceipt(receipt: LocationImportReceipt, replayed: boolean): LocationImportReceipt {
+  return {
+    operationId: receipt.operationId,
+    batchId: receipt.batchId,
+    committedAt: receipt.committedAt,
+    additions: receipt.additions,
+    updates: receipt.updates,
+    unchanged: receipt.unchanged,
+    locations: receipt.locations,
+    replayed,
+  };
 }
 
 export function validateMetadataWrites(
@@ -200,13 +349,18 @@ export function validateMetadataWrites(
   const validatedWrites = writes.map((write, index) => {
     const current = previous[index];
 
-    const expectedVer = write.expectedVersion ?? (typeof write.data?.expectedVersion === "number" ? write.data.expectedVersion : undefined);
+    const expectedVer = Object.hasOwn(write, "expectedVersion")
+      ? write.expectedVersion
+      : typeof write.data?.expectedVersion === "number" ? write.data.expectedVersion : undefined;
     if (write.collection === 'regions' || write.collection === 'districts') {
       if (!Object.hasOwn(write, 'expectedVersion') || (write.expectedVersion === null ? Boolean(current) : !current)) {
         throw new DirectoryConflict("Hierarchy registry record changed concurrently. Reload the directory before saving.");
       }
     }
     if (current && ['locations', 'people', 'users', 'requests', 'regions', 'districts'].includes(write.collection)) {
+      if (write.collection === 'locations' && expectedVer === null) {
+        throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
+      }
       if (expectedVer === undefined) {
         throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
       }
@@ -215,7 +369,7 @@ export function validateMetadataWrites(
         throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
       }
     }
-    if (!current && expectedVer !== undefined && expectedVer !== 0) {
+    if (!current && expectedVer !== undefined && expectedVer !== null && expectedVer !== 0) {
       throw new DirectoryConflict("Record changed concurrently. Reload the directory before saving.");
     }
 

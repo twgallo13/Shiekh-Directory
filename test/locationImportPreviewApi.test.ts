@@ -5,6 +5,7 @@ import express from 'express';
 import { parse } from 'csv-parse/sync';
 import type { Account } from '../server/authAuthority';
 import { createLocationImportPreviewRouter, type LocationImportPreviewStore } from '../server/locationImportPreview';
+import { LOCATION_IMPORT_MAX_TOKEN_BYTES, LocationImportConfirmationError, expiredConfirmation, loadLocationImportTokenSecret, verifyLocationImportManifest, type LocationImportManifest, type LocationImportReceipt } from '../server/locationImportConfirmation';
 import { LOCATION_IMPORT_COLUMNS } from '../src/lib/locationImportPreview';
 import type { DirectorySeed } from '../src/lib/directorySeed';
 
@@ -116,15 +117,208 @@ test('Location import preview rejects viewers, invalid templates, and unavailabl
   } finally { await broken.close(); }
 });
 
-async function harness(authenticatedAccount: Account, store: LocationImportPreviewStore) {
+test('eligible previews issue bound tokens and confirmation rejects tampering, mismatches, warnings, expiry, and revoked authority', async () => {
+  let confirmed: LocationImportManifest | undefined;
+  let committedReceipt: LocationImportReceipt | undefined;
+  let currentAccount = account;
+  let clock = new Date('2026-09-13T12:00:00.000Z');
+  const store: LocationImportPreviewStore = {
+    async readLocationImportSnapshot() { return structuredClone(seed); },
+    async confirmLocationImport(manifest, _actor, options) {
+      if (options?.replayOnly && !committedReceipt) throw expiredConfirmation();
+      confirmed = manifest;
+      if (committedReceipt) return { ...committedReceipt, replayed: true };
+      committedReceipt = receipt(manifest);
+      return committedReceipt;
+    },
+  };
+  const app = await harness(account, store, { now: () => clock, authenticate: async () => currentAccount });
+  try {
+    const csv = row({ LocationId: 'loc-1', StoreNumber: '001', StoreName: 'Confirmed Name' });
+    const previewResponse = await post(app.baseUrl, 'preview', { csv });
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json();
+    assert.equal(typeof preview.confirmationToken, 'string');
+    assert.equal(preview.rows[0].locationId, 'loc-1');
+
+    const tampered = await post(app.baseUrl, 'confirm', { csv, confirmationToken: `${preview.confirmationToken}x`, operationId: preview.operationId, warningsReviewed: true });
+    assert.equal(tampered.status, 400);
+    assert.equal((await tampered.json()).error.code, 'confirmation_tampered');
+
+    const mismatched = await post(app.baseUrl, 'confirm', { csv: `${csv}\r\n`, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    assert.equal(mismatched.status, 409);
+    assert.equal((await mismatched.json()).error.code, 'confirmation_mismatch');
+
+    const wrongOperation = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: 'locimp-other', warningsReviewed: true });
+    assert.equal(wrongOperation.status, 409);
+    assert.equal((await wrongOperation.json()).error.code, 'confirmation_mismatch');
+
+    const confirmedResponse = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    assert.equal(confirmedResponse.status, 200);
+    assert.equal((await confirmedResponse.json()).operationId, preview.operationId);
+    assert.equal(confirmed?.sourceDigest.length, 43);
+    assert.equal(confirmed?.writes[0].expectedVersion, 0);
+    assert.deepEqual(confirmed?.unchanged, []);
+
+    currentAccount = { ...account, role: 'Directory Data Steward' };
+    const changedAuthority = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    assert.equal(changedAuthority.status, 409);
+    assert.equal((await changedAuthority.json()).error.code, 'confirmation_mismatch');
+    currentAccount = account;
+
+    currentAccount = { ...account, role: 'Viewer' };
+    const revoked = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    assert.equal(revoked.status, 403);
+    assert.equal(confirmed?.operationId, preview.operationId);
+    currentAccount = account;
+
+    clock = new Date('2026-09-13T12:10:00.001Z');
+    const expired = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    assert.equal(expired.status, 200);
+    assert.equal((await expired.json()).replayed, true);
+
+    clock = new Date('2026-09-13T12:20:00.000Z');
+    committedReceipt = undefined;
+    const freshCsv = row({ LocationId: 'loc-1', StoreNumber: '001', StoreName: 'Another Name' });
+    const freshPreview = await (await post(app.baseUrl, 'preview', { csv: freshCsv })).json();
+    clock = new Date('2026-09-13T12:30:00.001Z');
+    const expiredUncommitted = await post(app.baseUrl, 'confirm', { csv: freshCsv, confirmationToken: freshPreview.confirmationToken, operationId: freshPreview.operationId, warningsReviewed: true });
+    assert.equal(expiredUncommitted.status, 409);
+    assert.equal((await expiredUncommitted.json()).error.code, 'confirmation_expired');
+  } finally { await app.close(); }
+
+  const warningApp = await harness(account, store);
+  try {
+    const csv = row({ StoreNumber: '0001', StoreName: 'Warning Rename' });
+    const preview = await (await post(warningApp.baseUrl, 'preview', { csv })).json();
+    assert.equal(preview.summary.warnings, 1);
+    const response = await post(warningApp.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: false });
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).error.code, 'warnings_not_reviewed');
+  } finally { await warningApp.close(); }
+});
+
+test('preview reserves generated addition IDs, enforces batch limits, and only requires a secret for eligible changes', async () => {
+  const unavailable = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } }, { tokenSecret: '' });
+  try {
+    const blocked = await post(unavailable.baseUrl, 'preview', { csv: row({ StoreNumber: '002' }) });
+    assert.equal(blocked.status, 200);
+    assert.equal((await blocked.json()).summary.blocked, 1);
+    const eligible = await post(unavailable.baseUrl, 'preview', { csv: row({ LocationId: 'loc-1', StoreName: 'Rename' }) });
+    assert.equal(eligible.status, 200);
+    const readOnlyPreview = await eligible.json();
+    assert.equal(readOnlyPreview.summary.updates, 1);
+    assert.match(readOnlyPreview.confirmationDisabledReason, /not configured/);
+    assert.equal(readOnlyPreview.confirmationToken, undefined);
+  } finally { await unavailable.close(); }
+
+  const noExecutor = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } }, { confirmationExecutor: false });
+  try {
+    const response = await post(noExecutor.baseUrl, 'preview', { csv: row({ LocationId: 'loc-1', StoreName: 'Rename' }) });
+    assert.equal(response.status, 200);
+    const readOnlyPreview = await response.json();
+    assert.equal(readOnlyPreview.summary.updates, 1);
+    assert.match(readOnlyPreview.confirmationDisabledReason, /not configured/);
+    assert.equal(readOnlyPreview.operationId, undefined);
+  } finally { await noExecutor.close(); }
+
+  const app = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } });
+  try {
+    const addition = validAdditionRow('002');
+    const preview = await (await post(app.baseUrl, 'preview', { csv: addition })).json();
+    assert.match(preview.rows[0].locationId, /^loc-[0-9a-f-]{36}$/);
+    const suppliedCsv = row({ ...additionValues('003'), LocationId: 'loc-supplied' });
+    const suppliedPreview = await (await post(app.baseUrl, 'preview', { csv: suppliedCsv })).json();
+    const suppliedManifest = verifyLocationImportManifest(suppliedPreview.confirmationToken, 'test-location-import-secret', new Date('2026-09-13T12:00:00.000Z'));
+    assert.equal(suppliedPreview.rows[0].locationId, 'loc-supplied');
+    assert.equal(suppliedManifest.writes[0].id, 'loc-supplied');
+    assert.equal(suppliedManifest.writes[0].data.id, 'loc-supplied');
+    const tooManyRows = csvRows(Array.from({ length: 101 }, (_, index) => ({ StoreNumber: String(index + 1000) })));
+    const response = await post(app.baseUrl, 'preview', { csv: tooManyRows });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, 'batch_too_large');
+    const tooManyChanges = csvRows(Array.from({ length: 41 }, (_, index) => additionValues(String(index + 2000))));
+    const changedResponse = await post(app.baseUrl, 'preview', { csv: tooManyChanges });
+    assert.equal(changedResponse.status, 400);
+    assert.equal((await changedResponse.json()).error.code, 'batch_too_large');
+  } finally { await app.close(); }
+});
+
+test('preview manifest binds unchanged Location identity and version alongside changed rows', async () => {
+  const snapshot = structuredClone(seed);
+  snapshot.locations.push({ ...snapshot.locations[0], id: 'loc-2', storeNumber: '002', name: 'Unchanged', version: 7 });
+  let confirmed: LocationImportManifest | undefined;
+  const app = await harness(account, {
+    async readLocationImportSnapshot() { return snapshot; },
+    async confirmLocationImport(manifest) { confirmed = manifest; return receipt(manifest); },
+  });
+  try {
+    const csv = csvRows([
+      { LocationId: 'loc-1', StoreNumber: '001', StoreName: 'Changed' },
+      { LocationId: 'loc-2', StoreNumber: '002' },
+    ]);
+    const preview = await (await post(app.baseUrl, 'preview', { csv })).json();
+    assert.deepEqual(preview.summary, { totalRows: 2, additions: 0, updates: 1, unchanged: 1, blocked: 0, warnings: 0 });
+    const response = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    assert.equal(response.status, 200);
+    assert.deepEqual(confirmed?.unchanged, [{ id: 'loc-2', expectedVersion: 7, storeNumber: '002' }]);
+  } finally { await app.close(); }
+});
+
+test('confirmation verifier rejects tokens above the signed-token byte limit', () => {
+  assert.throws(
+    () => verifyLocationImportManifest('x'.repeat(LOCATION_IMPORT_MAX_TOKEN_BYTES + 1), 'secret', new Date()),
+    (error: unknown) => error instanceof LocationImportConfirmationError && error.code === 'confirmation_too_large',
+  );
+});
+
+test('confirmation secret configuration fails closed for weak values', () => {
+  assert.equal(loadLocationImportTokenSecret('x'.repeat(32)), 'x'.repeat(32));
+  assert.throws(() => loadLocationImportTokenSecret('too-short'), /at least 32 bytes/);
+});
+
+async function harness(
+  authenticatedAccount: Account,
+  store: LocationImportPreviewStore,
+  options: { now?: () => Date; tokenSecret?: string; authenticate?: (token: string) => Promise<Account>; confirmationExecutor?: false } = {},
+) {
   const app = express();
-  app.use('/api/imports', express.json({ limit: '12mb' }), createLocationImportPreviewRouter(async () => authenticatedAccount, store, { rateLimit: false, now: () => new Date('2026-09-13T12:00:00.000Z') }));
+  const capableStore: LocationImportPreviewStore = {
+    ...store,
+    ...(options.confirmationExecutor === false ? {} : { confirmLocationImport: store.confirmLocationImport || (async manifest => receipt(manifest)) }),
+  };
+  app.use('/api/imports', express.json({ limit: '12mb' }), createLocationImportPreviewRouter(options.authenticate || (async () => authenticatedAccount), capableStore, {
+    rateLimit: false,
+    now: options.now || (() => new Date('2026-09-13T12:00:00.000Z')),
+    tokenSecret: options.tokenSecret === undefined ? 'test-location-import-secret' : options.tokenSecret,
+  }));
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   return {
     baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}`,
     async close() { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); },
   };
+}
+
+function post(baseUrl: string, action: 'preview' | 'confirm', body: unknown) {
+  return fetch(`${baseUrl}/api/imports/locations/${action}`, { method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+function receipt(manifest: LocationImportManifest): LocationImportReceipt {
+  return { operationId: manifest.operationId, batchId: manifest.batchId, committedAt: '2026-09-13T12:00:01.000Z', additions: manifest.summary.additions, updates: manifest.summary.updates, unchanged: manifest.summary.unchanged, locations: manifest.writes.map(write => ({ id: write.id, name: String(write.data.name || ''), storeNumber: String(write.data.storeNumber || ''), record: { ...write.data, id: write.id } })), replayed: false };
+}
+
+function validAdditionRow(storeNumber: string) {
+  return row(additionValues(storeNumber));
+}
+
+function additionValues(storeNumber: string) {
+  return { StoreNumber: storeNumber, StoreName: `Store ${storeNumber}`, Type: 'Street / Standalone Location', Address: '2 Main', City: 'LA', State: 'CA', ZipCode: '90002', Phone: '2135550100', TimeZone: 'America/Los_Angeles', HierarchyApplicability: 'Applicable', RegionId: 'reg-west', DistrictId: 'dist-1', OperationalStatus: 'Open — Normal Operations', RecordStatus: 'Active' };
+}
+
+function csvRows(rows: Array<Partial<Record<typeof LOCATION_IMPORT_COLUMNS[number], string>>>) {
+  const values = rows.map(overrides => ({ SchemaVersion: 'locations-v1', ...overrides }));
+  return `${LOCATION_IMPORT_COLUMNS.join(',')}\r\n${values.map(value => LOCATION_IMPORT_COLUMNS.map(column => JSON.stringify(value[column] || '')).join(',')).join('\r\n')}\r\n`;
 }
 
 function row(overrides: Partial<Record<typeof LOCATION_IMPORT_COLUMNS[number], string>>) {

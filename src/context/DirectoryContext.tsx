@@ -49,6 +49,7 @@ interface DirectoryContextType {
   saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => Promise<void>;
   persistenceError: string | null;
   clearPersistenceError: () => void;
+  reconcileConfirmedLocations: (records: LocationRecord[]) => void;
   updateLocation: (id: string, updates: Partial<LocationRecord>) => void;
   createLocation: (location: Omit<LocationRecord, 'id'>) => LocationRecord;
   deleteLocation: (id: string) => void;
@@ -159,6 +160,15 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
           : [...previous, record.data as unknown as DistrictRecord]);
       }
     }
+  };
+
+  const reconcileConfirmedLocations = (records: LocationRecord[]) => {
+    setLocations(previous => {
+      const confirmedById = new Map(records.map(record => [record.id, record]));
+      const reconciled = previous.map(record => confirmedById.get(record.id) || record);
+      const existingIds = new Set(previous.map(record => record.id));
+      return [...reconciled, ...records.filter(record => !existingIds.has(record.id))];
+    });
   };
 
   const persist = (writes: DirectoryWrite[], audit: DirectoryAudit) => {
@@ -900,6 +910,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         saveLocationRecord,
         persistenceError,
         clearPersistenceError: () => setPersistenceError(null),
+        reconcileConfirmedLocations,
         updateLocation,
         createLocation,
         deleteLocation,

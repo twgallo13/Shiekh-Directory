@@ -1,20 +1,26 @@
 import React, { useRef, useState } from 'react';
-import { AlertCircle, BookOpen, Download, FileSpreadsheet, Plus, Upload } from 'lucide-react';
+import { AlertCircle, BookOpen, CheckCircle2, Download, ExternalLink, FileSpreadsheet, Plus, Upload } from 'lucide-react';
+import type { LocationRecord } from '../../types';
 import type { SessionUser } from '../../lib/authSession';
-import type { LocationImportPreview } from '../../lib/locationImportPreview';
+import type { LocationImportPreview, LocationImportReceipt } from '../../lib/locationImportPreview';
 import { LOCATION_IMPORT_FIELDS } from '../../lib/locationImportSchema';
-import { downloadLocationImportResource, LocationImportRequestError, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
+import { locationPath } from '../../lib/navigation';
+import { confirmLocationImport, downloadLocationImportResource, LocationImportRequestError, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
 
 interface LocationImportPreviewPanelProps {
   user: SessionUser | null;
   onAddStore(): void;
+  onLocationsConfirmed(records: LocationRecord[]): void;
 }
 
-export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportPreviewPanelProps) {
+export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfirmed }: LocationImportPreviewPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<LocationImportPreview | null>(null);
+  const [csv, setCsv] = useState('');
+  const [receipt, setReceipt] = useState<LocationImportReceipt | null>(null);
+  const [warningsReviewed, setWarningsReviewed] = useState(false);
   const [filename, setFilename] = useState('');
-  const [busy, setBusy] = useState<LocationImportDownload | 'preview' | null>(null);
+  const [busy, setBusy] = useState<LocationImportDownload | 'preview' | 'confirm' | null>(null);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
 
@@ -37,6 +43,9 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
     if (!file || busy) return;
     setFilename(file.name);
     setPreview(null);
+    setCsv('');
+    setReceipt(null);
+    setWarningsReviewed(false);
     if (!user) {
       setError('Sign in again before previewing this file.');
       setErrorCode('authentication_required');
@@ -47,7 +56,9 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
     setError('');
     setErrorCode('');
     try {
-      setPreview(await previewLocationImport(user, file));
+      const result = await previewLocationImport(user, file);
+      setPreview(result.preview);
+      setCsv(result.csv);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The Location import preview could not be generated.');
       setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'preview_failed');
@@ -57,10 +68,61 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
     }
   };
 
+  const confirmImport = async () => {
+    if (!user || !preview?.confirmationToken || !preview.operationId || !csv || busy) return;
+    setBusy('confirm');
+    setError('');
+    setErrorCode('');
+    try {
+      const result = await confirmLocationImport(user, {
+        csv,
+        confirmationToken: preview.confirmationToken,
+        operationId: preview.operationId,
+        warningsReviewed,
+      });
+      onLocationsConfirmed(result.locations.map(location => location.record));
+      setReceipt(result);
+    } catch (cause) {
+      const code = cause instanceof LocationImportRequestError ? cause.code : 'confirmation_failed';
+      setErrorCode(code);
+      setError(code === 'confirmation_uncertain'
+        ? 'The import outcome is uncertain. Retry the same import operation to retrieve its authoritative result without duplicating writes.'
+        : cause instanceof Error ? cause.message : 'The Location import could not be confirmed.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const changedRows = preview ? preview.summary.additions + preview.summary.updates : 0;
+  const requiresNewPreview = ['confirmation_expired', 'confirmation_mismatch', 'confirmation_tampered', 'stale_preview', 'idempotency_conflict'].includes(errorCode);
+  const eligibleForConfirmation = Boolean(preview
+    && preview.summary.blocked === 0
+    && changedRows > 0
+    && preview.confirmationToken
+    && preview.operationId
+    && (!preview.summary.warnings || warningsReviewed)
+    && !receipt
+    && !requiresNewPreview);
+  const confirmDisabledReason = receipt
+    ? 'This import is already confirmed.'
+    : requiresNewPreview
+      ? 'The preview is stale or expired. Choose the CSV again to create a new preview.'
+      : preview?.confirmationDisabledReason
+        ? preview.confirmationDisabledReason
+      : preview?.summary.blocked
+        ? 'Resolve every blocked row and preview the entire batch again. Partial imports are not available.'
+        : changedRows === 0
+          ? 'There are no additions or updates to import.'
+          : !preview?.confirmationToken || !preview.operationId
+            ? 'This preview is read-only and cannot be confirmed.'
+            : preview.summary.warnings > 0 && !warningsReviewed
+              ? 'Review and acknowledge all warnings before confirming.'
+              : busy ? 'Another import action is in progress.' : '';
+
   const disabledReason = !user
     ? 'Sign in to download resources or preview a Location CSV.'
     : busy
-      ? busy === 'preview' ? `Previewing ${filename}. Controls are disabled until the request finishes.` : 'A download is in progress. Controls are disabled until it finishes.'
+      ? busy === 'preview' ? `Previewing ${filename}. Controls are disabled until the request finishes.` : busy === 'confirm' ? `Importing ${filename}. Controls are disabled until confirmation finishes.` : 'A download is in progress. Controls are disabled until it finishes.'
       : '';
 
   return (
@@ -71,11 +133,11 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
             <Upload className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-neutral-900">Preview Location CSV Import</h3>
-            <p className="text-xs text-neutral-500">Review proposed changes and blockers without saving data</p>
+            <h3 className="text-sm font-bold text-neutral-900">Location CSV Import</h3>
+            <p className="text-xs text-neutral-500">Preview and review the complete batch before confirming</p>
           </div>
         </div>
-        <button type="button" onClick={onAddStore} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs">
+        <button type="button" disabled={Boolean(busy)} title={busy ? 'Location import work is in progress.' : undefined} onClick={onAddStore} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs disabled:opacity-50">
           <Plus className="w-3.5 h-3.5" />
           <span>Add Store</span>
         </button>
@@ -89,7 +151,7 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
         <div className="grid gap-3 text-xs leading-5 text-neutral-700 md:grid-cols-2">
           <div>
             <div className="font-semibold text-neutral-900">Scope and access</div>
-            <p>Locations only and preview only. Nothing is saved, IDs are not reserved, and a future save must recheck current records, versions, and authorization. System Administrators, Directory Data Stewards, and Editors need company-wide scope.</p>
+            <p>Locations only. Preview does not save data; confirmation atomically rechecks and saves the entire eligible batch. System Administrators, Directory Data Stewards, and Editors need company-wide scope.</p>
           </div>
           <div>
             <div className="font-semibold text-neutral-900">Setup order</div>
@@ -153,6 +215,7 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span className="grow">{error}</span>
           {errorCode === 'directory_export_not_importable' && <button type="button" disabled={!user || Boolean(busy)} onClick={() => void downloadResource('template')} className="font-semibold underline disabled:opacity-50">Download Blank Template</button>}
+          {errorCode === 'confirmation_uncertain' && <button type="button" disabled={!eligibleForConfirmation || Boolean(busy)} title={confirmDisabledReason || undefined} onClick={() => void confirmImport()} className="font-semibold underline disabled:opacity-50">Retry Same Import</button>}
           <button type="button" disabled={!user || Boolean(busy)} onClick={() => inputRef.current?.click()} className="font-semibold underline disabled:opacity-50">Choose File Again</button>
         </div>
       )}
@@ -162,17 +225,17 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
           <div className="flex items-center justify-between gap-3 border-t border-neutral-200 pt-4">
             <div>
               <div className="text-xs font-semibold text-neutral-900">{filename}</div>
-              <div className="text-[11px] text-neutral-500">Preview only. No directory records were saved.</div>
-              <div className="text-[11px] text-neutral-500">Snapshot read {new Date(preview.snapshotReadAt).toLocaleString()}. A future save must rebuild the preview and revalidate current records, versions, and authorization.</div>
+              <div className="text-[11px] text-neutral-500">{receipt ? 'This batch was saved and reconciled with the directory.' : 'Preview only. No directory records have been saved yet.'}</div>
+              <div className="text-[11px] text-neutral-500">Snapshot read {new Date(preview.snapshotReadAt).toLocaleString()}. Confirmation revalidates current records, versions, and authorization.</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
             <Summary label="Rows" value={preview.summary.totalRows} />
             <Summary label="Additions" value={preview.summary.additions} tone="text-emerald-700" />
             <Summary label="Updates" value={preview.summary.updates} tone="text-blue-700" />
             <Summary label="Unchanged" value={preview.summary.unchanged} />
             <Summary label="Blocked" value={preview.summary.blocked} tone="text-red-700" />
-            {preview.summary.warnings > 0 && <Summary label="Warnings" value={preview.summary.warnings} tone="text-amber-700" />}
+            <Summary label="Warnings" value={preview.summary.warnings} tone="text-amber-700" />
           </div>
           {preview.rows.length === 0 ? (
             <p className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">The CSV contains no data rows.</p>
@@ -207,6 +270,38 @@ export function LocationImportPreviewPanel({ user, onAddStore }: LocationImportP
                 </tbody>
               </table>
             </div>
+          )}
+          {!receipt && (
+            <div className="space-y-3 border-y border-neutral-200 py-4">
+              {preview.confirmationDisabledReason && <p className="text-xs font-medium text-amber-800">{preview.confirmationDisabledReason}</p>}
+              {preview.summary.warnings > 0 && (
+                <label className="flex items-start gap-2 text-xs text-neutral-700">
+                  <input type="checkbox" checked={warningsReviewed} disabled={Boolean(busy)} onChange={event => setWarningsReviewed(event.target.checked)} className="mt-0.5" />
+                  <span>I reviewed all {preview.summary.warnings} warnings and accept the displayed changes.</span>
+                </label>
+              )}
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" disabled={!eligibleForConfirmation || Boolean(busy)} title={confirmDisabledReason || undefined} onClick={() => void confirmImport()} className="flex items-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>{busy === 'confirm' ? 'Importing...' : 'Confirm Import'}</span>
+                </button>
+                <span className="text-[11px] text-neutral-500">The full batch is atomic. Blocked rows prevent every write.</span>
+              </div>
+            </div>
+          )}
+          {receipt && (
+            <section role="status" aria-live="polite" className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-950">
+              <div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" />Import complete</div>
+              <div>Saved {receipt.additions} additions and {receipt.updates} updates; {receipt.unchanged} rows were unchanged.</div>
+              {receipt.replayed && <div>This is the authoritative result of an idempotent replay. No duplicate writes were created.</div>}
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {receipt.locations.map(location => (
+                  <a key={location.id} href={locationPath(location.record)} className="inline-flex items-center gap-1 font-semibold text-emerald-800 underline">
+                    Store {location.storeNumber} · {location.name}<ExternalLink className="h-3 w-3" />
+                  </a>
+                ))}
+              </div>
+            </section>
           )}
         </div>
       )}

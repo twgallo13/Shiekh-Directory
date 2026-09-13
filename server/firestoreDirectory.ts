@@ -352,6 +352,9 @@ export function validateMetadataWrites(
 
     if (write.collection === 'people') {
       const originalData = write.data || {};
+      for (const field of ['phone', 'phoneExtension', 'workPhone', 'workPhoneExtension', 'email', 'workEmail'] as const) {
+        if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
+      }
       for (const field of ['primaryLocationId', 'supportedLocationIds'] as const) {
         if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
       }

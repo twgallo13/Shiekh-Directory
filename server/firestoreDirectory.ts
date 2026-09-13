@@ -4,8 +4,9 @@ import type { Account } from "./authAuthority";
 import type { DirectorySeed } from "../src/lib/directorySeed";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 import { isPlainRecord, parseCustomFieldDefinition, validateCustomMetadata, type CustomFieldDefinition } from "../src/lib/customFields";
-import { normalizeUsPhone, normalizeWebUrl } from "../src/lib/contactNormalization";
+import { normalizeUsPhone } from "../src/lib/contactNormalization";
 import { type HierarchyFieldContract, type HierarchyRegistry, validateLocationHierarchyFields, validateUserPersonLink } from "../src/lib/hierarchyAssignmentContract";
+import { normalizeLocationWriteValues } from "../src/lib/locationWriteContract";
 import { isDeepStrictEqual } from "node:util";
 
 export const DIRECTORY_COLLECTIONS = {
@@ -249,7 +250,7 @@ export function validateMetadataWrites(
     }
 
     if (write.operation !== 'set' || !['locations', 'people', 'users', 'requests'].includes(write.collection)) return write;
-    const data = { ...write.data };
+    let data = { ...write.data };
 
     if (current || write.expectedVersion !== undefined || typeof data.version === 'number') {
       data.version = ((current?.version as number) || 0) + 1;
@@ -278,9 +279,14 @@ export function validateMetadataWrites(
       return { ...write, data };
     }
 
-    normalizePhoneWrite(data, current, 'phone', 'phoneExtension', write.collection === 'locations');
+    if (write.collection !== 'locations') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
 
     if (write.collection === 'locations') {
+      const normalizedLocation = normalizeLocationWriteValues(data, current);
+      if (normalizedLocation.issues.length > 0) {
+        throw new DirectoryValidationError(normalizedLocation.issues.map(issue => issue.message).join('; '));
+      }
+      data = normalizedLocation.values;
       const originalData = write.data || {};
       const isFieldChanged = (field: string) => Object.hasOwn(originalData, field) && !isDeepStrictEqual(originalData[field], current?.[field]);
       const hierarchyTouched = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(isFieldChanged);
@@ -399,13 +405,6 @@ export function validateMetadataWrites(
         throw new DirectoryWriteDenied('Your access scope does not permit metadata changes for this store.');
       }
       if (!isDeepStrictEqual(write.expectedCustomMetadata, existing)) throw new DirectoryConflict('Custom metadata changed. Reload the directory before saving.');
-    }
-    for (const key of ['googleReviewUrl', 'storePageUrl']) {
-      if (data[key] !== undefined && data[key] !== '' && data[key] !== current?.[key]) {
-        const normalized = normalizeWebUrl(data[key]);
-        if (!normalized) throw new DirectoryValidationError(`${key} must be an HTTP or HTTPS URL without credentials.`);
-        data[key] = normalized;
-      }
     }
     try {
       if (changed) data.customMetadata = validateCustomMetadata(supplied, definitions, existing);

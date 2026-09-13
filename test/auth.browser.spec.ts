@@ -327,6 +327,44 @@ test("Export All Stores shows server failures visibly and does not download", as
   expect(fixture.calls()).toEqual({ prepareCalls: 1, downloadCalls: 0 });
 });
 
+test("Location CSV template upload shows a no-write field-level preview", async ({ page }) => {
+  await prepare(page, 'System Administrator');
+  let previewCalls = 0;
+  await page.route('**/api/imports/locations/template', route => route.fulfill({
+    status: 200,
+    contentType: 'text/csv; charset=utf-8',
+    headers: { 'Content-Disposition': 'attachment; filename="shiekh_locations_import_v1.csv"' },
+    body: 'SchemaVersion,LocationId,StoreNumber,StoreName\r\n',
+  }));
+  await page.route('**/api/imports/locations/preview', async route => {
+    previewCalls += 1;
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().headers().authorization).toBe('Bearer synthetic-token');
+    expect(route.request().postDataJSON().csv).toContain('locations-v1');
+    await route.fulfill({ json: {
+      schemaVersion: 'locations-v1',
+      summary: { totalRows: 2, additions: 0, updates: 1, unchanged: 0, blocked: 1 },
+      rows: [
+        { rowNumber: 2, action: 'update', locationId: 'loc-1', storeNumber: '001', displayName: 'Renamed Store', issues: [], changes: [{ field: 'name', before: 'Original Store', after: 'Renamed Store' }] },
+        { rowNumber: 3, action: 'blocked', locationId: null, storeNumber: '002', displayName: 'Blocked Store', changes: [], issues: [{ code: 'missing_person_reference', field: 'storeManagerId', message: 'storeManagerId references missing Person ID missing-person.' }] },
+      ],
+    } });
+  });
+
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Fleet CSV' }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download Template' }).click();
+  expect((await download).suggestedFilename()).toBe('shiekh_locations_import_v1.csv');
+  await page.getByLabel('Upload Location CSV').setInputFiles({ name: 'locations.csv', mimeType: 'text/csv', buffer: Buffer.from('SchemaVersion\r\nlocations-v1\r\n') });
+  await expect(page.getByText('Preview only. No directory records were saved.')).toBeVisible();
+  await expect(page.getByText('Original Store')).toBeVisible();
+  await expect(page.getByText('Renamed Store')).toBeVisible();
+  await expect(page.getByText('storeManagerId references missing Person ID missing-person.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Confirm Import/i })).toHaveCount(0);
+  expect(previewCalls).toBe(1);
+});
+
 test("diagnostic mail uses the account session without separate sign-in controls", async ({ page }) => {
   await prepare(page, "Directory Data Steward");
   await page.goto(`${origin}/admin`); await restore(page, true);

@@ -14,6 +14,7 @@ import { createAuthRouter, createFirebaseAuthenticator } from "./server/authAuth
 import { createFirestoreDirectoryStore } from "./server/firestoreDirectory";
 import { createDirectoryDataRouter } from "./server/directoryDataApi";
 import { createFirestoreLocationExportStore, createLocationExportRouter } from "./server/locationExport";
+import { createLocationImportPreviewRouter } from "./server/locationImportPreview";
 
 // Attempt to load .env file if present in Node 20.6+
 try {
@@ -35,6 +36,7 @@ async function startServer() {
   const locationExports = createFirestoreLocationExportStore();
   app.use("/api/auth", createAuthRouter(authenticate, () => directory.read()));
   app.use("/api/exports", createLocationExportRouter(authenticate, locationExports));
+  app.use("/api/imports", express.json({ limit: "2mb" }), createLocationImportPreviewRouter(authenticate, directory));
   app.use("/api/mail", createMailRouter({
     authenticate,
     configuration: mailConfiguration,

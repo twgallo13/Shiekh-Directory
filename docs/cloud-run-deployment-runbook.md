@@ -13,11 +13,11 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 
 ## Current live revision
 
-- `latestReadyRevisionName`: `shiekh-location-company-directory-dispatch7-f73b277` (deployed from commit `f73b2774a5b5986d6d3b13b0bf79bb4020ac593b`, Dispatch 7 Person workflow correction, 2026-09-13)
+- `latestReadyRevisionName`: `shiekh-location-company-directory-dispatch8-d2e64bd` (deployed from commit `d2e64bd4398aa286182a4d308ba08525123f2d4f`, Dispatch 8 Location CSV preview correction, 2026-09-13)
 - Traffic: 100%, confirmed via `gcloud run services describe` after promotion
 - Autoscaling: `minScale=0`, `maxScale=20`, `cpu-throttling=true`, `startup-cpu-boost=true`
 
-Previous production revision `shiekh-location-company-directory-dispatch7-9b9853b` (commit `9b9853b2f444154f6544cd8e0124b77e9d0dfa1d`) is retained at 0% traffic as the rollback target. The earlier `phasec` revision and other tagged, no-traffic revisions remain available for rollback/reference (`smtp`, `cfg`, `tpl`, `onboarding`, `msg`, `fbmail`, `rev-9ce8646`, `a14`, `a14b`, `smtp2`, `custom-fields`), each reachable at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+Previous production revision `shiekh-location-company-directory-dispatch7-f73b277` (commit `f73b2774a5b5986d6d3b13b0bf79bb4020ac593b`) is retained as the rollback target. The Dispatch 8 candidate tag `d8-d2e64bd` and earlier tagged revisions remain available for direct revision checks at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
 
 ## Runtime environment (names only; no secret values other than public Firebase config)
 
@@ -163,6 +163,26 @@ gcloud run services update-traffic shiekh-location-company-directory \
   --project gen-lang-client-0801664258 \
   --region us-west1 \
   --to-revisions=shiekh-location-company-directory-dispatch7-9b9853b=100
+```
+
+### 2026-09-13 Dispatch 8 Location CSV preview correction (commit `d2e64bd`)
+
+1. Verified the clean checkout exactly matched `d2e64bd4398aa286182a4d308ba08525123f2d4f`. PR #5 remained draft and unmerged; PR #6 remained separate.
+2. Recorded `shiekh-location-company-directory-dispatch7-f73b277` at 100% traffic as the rollback target.
+3. An initial no-traffic deploy request was rejected during configuration validation because the proposed traffic tag exceeded Cloud Run's combined service-and-tag length limit. No source upload, build, revision, configuration, or traffic change occurred. Retried with the shorter tag `d8-d2e64bd`.
+4. Deployed the exact commit with `--revision-suffix=dispatch8-d2e64bd --tag=d8-d2e64bd --no-traffic`. Candidate revision `shiekh-location-company-directory-dispatch8-d2e64bd` became Ready while Dispatch 7 continued serving 100%.
+5. Compared candidate and rollback revisions before promotion. Service identity, environment, `Shiekh_Location:latest` secret binding, resources, timeout, concurrency, ingress, autoscaling, CPU settings, probes, volumes, and VPC settings matched; only expected image/build provenance and revision metadata differed.
+6. Verified the tagged candidate root returned `200`, unauthenticated `/api/auth/me` returned JSON `401` with `invalid_token`, and `/api/does-not-exist` returned JSON `404` with `api_route_not_found`.
+7. Explicitly promoted `shiekh-location-company-directory-dispatch8-d2e64bd` to 100% traffic. Guarded checks returned the same expected results on both the default Cloud Run URL and `https://shiekh-dir.ai.studio`; rollback was not needed. The branded domain mapping remained Ready.
+8. No import execution, data repair, migration, merge, or browser automation was performed.
+
+**Dispatch 8 rollback command:**
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-dispatch7-f73b277=100
 ```
 
 ## Adjacent services — do not confuse with production

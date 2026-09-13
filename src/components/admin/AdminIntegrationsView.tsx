@@ -107,7 +107,9 @@ export const AdminIntegrationsView: React.FC = () => {
     rollbackAuditChange
   } = useDirectory();
 
-  const [activeTab, setActiveTab] = useState<AdminTab>('hours');
+  const requestedAdminTab = new URLSearchParams(window.location.search).get('tab');
+  const selectedUserId = new URLSearchParams(window.location.search).get('userId');
+  const [activeTab, setActiveTab] = useState<AdminTab>(requestedAdminTab === 'rbac' ? 'rbac' : 'hours');
   const [rollbackAlert, setRollbackAlert] = useState<{ success: boolean; message: string } | null>(null);
   const [pendingAdminAction, setPendingAdminAction] = useState<PendingAdminAction | null>(null);
 
@@ -1375,7 +1377,7 @@ export const AdminIntegrationsView: React.FC = () => {
                   : u.invitationStatus === 'Pending'
                     ? `${u.invitationDelivery || 'Previous invitation'} ${u.invitationDeliveryStatus === 'Accepted' ? 'accepted by relay' : 'created'}${u.invitedAt ? ` ${new Date(u.invitedAt).toLocaleDateString()}` : ''}`
                     : 'Never sent';
-                return <section key={u.id} aria-label={`${u.name} account`} className="flex flex-col justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-xs">
+                return <section id={`user-${u.id}`} key={u.id} aria-label={`${u.name} account`} className={`flex flex-col justify-between gap-3 rounded-lg border bg-neutral-50 p-4 text-xs ${selectedUserId === u.id ? 'border-red-400 ring-2 ring-red-100' : 'border-neutral-200'}`}>
                   <div className="space-y-2">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0"><div className="truncate font-bold text-neutral-900">{u.name}</div><div className="truncate font-mono text-[11px] text-neutral-500">{u.email}</div></div>

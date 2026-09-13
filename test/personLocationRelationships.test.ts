@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PersonLocationRelationshipFields, reconcileSupportedLocationIds } from '../src/components/people/PersonLocationRelationshipFields';
-import type { LocationRecord } from '../src/types';
+import { buildPersonLocationRelationships, getPersonDeletionBlockers } from '../src/lib/personLocationRelationships';
+import type { LocationRecord, PersonRecord, UserProfile } from '../src/types';
 
 test('employment selector reconciliation removes duplicates and the primary Location', () => {
   assert.deepEqual(reconcileSupportedLocationIds('corp-1', ['store-1', 'corp-1', 'store-1', 'dc-1']), ['store-1', 'dc-1']);
@@ -31,4 +32,45 @@ test('employment selectors include all non-retired company Location types and re
     assert.ok(html.includes(text), text);
   }
   assert.equal(html.includes('value="retired-1" selected=""'), true);
+});
+
+test('Person Locations groups one Location row with every employment and leadership label', () => {
+  const person = { id: 'per-arturo', fullName: 'Arturo', primaryLocationId: 'loc-29', supportedLocationIds: ['loc-29', 'missing-location'] } as PersonRecord;
+  const locations = [{
+    id: 'loc-29',
+    storeNumber: '29',
+    name: 'Moreno Valley Mall',
+    type: 'Mall / Shopping Center',
+    recordStatus: 'Active',
+    assistantStoreManagerIds: ['per-arturo'],
+    keyHolderIds: ['per-arturo'],
+  }] as unknown as LocationRecord[];
+
+  const rows = buildPersonLocationRelationships(person, locations);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0], {
+    locationId: 'loc-29',
+    location: locations[0],
+    labels: ['Primary workplace', 'Supports', 'Assistant Manager', 'Key Holder'],
+    unavailable: false,
+  });
+  assert.deepEqual(rows[1], {
+    locationId: 'missing-location',
+    labels: ['Supports'],
+    unavailable: true,
+  });
+});
+
+test('Person deletion blockers include leadership Locations and linked users but not employment-only relationships', () => {
+  const person = { id: 'per-1', fullName: 'Employee', primaryLocationId: 'loc-work', supportedLocationIds: ['loc-support'] } as PersonRecord;
+  const locations = [
+    { id: 'loc-work', storeNumber: '01', name: 'Workplace', type: 'Corporate Office', recordStatus: 'Active' },
+    { id: 'loc-support', storeNumber: '02', name: 'Support Site', type: 'Other Company Location', recordStatus: 'Active' },
+    { id: 'loc-lead', storeNumber: '29', name: 'Leadership Store', type: 'Mall / Shopping Center', recordStatus: 'Active', storeManagerId: 'per-1' },
+  ] as LocationRecord[];
+  const users = [{ id: 'usr-1', name: 'Employee Login', email: 'employee@example.test', personId: 'per-1' }] as UserProfile[];
+
+  const blockers = getPersonDeletionBlockers(person, locations, users);
+  assert.deepEqual(blockers.locations.map(row => [row.locationId, row.labels]), [['loc-lead', ['Store Manager']]]);
+  assert.deepEqual(blockers.users.map(user => user.id), ['usr-1']);
 });

@@ -1,6 +1,6 @@
 # Dispatch 7: Employee Works at and Supports Relationships
 
-**Status:** Scoped implementation complete; review and manual acceptance pending
+**Status:** Full Person workflow follow-up complete; review and manual acceptance pending
 **Starting SHA:** `6bea5ec8e138c2b3478084d3b2725e9fb76f46c7`
 **Depends on:** Dispatch 6 Region/District registry and Regional Manager coverage
 **Implementation mode:** Additive Person-owned employment relationships; no inference, migration, bulk cleanup, or public contract expansion
@@ -16,15 +16,18 @@
 ## Completed
 
 1. Added optional `primaryLocationId` and `supportedLocationIds` fields to the Person contract and the shared correction-request target shape.
-2. Added controlled Works at and Supports selectors to Person creation and existing Person profiles. Choices include every non-retired company Location type and show Location number, name, and type.
+2. Added one reusable full Person editor for creation and updates: full name, free-text job title, department, work phone and extension, work email, active status, contact privacy, compatibility district, Works at, and Supports.
 3. Selector state removes duplicates and prevents the primary Location from also appearing in Supports. Changing Works at reconciles the final Supports list immediately.
-4. Person profiles show separate, clickable Works at, Supports, and Retail Leadership sections. Missing and retired current references remain visible as unavailable for review.
+4. Person profiles show one deduplicated Locations list. Each Location appears once with all applicable labels: Primary workplace, Supports, Store Manager, Assistant Manager, District Manager, Regional Manager, and Key Holder. Missing and retired references remain visible as unavailable.
 5. Location profiles show employees who work at or support that Location, derived directly from Person records and kept separate from the leadership roster.
 6. Server writes preserve omitted employment fields for older clients. Explicit `null` clears Works at; explicit `[]` clears Supports.
 7. Server validation uses proposed transaction state, accepts existing non-retired Locations without job-title restrictions, and rejects duplicate, overlapping, missing, or retired new references.
 8. Location retirement or deletion rejects unresolved incoming employment references. The same transaction may reassign or clear affected People before completing the lifecycle change.
 9. Direct Person saves and approvals of persisted Person requests use the same validation, optimistic version checks, atomic transaction, and audit evidence. The existing request-creation UI scope is unchanged. Employment-only saves do not rewrite leadership-owned Location records.
 10. Rejected client saves restore prior Person and Location state; successful responses reconcile committed versions for refresh and consecutive edits.
+11. Added separate Person inactivation and deletion actions. Both expose linked leadership Locations and user accounts before submission; Location blockers open the owning Location editor and user blockers open the focused Admin access-control record.
+12. Person deletion requires the exact full name, uses the current expected version, writes audit evidence, and keeps the Person profile and confirmation state intact when the server rejects the transaction.
+13. Explicit numeric work-phone extensions now survive server phone normalization instead of being discarded.
 
 ## Compatibility and boundaries
 
@@ -33,6 +36,7 @@
 - No migration, bulk cleanup, governed import, new permission rules, public API/export expansion, or unrelated redesign is included.
 - Location eligibility uses record lifecycle (`recordStatus !== 'Retired'`), not daily operating hours.
 - Existing Person-edit permissions are unchanged.
+- Person-owned employment fields remain editable only on the Person. Leadership assignments remain editable only on the Location, and application access remains editable only in Admin.
 
 ## Focused regression coverage
 
@@ -46,6 +50,9 @@
 - Unchanged legacy relationship defects during unrelated Person edits.
 - Location retirement/deletion with incoming references, including same-transaction reassignment and unlink.
 - Controlled-selector reconciliation and unavailable-reference rendering without browser automation.
+- One grouped Person Location row carrying multiple employment and leadership labels.
+- Actionable Location and linked-user blocker projection without treating employment relationships as deletion blockers.
+- Complete Person create, full update, extension persistence, expected-version delete, and audit lifecycle.
 
 ## Verification
 
@@ -65,7 +72,10 @@ Browser automation was not run. Visual and functional acceptance remain the prod
 4. Save, close, refresh, reopen, edit again, and confirm relationships and versioned consecutive saves persist.
 5. Clear Works at and Supports, save, refresh, and confirm both remain unassigned.
 6. Open each related Location from the Person profile and each related Person from the Location profile.
-7. Confirm employment sections remain separate from Retail Leadership Assignments.
+7. Confirm each Location appears once on the Person profile with every applicable employment and leadership label.
 8. Review a Person with a missing or retired current reference; confirm it is visible as unavailable but cannot be newly selected.
 9. Force or simulate a stale/rejected save and confirm the displayed Person returns to persisted relationships with a clear error.
 10. Confirm Location retirement/deletion is blocked while incoming employment references remain and succeeds after an explicit same-transaction reassignment or unlink.
+11. Edit all Person fields, including a free-text title, department, phone extension, active status, and privacy; refresh and confirm they persist.
+12. Attempt inactivation and deletion while leadership assignments or a linked user remain; confirm each blocker identifies and opens its owning record.
+13. Clear blockers, inactivate the Person, then separately test deletion by typing the exact full name. Confirm rejected actions keep the dialog and data intact.

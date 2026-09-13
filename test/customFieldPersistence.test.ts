@@ -115,6 +115,35 @@ test('directory commit allows person-only changes when unrelated location manage
   assert.equal(records.get('locations/loc-07')?.storeManagerId, 'per-2');
 });
 
+test('directory commit persists a complete Person create, update, and versioned delete lifecycle', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/corp-1', { id: 'corp-1', storeNumber: 'HQ', name: 'Corporate Office', type: 'Corporate Office', version: 0, recordStatus: 'Active' });
+
+  await store.commit([
+    { collection: 'people', id: 'per-new', operation: 'set', data: { fullName: 'New Employee', jobTitle: 'Accountant', department: 'Finance', workPhone: '2125550100', workPhoneExtension: '42', workEmail: 'employee@example.test', status: 'Active', activeStatus: true, phonePrivacy: 'Internal', primaryLocationId: 'corp-1', supportedLocationIds: [] } },
+  ], { action: 'Person Created', entityType: 'Person', entityId: 'per-new', entityName: 'New Employee', details: 'Create full Person.' }, actor);
+
+  assert.equal(records.get('people/per-new')?.version, undefined);
+  assert.equal(records.get('people/per-new')?.workPhone, '+12125550100');
+  assert.equal(records.get('people/per-new')?.department, 'Finance');
+
+  await store.commit([
+    { collection: 'people', id: 'per-new', operation: 'set', expectedVersion: 0, data: { fullName: 'Updated Employee', jobTitle: 'Senior Accountant', department: 'Finance', workPhone: '+12125550100', workPhoneExtension: '84', workEmail: 'updated@example.test', status: 'Active', activeStatus: true, phonePrivacy: 'Restricted', primaryLocationId: 'corp-1', supportedLocationIds: [] } },
+  ], { action: 'Person Updated', entityType: 'Person', entityId: 'per-new', entityName: 'New Employee', details: 'Update full Person.' }, actor);
+
+  assert.equal(records.get('people/per-new')?.version, 1);
+  assert.equal(records.get('people/per-new')?.fullName, 'Updated Employee');
+  assert.equal(records.get('people/per-new')?.workPhoneExtension, '84');
+
+  await store.commit([
+    { collection: 'people', id: 'per-new', operation: 'delete', expectedVersion: 1 },
+  ], { action: 'Person Deleted', entityType: 'Person', entityId: 'per-new', entityName: 'Updated Employee', details: 'Delete unlinked Person.' }, actor);
+
+  assert.equal(records.has('people/per-new'), false);
+  assert.ok([...records.values()].some(record => record.action === 'Person Deleted' && record.entityId === 'per-new'));
+});
+
 test('directory commit rejects an unchanged manager reference when its Person is deleted in the same transaction, but allows the reference to be cleared', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };

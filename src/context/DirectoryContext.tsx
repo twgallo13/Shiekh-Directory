@@ -57,6 +57,7 @@ interface DirectoryContextType {
   toggleLocationPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
   addPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
   updatePerson: (id: string, updates: PersonUpdate) => Promise<void>;
+  deletePerson: (id: string) => Promise<void>;
   togglePersonPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
   submitRequest: (request: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => void;
   approveRequest: (requestId: string, reviewerNotes?: string) => void;
@@ -393,6 +394,22 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       setLocations(locations);
       throw error;
     }
+  };
+
+  const deletePerson = async (id: string): Promise<void> => {
+    const currentPerson = people.find(person => person.id === id);
+    if (!currentPerson) return;
+
+    await persist([
+      { collection: 'people', id, operation: 'delete', expectedVersion: expectedVersionOf(currentPerson) },
+    ], {
+      action: 'Person Deleted',
+      entityType: 'Person',
+      entityId: id,
+      entityName: currentPerson.fullName,
+      details: `Deleted person record for ${currentPerson.fullName}.`,
+    });
+    addAuditLog('Person Deleted', 'Person', id, currentPerson.fullName, `Deleted person record for ${currentPerson.fullName}.`, currentPerson, undefined);
   };
 
   const togglePersonPhonePrivacy = (id: string, privacy: ContactPrivacyLevel) => {
@@ -902,6 +919,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         toggleLocationPhonePrivacy,
         addPerson,
         updatePerson,
+        deletePerson,
         togglePersonPhonePrivacy,
         submitRequest,
         approveRequest,

@@ -10,6 +10,10 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   tone?: 'danger' | 'primary';
   confirmDisabled?: boolean;
+  confirmationText?: string;
+  confirmationValue?: string;
+  onConfirmationValueChange?: (value: string) => void;
+  children?: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -22,6 +26,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   cancelLabel = 'Cancel',
   tone = 'danger',
   confirmDisabled = false,
+  confirmationText,
+  confirmationValue = '',
+  onConfirmationValueChange,
+  children,
   onConfirm,
   onCancel,
 }) => {
@@ -67,6 +75,18 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             <p id={descriptionId} className="mt-1.5 text-sm leading-5 text-neutral-600">
               {description}
             </p>
+            {confirmationText && (
+              <label className="mt-4 block text-sm font-medium text-neutral-700">
+                Type <strong>{confirmationText}</strong> to confirm
+                <input
+                  value={confirmationValue}
+                  onChange={event => onConfirmationValueChange?.(event.target.value)}
+                  autoComplete="off"
+                  className="mt-1.5 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
+                />
+              </label>
+            )}
+            {children}
           </div>
           <button
             type="button"
@@ -88,7 +108,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           </button>
           <button
             type="button"
-            disabled={confirmDisabled}
+            disabled={confirmDisabled || Boolean(confirmationText && confirmationValue !== confirmationText)}
             onClick={onConfirm}
             className={`rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${confirmClassName}`}
           >

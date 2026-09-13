@@ -658,7 +658,11 @@ function normalizePhoneWrite(data: Record<string, unknown>, current: Record<stri
   if (!normalized) throw new DirectoryValidationError(`${field} must be a valid US phone number.`);
   data[field] = normalized.e164;
   if (normalized.extension) data[extensionField] = normalized.extension;
-  else delete data[extensionField];
+  else if (typeof data[extensionField] === 'string' && data[extensionField].trim()) {
+    const extension = data[extensionField].trim();
+    if (!/^\d{1,10}$/.test(extension)) throw new DirectoryValidationError(`${extensionField} must contain 1 to 10 digits.`);
+    data[extensionField] = extension;
+  } else delete data[extensionField];
 }
 
 export function createFirestoreDirectoryStore(): FirestoreDirectoryStore {

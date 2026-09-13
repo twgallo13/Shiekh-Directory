@@ -13,11 +13,11 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 
 ## Current live revision
 
-- `latestReadyRevisionName`: `shiekh-location-company-directory-dispatch8-d2e64bd` (deployed from commit `d2e64bd4398aa286182a4d308ba08525123f2d4f`, Dispatch 8 Location CSV preview correction, 2026-09-13)
+- `latestReadyRevisionName`: `shiekh-location-company-directory-dispatch8-002ac13` (deployed from commit `002ac13b85bbde1f4ddb83feb8c5606e74f5ccef`, Dispatch 8 Admin bundle correction, 2026-09-13)
 - Traffic: 100%, confirmed via `gcloud run services describe` after promotion
 - Autoscaling: `minScale=0`, `maxScale=20`, `cpu-throttling=true`, `startup-cpu-boost=true`
 
-Previous production revision `shiekh-location-company-directory-dispatch7-f73b277` (commit `f73b2774a5b5986d6d3b13b0bf79bb4020ac593b`) is retained as the rollback target. The Dispatch 8 candidate tag `d8-d2e64bd` and earlier tagged revisions remain available for direct revision checks at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+Known-working revision `shiekh-location-company-directory-dispatch7-f73b277` (commit `f73b2774a5b5986d6d3b13b0bf79bb4020ac593b`) is retained as the rollback target. The Dispatch 8 tags `d8-002ac13` and `d8-d2e64bd` and earlier tagged revisions remain available for direct revision checks at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
 
 ## Runtime environment (names only; no secret values other than public Firebase config)
 
@@ -177,6 +177,25 @@ gcloud run services update-traffic shiekh-location-company-directory \
 8. No import execution, data repair, migration, merge, or browser automation was performed.
 
 **Dispatch 8 rollback command:**
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-dispatch7-f73b277=100
+```
+
+### 2026-09-13 Dispatch 8 Admin bundle correction (commit `002ac13`)
+
+1. Confirmed the deployed `d2e64bd` Admin chunk failed because the browser-reachable shared import schema loaded `csv-stringify/sync`, whose bundled initialization referenced the unavailable Node `Buffer` global.
+2. Verified the clean checkout exactly matched `002ac13b85bbde1f4ddb83feb8c5606e74f5ccef`. PR #5 remained draft and unmerged; PR #6 remained separate. Lint passed, all 174 API tests passed, the production build passed, and diff-check passed. Browser automation was not run.
+3. Recorded `shiekh-location-company-directory-dispatch7-f73b277` as the known-working rollback target. Deployed the exact correction with `--revision-suffix=dispatch8-002ac13 --tag=d8-002ac13 --no-traffic`.
+4. Candidate revision `shiekh-location-company-directory-dispatch8-002ac13` became Ready at 0%. Its service identity, environment, `Shiekh_Location:latest` secret binding, resources, timeout, concurrency, ingress, autoscaling, CPU settings, probes, volumes, and VPC settings matched Dispatch 7; only expected image/build and revision metadata differed.
+5. Verified the tagged candidate root returned `200`, unauthenticated `/api/auth/me` returned JSON `401` with `invalid_token`, and `/api/does-not-exist` returned JSON `404` with `api_route_not_found`. The served lazy Admin chunk was `AdminIntegrationsView-pbG1SbuV.js` (134,637 bytes) with zero `Buffer`, `csv-stringify`, or `csv-parse` matches.
+6. Explicitly promoted `shiekh-location-company-directory-dispatch8-002ac13` to 100% traffic. Guarded checks returned the expected results on both the default and branded URLs, and `https://shiekh-dir.ai.studio` served the verified clean Admin chunk. Rollback was not needed.
+7. No import execution, data repair, migration, merge, or browser automation was performed.
+
+**Dispatch 8 Admin correction rollback command:**
 
 ```bash
 gcloud run services update-traffic shiekh-location-company-directory \

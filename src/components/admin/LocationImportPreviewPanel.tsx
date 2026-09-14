@@ -2,10 +2,11 @@ import React, { useRef, useState } from 'react';
 import { AlertCircle, BookOpen, CheckCircle2, Download, ExternalLink, FileSpreadsheet, Plus, Upload } from 'lucide-react';
 import type { LocationRecord } from '../../types';
 import type { SessionUser } from '../../lib/authSession';
+import type { PreparedLocationEditingExport } from '../../lib/locationEditingExport';
 import type { LocationImportPreview, LocationImportReceipt } from '../../lib/locationImportPreview';
 import { LOCATION_IMPORT_FIELDS } from '../../lib/locationImportSchema';
 import { locationPath } from '../../lib/navigation';
-import { confirmLocationImport, downloadLocationImportResource, LocationImportRequestError, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
+import { confirmLocationImport, downloadLocationEditingExportPart, downloadLocationImportResource, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
 
 interface LocationImportPreviewPanelProps {
   user: SessionUser | null;
@@ -20,7 +21,8 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   const [receipt, setReceipt] = useState<LocationImportReceipt | null>(null);
   const [warningsReviewed, setWarningsReviewed] = useState(false);
   const [filename, setFilename] = useState('');
-  const [busy, setBusy] = useState<LocationImportDownload | 'preview' | 'confirm' | null>(null);
+  const [editingExport, setEditingExport] = useState<PreparedLocationEditingExport | null>(null);
+  const [busy, setBusy] = useState<LocationImportDownload | 'editing-export' | `editing-part-${number}` | 'preview' | 'confirm' | null>(null);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
 
@@ -34,6 +36,37 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The Location import guidance could not be downloaded.');
       setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'download_failed');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const prepareEditingExport = async () => {
+    if (!user || busy) return;
+    setBusy('editing-export');
+    setError('');
+    setErrorCode('');
+    try {
+      setEditingExport(await prepareLocationEditingExport(user));
+    } catch (cause) {
+      setEditingExport(null);
+      setError(cause instanceof Error ? cause.message : 'The Location editing export could not be prepared.');
+      setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'editing_export_failed');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const downloadEditingPart = async (partNumber: number) => {
+    if (!user || !editingExport || busy) return;
+    setBusy(`editing-part-${partNumber}`);
+    setError('');
+    setErrorCode('');
+    try {
+      await downloadLocationEditingExportPart(editingExport, partNumber);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The Location editing export part could not be downloaded.');
+      setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'editing_export_download_failed');
     } finally {
       setBusy(null);
     }
@@ -134,7 +167,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           </div>
           <div>
             <h3 className="text-sm font-bold text-neutral-900">Location CSV Import</h3>
-            <p className="text-xs text-neutral-500">Preview and review the complete batch before confirming</p>
+            <p className="text-xs text-neutral-500">Export, edit supported fields, preview, review, and confirm</p>
           </div>
         </div>
         <button type="button" disabled={Boolean(busy)} title={busy ? 'Location import work is in progress.' : undefined} onClick={onAddStore} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs disabled:opacity-50">
@@ -163,12 +196,16 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           </div>
           <div>
             <div className="font-semibold text-neutral-900">Use the supported files</div>
-            <p>Replace every synthetic or REPLACE_WITH value in the worked example with Reference IDs. Export All Stores is neither import-compatible nor a complete backup.</p>
+            <p>Export for Editing uses the supported Location fields and canonical IDs. Export All Stores remains a presentation export and is neither import-compatible nor a complete backup.</p>
           </div>
         </div>
       </section>
 
       <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => void prepareEditingExport()} className="flex items-center gap-2 px-3.5 py-2 border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-semibold disabled:opacity-50">
+          <Download className="w-4 h-4" />
+          <span>{busy === 'editing-export' ? 'Preparing Export...' : 'Export for Editing'}</span>
+        </button>
         <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => void downloadResource('template')} className="flex items-center gap-2 px-3.5 py-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-800 rounded-lg text-xs font-semibold disabled:opacity-50">
           <Download className="w-4 h-4" />
           <span>{busy === 'template' ? 'Downloading...' : 'Blank Template'}</span>
@@ -192,6 +229,64 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
         <input ref={inputRef} type="file" accept=".csv,text/csv" disabled={!user || Boolean(busy)} className="sr-only" aria-label="Upload Location CSV" onChange={event => void selectFile(event.target.files?.[0])} />
         <span className="self-center text-[11px] text-neutral-500">Schema locations-v1 · Maximum 2 MB</span>
       </div>
+
+      {editingExport && (
+        <section aria-labelledby="location-editing-export-results" className="space-y-3 border-y border-emerald-200 bg-emerald-50/40 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 id="location-editing-export-results" className="text-sm font-bold text-neutral-900">Editing export ready</h4>
+              <p className="text-xs text-neutral-600">Snapshot {new Date(editingExport.snapshotReadAt).toLocaleString()} · {editingExport.totalRecords} Locations · {editingExport.parts.length} file{editingExport.parts.length === 1 ? '' : 's'}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px] font-semibold text-neutral-700">
+              <span>Active {editingExport.lifecycleCounts.Active}</span>
+              <span>Draft {editingExport.lifecycleCounts.Draft}</span>
+              <span>Retired {editingExport.lifecycleCounts.Retired}</span>
+              {editingExport.lifecycleCounts.unrecognized > 0 && <span className="text-red-700">Other {editingExport.lifecycleCounts.unrecognized}</span>}
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {editingExport.parts.map(part => (
+              <div key={part.partNumber} className="flex items-center justify-between gap-3 border border-neutral-200 bg-white p-3 rounded-lg">
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold text-neutral-900">{part.filename}</div>
+                  <div className="text-[11px] text-neutral-500">Part {part.partNumber} of {editingExport.parts.length} · {part.recordCount} records · {(part.byteCount / 1024).toFixed(1)} KB</div>
+                </div>
+                <button type="button" disabled={Boolean(busy)} title={busy ? 'Another Location CSV action is in progress.' : `Download ${part.filename}`} onClick={() => void downloadEditingPart(part.partNumber)} className="shrink-0 p-2 border border-neutral-300 bg-white hover:bg-neutral-50 text-neutral-700 rounded-lg disabled:opacity-50" aria-label={`Download editing export part ${part.partNumber}`}>
+                  <Download className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-2 text-[11px] leading-4 text-neutral-700 md:grid-cols-2">
+            <p>Import each file independently. Each file contains at most 100 rows; confirmation still permits at most 40 changed rows in one batch.</p>
+            <p>This snapshot has no export-time version lock. Preview compares with current data, and confirmation protects the reviewed preview only until it is submitted. Review every proposed change.</p>
+            <p>Blank cells preserve current values, and removing a CSV row does not delete a Location. Unsupported fields remain outside this editing export, so it is not a full backup.</p>
+            <p>Spreadsheet software may alter Store Number, ZIP Code, or Phone values. Import those columns as text; do not add formulas to force formatting.</p>
+          </div>
+          <p className="text-xs font-medium text-neutral-800">Immediate preview check: {editingExport.roundTrip.unchanged} unchanged, {editingExport.roundTrip.updates} updates, {editingExport.roundTrip.additions} additions, {editingExport.roundTrip.blocked} blocked, {editingExport.roundTrip.warnings} warnings.</p>
+          {editingExport.diagnostics.length > 0 && (
+            <details className="border-t border-neutral-200 pt-3">
+              <summary className="cursor-pointer text-xs font-semibold text-amber-800">Review {editingExport.diagnostics.length} export diagnostic{editingExport.diagnostics.length === 1 ? '' : 's'}</summary>
+              <div className="mt-2 max-h-72 space-y-2 overflow-y-auto pr-1">
+                {editingExport.diagnostics.map((diagnostic, index) => (
+                  <div key={`${diagnostic.locationId}-${diagnostic.code}-${index}`} className="border-l-2 border-amber-300 bg-white px-3 py-2 text-[11px] text-neutral-700">
+                    <div className="font-semibold text-neutral-900">Store {diagnostic.storeNumber || 'not provided'} · {diagnostic.locationId}</div>
+                    <div>Fields: {diagnostic.fields.join(', ') || 'record'}</div>
+                    <div>{diagnostic.message}</div>
+                    {diagnostic.issues?.map((issue, issueIndex) => (
+                      <div key={`${issue.code}-${issue.field}-${issueIndex}`} className="mt-1 border-l border-amber-200 pl-2">
+                        <div>{issue.field}: {issue.reason}</div>
+                        <div className="font-medium">Next: {issue.correction}</div>
+                      </div>
+                    ))}
+                    <div className="font-medium">Next: {diagnostic.guidance}</div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </section>
+      )}
 
       {(disabledReason || filename) && (
         <div role="status" aria-live="polite" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-600">

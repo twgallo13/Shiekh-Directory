@@ -1,4 +1,5 @@
 import type { SessionUser } from './authSession';
+import type { PreparedLocationEditingExport } from './locationEditingExport';
 import type { LocationImportPreview, LocationImportReceipt } from './locationImportPreview';
 import { LOCATION_IMPORT_MAX_BYTES } from './locationImportSchema';
 
@@ -28,11 +29,40 @@ export async function downloadLocationImportResource(user: SessionUser, resource
     redirect: 'error',
   });
   if (!response.ok) throw await previewRequestError(response, 'The Location import guidance could not be downloaded.');
-  const blob = await response.blob();
+  downloadBlob(await response.blob(), downloadNames[resource]);
+}
+
+export async function prepareLocationEditingExport(user: SessionUser): Promise<PreparedLocationEditingExport> {
+  const response = await fetch('/api/imports/locations/editing-export/prepare', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${await user.getIdToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+    cache: 'no-store',
+    redirect: 'error',
+  });
+  if (!response.ok) throw await previewRequestError(response, 'The Location editing export could not be prepared.');
+  const prepared = await response.json() as PreparedLocationEditingExport;
+  if (!isPreparedLocationEditingExport(prepared)) throw new Error('The server returned an invalid Location editing export.');
+  return prepared;
+}
+
+export async function downloadLocationEditingExportPart(
+  prepared: PreparedLocationEditingExport,
+  partNumber: number,
+): Promise<void> {
+  const part = prepared.parts.find(candidate => candidate.partNumber === partNumber);
+  if (!part) throw new Error('The requested Location editing export part does not exist.');
+  downloadBlob(new Blob([part.csv], { type: 'text/csv;charset=utf-8' }), part.filename);
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
   const href = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = href;
-  link.download = downloadNames[resource];
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -138,8 +168,42 @@ function isLocationImportReceipt(value: LocationImportReceipt): boolean {
       && Boolean(location.record) && typeof location.record === 'object' && !Array.isArray(location.record));
 }
 
-function isCountSummary(value: LocationImportPreview['summary']): boolean {
+function isPreparedLocationEditingExport(value: PreparedLocationEditingExport): boolean {
+  if (!value
+    || value.schemaVersion !== 'locations-v1'
+    || typeof value.snapshotReadAt !== 'string'
+    || !Number.isInteger(value.totalRecords) || value.totalRecords < 0
+    || !value.lifecycleCounts
+    || !['Active', 'Draft', 'Retired', 'unrecognized'].every(key => Number.isInteger(value.lifecycleCounts[key as keyof typeof value.lifecycleCounts]))
+    || !isRoundTripSummary(value.roundTrip)
+    || !Array.isArray(value.parts) || value.parts.length === 0
+    || !Array.isArray(value.diagnostics)) return false;
+  const partCount = value.parts.length;
+  const partsValid = value.parts.every((part, index) => Number.isInteger(part.partNumber)
+    && part.partNumber === index + 1
+    && part.filename === `shiekh_locations_editing_v1_part_${String(index + 1).padStart(3, '0')}_of_${String(partCount).padStart(3, '0')}.csv`
+    && Number.isInteger(part.recordCount) && part.recordCount >= 0 && part.recordCount <= 100
+    && Number.isInteger(part.byteCount) && part.byteCount > 0 && part.byteCount <= LOCATION_IMPORT_MAX_BYTES
+    && typeof part.csv === 'string' && new TextEncoder().encode(part.csv).byteLength === part.byteCount);
+  const lifecycleTotal = Object.values(value.lifecycleCounts).reduce((total, count) => total + count, 0);
+  const partTotal = value.parts.reduce((total, part) => total + part.recordCount, 0);
+  const actionTotal = value.roundTrip.additions + value.roundTrip.updates + value.roundTrip.unchanged + value.roundTrip.blocked;
+  return partsValid
+    && lifecycleTotal === value.totalRecords
+    && partTotal === value.totalRecords
+    && actionTotal === value.totalRecords
+    && value.diagnostics.every(diagnostic => typeof diagnostic.locationId === 'string'
+      && typeof diagnostic.storeNumber === 'string' && Array.isArray(diagnostic.fields)
+      && typeof diagnostic.message === 'string' && typeof diagnostic.guidance === 'string');
+}
+
+function isCountSummary(value: LocationImportPreview['summary'] | PreparedLocationEditingExport['roundTrip']): boolean {
   return Boolean(value) && ['totalRows', 'additions', 'updates', 'unchanged', 'blocked', 'warnings']
+    .every(key => Number.isInteger(value[key as keyof typeof value]));
+}
+
+function isRoundTripSummary(value: PreparedLocationEditingExport['roundTrip']): boolean {
+  return Boolean(value) && ['additions', 'updates', 'unchanged', 'blocked', 'warnings']
     .every(key => Number.isInteger(value[key as keyof typeof value]));
 }
 

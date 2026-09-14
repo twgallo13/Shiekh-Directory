@@ -22,6 +22,7 @@ import {
   type LocationImportReceipt,
 } from './locationImportConfirmation';
 import { DirectoryConflict, DirectoryValidationError, FirestoreDirectoryStore, LocationImportIdempotencyConflict, LocationImportPayloadTooLarge } from './firestoreDirectory';
+import { buildLocationEditingExport, LocationEditingExportError } from './locationEditingExport';
 
 const PREVIEW_ROLES: Account['role'][] = ['System Administrator', 'Directory Data Steward', 'Editor'];
 export type LocationImportSnapshot = Pick<DirectorySeed, 'locations' | 'people' | 'regions' | 'districts'>;
@@ -85,6 +86,16 @@ export function createLocationImportPreviewRouter(
         .set('Content-Disposition', 'attachment; filename="shiekh_location_import_reference_ids.csv"')
         .set('X-Snapshot-Read-At', snapshotReadAt)
         .send(buildLocationImportReferenceCsv(snapshot));
+    } catch (error) {
+      sendPreviewError(response, error);
+    }
+  });
+
+  router.post('/locations/editing-export/prepare', async (request, response) => {
+    try {
+      await authorizePreview(authenticate, request.get('authorization'));
+      const snapshot = await store.readLocationImportSnapshot();
+      response.status(200).json(buildLocationEditingExport(snapshot, now().toISOString()));
     } catch (error) {
       sendPreviewError(response, error);
     }
@@ -244,6 +255,7 @@ function sendPreviewError(response: { status(code: number): { json(body: unknown
   if (error instanceof LocationImportIdempotencyConflict) return response.status(409).json({ error: { code: 'idempotency_conflict', message: error.message } });
   if (error instanceof DirectoryConflict || error instanceof DirectoryValidationError) return response.status(409).json({ error: { code: 'stale_preview', message: 'The directory changed after preview. Preview the CSV again.' } });
   if (error instanceof LocationImportPayloadTooLarge) return response.status(400).json({ error: { code: 'atomic_payload_too_large', message: error.message } });
+  if (error instanceof LocationEditingExportError) return response.status(400).json({ error: { code: error.code, message: error.message, locationId: error.locationId, fields: error.fields } });
   if (error instanceof LocationImportPreviewError) return response.status(400).json({ error: { code: error.code, message: error.message } });
   return response.status(503).json({ error: { code: 'preview_unavailable', message: 'The authoritative directory snapshot could not be previewed.' } });
 }

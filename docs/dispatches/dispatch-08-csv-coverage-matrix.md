@@ -1,8 +1,8 @@
-# Dispatch 8–9: CSV Coverage Matrix
+# Dispatch 8–10: CSV Coverage Matrix
 
 ## Reading the matrix
 
-`Preview` means the `locations-v1` dry-run contract. `Confirm` means Dispatch 9 can atomically persist an eligible preview using the same column and validation contract. `Export` means the current **Export All Stores** CSV, not the Reference IDs guidance file or Directory API. Dispatch 8 preview and guidance routes remain read-only.
+`Preview` means the `locations-v1` dry-run contract. `Confirm` means Dispatch 9 can atomically persist an eligible preview using the same column and validation contract. `Editing export` means Dispatch 10 emits that exact import schema from one authoritative snapshot. `Presentation export` means the unchanged **Export All Stores** CSV. Preview, guidance, and editing-export routes remain read-only.
 
 ## Dispatch 9 confirmation coverage
 
@@ -16,6 +16,21 @@
 | Unsupported Location fields and every non-Location group below | No | Preserved on updates where already present; no new CSV columns |
 | Export All Stores | No | Presentation export remains non-importable |
 
+## Dispatch 10 editing export coverage
+
+| Data group | Editing export | Boundary |
+|---|---|---|
+| Supported Location identity, profile, lifecycle, hierarchy, and Location-owned leadership columns listed below | Yes | Exact `locations-v1` headers and mappings; canonical IDs and assignment order preserved |
+| Active, Draft, and Retired Locations of every type | Yes | One authoritative snapshot; deterministic numbered parts with complete counts |
+| Phone extension | Yes | Combined in `Phone` using the accepted `ext. <digits>` syntax |
+| Unsupported populated Location fields | Diagnostic only | Named by Location ID and field; omitted from CSV but preserved by supported updates; not a backup |
+| Invalid legacy values, missing/inactive references, normalization changes, ambiguous identities | Diagnostic only | Existing preview logic evaluates exported rows; no silent cleanup or inferred replacement |
+| Person `Works at` / `Supports` | No | Person-owned relationships remain outside `locations-v1` |
+| Regions, Districts, and People records | No | Existing canonical IDs are references only; registries and People are not exported |
+| Version protection | Preview onward only | Export snapshot is informational; later preview compares with current state, then Dispatch 9 protects confirmation |
+
+Parts respect the existing 100-row and 2,000,000-byte limits. Each part is independently previewed/imported, and the existing 40-changed-row confirmation limit is unchanged. A record too large for one part fails explicitly with its Location ID and largest fields. Blank cells preserve values; omitted rows do not delete records.
+
 Confirmation binds the actor, schema, exact CSV digest, target identities, expected versions, normalized changed records, and unchanged-row assertions in a 10-minute signed manifest. The server revalidates the complete batch in one transaction and writes changed Locations, correlated before/after audits, and one idempotent receipt together. Limits are 100 total rows, 40 changed rows, a 1,000,000-byte signed token, and an 8,000,000-byte estimated atomic payload including audit and receipt data.
 
 Recommended future bulk exchange uses separate linked Location and People CSV contracts. Canonical IDs join those contracts. Leadership is organizational data owned by Locations; application role/access scope is authorization data owned by user accounts. The application models `Works at`, `Supports`, Store Manager, Assistant Manager, Key Holder, District Manager, and Regional Manager. It does not model a general employee supervisor/reporting tree.
@@ -26,9 +41,9 @@ Source of truth: `locations` documents. Manual path is Location create/edit unle
 
 | Attribute | Preview | Export | Current management/class | Future representation, dependency, and acceptance test |
 |---|---|---|---|---|
-| `id` | `LocationId`; match/add candidate | No | Stable identity; generated on UI create, no ordinary ID editor | Required immutable Location key; reject duplicate/conflicting IDs and prove round trip |
+| `id` | `LocationId`; match/add candidate | Canonical `LocationId` | Stable identity; generated on UI create, no ordinary ID editor | Required immutable Location key; reject duplicate/conflicting IDs and prove round trip |
 | `version` | Returned as `currentVersion`, not importable | No | Server-managed optimistic concurrency | Exclude from ordinary payload; confirmation manifest records expected version and rejects stale save |
-| `storeNumber` | `StoreNumber`; writable, digits-only matching | `StoreNumber` | Location editor | Required text; define nonnumeric policy and test leading zeros/collisions |
+| `storeNumber` | `StoreNumber`; writable, digits-only matching | Exact `StoreNumber` text | Location editor | Required text; leading zeros preserved; nonnumeric legacy values diagnosed |
 | `name` | `StoreName`; writable | `StoreName` | Location editor | Required text; round-trip exact value |
 | `type` | `Type`; writable/validated | `Type` | Location editor | Controlled enum; test every type and hierarchy rule |
 | `mallOrCenterName` | Unsupported | No | Location editor | Optional Location column; test retail/non-retail display |
@@ -37,9 +52,9 @@ Source of truth: `locations` documents. Manual path is Location create/edit unle
 | `state` | `State`; writable/validated | `State` | Location editor | Controlled postal code list; reject unsupported values |
 | `zipCode` | `ZipCode`; writable/validated | `ZipCode` | Location editor | Text-preserving postal format; test leading zeros |
 | `phone` | `Phone`; writable/normalized | `Phone` | Location editor | E.164-compatible input; preview/save normalization parity |
-| `phoneExtension` | Derived from `Phone` input | No | Location editor through phone input | Separate column or documented combined syntax; round-trip extension |
+| `phoneExtension` | Derived from `Phone` input | Combined accepted `Phone` syntax | Location editor through phone input | Round-trip numeric extension with `ext. <digits>` |
 | `phonePrivacy` | Unsupported | No | Read badge; no Location edit control verified | Explicit privacy enum outside public export; test audience-based omission |
-| `timeZone` | `TimeZone`; writable/validated | No | Location editor | Controlled IANA zone; include in import-compatible export |
+| `timeZone` | `TimeZone`; writable/validated | `TimeZone` | Location editor | Controlled IANA zone; invalid legacy values diagnosed |
 | `operationalStatus` | `OperationalStatus`; writable/validated | `OperationalStatus` | Location editor/request flow | Controlled enum; round trip |
 | `recordStatus` | `RecordStatus`; writable/validated | `RecordStatus` for active export rows | Location editor | Lifecycle enum; confirmation rechecks incoming relationships |
 | `activeNotice.shortDescription` | Unsupported | No | Location editor/request flow | Structured notice contract; text/date validation |
@@ -61,21 +76,21 @@ Region/District source of truth: `regions` and `districts`. Leadership source of
 
 | Attribute | Preview | Export | Current management/class | Future representation, dependency, and acceptance test |
 |---|---|---|---|---|
-| `hierarchyApplicability` | `HierarchyApplicability`; writable | No | Location editor | Controlled enum linked to Location type; test all type combinations |
-| `regionId` | `RegionId`; writable/reference validated | No | Location editor; Hierarchy Registry admin | Canonical Region ID; export ID/name; test retired/missing references |
-| `districtId` | `DistrictId`; writable/parent validated | No | Location editor; Hierarchy Registry admin | Canonical District ID; require matching Region; test mismatch |
+| `hierarchyApplicability` | `HierarchyApplicability`; writable | `HierarchyApplicability` | Location editor | Controlled enum linked to Location type; test all type combinations |
+| `regionId` | `RegionId`; writable/reference validated | Canonical `RegionId` | Location editor; Hierarchy Registry admin | Canonical Region ID only; test retired/missing references |
+| `districtId` | `DistrictId`; writable/parent validated | Canonical `DistrictId` | Location editor; Hierarchy Registry admin | Canonical District ID only; require matching Region; test mismatch |
 | `district` | Unsupported legacy projection | `District` display | Legacy/read projection; no authoritative editor | Derived/labeled compatibility field, never import identity |
-| `storeManagerId` | `StoreManagerId`; writable/active Person validated | No; resolved `StoreManager` name exported | Location editor; organizational leadership | Canonical Person ID; linked People export; missing/inactive tests |
+| `storeManagerId` | `StoreManagerId`; writable/active Person validated | Canonical `StoreManagerId` | Location editor; organizational leadership | Canonical Person ID; missing/inactive diagnostics |
 | `storeManagerName` | Unsupported derived/legacy copy | Resolved `StoreManager` | Derived compatibility | Exclude from import; regenerate and test stale copy ignored |
 | `storeManagerPhone` | Unsupported derived/legacy copy | Resolved `StoreManagerPhone` | Derived compatibility | Exclude; resolve privacy-aware Person contact at read time |
 | `storeManagerPhonePrivacy` | Unsupported derived/legacy copy | No | Copied from selected Person in editor | Exclude; source privacy from Person |
-| `assistantStoreManagerIds` | `AssistantStoreManagerIds`; writable semicolon list | No; resolved names exported | Location editor; organizational leadership | Canonical ID list; test order, duplicates, missing/inactive IDs |
+| `assistantStoreManagerIds` | `AssistantStoreManagerIds`; writable semicolon list | Ordered semicolon IDs | Location editor; organizational leadership | Canonical ID list; order preserved; duplicates/missing/inactive IDs diagnosed |
 | `assistantStoreManagerNames` | Unsupported derived/legacy copy | `AssistantStoreManagers` | Derived compatibility | Exclude; regenerate from canonical IDs |
-| `keyHolderIds` | `KeyHolderIds`; writable semicolon list | No | Location editor; organizational leadership | Canonical ID list; test order, duplicates, missing/inactive IDs |
+| `keyHolderIds` | `KeyHolderIds`; writable semicolon list | Ordered semicolon IDs | Location editor; organizational leadership | Canonical ID list; order preserved; duplicates/missing/inactive IDs diagnosed |
 | `keyHolderNames` | Unsupported derived/legacy copy | No | Derived compatibility | Exclude; regenerate from canonical IDs |
-| `districtManagerId` | `DistrictManagerId`; writable/active Person validated | No; resolved `DistrictManager` exported | Location editor; organizational leadership | Canonical Person ID; lifecycle tests |
+| `districtManagerId` | `DistrictManagerId`; writable/active Person validated | Canonical `DistrictManagerId` | Location editor; organizational leadership | Canonical Person ID; lifecycle diagnostics |
 | `districtManagerName` | Unsupported derived/legacy copy | `DistrictManager` | Derived compatibility | Exclude; regenerate from canonical ID |
-| `regionalManagerId` | `RegionalManagerId`; writable/active Person validated | No | Location editor; organizational leadership | Canonical Person ID; export ID/name and registry tests |
+| `regionalManagerId` | `RegionalManagerId`; writable/active Person validated | Canonical `RegionalManagerId` | Location editor; organizational leadership | Canonical Person ID; lifecycle diagnostics |
 | `regionalManagerName` | Unsupported derived/legacy copy | No | Derived compatibility | Exclude; regenerate from canonical ID |
 | Person `primaryLocationId` (`Works at`) | Read for retirement blocker; not writable | No | Person editor | People CSV canonical Location ID; lifecycle/concurrency tests |
 | Person `supportedLocationIds` (`Supports`) | Read for retirement blocker; not writable | No | Person editor | People CSV semicolon Location IDs; duplicate/primary overlap tests |

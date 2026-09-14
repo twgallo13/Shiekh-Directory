@@ -9,6 +9,9 @@ import { parse } from 'csv-parse/sync';
 import { serializeLocationReferenceClears } from '../src/lib/hierarchyAssignmentContract';
 import type { LocationRecord } from '../src/types';
 import type { LocationImportManifest } from '../server/locationImportConfirmation';
+import { buildLocationEditingExport } from '../server/locationEditingExport';
+import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
+import { stringify } from 'csv-stringify/sync';
 
 function databaseFixture() {
   const records = new Map<string, Record<string, unknown>>();
@@ -85,6 +88,40 @@ test('Location import confirmation atomically writes mixed changes, correlated a
   assert.equal(records.size, recordCount);
   await assert.rejects(store.confirmLocationImport({ ...manifest, sourceDigest: 'different' }, actor), /different import content/);
   assert.equal(records.size, recordCount);
+});
+
+test('editing export to preview and confirmation preserves unrelated Location fields', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const standardHours = { monday: { open: '09:00', close: '17:00', isClosed: false } };
+  const customMetadata = { floorPlan: 'Legacy layout' };
+  records.set('custom_field_definitions/floorPlan', { id: 'floorPlan', label: 'Floor Plan', type: 'text', helpText: '', options: [], order: 0, apiVisible: false, retired: false });
+  records.set('locations/loc-edit', {
+    id: 'loc-edit', version: 6, storeNumber: '0007', name: 'Original Name', type: 'Other Company Location',
+    address: '7 Main', city: 'Los Angeles', state: 'CA', zipCode: '09001', phone: '+12135550100', phoneExtension: '42',
+    timeZone: 'America/Los_Angeles', hierarchyApplicability: 'Not Applicable', operationalStatus: 'Open — Normal Operations', recordStatus: 'Active',
+    standardHours, customMetadata, activeNotice: { shortDescription: 'Lobby work', effectiveDate: '2026-09-01' },
+  });
+
+  const before = await store.read();
+  const editingExport = buildLocationEditingExport(before, '2026-09-13T12:00:00.000Z');
+  const rows = parse(editingExport.parts[0].csv!, { bom: true, columns: true }) as Array<Record<string, string>>;
+  rows[0].StoreName = 'Edited Name';
+  const editedCsv = stringify(rows, { header: true, columns: Object.keys(rows[0]), record_delimiter: '\r\n', bom: true });
+  const plan = buildLocationImportPlan(editedCsv, before, '2026-09-13T12:01:00.000Z');
+  assert.deepEqual(plan.preview.summary, { totalRows: 1, additions: 0, updates: 1, unchanged: 0, blocked: 0, warnings: 0 });
+  assert.deepEqual(plan.preview.rows[0].changes, [{ field: 'name', before: 'Original Name', after: 'Edited Name' }]);
+
+  const manifest = importManifest(plan.writes, plan.unchanged);
+  const receipt = await store.confirmLocationImport(manifest, actor);
+  assert.equal(receipt.updates, 1);
+  const saved = records.get('locations/loc-edit');
+  assert.equal(saved?.name, 'Edited Name');
+  assert.equal(saved?.storeNumber, '0007');
+  assert.equal(saved?.phoneExtension, '42');
+  assert.deepEqual(saved?.standardHours, standardHours);
+  assert.deepEqual(saved?.customMetadata, customMetadata);
+  assert.deepEqual(saved?.activeNotice, { shortDescription: 'Lobby work', effectiveDate: '2026-09-01' });
 });
 
 test('concurrent Location import confirmations create one receipt and one audit set', async () => {

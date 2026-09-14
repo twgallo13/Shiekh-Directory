@@ -2,7 +2,7 @@
 
 **Status:** Manually accepted for merge on 2026-09-13
 
-Dispatch 8 defines the read-only preview contract. Dispatch 9 extends an eligible preview with a separate, atomic Confirm Import operation; see [dispatch-09-confirm-location-import.md](dispatch-09-confirm-location-import.md).
+Dispatch 8 defines the read-only preview contract. Dispatch 9 extends an eligible preview with a separate, atomic Confirm Import operation; see [dispatch-09-confirm-location-import.md](dispatch-09-confirm-location-import.md). Dispatch 10 adds an import-compatible **Export for Editing** action using this same `locations-v1` contract.
 
 ## Manual acceptance
 
@@ -25,11 +25,17 @@ The admin panel provides four authenticated downloads:
 - **Field Dictionary**: purpose, addition/update requirement, format, allowed values, blank behavior, and example for every column.
 - **Reference IDs**: current Location, Person, Region, and District IDs with recognizable names and lifecycle status. Locations include store number; Districts include parent Region ID/name. It excludes users, account data, email addresses, phone numbers, and private contacts.
 
+The separate **Export for Editing** action reads one authoritative snapshot and emits every Location type and lifecycle state using the exact `locations-v1` headers. It preserves canonical Location, Region, District, and leadership Person IDs, assignment-list order, leading-zero text, phone extensions, Unicode, quoted text, and multiline values. It never substitutes names for IDs, infers relationships, or invents defaults.
+
+The export reports total, Active, Draft, and Retired counts plus its snapshot timestamp. Files are deterministically ordered and split into numbered parts of at most 100 rows and 2,000,000 UTF-8 bytes. Each part is imported independently, and confirmation still permits at most 40 changed rows. A single record that cannot fit is identified by Location ID and its largest fields; records are never silently omitted or truncated.
+
+Every generated part is evaluated with the existing preview planner against the same snapshot. Conforming rows report unchanged. Diagnostics identify affected Location IDs and fields when normalization, invalid legacy values, ambiguous identities, missing/inactive references, or unsupported populated fields prevent a clean round trip. The export does not clean those values. Unsupported fields remain on the authoritative record when a supported update is confirmed, but they are not backed up by this CSV.
+
 The example is synthetic. `SYNTHETIC-*` IDs only produce update/unchanged results against the test fixtures defining those records. Every `REPLACE_WITH_*` value must be replaced with a canonical ID from Reference IDs. Downloads never seed or modify records.
 
 All user-facing CSV downloads use UTF-8 with a BOM for spreadsheet compatibility. Preview accepts supported templates with or without that BOM.
 
-`Export All Stores` is a presentation export, not an import-compatible file and not a complete backup. It omits canonical IDs and many fields needed for deterministic re-import. Uploading its headers returns: “This is a directory export. Download the Blank Template to preview Location changes.” The error includes a direct Blank Template action. See [dispatch-08-csv-coverage-matrix.md](dispatch-08-csv-coverage-matrix.md).
+`Export All Stores` remains an unchanged presentation export, not an import-compatible file and not a complete backup. It omits canonical IDs and many fields needed for deterministic re-import. Uploading its headers returns: “This is a directory export. Download the Blank Template to preview Location changes.” The error includes a direct Blank Template action. Use Export for Editing for the supported round-trip workflow. See [dispatch-08-csv-coverage-matrix.md](dispatch-08-csv-coverage-matrix.md).
 
 ## Schema contract
 
@@ -89,20 +95,27 @@ Focused fixtures prove the worked example yields one addition, one update, one u
 - `GET /api/imports/locations/example`
 - `GET /api/imports/locations/fields`
 - `GET /api/imports/locations/references`
+- `POST /api/imports/locations/editing-export/prepare`
 - `POST /api/imports/locations/preview` with `{ "csv": "..." }`
 - `POST /api/imports/locations/confirm` is defined by Dispatch 9 and consumes a server-signed eligible preview.
 
-All routes require the current Firebase ID token, company-wide preview authority, rate limiting, and `Cache-Control: no-store`. Reference and preview routes remain read-only and receive no directory writer.
+All routes require the current Firebase ID token, company-wide preview authority, rate limiting, and `Cache-Control: no-store`. Reference, editing-export, and preview routes remain read-only and receive no directory writer. The authenticated editing-export response includes every bounded CSV part from one snapshot; the browser retains those part bodies for local downloads, so no process-local prepared-file state or follow-up server read is required.
 
 ## Remaining limitations
 
-- No partial import, automatic rollback/restore, or import-compatible backup export. Dispatch 9 adds atomic confirmation, receipts, and audit evidence.
+- No partial import, automatic rollback/restore, or full backup export. Export for Editing covers only supported `locations-v1` fields.
 - No explicit clearing syntax and no nonnumeric Store Number matching.
-- No People import/export contract or import-compatible Location/backup export.
+- No People import/export contract or full-fidelity Location backup export.
 - No import of `Works at`, `Supports`, custom fields, hours, templates, overrides, notices, privacy settings, account permissions, credentials, audits, or configuration.
 - No hierarchy registry import and no creation of references from names.
 - No ID reservation; concurrent changes require a rebuilt preview.
 - No broader Directory API/export hierarchy coverage or Region/District search/print improvement.
+- The editing-export response carries all parts in memory. A future object-backed or streamed transport is required if directory size approaches Cloud Run or browser response-memory limits.
+- API throttling uses the router's per-instance in-memory limiter. Authorization remains mandatory; a shared limiter is future infrastructure work for globally consistent quotas.
+
+The export snapshot is not an export-time version lock. A later preview compares the edited file with current authoritative data, so every proposed change must be reviewed. Dispatch 9 still protects the interval between preview and confirmation. Blank cells preserve values, and removing a row does not delete a Location.
+
+Spreadsheet software may automatically convert leading-zero Store Number/ZIP values or phone values. Open or import those columns as text. The CSV does not use formulas to force formatting.
 
 Future bulk work should use separate linked `locations-vN` and `people-vN` contracts with canonical IDs. Credentials, application permissions, audit history, server-managed values, and operational configuration remain outside ordinary directory imports.
 

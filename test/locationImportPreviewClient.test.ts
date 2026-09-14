@@ -1,11 +1,38 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { confirmLocationImport, LocationImportRequestError, previewLocationImport } from '../src/lib/locationImportPreviewClient';
+import { confirmLocationImport, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport } from '../src/lib/locationImportPreviewClient';
 
 const user = { getIdToken: async () => 'token' } as never;
 const originalFetch = globalThis.fetch;
 
 afterEach(() => { globalThis.fetch = originalFetch; });
+
+test('editing export client accepts bounded CSV parts with exact UTF-8 byte counts', async () => {
+  const csv = '\ufeffSchemaVersion\r\nlocations-v1\r\n';
+  globalThis.fetch = async (_input, init) => {
+    assert.equal(init?.method, 'POST');
+    return Response.json({
+      schemaVersion: 'locations-v1', snapshotReadAt: '2026-09-13T12:00:00.000Z',
+      totalRecords: 1, lifecycleCounts: { Active: 1, Draft: 0, Retired: 0, unrecognized: 0 },
+      roundTrip: { additions: 0, updates: 0, unchanged: 1, blocked: 0, warnings: 0 },
+      parts: [{ partNumber: 1, filename: 'shiekh_locations_editing_v1_part_001_of_001.csv', recordCount: 1, byteCount: new TextEncoder().encode(csv).byteLength, csv }],
+      diagnostics: [],
+    });
+  };
+
+  const prepared = await prepareLocationEditingExport(user);
+  assert.equal(prepared.parts[0].filename, 'shiekh_locations_editing_v1_part_001_of_001.csv');
+  assert.equal(prepared.roundTrip.unchanged, 1);
+
+  globalThis.fetch = async () => Response.json({ ...prepared, roundTrip: { unchanged: 1 } });
+  await assert.rejects(() => prepareLocationEditingExport(user), /invalid Location editing export/);
+
+  globalThis.fetch = async () => Response.json({ ...prepared, totalRecords: 2 });
+  await assert.rejects(() => prepareLocationEditingExport(user), /invalid Location editing export/);
+
+  globalThis.fetch = async () => Response.json({ ...prepared, parts: [{ ...prepared.parts[0], partNumber: 2 }] });
+  await assert.rejects(() => prepareLocationEditingExport(user), /invalid Location editing export/);
+});
 
 test('preview retains the exact CSV text and validates confirmation metadata', async () => {
   const csv = '\ufeffSchemaVersion\r\nlocations-v1\r\n';

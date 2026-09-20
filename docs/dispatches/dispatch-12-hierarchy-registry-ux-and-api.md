@@ -151,3 +151,70 @@ Final automated verification on 2026-09-20:
 - `git diff --check`: passed.
 
 Delivery references are recorded in the draft pull request. Browser automation was intentionally not run; manual browser validation remains assigned to Theo.
+
+## Review amendment — corrections required before acceptance
+
+Review date: 2026-09-20. Application reviewed: `b9d0498540c364bcf688520a267436567aa93a8d`, draft PR #10. This is a source review, not a browser acceptance result or an independent execution of the reported test suite.
+
+### Readiness and review outcome
+
+- PASS (repository inspection): PR #10 is draft on the intended implementation branch, based on `dispatch-11-flexible-location-csv`. PR #9 remains open at `e4e332c9a7711df3aee2559c2c40892ca395d081`. Keep the existing stacked-PR sequence.
+- PASS (source inspection): the implementation separates canonical IDs and resolved names, adds edit controls and backend dependency checks, and extends API hierarchy reconciliation and both CSV exports.
+- FAIL (source inspection): the three behaviors below do not yet satisfy the preservation and canonical-display requirements.
+- REPORTED PASS: Copilot reports lint, 232 API tests, build, and diff-check passing. These results were not independently rerun during this review.
+- UNVERIFIED: browser behavior, current production data, and actual downstream consumers. No deployment, production write, or external integration test was performed.
+
+### A. Preserve drafts through conflict refresh
+
+Evidence: `HierarchyRegistryPanel.tsx` renders “Refresh directory and review” using `window.location.reload()`. The edit draft exists only in component state, so this recovery action discards it. `EditState` also does not retain the version originally opened for editing, and `DirectoryContext.saveRegion/saveDistrict` derive the expected version from current context.
+
+Required correction:
+
+- Replace the destructive reload recovery with an authorized read-only refresh that retains the draft and shows the latest saved values for comparison.
+- Capture the original record and version when Edit begins. Send that version with an update; a context refresh must not silently advance the draft's expected version.
+- After a conflict, let the administrator explicitly choose to discard their draft and use the latest record, or review and reapply their edits against the refreshed version. Neither refresh nor review may write anything automatically.
+- Preserve the draft if refresh fails. Handle deleted/unavailable records explicitly and prevent an update from becoming a create.
+- Preserve create-only semantics, legacy version 0 updates, permission checks, and lifecycle/dependency guards.
+- Test the conflict/review state transitions and expected-version contract without browser automation. Add Theo's two-session manual test: one session saves first; the second receives a conflict, refreshes without losing its draft, compares the saved values, and explicitly chooses the next action.
+
+This version-binding requirement supports the new refresh workflow; this review did not reproduce a current same-session overwrite.
+
+### B. Display hierarchy problems wherever the affected label is used
+
+Evidence: `hierarchyDistrictLabel` in `src/lib/hierarchyResolution.ts` only reflects a missing District or a retired District. It does not display a parent mismatch, a missing Region, or a retired Region when the District itself resolves. Dashboard cards, Location cards/groups, and the print sheet use this helper. The Location detail tooltip alone is not sufficient visible feedback.
+
+Required correction:
+
+- Keep canonical IDs and names intact while visibly distinguishing unassigned, unresolved, retired, and parent-mismatched hierarchy states on the affected surfaces.
+- Cover an active District under a retired Region, a resolved District with a missing Region, and a District whose parent differs from the Location's Region.
+- Where multiple problems coexist, make all relevant explanations accessible; do not rely solely on hover text or color.
+- Check selectors and registry parent labels for the same misleading healthy-state display. Preserve unavailable current references for review and keep them out of new-assignment choices.
+- Reuse the existing resolver and warnings. Do not repair stored relationships, infer parents, or rewrite legacy fields.
+- Add focused helper/projection tests and a manual checklist for Dashboard, Location detail/cards/grouping, print, and selectors. Preserve the existing separate API/CSV ID/name values and their documented diagnostics.
+
+### C. Remove ambiguous manager links in the touched Dashboard path
+
+Evidence: the changed `DashboardView.tsx` resolves a District Manager by ID, then falls back to a matching `fullName`; it does not require Active status. A missing canonical reference can therefore open a different Person with the same name, and an inactive Person can still appear as the current manager. The same Quick Reference cards/search still use copied manager names.
+
+Required correction:
+
+- Use the existing `resolveActivePerson` contract for District Manager and Store Manager resolution in the Dashboard Quick Reference path.
+- Remove name-based identity fallback. Show the established vacant/unassigned state when the canonical Person is missing or inactive, and only link to the resolved active Person.
+- Make displayed manager names and manager search terms in this path use the same resolution. Do not change role eligibility or assignment permissions.
+- Add focused coverage for missing IDs, inactive People, duplicate names, and valid active assignments. This is a consistency correction in the already-touched Dashboard, not a broader People feature.
+
+### Impact assessment and boundaries for this amendment
+
+- Directly affected: registry edit UI, authorized refresh/client state, expected-version handoff, shared hierarchy presentation, and Dashboard manager projections.
+- Regression checks: registry API writes, audit immutability on rejection, Location relationships, canonical API reconciliation, CSV ID/name separation, and the existing selected-row import safeguards.
+- No new database migration, automatic reassignment, permission model, scheduled job, or integration contract is authorized.
+- Inspect repository jobs, reports, dashboards, and integration consumers that read these affected fields; record each as affected, unaffected with evidence, or not verified. External applications and direct database consumers outside this repository remain unverified until their owners provide evidence.
+- Fetch the remote branch before editing because this review adds a documentation commit. Inspect the local worktree and preserve the unrelated runbook modification; do not reset, discard, or include it. Use an isolated worktree if needed.
+
+### Return evidence in this repository
+
+Continue on PR #10. Correct A–C, add focused tests, and run lint, the complete API suite, production build, and diff-check. Do not run Playwright or troubleshoot its environment.
+
+Append the correction report to this dispatch: application SHA, PR/base, changed files and purpose, acceptance results marked PASS/FAIL/NOT RUN, regression evidence, unresolved limitations, affected/unverified consumers, and Theo's manual checklist. Keep the earlier completion report as historical evidence. Distinguish the tested application commit from any later documentation-only commit.
+
+Commit and push the scoped corrections and report. Keep the PR draft. No merge, deployment, production import, migration, repair, secret/configuration changes, or People CSV expansion. These corrections are ready for implementation; Dispatch 12 remains pending acceptance.

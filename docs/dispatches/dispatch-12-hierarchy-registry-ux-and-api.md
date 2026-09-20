@@ -218,3 +218,42 @@ Continue on PR #10. Correct A–C, add focused tests, and run lint, the complete
 Append the correction report to this dispatch: application SHA, PR/base, changed files and purpose, acceptance results marked PASS/FAIL/NOT RUN, regression evidence, unresolved limitations, affected/unverified consumers, and Theo's manual checklist. Keep the earlier completion report as historical evidence. Distinguish the tested application commit from any later documentation-only commit.
 
 Commit and push the scoped corrections and report. Keep the PR draft. No merge, deployment, production import, migration, repair, secret/configuration changes, or People CSV expansion. These corrections are ready for implementation; Dispatch 12 remains pending acceptance.
+
+## Review amendment completion report
+
+Completed on 2026-09-20. Tested application commit: `e74e57c1a4ebb6cb553dca109b3355832282c6dc`. This report is a later documentation-only change and does not alter the tested application snapshot. Draft PR #10 remains on `feat/dispatch-12-hierarchy-registry-api`, based on `dispatch-11-flexible-location-csv`.
+
+### Corrections and changed files
+
+- Correction A — PASS: `src/components/admin/HierarchyRegistryPanel.tsx`, `src/context/DirectoryContext.tsx`, `src/lib/directoryClient.ts`, and new `src/lib/hierarchyRegistryEditing.ts` bind edits to the version opened, refresh through the authorized read-only bootstrap route, retain drafts and latest saved values for comparison, require explicit discard or reapply, preserve refresh retry failures, and prevent unavailable records from becoming creates.
+- Correction B — PASS: `src/lib/hierarchyResolution.ts`, `src/components/locations/LocationsView.tsx`, `src/components/locations/LocationDetailModal.tsx`, and the registry panel visibly distinguish all resolver issues, including missing or retired Regions and parent mismatches. Existing shared label use carries the same result into Dashboard grouping/cards and `src/components/export/PrintSheetView.tsx`; assignment selectors retain unavailable current references while active-only option lists remain unchanged.
+- Correction C — PASS: `src/lib/readProjectionContract.ts` and `src/components/dashboard/DashboardView.tsx` resolve Quick Reference Store and District Managers only by canonical active Person ID. Display, links, and search use the same projection; missing or inactive references show vacant/unassigned states without copied-name fallback.
+- Regression coverage — PASS: new `test/hierarchyRegistryEditing.test.ts` and `test/hierarchyResolution.test.ts`, plus `test/readProjectionContract.test.ts`, cover conflict review transitions, exact expected versions including legacy version 0, authorized read-only refresh, unavailable records, missing/retired/mismatched hierarchy labels, exact active manager IDs, missing and inactive People, duplicate names, and valid assignments.
+
+### Verification and regression evidence
+
+- PASS — `npm run lint`.
+- PASS — `npm run test:api`: 244 passed, 0 failed, 0 skipped, 0 cancelled, 0 todo across 12 suites.
+- PASS — `npm run build`; the existing Vite warning for chunks larger than 500 kB remains.
+- PASS — `git diff --check`, both for the full worktree and with the unrelated runbook excluded.
+- PASS — the complete API suite retained registry write/audit rejection behavior, Location relationship validation, API hierarchy reconciliation, CSV ID/name separation, unchanged editing-export behavior, and selected-row import safeguards.
+- NOT RUN — Playwright and browser automation, as required by the dispatch.
+- NOT RUN — deployment, migration, production import, production repair, or any production data/configuration operation.
+
+### Consumer impact and remaining limitations
+
+- Affected and corrected: Hierarchy Registry administration, Dashboard Quick Reference, Location detail/cards/grouping/filter selectors, and the print report.
+- Unaffected with repository evidence: Directory API and CSV read projections continue to expose separate canonical IDs and resolved names; server transaction, export, import-preview, and reconciliation contracts passed the complete API suite. The migration script remains unchanged and uses copied manager names only for its existing migration mapping. Request views and other People workflows were not broadened by this amendment.
+- Not verified: external applications, direct database consumers, current production data, and owners' downstream integration behavior are outside this repository and require owner evidence.
+- Remaining limitation: conflict refresh is explicit rather than live synchronization, and manual visual, focus, responsive, and multi-session behavior still requires Theo's browser acceptance.
+
+### Theo manual checklist
+
+- In two sessions, edit the same Region or District. Save in session one; in session two confirm Save conflicts, refresh retains the second draft, latest values appear for comparison, and no write occurs until explicitly choosing discard or reapply and then Save.
+- Confirm edit, Cancel, Save, focus return, pending/duplicate-submit protection, stale-refresh retry, and deleted/unavailable-record handling for Regions and Districts.
+- Confirm lifecycle and District parent-change dependency errors retain input and provide affected Location links and corrective guidance.
+- Rename a Region and District, refresh authoritative data, and confirm the names update without Location rewrites in Dashboard, Location detail/cards/grouping, print, and selectors.
+- Check unassigned, unresolved, retired, missing-parent, and parent-mismatched labels on Dashboard, Location detail/cards/grouping, print, and selectors; confirm all simultaneous explanations are readable without hover or color alone.
+- Check Quick Reference with valid, missing, inactive, and duplicate-name People; only the exact active canonical manager should display, link, and match search.
+- Export reporting and editing CSVs and confirm separate `RegionId`, `RegionName`, `DistrictId`, and `DistrictName` fields, exact text ID `01`, informational name handling, and unchanged legacy `District` compatibility behavior.
+- Exercise Location API list/detail, pagination, cursor invalidation, ETags, `hierarchyVersion`, and full-reconciliation restart after a registry-only rename.

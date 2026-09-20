@@ -5,7 +5,7 @@ import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
 import { formatUsPhone } from "../src/lib/contactNormalization";
-import { spreadsheetSafeCsvValue } from "../src/lib/locationImportSchema";
+import { LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, spreadsheetSafeCsvValue } from "../src/lib/locationImportSchema";
 import { buildLocationReadProjection, type ReadProjectionPerson } from "../src/lib/readProjectionContract";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
@@ -52,6 +52,7 @@ export class LocationExportFailure extends Error {
 }
 
 const LOCATION_EXPORT_COLUMNS = [
+  LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
   "StoreNumber",
   "StoreName",
   "Type",
@@ -274,6 +275,7 @@ function toCsvRow(
   );
 
   return {
+    [LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER]: LOCATION_IMPORT_SPREADSHEET_ENCODING,
     StoreNumber: stringField(location.storeNumber),
     StoreName: stringField(location.name),
     Type: stringField(location.type),

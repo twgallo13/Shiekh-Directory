@@ -7,6 +7,8 @@ import {
   LOCATION_IMPORT_FIELDS,
   LOCATION_IMPORT_MAX_BYTES,
   LOCATION_IMPORT_SCHEMA_VERSION,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
   spreadsheetSafeCsvValue,
 } from '../src/lib/locationImportSchema';
 import { LOCATION_IMPORT_MAX_ROWS } from './locationImportConfirmation';
@@ -172,7 +174,7 @@ function serializeRows(rows: ExportRow[]): string {
   const safeRows = rows.map(row => Object.fromEntries(Object.entries(row).map(([column, value]) => [column, spreadsheetSafeCsvValue(value)])));
   return stringify(safeRows, {
     header: true,
-    columns: LOCATION_IMPORT_COLUMNS,
+    columns: LOCATION_IMPORT_COLUMNS.map(column => ({ key: column, header: column === 'SpreadsheetEncoding' ? LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER : column })),
     record_delimiter: '\r\n',
     bom: true,
   });
@@ -181,6 +183,7 @@ function serializeRows(rows: ExportRow[]): string {
 function toEditingRow(location: ExportLocation): ExportRow {
   return Object.fromEntries(LOCATION_IMPORT_FIELDS.map(field => {
     if (field.column === 'SchemaVersion') return [field.column, LOCATION_IMPORT_SCHEMA_VERSION];
+    if (field.column === 'SpreadsheetEncoding') return [field.column, LOCATION_IMPORT_SPREADSHEET_ENCODING];
     if (field.column === 'Phone') return [field.column, phoneWithExtension(location.phone, location.phoneExtension)];
     if (field.column === 'AssistantStoreManagerIds') return [field.column, serializeIdList(location.assistantStoreManagerIds)];
     if (field.column === 'KeyHolderIds') return [field.column, serializeIdList(location.keyHolderIds)];

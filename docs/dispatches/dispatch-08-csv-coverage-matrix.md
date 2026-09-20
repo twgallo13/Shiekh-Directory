@@ -42,7 +42,9 @@ Confirmation binds the actor, schema, exact CSV digest, reviewed mappings, impor
 | Header aliases and ignore | Yes | Shared schema suggestions ignore case/outer whitespace; duplicate targets blocked; unsupported/informational columns require reviewed Ignore |
 | Import mode | Yes | Add and update, or Update existing only; editing-export filenames default to update-only |
 | Selected rows | Yes | Ready New/Updated rows only; complete-file identity conflicts remain blocking; one atomic selected transaction |
-| Actionable downloads | Yes | Results identify saved/unchanged/blocked/not selected; correction CSV retains unsuccessful source rows with spreadsheet protection |
+| Recoverable row shape | Yes | Wrong cell counts are blocked per row with original values/position retained; available identity still participates in file-wide conflicts; unreliable quoting rejects the file |
+| Actionable downloads | Yes | Receipt-proven saved, pending, not saved, outcome unknown, unchanged, blocked, and not selected; correction CSV follows definitive outcome without duplicating unknown writes |
+| Spreadsheet encoding | Yes | `SpreadsheetEncoding=shiekh-safe-v1` explicitly enables one-layer reversible decoding; ordinary CSV preserves literal apostrophes |
 | Explicit clearing | No | Remains unsupported; blank preserves |
 
 Recommended future bulk exchange uses separate linked Location and People CSV contracts. Canonical IDs join those contracts. Leadership is organizational data owned by Locations; application role/access scope is authorization data owned by user accounts. The application models `Works at`, `Supports`, Store Manager, Assistant Manager, Key Holder, District Manager, and Regional Manager. It does not model a general employee supervisor/reporting tree.

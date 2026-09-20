@@ -80,11 +80,18 @@ describe('Location CSV import preview', () => {
     assert.equal(write.data.districtId, baseLocation.districtId);
   });
 
-  it('restores spreadsheet-protected correction values without changing the proposal', () => {
-    const result = previewLocationImport("LocationId,StoreName\r\nloc-007,'=Corrected Name\r\n", snapshot);
+  it('preserves intentional leading apostrophes in ordinary CSV values', () => {
+    const result = previewLocationImport("LocationId,StoreName\r\nloc-007,'=Literal Name\r\n", snapshot);
+
+    assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: "'=Literal Name" }]);
+    assert.deepEqual(result.rows[0].sourceValues, ['loc-007', "'=Literal Name"]);
+  });
+
+  it('decodes one protection layer only when the application encoding signal applies', () => {
+    const result = previewLocationImport("SpreadsheetEncoding,LocationId,StoreName\r\nshiekh-safe-v1,loc-007,'=Corrected Name\r\n", snapshot);
 
     assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: '=Corrected Name' }]);
-    assert.deepEqual(result.rows[0].sourceValues, ['loc-007', '=Corrected Name']);
+    assert.deepEqual(result.rows[0].sourceValues, ['shiekh-safe-v1', 'loc-007', '=Corrected Name']);
   });
 
   it('rejects an explicitly supplied unsupported SchemaVersion', () => {
@@ -217,10 +224,29 @@ describe('Location CSV import preview', () => {
     ]);
   });
 
-  it('rejects duplicate target mappings, unreviewed unsupported columns, and malformed row widths', () => {
+  it('rejects duplicate target mappings and unreviewed unsupported columns while isolating malformed row widths', () => {
     assert.throws(() => previewLocationImport('SchemaVersion,SchemaVersion\r\nlocations-v1,locations-v1\r\n', snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'unsupported_template' && /Duplicate target mappings/.test(error.message));
     assert.throws(() => previewLocationImport(`${LOCATION_IMPORT_COLUMNS.join(',')},Unexpected\r\n`, snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'unsupported_template' && /Unsupported headings needing explicit Ignore/.test(error.message));
-    assert.throws(() => previewLocationImport(`${LOCATION_IMPORT_COLUMNS.join(',')}\r\nlocations-v1,too,few\r\n`, snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'invalid_csv');
+    const result = previewLocationImport('LocationId,StoreName\r\nloc-007,Valid Rename\r\nloc-other,Too,Many\r\n', snapshot);
+    assert.equal(result.rows[0].action, 'update');
+    assert.equal(result.rows[1].action, 'blocked');
+    assert.deepEqual(result.rows[1].sourceValues, ['loc-other', 'Too', 'Many']);
+    assert.ok(result.rows[1].issues.some(issue => issue.code === 'invalid_row_shape' && /3 cells for 2 headings/.test(issue.reason)));
+  });
+
+  it('rejects the entire file when broken quoting makes row boundaries unreliable', () => {
+    assert.throws(
+      () => previewLocationImport('LocationId,StoreName\r\nloc-007,"Unclosed name\r\nloc-other,Other\r\n', snapshot),
+      (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'invalid_csv' && /not valid CSV/.test(error.message),
+    );
+  });
+
+  it('keeps full-file identity collisions blocking when one colliding row has the wrong cell count', () => {
+    const result = previewLocationImport('LocationId,StoreName\r\nloc-007,First\r\nloc-007,Second,Extra\r\n', snapshot);
+
+    assert.equal(result.summary.blocked, 2);
+    assert.ok(result.rows.every(row => row.issues.some(issue => issue.code === 'duplicate_csv_identity')));
+    assert.ok(result.rows[1].issues.some(issue => issue.code === 'invalid_row_shape'));
   });
 
   it('reports leading-zero matches and blocks interactions between colliding CSV rows', () => {

@@ -7,6 +7,8 @@ import {
   LOCATION_IMPORT_COLUMNS,
   LOCATION_IMPORT_FIELDS,
   LOCATION_IMPORT_SCHEMA_VERSION,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
   LOCATION_OPERATIONAL_STATUSES,
   LOCATION_RECORD_STATUSES,
   LOCATION_TIME_ZONES,
@@ -42,7 +44,8 @@ export type LocationImportIssueCode =
   | 'retirement_dependency'
   | 'leading_zero_match'
   | 'new_id_not_reserved'
-  | 'new_location_not_allowed';
+  | 'new_location_not_allowed'
+  | 'invalid_row_shape';
 
 export interface LocationImportIssue {
   severity: 'error' | 'warning';
@@ -226,6 +229,23 @@ export function buildLocationImportPlan(
   const previewRows = rows.map((row, index) => {
     const rowNumber = index + 2;
     const issues: LocationImportIssue[] = [];
+    const rowShape = parsed.rowShapes[index];
+    if (rowShape.actual !== rowShape.expected) {
+      issues.push(issue(
+        'error',
+        'invalid_row_shape',
+        'CSV row',
+        parsed.sourceRows[index],
+        null,
+        `CSV row ${rowNumber} has ${rowShape.actual} cells for ${rowShape.expected} headings. Its values were preserved, but the row cannot be imported.`,
+        'Correct this row so it has exactly one cell for every heading, then preview the file again.',
+      ));
+    }
+    if (row.SpreadsheetEncoding && row.SpreadsheetEncoding !== LOCATION_IMPORT_SPREADSHEET_ENCODING) {
+      issues.push(issue('error', 'invalid_attribute', 'SpreadsheetEncoding', row.SpreadsheetEncoding, LOCATION_IMPORT_SPREADSHEET_ENCODING, 'The row supplies an unsupported spreadsheet encoding signal.', `Use ${LOCATION_IMPORT_SPREADSHEET_ENCODING} only for application-generated protected CSV, or leave the column blank for ordinary CSV.`));
+    } else if (parsed.spreadsheetEncoded && rowShape.actual === rowShape.expected && row.SpreadsheetEncoding !== LOCATION_IMPORT_SPREADSHEET_ENCODING) {
+      issues.push(issue('error', 'invalid_attribute', 'SpreadsheetEncoding', row.SpreadsheetEncoding, LOCATION_IMPORT_SPREADSHEET_ENCODING, 'Every complete row in a protected CSV must carry the spreadsheet encoding signal.', `Set SpreadsheetEncoding to ${LOCATION_IMPORT_SPREADSHEET_ENCODING}, or remove the signal from every row and use ordinary CSV values.`));
+    }
     const normalizedStore = normalizeStoreNumber(row.StoreNumber);
     validateRowIdentitySyntax(row, issues);
 
@@ -377,7 +397,7 @@ export function buildLocationImportPlan(
       displayName: String(proposed.name || row.StoreName || `Row ${rowNumber}`),
       changes,
       issues,
-      sourceValues: parsed.sourceRows[index].map(restoreSpreadsheetSafeCsvValue),
+      sourceValues: parsed.sourceRows[index],
     } satisfies LocationImportPreviewRow;
   });
 
@@ -440,10 +460,10 @@ export function buildLocationImportPlan(
   };
 }
 
-function parseImportRows(csv: string, suppliedMappings?: LocationImportHeaderMapping[]): { rows: ImportRow[]; mappings: LocationImportHeaderMapping[]; sourceRows: string[][] } {
+function parseImportRows(csv: string, suppliedMappings?: LocationImportHeaderMapping[]): { rows: ImportRow[]; mappings: LocationImportHeaderMapping[]; sourceRows: string[][]; rowShapes: Array<{ actual: number; expected: number }>; spreadsheetEncoded: boolean } {
   let matrix: string[][];
   try {
-    matrix = parse(csv, { bom: true, skip_empty_lines: true, trim: true });
+    matrix = parse(csv, { bom: true, skip_empty_lines: true, trim: true, relax_column_count: true });
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Malformed row.';
     throw new LocationImportPreviewError('invalid_csv', `The file is not valid CSV: ${detail}`);
@@ -468,25 +488,28 @@ function parseImportRows(csv: string, suppliedMappings?: LocationImportHeaderMap
       `Unsupported headings needing explicit Ignore: ${unsupportedWithoutReview.join(', ') || 'none'}.`,
     ].join(' '));
   }
-  const sourceRows = matrix.slice(1);
+  const parsedRows = matrix.slice(1);
+  const rowShapes = parsedRows.map(values => ({ actual: values.length, expected: headers.length }));
+  const encodingMapping = suggestedMappings.find(mapping => mapping.target === 'SpreadsheetEncoding');
+  const encodingValues = encodingMapping ? parsedRows.map(values => values[encodingMapping.sourceIndex] || '') : [];
+  const spreadsheetEncoded = headers.some(header => header === LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER)
+    || encodingValues.some(value => value === LOCATION_IMPORT_SPREADSHEET_ENCODING);
+  const sourceRows = parsedRows.map(values => spreadsheetEncoded ? values.map(restoreSpreadsheetSafeCsvValue) : values);
   const rows = sourceRows.map((values, index) => {
-    if (values.length !== headers.length) {
-      throw new LocationImportPreviewError('invalid_csv', `CSV row ${index + 2} has ${values.length} values for ${headers.length} headings. Correct the row boundaries and preview again.`);
-    }
     const suggestedSchemaMapping = suggestedMappings.find(mapping => mapping.target === 'SchemaVersion');
     const suppliedSchemaVersion = suggestedSchemaMapping
-      ? restoreSpreadsheetSafeCsvValue(values[suggestedSchemaMapping.sourceIndex] || '')
+      ? values[suggestedSchemaMapping.sourceIndex] || ''
       : '';
     const row: ImportRow = { SchemaVersion: suppliedSchemaVersion || LOCATION_IMPORT_SCHEMA_VERSION };
     mappings.forEach(mapping => {
       if (mapping.target && (mapping.target !== 'SchemaVersion' || !suppliedSchemaVersion)) {
-        row[mapping.target] = restoreSpreadsheetSafeCsvValue(values[mapping.sourceIndex] || '');
+        row[mapping.target] = values[mapping.sourceIndex] || '';
       }
     });
     if (!row.SchemaVersion) row.SchemaVersion = LOCATION_IMPORT_SCHEMA_VERSION;
     return row;
   });
-  return { rows, mappings, sourceRows };
+  return { rows, mappings, sourceRows, rowShapes, spreadsheetEncoded };
 }
 
 function validateRowIdentitySyntax(row: ImportRow, issues: LocationImportIssue[]): void {

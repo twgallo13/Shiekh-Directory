@@ -6,12 +6,13 @@ import express from "express";
 import { parse } from "csv-parse/sync";
 import { AccessDenied, AuthenticationUnavailable, type Account } from "../server/authAuthority";
 import { createLocationExportRouter, createFirestoreLocationExportStore, type LocationExportRecord, type LocationExportStore } from "../server/locationExport";
+import { LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER } from "../src/lib/locationImportSchema";
 
 const now = new Date("2026-09-09T12:00:00.000Z");
 const companyAccount: Account = { uid: "uid-company", email: "company@example.test", emailVerified: true, name: "Company User", role: "Viewer", status: "Active", accessScope: "Company-wide", personId: null, authenticationMethod: "password" };
 const otherCompanyAccount: Account = { ...companyAccount, uid: "uid-company-2", email: "company2@example.test" };
 const exactStoreAccount: Account = { ...companyAccount, uid: "uid-store", accessScope: "Store 007" };
-interface CsvRow { StoreNumber: string; ZipCode: string; StoreName: string; Phone: string; StoreManager: string; StoreManagerPhone: string; DistrictManager: string; AssistantStoreManagers: string; OperationalStatus: string }
+interface CsvRow { StoreNumber: string; ZipCode: string; StoreName: string; Phone: string; StoreManager: string; StoreManagerPhone: string; DistrictManager: string; AssistantStoreManagers: string; OperationalStatus: string; [LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER]: string }
 interface PreparedBody { token: string; metadata: { recordCount: number; authorizationScope: { label: string; type: string; storeNumber?: string }; storeNumberSetDigest: string; missingCanonicalPersonReferences: number } }
 
 test("Export All prepares and downloads every active authorized location from the authoritative snapshot", async () => {
@@ -32,6 +33,7 @@ test("Export All prepares and downloads every active authorized location from th
     assert.equal(rows.length, 120);
     assert.equal(rows[0].StoreNumber, "001");
     assert.equal(rows[0].ZipCode, "00000");
+    assert.equal(rows[0][LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER], LOCATION_IMPORT_SPREADSHEET_ENCODING);
     assert.equal(rows.at(-1).StoreNumber, "120");
   } finally { await app.close(); }
 });
@@ -140,6 +142,16 @@ test("CSV output has a UTF-8 BOM, preserves Unicode, and formats phones with ext
     assert.equal(rows[1].Phone, "(213) 622-0658 ext. 42");
     assert.equal(rows[1].StoreManagerPhone, "(310) 555-0123 ext. 9");
     assert.equal(rows[1].OperationalStatus, "Open — Normal Operations");
+  } finally { await app.close(); }
+});
+
+test("reporting export formula protection is explicitly signaled", async () => {
+  const app = await harness({ locations: [location("007", { name: "=Formula Store" })], people: [], account: companyAccount });
+  try {
+    const prepared = await prepare(app.baseUrl, "token");
+    const [row] = parse(await download(app.baseUrl, prepared.token, "token"), { bom: true, columns: true }) as CsvRow[];
+    assert.equal(row[LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER], LOCATION_IMPORT_SPREADSHEET_ENCODING);
+    assert.equal(row.StoreName, "'=Formula Store");
   } finally { await app.close(); }
 });
 

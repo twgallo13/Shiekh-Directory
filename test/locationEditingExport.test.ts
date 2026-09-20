@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import { buildLocationEditingExport, LocationEditingExportError } from '../server/locationEditingExport';
-import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_MAX_BYTES, LOCATION_TYPES } from '../src/lib/locationImportSchema';
+import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_MAX_BYTES, LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, LOCATION_TYPES } from '../src/lib/locationImportSchema';
 import type { DirectorySeed } from '../src/lib/directorySeed';
 import type { LocationRecord } from '../src/types';
 
@@ -63,7 +63,9 @@ describe('Location editing export', () => {
     assert.equal(result.totalRecords, 0);
     assert.equal(result.parts.length, 1);
     assert.equal(result.parts[0].recordCount, 0);
-    assert.deepEqual(parse(result.parts[0].csv!, { bom: true }) as string[][], [LOCATION_IMPORT_COLUMNS]);
+    assert.deepEqual(parse(result.parts[0].csv!, { bom: true }) as string[][], [
+      LOCATION_IMPORT_COLUMNS.map(column => column === 'SpreadsheetEncoding' ? LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER : column),
+    ]);
   });
 
   it('round-trips conforming records unchanged with exact locations-v1 serialization', () => {
@@ -78,7 +80,8 @@ describe('Location editing export', () => {
     assert.ok((result.parts[0].byteCount) <= LOCATION_IMPORT_MAX_BYTES);
 
     const [row] = parse(result.parts[0].csv!, { bom: true, columns: true }) as Array<Record<string, string>>;
-    assert.deepEqual(Object.keys(row), LOCATION_IMPORT_COLUMNS);
+    assert.deepEqual(Object.keys(row), LOCATION_IMPORT_COLUMNS.map(column => column === 'SpreadsheetEncoding' ? LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER : column));
+    assert.equal(row[LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER], LOCATION_IMPORT_SPREADSHEET_ENCODING);
     assert.equal(row.LocationId, 'loc-007');
     assert.equal(row.StoreNumber, '007');
     assert.equal(row.StoreName, 'Café "North"');

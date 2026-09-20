@@ -6,7 +6,7 @@ import type { PreparedLocationEditingExport } from '../../lib/locationEditingExp
 import type { LocationImportPreview, LocationImportReceipt } from '../../lib/locationImportPreview';
 import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_FIELDS, type LocationImportHeaderMapping, type LocationImportMode } from '../../lib/locationImportSchema';
 import { locationPath } from '../../lib/navigation';
-import { confirmLocationImport, downloadLocationEditingExportPart, downloadLocationImportCorrections, downloadLocationImportResource, downloadLocationImportResults, inspectLocationImportFile, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
+import { confirmLocationImport, downloadLocationEditingExportPart, downloadLocationImportCorrections, downloadLocationImportResource, downloadLocationImportResults, inspectLocationImportFile, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport, type LocationImportConfirmationOutcome, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
 
 interface LocationImportPreviewPanelProps {
   user: SessionUser | null;
@@ -26,6 +26,8 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   const [mappingReviewed, setMappingReviewed] = useState(false);
   const [selectedRowNumbers, setSelectedRowNumbers] = useState<number[]>([]);
   const [selectionDirty, setSelectionDirty] = useState(false);
+  const [confirmationOutcome, setConfirmationOutcome] = useState<LocationImportConfirmationOutcome>('pending');
+  const [completedImport, setCompletedImport] = useState<{ preview: LocationImportPreview; receipt: LocationImportReceipt; filename: string } | null>(null);
   const [editingExport, setEditingExport] = useState<PreparedLocationEditingExport | null>(null);
   const [busy, setBusy] = useState<LocationImportDownload | 'editing-export' | `editing-part-${number}` | 'preview' | 'confirm' | null>(null);
   const [error, setError] = useState('');
@@ -78,7 +80,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   };
 
   const selectFile = async (file: File | undefined) => {
-    if (!file || busy) return;
+    if (!file || busy || confirmationOutcome === 'uncertain') return;
     setFilename(file.name);
     setPreview(null);
     setCsv('');
@@ -88,6 +90,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     setMappingReviewed(false);
     setSelectedRowNumbers([]);
     setSelectionDirty(false);
+    setConfirmationOutcome('pending');
     if (!user) {
       setError('Sign in again before previewing this file.');
       setErrorCode('authentication_required');
@@ -112,11 +115,12 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   };
 
   const validatePreview = async (selection?: number[]) => {
-    if (!user || !csv || !filename || busy) return;
+    if (!user || !csv || !filename || busy || confirmationOutcome === 'uncertain') return;
     setBusy('preview');
     setError('');
     setErrorCode('');
     setReceipt(null);
+    setConfirmationOutcome('pending');
     setWarningsReviewed(false);
     try {
       const result = await previewLocationImport(user, {
@@ -144,6 +148,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     setWarningsReviewed(false);
     setSelectedRowNumbers([]);
     setSelectionDirty(false);
+    setConfirmationOutcome('pending');
   };
 
   const updateMapping = (sourceIndex: number, target: string) => {
@@ -165,6 +170,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
       : current.filter(candidate => candidate !== rowNumber));
     setSelectionDirty(true);
     setReceipt(null);
+    setConfirmationOutcome('pending');
     setWarningsReviewed(false);
   };
 
@@ -185,8 +191,11 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
       });
       onLocationsConfirmed(result.locations.map(location => location.record));
       setReceipt(result);
+      setCompletedImport({ preview: { ...preview, selectedRowNumbers: [...selectedRowNumbers] }, receipt: result, filename });
+      setConfirmationOutcome('pending');
     } catch (cause) {
       const code = cause instanceof LocationImportRequestError ? cause.code : 'confirmation_failed';
+      setConfirmationOutcome(code === 'confirmation_uncertain' ? 'uncertain' : 'rejected');
       setErrorCode(code);
       setError(code === 'confirmation_uncertain'
         ? 'The import outcome is uncertain. Retry the same import operation to retrieve its authoritative result without duplicating writes.'
@@ -201,6 +210,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   const mappedTargets = mappings.flatMap(mapping => mapping.target ? [mapping.target] : []);
   const duplicateMappings = [...new Set(mappedTargets.filter((target, index) => mappedTargets.indexOf(target) !== index))];
   const mappingValid = mappings.length > 0 && duplicateMappings.length === 0 && mappedTargets.some(target => target === 'LocationId' || target === 'StoreNumber');
+  const outcomeUnknown = confirmationOutcome === 'uncertain';
   const requiresNewPreview = ['confirmation_expired', 'confirmation_mismatch', 'confirmation_tampered', 'stale_preview', 'idempotency_conflict'].includes(errorCode);
   const eligibleForConfirmation = Boolean(preview
     && changedRows > 0
@@ -228,6 +238,8 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
 
   const disabledReason = !user
     ? 'Sign in to download resources or preview a Location CSV.'
+    : outcomeUnknown
+      ? 'The current import outcome is unknown. Retry the same operation before changing the file, mappings, mode, or selection.'
     : busy
       ? busy === 'preview' ? `Previewing ${filename}. Controls are disabled until the request finishes.` : busy === 'confirm' ? `Importing ${filename}. Controls are disabled until confirmation finishes.` : 'A download is in progress. Controls are disabled until it finishes.'
       : '';
@@ -270,7 +282,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           </div>
           <div>
             <div className="font-semibold text-neutral-900">Use the supported files</div>
-            <p>Export for Editing includes canonical IDs and defaults to Update existing only. Export All Stores can map supported attributes, but its displayed District and leadership names remain informational. Neither export is a complete backup.</p>
+            <p>Application exports identify their reversible spreadsheet protection in the CSV heading. Ordinary uploads preserve leading apostrophes. Export All Stores names remain informational, and neither export is a complete backup.</p>
           </div>
         </div>
       </section>
@@ -296,11 +308,11 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           <Download className="w-4 h-4" />
           <span>{busy === 'references' ? 'Downloading...' : 'Reference IDs'}</span>
         </button>
-        <button type="button" disabled={!user || Boolean(busy)} title={disabledReason || undefined} onClick={() => inputRef.current?.click()} className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+        <button type="button" disabled={!user || Boolean(busy) || outcomeUnknown} title={disabledReason || undefined} onClick={() => inputRef.current?.click()} className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
           <FileSpreadsheet className="w-4 h-4" />
           <span>{busy === 'preview' ? 'Building Preview...' : 'Upload CSV'}</span>
         </button>
-        <input ref={inputRef} type="file" accept=".csv,text/csv" disabled={!user || Boolean(busy)} className="sr-only" aria-label="Upload Location CSV" onChange={event => void selectFile(event.target.files?.[0])} />
+        <input ref={inputRef} type="file" accept=".csv,text/csv" disabled={!user || Boolean(busy) || outcomeUnknown} className="sr-only" aria-label="Upload Location CSV" onChange={event => void selectFile(event.target.files?.[0])} />
         <span className="self-center text-[11px] text-neutral-500">Maximum 2 MB · 100 file rows · 40 selected changes · confirmation expires after 10 minutes</span>
       </div>
 
@@ -309,18 +321,18 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h4 id="location-import-mapping" className="text-sm font-bold text-neutral-900">Match CSV headings</h4>
-              <p className="text-xs text-neutral-600">Review each suggestion. Choose Ignore for unsupported or informational columns; displayed District and leadership names never create relationships.</p>
+              <p className="text-xs text-neutral-600">Review each suggestion. Choose Ignore for unsupported or informational columns. Keep the application encoding heading mapped when present; displayed District and leadership names never create relationships.</p>
             </div>
             <div className="inline-flex overflow-hidden rounded-lg border border-neutral-300" aria-label="Location import mode">
-              <button type="button" disabled={Boolean(busy)} onClick={() => updateMode('add-and-update')} className={`px-3 py-2 text-xs font-semibold ${mode === 'add-and-update' ? 'bg-blue-600 text-white' : 'bg-white text-neutral-700'}`}>Add and update</button>
-              <button type="button" disabled={Boolean(busy)} onClick={() => updateMode('update-existing-only')} className={`border-l border-neutral-300 px-3 py-2 text-xs font-semibold ${mode === 'update-existing-only' ? 'bg-blue-600 text-white' : 'bg-white text-neutral-700'}`}>Update existing only</button>
+              <button type="button" disabled={Boolean(busy) || outcomeUnknown} onClick={() => updateMode('add-and-update')} className={`px-3 py-2 text-xs font-semibold ${mode === 'add-and-update' ? 'bg-blue-600 text-white' : 'bg-white text-neutral-700'}`}>Add and update</button>
+              <button type="button" disabled={Boolean(busy) || outcomeUnknown} onClick={() => updateMode('update-existing-only')} className={`border-l border-neutral-300 px-3 py-2 text-xs font-semibold ${mode === 'update-existing-only' ? 'bg-blue-600 text-white' : 'bg-white text-neutral-700'}`}>Update existing only</button>
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {mappings.map(mapping => (
               <label key={`${mapping.sourceIndex}-${mapping.sourceHeader}`} className="text-xs text-neutral-700">
                 <span className="mb-1 flex items-center justify-between gap-2"><span className="truncate font-semibold text-neutral-900">{mapping.sourceHeader || '(blank heading)'}</span><span className="text-[10px] uppercase text-neutral-500">{mapping.kind}</span></span>
-                <select value={mapping.target || ''} disabled={Boolean(busy)} onChange={event => updateMapping(mapping.sourceIndex, event.target.value)} className="w-full rounded-md border border-neutral-300 bg-white px-2 py-2 text-xs">
+                <select value={mapping.target || ''} disabled={Boolean(busy) || outcomeUnknown} onChange={event => updateMapping(mapping.sourceIndex, event.target.value)} className="w-full rounded-md border border-neutral-300 bg-white px-2 py-2 text-xs">
                   <option value="">Ignore</option>
                   {LOCATION_IMPORT_COLUMNS.map(column => <option key={column} value={column}>{column}</option>)}
                 </select>
@@ -330,10 +342,10 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           {duplicateMappings.length > 0 && <p role="alert" className="text-xs font-medium text-red-700">Each target can be mapped once. Duplicates: {duplicateMappings.join(', ')}.</p>}
           {!mappedTargets.some(target => target === 'LocationId' || target === 'StoreNumber') && <p role="alert" className="text-xs font-medium text-red-700">Map LocationId or StoreNumber so every row has an identity field.</p>}
           <label className="flex items-start gap-2 text-xs text-neutral-700">
-            <input type="checkbox" checked={mappingReviewed} disabled={!mappingValid || Boolean(busy)} onChange={event => setMappingReviewed(event.target.checked)} className="mt-0.5" />
+            <input type="checkbox" checked={mappingReviewed} disabled={!mappingValid || Boolean(busy) || outcomeUnknown} onChange={event => setMappingReviewed(event.target.checked)} className="mt-0.5" />
             <span>I reviewed every heading, including ignored informational and unsupported columns.</span>
           </label>
-          <button type="button" disabled={!mappingValid || !mappingReviewed || Boolean(busy)} onClick={() => void validatePreview()} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+          <button type="button" disabled={!mappingValid || !mappingReviewed || Boolean(busy) || outcomeUnknown} onClick={() => void validatePreview()} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
             <CheckCircle2 className="h-4 w-4" />
             <span>{busy === 'preview' ? 'Validating...' : preview ? 'Validate Again' : 'Validate and Preview'}</span>
           </button>
@@ -421,7 +433,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           <span className="grow">{error}</span>
           {errorCode === 'directory_export_not_importable' && <button type="button" disabled={!user || Boolean(busy)} onClick={() => void downloadResource('template')} className="font-semibold underline disabled:opacity-50">Download Blank Template</button>}
           {errorCode === 'confirmation_uncertain' && <button type="button" disabled={!eligibleForConfirmation || Boolean(busy)} title={confirmDisabledReason || undefined} onClick={() => void confirmImport()} className="font-semibold underline disabled:opacity-50">Retry Same Import</button>}
-          <button type="button" disabled={!user || Boolean(busy)} onClick={() => inputRef.current?.click()} className="font-semibold underline disabled:opacity-50">Choose File Again</button>
+          {!outcomeUnknown && <button type="button" disabled={!user || Boolean(busy)} onClick={() => inputRef.current?.click()} className="font-semibold underline disabled:opacity-50">Choose File Again</button>}
         </div>
       )}
 
@@ -453,7 +465,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
                 <tbody className="divide-y divide-neutral-200">
                   {preview.rows.map(row => (
                     <tr key={row.rowNumber} className="align-top">
-                      <td className="px-3 py-3"><input type="checkbox" aria-label={`Select CSV row ${row.rowNumber}`} checked={selectedRowNumbers.includes(row.rowNumber)} disabled={Boolean(busy) || (row.action !== 'add' && row.action !== 'update')} onChange={event => toggleSelectedRow(row.rowNumber, event.target.checked)} /></td>
+                      <td className="px-3 py-3"><input type="checkbox" aria-label={`Select CSV row ${row.rowNumber}`} checked={selectedRowNumbers.includes(row.rowNumber)} disabled={Boolean(busy) || outcomeUnknown || (row.action !== 'add' && row.action !== 'update')} onChange={event => toggleSelectedRow(row.rowNumber, event.target.checked)} /></td>
                       <td className="px-3 py-3 text-neutral-500">{row.rowNumber}</td>
                       <td className="px-3 py-3"><div className="font-semibold text-neutral-900">{row.displayName}</div><div className="font-mono text-[11px] text-neutral-500">Store {row.storeNumber || 'not provided'}{row.locationId ? ` · ${row.locationId}` : ''}</div></td>
                       <td className="px-3 py-3">
@@ -495,30 +507,30 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
                 <span className="text-[11px] text-neutral-500">Selected rows save in one atomic transaction. {preview.summary.blocked} blocked and {preview.rows.filter(row => (row.action === 'add' || row.action === 'update') && !selectedRowNumbers.includes(row.rowNumber)).length} not selected rows remain unchanged.</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => downloadLocationImportResults({ ...preview, selectedRowNumbers }, receipt)} className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700"><Download className="h-3.5 w-3.5" />Download results</button>
-                <button type="button" onClick={() => downloadLocationImportCorrections({ ...preview, selectedRowNumbers })} className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700"><Download className="h-3.5 w-3.5" />Download correction CSV</button>
+                <button type="button" onClick={() => downloadLocationImportResults({ ...preview, selectedRowNumbers }, receipt, confirmationOutcome)} className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700"><Download className="h-3.5 w-3.5" />Download results</button>
+                <button type="button" onClick={() => downloadLocationImportCorrections({ ...preview, selectedRowNumbers }, receipt, confirmationOutcome)} className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700"><Download className="h-3.5 w-3.5" />Download correction CSV</button>
               </div>
             </div>
           )}
-          {receipt && (
-            <section role="status" aria-live="polite" className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-950">
-              <div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" />Import complete</div>
-              <div>Saved {receipt.additions} additions and {receipt.updates} updates; {receipt.unchanged} rows were unchanged.</div>
-              {receipt.replayed && <div>This is the authoritative result of an idempotent replay. No duplicate writes were created.</div>}
-              <div className="flex flex-wrap gap-x-4 gap-y-2">
-                {receipt.locations.map(location => (
-                  <a key={location.id} href={locationPath(location.record)} className="inline-flex items-center gap-1 font-semibold text-emerald-800 underline">
-                    Store {location.storeNumber} · {location.name}<ExternalLink className="h-3 w-3" />
-                  </a>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => downloadLocationImportResults(preview, receipt)} className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 font-semibold text-emerald-800"><Download className="h-3.5 w-3.5" />Download final results</button>
-                <button type="button" onClick={() => downloadLocationImportCorrections(preview)} className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 font-semibold text-emerald-800"><Download className="h-3.5 w-3.5" />Download correction CSV</button>
-              </div>
-            </section>
-          )}
         </div>
+      )}
+      {completedImport && (
+        <section role="status" aria-live="polite" className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-950">
+          <div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" />Completed import · {completedImport.filename}</div>
+          <div>Saved {completedImport.receipt.additions} additions and {completedImport.receipt.updates} updates; {completedImport.receipt.unchanged} rows were unchanged.</div>
+          {completedImport.receipt.replayed && <div>This is the authoritative result of an idempotent replay. No duplicate writes were created.</div>}
+          <div className="flex flex-wrap gap-x-4 gap-y-2">
+            {completedImport.receipt.locations.map(location => (
+              <a key={location.id} href={locationPath(location.record)} className="inline-flex items-center gap-1 font-semibold text-emerald-800 underline">
+                Store {location.storeNumber} · {location.name}<ExternalLink className="h-3 w-3" />
+              </a>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => downloadLocationImportResults(completedImport.preview, completedImport.receipt)} className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 font-semibold text-emerald-800"><Download className="h-3.5 w-3.5" />Download final results</button>
+            <button type="button" onClick={() => downloadLocationImportCorrections(completedImport.preview, completedImport.receipt)} className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 font-semibold text-emerald-800"><Download className="h-3.5 w-3.5" />Download correction CSV</button>
+          </div>
+        </section>
       )}
     </div>
   );

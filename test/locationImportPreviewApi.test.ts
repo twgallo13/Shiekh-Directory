@@ -307,6 +307,25 @@ test('selected ready rows can be confirmed while blocked rows remain unchanged',
   } finally { await app.close(); }
 });
 
+test('a valid row beside a recoverable malformed row can be selected and committed', async () => {
+  let confirmed: LocationImportManifest | undefined;
+  const app = await harness(account, {
+    async readLocationImportSnapshot() { return structuredClone(seed); },
+    async confirmLocationImport(manifest) { confirmed = manifest; return receipt(manifest); },
+  });
+  try {
+    const csv = 'LocationId,StoreName\r\nloc-1,Valid Rename\r\nloc-other,Malformed,Extra value\r\n';
+    const preview = await (await post(app.baseUrl, 'preview', { csv, selectedRowNumbers: [2] })).json();
+    assert.deepEqual(preview.summary, { totalRows: 2, additions: 0, updates: 1, unchanged: 0, blocked: 1, warnings: 0 });
+    assert.deepEqual(preview.rows[1].sourceValues, ['loc-other', 'Malformed', 'Extra value']);
+    assert.ok(preview.rows[1].issues.some((issue: { code: string }) => issue.code === 'invalid_row_shape'));
+
+    const response = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv));
+    assert.equal(response.status, 200);
+    assert.deepEqual(confirmed?.writes.map(write => [write.rowNumber, write.id]), [[2, 'loc-1']]);
+  } finally { await app.close(); }
+});
+
 test('excluding one side of a full-file identity collision cannot make it selectable', async () => {
   const app = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } });
   try {

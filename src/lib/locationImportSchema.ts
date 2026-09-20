@@ -1,6 +1,8 @@
 import type { LocationType, OperationalStatus, RecordStatus } from '../types';
 
 export const LOCATION_IMPORT_SCHEMA_VERSION = 'locations-v1';
+export const LOCATION_IMPORT_SPREADSHEET_ENCODING = 'shiekh-safe-v1';
+export const LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER = `SpreadsheetEncoding=${LOCATION_IMPORT_SPREADSHEET_ENCODING}`;
 export const LOCATION_IMPORT_MAX_BYTES = 2_000_000;
 
 export const LOCATION_TYPES = [
@@ -39,6 +41,7 @@ export interface LocationImportFieldDefinition {
 
 export const LOCATION_IMPORT_FIELDS: readonly LocationImportFieldDefinition[] = [
   { column: 'SchemaVersion', aliases: ['Schema Version'], purpose: 'Identifies this import contract.', additions: 'Optional; missing values use the current supported format', updates: 'Optional; missing values use the current supported format', format: `Exact text when supplied: ${LOCATION_IMPORT_SCHEMA_VERSION}`, allowedValues: [LOCATION_IMPORT_SCHEMA_VERSION], example: LOCATION_IMPORT_SCHEMA_VERSION },
+  { column: 'SpreadsheetEncoding', aliases: ['Spreadsheet Encoding', LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER], purpose: 'Signals reversible formula protection in application-generated CSV files.', additions: 'Optional; leave blank for ordinary CSV', updates: 'Optional; leave blank for ordinary CSV', format: `Application-generated files use heading ${LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER} and value ${LOCATION_IMPORT_SPREADSHEET_ENCODING}`, allowedValues: [LOCATION_IMPORT_SPREADSHEET_ENCODING], example: LOCATION_IMPORT_SPREADSHEET_ENCODING },
   { column: 'LocationId', field: 'id', aliases: ['Location ID'], purpose: 'Stable Location identity. Never matched by name.', additions: 'Optional; preview does not reserve the supplied ID', updates: 'Required unless StoreNumber uniquely identifies the Location', format: '1-128 letters, numbers, periods, underscores, or hyphens', example: 'REPLACE_WITH_LOCATION_ID' },
   { column: 'StoreNumber', field: 'storeNumber', aliases: ['Store Number', 'Store #', 'Store No.'], purpose: 'Location number and fallback update identity.', additions: 'Required', updates: 'Required when LocationId is blank; otherwise optional', format: 'Digits only. Leading zeros are ignored for matching but the supplied text is the proposed value.', example: '007' },
   { column: 'StoreName', field: 'name', aliases: ['Store Name', 'Location Name'], purpose: 'Displayed Location name.', additions: 'Required', updates: 'Optional', format: 'Non-empty text', example: 'SYNTHETIC EXAMPLE - Market Street' },

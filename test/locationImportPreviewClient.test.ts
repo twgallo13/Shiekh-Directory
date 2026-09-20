@@ -183,13 +183,48 @@ test('result and correction downloads distinguish outcomes and protect spreadshe
       { rowNumber: 4, action: 'blocked', locationId: null, currentVersion: null, matchedBy: null, storeNumber: '003', displayName: '=Formula', changes: [], issues: [{ severity: 'error', code: 'missing_required_field', field: 'Address', suppliedValue: '', currentValue: null, proposedValue: null, reason: 'Missing.', correction: 'Enter an address.' }], sourceValues: ['', '=Formula'] },
     ],
   };
-  const receipt: LocationImportReceipt = { operationId: 'op', batchId: 'batch', committedAt: 'now', additions: 0, updates: 1, unchanged: 0, locations: [], replayed: false };
+  const receipt: LocationImportReceipt = { operationId: 'op', batchId: 'batch', committedAt: 'now', additions: 0, updates: 1, unchanged: 0, locations: [{ id: 'loc-1', name: 'Saved', storeNumber: '001', record: { id: 'loc-1', name: 'Saved', storeNumber: '001' } as never }], replayed: false };
   const results = parse(buildLocationImportResultsCsv(preview, receipt), { bom: true, columns: true }) as Array<Record<string, string>>;
   const corrections = parse(buildLocationImportCorrectionCsv(preview), { bom: true, columns: true }) as Array<Record<string, string>>;
 
   assert.deepEqual(results.map(row => row.Result), ['saved', 'not selected', 'blocked']);
   const previewResults = parse(buildLocationImportResultsCsv(preview, null), { bom: true, columns: true }) as Array<Record<string, string>>;
-  assert.deepEqual(previewResults.map(row => row.Result), ['ready', 'not selected', 'blocked']);
+  assert.deepEqual(previewResults.map(row => row.Result), ['pending', 'not selected', 'blocked']);
   assert.deepEqual(corrections.map(row => row.LocationId), ['loc-2', '']);
   assert.equal(corrections[1].StoreName, "'=Formula");
+});
+
+test('reports and corrections follow authoritative confirmation outcomes', () => {
+  const preview: LocationImportPreview = {
+    schemaVersion: 'locations-v1', snapshotReadAt: '2026-09-13T12:00:00.000Z', selectedRowNumbers: [2, 3],
+    mappings: [{ sourceIndex: 0, sourceHeader: 'LocationId', target: 'LocationId' }, { sourceIndex: 1, sourceHeader: 'StoreName', target: 'StoreName' }],
+    summary: { totalRows: 3, additions: 0, updates: 2, unchanged: 0, blocked: 1, warnings: 0 },
+    rows: [
+      { rowNumber: 2, action: 'update', locationId: 'loc-1', currentVersion: 0, matchedBy: 'LocationId', storeNumber: '001', displayName: 'One', changes: [{ field: 'name', before: 'Old', after: 'One' }], issues: [], sourceValues: ['loc-1', 'One'] },
+      { rowNumber: 3, action: 'update', locationId: 'loc-2', currentVersion: 0, matchedBy: 'LocationId', storeNumber: '002', displayName: 'Two', changes: [{ field: 'name', before: 'Old', after: 'Two' }], issues: [], sourceValues: ['loc-2', 'Two'] },
+      { rowNumber: 4, action: 'blocked', locationId: null, currentVersion: null, matchedBy: null, storeNumber: '', displayName: 'Blocked', changes: [], issues: [], sourceValues: ['', 'Blocked', 'extra'] },
+    ],
+  };
+  const partialReceipt: LocationImportReceipt = {
+    operationId: 'op', batchId: 'batch', committedAt: 'now', additions: 0, updates: 1, unchanged: 0, replayed: false,
+    locations: [{ id: 'loc-1', name: 'One', storeNumber: '001', record: { id: 'loc-1', name: 'One', storeNumber: '001' } as never }],
+  };
+  const parseResults = (receipt: LocationImportReceipt | null, outcome: 'pending' | 'rejected' | 'uncertain' = 'pending') => parse(
+    buildLocationImportResultsCsv(preview, receipt, outcome), { bom: true, columns: true },
+  ) as Array<Record<string, string>>;
+
+  assert.deepEqual(parseResults(null, 'pending').map(row => row.Result), ['pending', 'pending', 'blocked']);
+  assert.deepEqual(parseResults(null, 'uncertain').map(row => row.Result), ['outcome unknown', 'outcome unknown', 'blocked']);
+  assert.deepEqual(parseResults(null, 'rejected').map(row => row.Result), ['not saved', 'not saved', 'blocked']);
+  assert.deepEqual(parseResults(partialReceipt).map(row => row.Result), ['saved', 'not saved', 'blocked']);
+
+  const rejectedCorrections = parse(buildLocationImportCorrectionCsv(preview, null, 'rejected'), { bom: true, columns: true, relax_column_count: true }) as Array<Record<string, string>>;
+  const uncertainCorrections = parse(buildLocationImportCorrectionCsv(preview, null, 'uncertain'), { bom: true, columns: true, relax_column_count: true }) as Array<Record<string, string>>;
+  const receiptCorrections = parse(buildLocationImportCorrectionCsv(preview, partialReceipt), { bom: true, columns: true, relax_column_count: true }) as Array<Record<string, string>>;
+  const rejectedMatrix = parse(buildLocationImportCorrectionCsv(preview, null, 'rejected'), { bom: true, relax_column_count: true }) as string[][];
+  assert.deepEqual(rejectedCorrections.map(row => row.LocationId), ['loc-1', 'loc-2', '']);
+  assert.deepEqual(uncertainCorrections.map(row => row.LocationId), ['']);
+  assert.deepEqual(receiptCorrections.map(row => row.LocationId), ['loc-2', '']);
+  assert.deepEqual(rejectedMatrix.at(-1), ['', 'Blocked', 'extra', 'shiekh-safe-v1']);
+  assert.equal(rejectedMatrix.at(-1)!.length, rejectedMatrix[0].length + 1);
 });

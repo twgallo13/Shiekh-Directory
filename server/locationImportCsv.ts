@@ -21,7 +21,11 @@ export function buildLocationImportFieldDictionary(): string {
     Updates: field.updates,
     Format: field.format,
     AllowedValues: field.allowedValues?.join(' | ') || '',
-    BlankBehavior: field.column === 'SchemaVersion' ? `Uses ${LOCATION_IMPORT_SCHEMA_VERSION} when omitted or blank` : 'Preserves an existing value; explicit clearing is not supported',
+    BlankBehavior: field.column === 'SchemaVersion'
+      ? `Uses ${LOCATION_IMPORT_SCHEMA_VERSION} when omitted or blank`
+      : field.column === 'SpreadsheetEncoding'
+        ? 'Leave blank for ordinary CSV; application-generated protected files populate this signal'
+        : 'Preserves an existing value; explicit clearing is not supported',
     Example: field.example,
   }));
   return stringify(rows, { header: true, record_delimiter: '\r\n', bom: true });

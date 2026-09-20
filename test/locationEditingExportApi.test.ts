@@ -6,7 +6,7 @@ import { parse } from 'csv-parse/sync';
 import type { Account } from '../server/authAuthority';
 import { createLocationImportPreviewRouter, type LocationImportPreviewStore } from '../server/locationImportPreview';
 import type { DirectorySeed } from '../src/lib/directorySeed';
-import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_MAX_BYTES } from '../src/lib/locationImportSchema';
+import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_MAX_BYTES, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER } from '../src/lib/locationImportSchema';
 import type { LocationRecord } from '../src/types';
 
 const account: Account = { uid: 'admin', email: 'admin@example.test', emailVerified: true, name: 'Admin', role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
@@ -67,7 +67,7 @@ test('editing export returns every bounded part from one authoritative snapshot 
       const bytes = new TextEncoder().encode(part.csv);
       assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
       const rows = parse(new TextDecoder().decode(bytes), { bom: true, columns: true }) as Array<Record<string, string>>;
-      assert.deepEqual(Object.keys(rows[0]), LOCATION_IMPORT_COLUMNS);
+      assert.deepEqual(Object.keys(rows[0]), LOCATION_IMPORT_COLUMNS.map(column => column === 'SpreadsheetEncoding' ? LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER : column));
       downloadedIds.push(...rows.map(row => row.LocationId));
     }
     assert.equal(downloadedIds.length, locations.length);

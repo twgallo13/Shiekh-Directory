@@ -3,6 +3,8 @@ import type { PreparedLocationEditingExport } from './locationEditingExport';
 import type { LocationImportPreview, LocationImportReceipt } from './locationImportPreview';
 import {
   LOCATION_IMPORT_MAX_BYTES,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
   spreadsheetSafeCsvValue,
   suggestLocationImportHeaderMappings,
   type LocationImportHeaderMapping,
@@ -91,6 +93,8 @@ export interface LocationImportPreviewOptions extends InspectedLocationImportFil
   selectedRowNumbers?: number[];
 }
 
+export type LocationImportConfirmationOutcome = 'pending' | 'rejected' | 'uncertain';
+
 export async function inspectLocationImportFile(file: File): Promise<InspectedLocationImportFile> {
   if (!file.name.toLowerCase().endsWith('.csv')) throw new Error('Choose a CSV file created from the supported template.');
   if (file.size === 0 || file.size > LOCATION_IMPORT_MAX_BYTES) throw new Error('Choose a non-empty CSV file no larger than 2 MB.');
@@ -168,20 +172,32 @@ export async function confirmLocationImport(
   return receipt;
 }
 
-export function downloadLocationImportResults(preview: LocationImportPreview, receipt: LocationImportReceipt | null, filename = 'shiekh_location_import_results.csv'): void {
-  downloadBlob(new Blob([buildLocationImportResultsCsv(preview, receipt)], { type: 'text/csv;charset=utf-8' }), filename);
+export function downloadLocationImportResults(preview: LocationImportPreview, receipt: LocationImportReceipt | null, outcome: LocationImportConfirmationOutcome = 'pending', filename = 'shiekh_location_import_results.csv'): void {
+  downloadBlob(new Blob([buildLocationImportResultsCsv(preview, receipt, outcome)], { type: 'text/csv;charset=utf-8' }), filename);
 }
 
-export function downloadLocationImportCorrections(preview: LocationImportPreview, filename = 'shiekh_location_import_corrections.csv'): void {
-  downloadBlob(new Blob([buildLocationImportCorrectionCsv(preview)], { type: 'text/csv;charset=utf-8' }), filename);
+export function downloadLocationImportCorrections(preview: LocationImportPreview, receipt: LocationImportReceipt | null = null, outcome: LocationImportConfirmationOutcome = 'pending', filename = 'shiekh_location_import_corrections.csv'): void {
+  downloadBlob(new Blob([buildLocationImportCorrectionCsv(preview, receipt, outcome)], { type: 'text/csv;charset=utf-8' }), filename);
 }
 
-export function buildLocationImportResultsCsv(preview: LocationImportPreview, receipt: LocationImportReceipt | null): string {
+export function buildLocationImportResultsCsv(preview: LocationImportPreview, receipt: LocationImportReceipt | null, outcome: LocationImportConfirmationOutcome = 'pending'): string {
   const selected = new Set(preview.selectedRowNumbers || []);
+  const savedLocationIds = new Set(receipt?.locations.map(location => location.id) || []);
   const rows = preview.rows.flatMap(row => {
-    const status = selected.has(row.rowNumber) && (row.action === 'add' || row.action === 'update')
-      ? receipt ? 'saved' : 'ready'
-      : row.action === 'unchanged' ? 'unchanged' : row.action === 'blocked' ? 'blocked' : 'not selected';
+    const changed = row.action === 'add' || row.action === 'update';
+    const status = changed && row.locationId && savedLocationIds.has(row.locationId)
+      ? 'saved'
+      : row.action === 'unchanged'
+        ? 'unchanged'
+        : row.action === 'blocked'
+          ? 'blocked'
+          : !selected.has(row.rowNumber)
+            ? 'not selected'
+            : receipt || outcome === 'rejected'
+              ? 'not saved'
+              : outcome === 'uncertain'
+                ? 'outcome unknown'
+                : 'pending';
     const identity = row.locationId || row.storeNumber || '(missing identity)';
     const issues = row.issues.length ? row.issues : [null];
     return issues.map(issue => [
@@ -201,14 +217,29 @@ export function buildLocationImportResultsCsv(preview: LocationImportPreview, re
   ]);
 }
 
-export function buildLocationImportCorrectionCsv(preview: LocationImportPreview): string {
+export function buildLocationImportCorrectionCsv(preview: LocationImportPreview, receipt: LocationImportReceipt | null = null, outcome: LocationImportConfirmationOutcome = 'pending'): string {
   const selected = new Set(preview.selectedRowNumbers || []);
+  const savedLocationIds = new Set(receipt?.locations.map(location => location.id) || []);
   const mappings = [...(preview.mappings || [])].sort((left, right) => left.sourceIndex - right.sourceIndex);
   const unsuccessful = preview.rows.filter(row => row.action === 'blocked'
-    || ((row.action === 'add' || row.action === 'update') && !selected.has(row.rowNumber)));
+    || ((row.action === 'add' || row.action === 'update')
+      && !(row.locationId && savedLocationIds.has(row.locationId))
+      && (!selected.has(row.rowNumber) || receipt !== null || outcome === 'rejected')));
+  const existingEncodingIndex = mappings.findIndex(mapping => mapping.target === 'SpreadsheetEncoding');
+  const headers = mappings.map(mapping => mapping.sourceHeader);
+  const rows = unsuccessful.map(row => [...row.sourceValues]);
+  if (existingEncodingIndex >= 0) {
+    headers[existingEncodingIndex] = LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER;
+    rows.forEach(values => {
+      if (existingEncodingIndex < values.length) values[existingEncodingIndex] = LOCATION_IMPORT_SPREADSHEET_ENCODING;
+    });
+  } else {
+    headers.push(LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER);
+    rows.forEach(values => values.push(LOCATION_IMPORT_SPREADSHEET_ENCODING));
+  }
   return serializeBrowserCsv([
-    mappings.map(mapping => mapping.sourceHeader),
-    ...unsuccessful.map(row => row.sourceValues),
+    headers,
+    ...rows,
   ]);
 }
 

@@ -7,6 +7,7 @@ import {
   LOCATION_IMPORT_FIELDS,
   LOCATION_IMPORT_MAX_BYTES,
   LOCATION_IMPORT_SCHEMA_VERSION,
+  spreadsheetSafeCsvValue,
 } from '../src/lib/locationImportSchema';
 import { LOCATION_IMPORT_MAX_ROWS } from './locationImportConfirmation';
 
@@ -168,7 +169,8 @@ function csvBytes(entries: ExportEntry[]): number {
 }
 
 function serializeRows(rows: ExportRow[]): string {
-  return stringify(rows, {
+  const safeRows = rows.map(row => Object.fromEntries(Object.entries(row).map(([column, value]) => [column, spreadsheetSafeCsvValue(value)])));
+  return stringify(safeRows, {
     header: true,
     columns: LOCATION_IMPORT_COLUMNS,
     record_delimiter: '\r\n',

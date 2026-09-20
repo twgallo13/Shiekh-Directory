@@ -4,9 +4,9 @@ import type { LocationRecord } from '../../types';
 import type { SessionUser } from '../../lib/authSession';
 import type { PreparedLocationEditingExport } from '../../lib/locationEditingExport';
 import type { LocationImportPreview, LocationImportReceipt } from '../../lib/locationImportPreview';
-import { LOCATION_IMPORT_FIELDS } from '../../lib/locationImportSchema';
+import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_FIELDS, type LocationImportHeaderMapping, type LocationImportMode } from '../../lib/locationImportSchema';
 import { locationPath } from '../../lib/navigation';
-import { confirmLocationImport, downloadLocationEditingExportPart, downloadLocationImportResource, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
+import { confirmLocationImport, downloadLocationEditingExportPart, downloadLocationImportCorrections, downloadLocationImportResource, downloadLocationImportResults, inspectLocationImportFile, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
 
 interface LocationImportPreviewPanelProps {
   user: SessionUser | null;
@@ -21,6 +21,11 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   const [receipt, setReceipt] = useState<LocationImportReceipt | null>(null);
   const [warningsReviewed, setWarningsReviewed] = useState(false);
   const [filename, setFilename] = useState('');
+  const [mappings, setMappings] = useState<LocationImportHeaderMapping[]>([]);
+  const [mode, setMode] = useState<LocationImportMode>('add-and-update');
+  const [mappingReviewed, setMappingReviewed] = useState(false);
+  const [selectedRowNumbers, setSelectedRowNumbers] = useState<number[]>([]);
+  const [selectionDirty, setSelectionDirty] = useState(false);
   const [editingExport, setEditingExport] = useState<PreparedLocationEditingExport | null>(null);
   const [busy, setBusy] = useState<LocationImportDownload | 'editing-export' | `editing-part-${number}` | 'preview' | 'confirm' | null>(null);
   const [error, setError] = useState('');
@@ -79,6 +84,10 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     setCsv('');
     setReceipt(null);
     setWarningsReviewed(false);
+    setMappings([]);
+    setMappingReviewed(false);
+    setSelectedRowNumbers([]);
+    setSelectionDirty(false);
     if (!user) {
       setError('Sign in again before previewing this file.');
       setErrorCode('authentication_required');
@@ -89,9 +98,10 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     setError('');
     setErrorCode('');
     try {
-      const result = await previewLocationImport(user, file);
-      setPreview(result.preview);
-      setCsv(result.csv);
+      const inspected = await inspectLocationImportFile(file);
+      setCsv(inspected.csv);
+      setMappings(inspected.mappings);
+      setMode(inspected.mode);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The Location import preview could not be generated.');
       setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'preview_failed');
@@ -99,6 +109,63 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
       setBusy(null);
       if (inputRef.current) inputRef.current.value = '';
     }
+  };
+
+  const validatePreview = async (selection?: number[]) => {
+    if (!user || !csv || !filename || busy) return;
+    setBusy('preview');
+    setError('');
+    setErrorCode('');
+    setReceipt(null);
+    setWarningsReviewed(false);
+    try {
+      const result = await previewLocationImport(user, {
+        csv,
+        filename,
+        mappings,
+        mode,
+        ...(selection === undefined ? {} : { selectedRowNumbers: selection }),
+      });
+      setPreview(result.preview);
+      setMappings(result.preview.mappings || mappings);
+      setSelectedRowNumbers(result.preview.selectedRowNumbers || []);
+      setSelectionDirty(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The Location import preview could not be generated.');
+      setErrorCode(cause instanceof LocationImportRequestError ? cause.code : 'preview_failed');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const invalidateReview = () => {
+    setPreview(null);
+    setReceipt(null);
+    setWarningsReviewed(false);
+    setSelectedRowNumbers([]);
+    setSelectionDirty(false);
+  };
+
+  const updateMapping = (sourceIndex: number, target: string) => {
+    setMappings(current => current.map(mapping => mapping.sourceIndex === sourceIndex
+      ? { ...mapping, target: target || null, kind: 'manual' }
+      : mapping));
+    setMappingReviewed(false);
+    invalidateReview();
+  };
+
+  const updateMode = (nextMode: LocationImportMode) => {
+    setMode(nextMode);
+    invalidateReview();
+  };
+
+  const toggleSelectedRow = (rowNumber: number, selected: boolean) => {
+    setSelectedRowNumbers(current => selected
+      ? [...current, rowNumber].sort((left, right) => left - right)
+      : current.filter(candidate => candidate !== rowNumber));
+    setSelectionDirty(true);
+    setReceipt(null);
+    setWarningsReviewed(false);
   };
 
   const confirmImport = async () => {
@@ -112,6 +179,9 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
         confirmationToken: preview.confirmationToken,
         operationId: preview.operationId,
         warningsReviewed,
+        mappings,
+        mode,
+        selectedRowNumbers,
       });
       onLocationsConfirmed(result.locations.map(location => location.record));
       setReceipt(result);
@@ -126,15 +196,19 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     }
   };
 
-  const changedRows = preview ? preview.summary.additions + preview.summary.updates : 0;
+  const changedRows = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber) && (row.action === 'add' || row.action === 'update')).length || 0;
+  const selectedWarnings = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber)).flatMap(row => row.issues).filter(issue => issue.severity === 'warning').length || 0;
+  const mappedTargets = mappings.flatMap(mapping => mapping.target ? [mapping.target] : []);
+  const duplicateMappings = [...new Set(mappedTargets.filter((target, index) => mappedTargets.indexOf(target) !== index))];
+  const mappingValid = mappings.length > 0 && duplicateMappings.length === 0 && mappedTargets.some(target => target === 'LocationId' || target === 'StoreNumber');
   const requiresNewPreview = ['confirmation_expired', 'confirmation_mismatch', 'confirmation_tampered', 'stale_preview', 'idempotency_conflict'].includes(errorCode);
   const eligibleForConfirmation = Boolean(preview
-    && preview.summary.blocked === 0
     && changedRows > 0
     && preview.confirmationToken
     && preview.operationId
-    && (!preview.summary.warnings || warningsReviewed)
+    && (!selectedWarnings || warningsReviewed)
     && !receipt
+    && !selectionDirty
     && !requiresNewPreview);
   const confirmDisabledReason = receipt
     ? 'This import is already confirmed.'
@@ -142,14 +216,14 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
       ? 'The preview is stale or expired. Choose the CSV again to create a new preview.'
       : preview?.confirmationDisabledReason
         ? preview.confirmationDisabledReason
-      : preview?.summary.blocked
-        ? 'Resolve every blocked row and preview the entire batch again. Partial imports are not available.'
+      : selectionDirty
+        ? 'The row selection changed. Revalidate the selected batch before importing.'
         : changedRows === 0
-          ? 'There are no additions or updates to import.'
+          ? 'Select at least one ready New or Updated row.'
           : !preview?.confirmationToken || !preview.operationId
             ? 'This preview is read-only and cannot be confirmed.'
-            : preview.summary.warnings > 0 && !warningsReviewed
-              ? 'Review and acknowledge all warnings before confirming.'
+            : selectedWarnings > 0 && !warningsReviewed
+              ? 'Review and acknowledge warnings on the selected rows before confirming.'
               : busy ? 'Another import action is in progress.' : '';
 
   const disabledReason = !user
@@ -184,7 +258,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
         <div className="grid gap-3 text-xs leading-5 text-neutral-700 md:grid-cols-2">
           <div>
             <div className="font-semibold text-neutral-900">Scope and access</div>
-            <p>Locations only. Preview does not save data; confirmation atomically rechecks and saves the entire eligible batch. System Administrators, Directory Data Stewards, and Editors need company-wide scope.</p>
+            <p>Locations only. Preview and downloads do not save data; confirmation atomically rechecks and saves only the selected ready rows. System Administrators, Directory Data Stewards, and Editors need company-wide scope.</p>
           </div>
           <div>
             <div className="font-semibold text-neutral-900">Setup order</div>
@@ -196,7 +270,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           </div>
           <div>
             <div className="font-semibold text-neutral-900">Use the supported files</div>
-            <p>Export for Editing uses the supported Location fields and canonical IDs. Export All Stores remains a presentation export and is neither import-compatible nor a complete backup.</p>
+            <p>Export for Editing includes canonical IDs and defaults to Update existing only. Export All Stores can map supported attributes, but its displayed District and leadership names remain informational. Neither export is a complete backup.</p>
           </div>
         </div>
       </section>
@@ -227,8 +301,44 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           <span>{busy === 'preview' ? 'Building Preview...' : 'Upload CSV'}</span>
         </button>
         <input ref={inputRef} type="file" accept=".csv,text/csv" disabled={!user || Boolean(busy)} className="sr-only" aria-label="Upload Location CSV" onChange={event => void selectFile(event.target.files?.[0])} />
-        <span className="self-center text-[11px] text-neutral-500">Schema locations-v1 · Maximum 2 MB</span>
+        <span className="self-center text-[11px] text-neutral-500">Maximum 2 MB · 100 file rows · 40 selected changes · confirmation expires after 10 minutes</span>
       </div>
+
+      {csv && mappings.length > 0 && (
+        <section aria-labelledby="location-import-mapping" className="space-y-3 border-y border-neutral-200 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 id="location-import-mapping" className="text-sm font-bold text-neutral-900">Match CSV headings</h4>
+              <p className="text-xs text-neutral-600">Review each suggestion. Choose Ignore for unsupported or informational columns; displayed District and leadership names never create relationships.</p>
+            </div>
+            <div className="inline-flex overflow-hidden rounded-lg border border-neutral-300" aria-label="Location import mode">
+              <button type="button" disabled={Boolean(busy)} onClick={() => updateMode('add-and-update')} className={`px-3 py-2 text-xs font-semibold ${mode === 'add-and-update' ? 'bg-blue-600 text-white' : 'bg-white text-neutral-700'}`}>Add and update</button>
+              <button type="button" disabled={Boolean(busy)} onClick={() => updateMode('update-existing-only')} className={`border-l border-neutral-300 px-3 py-2 text-xs font-semibold ${mode === 'update-existing-only' ? 'bg-blue-600 text-white' : 'bg-white text-neutral-700'}`}>Update existing only</button>
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {mappings.map(mapping => (
+              <label key={`${mapping.sourceIndex}-${mapping.sourceHeader}`} className="text-xs text-neutral-700">
+                <span className="mb-1 flex items-center justify-between gap-2"><span className="truncate font-semibold text-neutral-900">{mapping.sourceHeader || '(blank heading)'}</span><span className="text-[10px] uppercase text-neutral-500">{mapping.kind}</span></span>
+                <select value={mapping.target || ''} disabled={Boolean(busy)} onChange={event => updateMapping(mapping.sourceIndex, event.target.value)} className="w-full rounded-md border border-neutral-300 bg-white px-2 py-2 text-xs">
+                  <option value="">Ignore</option>
+                  {LOCATION_IMPORT_COLUMNS.map(column => <option key={column} value={column}>{column}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+          {duplicateMappings.length > 0 && <p role="alert" className="text-xs font-medium text-red-700">Each target can be mapped once. Duplicates: {duplicateMappings.join(', ')}.</p>}
+          {!mappedTargets.some(target => target === 'LocationId' || target === 'StoreNumber') && <p role="alert" className="text-xs font-medium text-red-700">Map LocationId or StoreNumber so every row has an identity field.</p>}
+          <label className="flex items-start gap-2 text-xs text-neutral-700">
+            <input type="checkbox" checked={mappingReviewed} disabled={!mappingValid || Boolean(busy)} onChange={event => setMappingReviewed(event.target.checked)} className="mt-0.5" />
+            <span>I reviewed every heading, including ignored informational and unsupported columns.</span>
+          </label>
+          <button type="button" disabled={!mappingValid || !mappingReviewed || Boolean(busy)} onClick={() => void validatePreview()} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>{busy === 'preview' ? 'Validating...' : preview ? 'Validate Again' : 'Validate and Preview'}</span>
+          </button>
+        </section>
+      )}
 
       {editingExport && (
         <section aria-labelledby="location-editing-export-results" className="space-y-3 border-y border-emerald-200 bg-emerald-50/40 py-4">
@@ -338,11 +448,12 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
             <div className="overflow-x-auto border border-neutral-200 rounded-lg">
               <table className="w-full min-w-[760px] text-left text-xs">
                 <thead className="bg-neutral-50 text-neutral-600">
-                  <tr><th className="px-3 py-2 font-semibold">Row</th><th className="px-3 py-2 font-semibold">Location</th><th className="px-3 py-2 font-semibold">Result</th><th className="px-3 py-2 font-semibold">Proposed changes</th></tr>
+                  <tr><th className="px-3 py-2 font-semibold">Select</th><th className="px-3 py-2 font-semibold">Row</th><th className="px-3 py-2 font-semibold">Location</th><th className="px-3 py-2 font-semibold">Result</th><th className="px-3 py-2 font-semibold">Proposed changes</th></tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-200">
                   {preview.rows.map(row => (
                     <tr key={row.rowNumber} className="align-top">
+                      <td className="px-3 py-3"><input type="checkbox" aria-label={`Select CSV row ${row.rowNumber}`} checked={selectedRowNumbers.includes(row.rowNumber)} disabled={Boolean(busy) || (row.action !== 'add' && row.action !== 'update')} onChange={event => toggleSelectedRow(row.rowNumber, event.target.checked)} /></td>
                       <td className="px-3 py-3 text-neutral-500">{row.rowNumber}</td>
                       <td className="px-3 py-3"><div className="font-semibold text-neutral-900">{row.displayName}</div><div className="font-mono text-[11px] text-neutral-500">Store {row.storeNumber || 'not provided'}{row.locationId ? ` · ${row.locationId}` : ''}</div></td>
                       <td className="px-3 py-3">
@@ -369,18 +480,23 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           {!receipt && (
             <div className="space-y-3 border-y border-neutral-200 py-4">
               {preview.confirmationDisabledReason && <p className="text-xs font-medium text-amber-800">{preview.confirmationDisabledReason}</p>}
-              {preview.summary.warnings > 0 && (
+              {selectedWarnings > 0 && (
                 <label className="flex items-start gap-2 text-xs text-neutral-700">
                   <input type="checkbox" checked={warningsReviewed} disabled={Boolean(busy)} onChange={event => setWarningsReviewed(event.target.checked)} className="mt-0.5" />
-                  <span>I reviewed all {preview.summary.warnings} warnings and accept the displayed changes.</span>
+                  <span>I reviewed all {selectedWarnings} warnings on the selected rows and accept the displayed changes.</span>
                 </label>
               )}
               <div className="flex flex-wrap items-center gap-3">
+                {selectionDirty && <button type="button" disabled={selectedRowNumbers.length === 0 || selectedRowNumbers.length > 40 || Boolean(busy)} onClick={() => void validatePreview(selectedRowNumbers)} className="flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-800 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" />Revalidate selection</button>}
                 <button type="button" disabled={!eligibleForConfirmation || Boolean(busy)} title={confirmDisabledReason || undefined} onClick={() => void confirmImport()} className="flex items-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span>{busy === 'confirm' ? 'Importing...' : 'Confirm Import'}</span>
+                  <span>{busy === 'confirm' ? 'Importing...' : `Import ${changedRows} ready row${changedRows === 1 ? '' : 's'}`}</span>
                 </button>
-                <span className="text-[11px] text-neutral-500">The full batch is atomic. Blocked rows prevent every write.</span>
+                <span className="text-[11px] text-neutral-500">Selected rows save in one atomic transaction. {preview.summary.blocked} blocked and {preview.rows.filter(row => (row.action === 'add' || row.action === 'update') && !selectedRowNumbers.includes(row.rowNumber)).length} not selected rows remain unchanged.</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => downloadLocationImportResults({ ...preview, selectedRowNumbers }, receipt)} className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700"><Download className="h-3.5 w-3.5" />Download results</button>
+                <button type="button" onClick={() => downloadLocationImportCorrections({ ...preview, selectedRowNumbers })} className="flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700"><Download className="h-3.5 w-3.5" />Download correction CSV</button>
               </div>
             </div>
           )}
@@ -395,6 +511,10 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
                     Store {location.storeNumber} · {location.name}<ExternalLink className="h-3 w-3" />
                   </a>
                 ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => downloadLocationImportResults(preview, receipt)} className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 font-semibold text-emerald-800"><Download className="h-3.5 w-3.5" />Download final results</button>
+                <button type="button" onClick={() => downloadLocationImportCorrections(preview)} className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 font-semibold text-emerald-800"><Download className="h-3.5 w-3.5" />Download correction CSV</button>
               </div>
             </section>
           )}

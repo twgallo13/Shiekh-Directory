@@ -13,6 +13,7 @@ import {
   buildLocationImportPlan,
   previewLocationImport,
 } from '../src/lib/locationImportPreview';
+import { suggestLocationImportHeaderMappings } from '../src/lib/locationImportSchema';
 import type { DirectorySeed } from '../src/lib/directorySeed';
 
 const baseLocation = {
@@ -36,9 +37,11 @@ describe('Location CSV import preview', () => {
   it('downloads the exact supported locations-v1 header', () => {
     const [headers] = parse(buildLocationImportTemplate(), { bom: true }) as string[][];
     assert.deepEqual(headers, LOCATION_IMPORT_COLUMNS);
-    const dictionary = parse(buildLocationImportFieldDictionary(), { bom: true, columns: true }) as Array<{ Header: string }>;
+    const dictionary = parse(buildLocationImportFieldDictionary(), { bom: true, columns: true }) as Array<{ Header: string; Aliases: string; BlankBehavior: string }>;
     assert.deepEqual(dictionary.map(field => field.Header), LOCATION_IMPORT_COLUMNS);
     assert.deepEqual(LOCATION_IMPORT_FIELDS.map(field => field.column), LOCATION_IMPORT_COLUMNS);
+    assert.match(dictionary.find(field => field.Header === 'LocationId')?.Aliases || '', /Location ID/);
+    assert.match(dictionary.find(field => field.Header === 'SchemaVersion')?.BlankBehavior || '', /when omitted or blank/);
     assert.equal(buildLocationImportTemplate().codePointAt(0), 0xfeff);
     assert.equal(buildLocationImportWorkedExample().codePointAt(0), 0xfeff);
     assert.equal(buildLocationImportFieldDictionary().codePointAt(0), 0xfeff);
@@ -51,14 +54,12 @@ describe('Location CSV import preview', () => {
     assert.equal(previewLocationImport(templateWithoutBom, snapshot).summary.totalRows, 0);
   });
 
-  it('identifies a directory export and points directly to the Blank Template', () => {
+  it('recognizes a reporting export and ignores its informational relationship names', () => {
     const exportHeaders = 'StoreNumber,StoreName,Type,Address,City,State,ZipCode,Phone,District,StoreManager,StoreManagerPhone,DistrictManager,AssistantStoreManagers,OperationalStatus,RecordStatus,GoogleReviewUrl,StorePageUrl\r\n';
-    assert.throws(
-      () => previewLocationImport(exportHeaders, snapshot),
-      (error: unknown) => error instanceof LocationImportPreviewError
-        && error.code === 'directory_export_not_importable'
-        && error.message === 'This is a directory export. Download the Blank Template to preview Location changes.',
-    );
+    const result = previewLocationImport(exportHeaders, snapshot);
+    assert.equal(result.summary.totalRows, 0);
+    assert.equal(result.mappings?.find(mapping => mapping.sourceHeader === 'StoreManager')?.kind, 'informational');
+    assert.equal(result.mappings?.find(mapping => mapping.sourceHeader === 'StoreManager')?.target, null);
   });
 
   it('shows exact updates while preserving blank fields and without mutating the snapshot', () => {
@@ -67,6 +68,88 @@ describe('Location CSV import preview', () => {
     assert.deepEqual(result.summary, { totalRows: 1, additions: 0, updates: 1, unchanged: 0, blocked: 0, warnings: 0 });
     assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: 'Renamed Store' }]);
     assert.deepEqual(snapshot, before);
+  });
+
+  it('accepts identity plus one changed field without SchemaVersion and preserves other attributes', () => {
+    const result = previewLocationImport('LocationId,StoreName\r\nloc-007,Renamed Store\r\n', snapshot);
+
+    assert.equal(result.rows[0].action, 'update');
+    assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: 'Renamed Store' }]);
+    const write = buildLocationImportPlan('LocationId,StoreName\r\nloc-007,Renamed Store\r\n', snapshot).writes[0];
+    assert.equal(write.data.address, baseLocation.address);
+    assert.equal(write.data.districtId, baseLocation.districtId);
+  });
+
+  it('restores spreadsheet-protected correction values without changing the proposal', () => {
+    const result = previewLocationImport("LocationId,StoreName\r\nloc-007,'=Corrected Name\r\n", snapshot);
+
+    assert.deepEqual(result.rows[0].changes, [{ field: 'name', before: 'Original Store', after: '=Corrected Name' }]);
+    assert.deepEqual(result.rows[0].sourceValues, ['loc-007', '=Corrected Name']);
+  });
+
+  it('rejects an explicitly supplied unsupported SchemaVersion', () => {
+    const result = previewLocationImport('SchemaVersion,LocationId,StoreName\r\nlocations-v99,loc-007,Renamed Store\r\n', snapshot);
+
+    assert.equal(result.rows[0].action, 'blocked');
+    assert.equal(result.rows[0].issues[0]?.code, 'invalid_schema_version');
+    assert.match(result.rows[0].issues[0]?.reason || '', /unsupported schema version/);
+  });
+
+  it('rejects an unsupported supplied SchemaVersion even when its column is mapped to Ignore', () => {
+    const csv = 'Schema Version,LocationId,StoreName\r\nlocations-v99,loc-007,Renamed Store\r\n';
+    const mappings = suggestLocationImportHeaderMappings(['Schema Version', 'LocationId', 'StoreName']);
+    mappings[0] = { ...mappings[0], target: null, kind: 'manual' };
+    const result = buildLocationImportPlan(csv, snapshot, undefined, undefined, { mappings }).preview;
+
+    assert.equal(result.rows[0].action, 'blocked');
+    assert.ok(result.rows[0].issues.some(issue => issue.code === 'invalid_schema_version'));
+  });
+
+  it('matches approved aliases case-insensitively and permits explicitly ignored columns', () => {
+    const csv = ' location id , STORE NAME ,Notes\r\nloc-007,Alias Rename,leave this alone\r\n';
+    const mappings = suggestLocationImportHeaderMappings(['location id', 'STORE NAME', 'Notes']);
+    const plan = buildLocationImportPlan(csv, snapshot, undefined, undefined, { mappings });
+
+    assert.equal(plan.preview.rows[0].action, 'update');
+    assert.deepEqual(plan.preview.rows[0].changes, [{ field: 'name', before: 'Original Store', after: 'Alias Rename' }]);
+    assert.equal(plan.preview.mappings?.[2].target, null);
+  });
+
+  it('blocks duplicate target mappings before evaluating rows', () => {
+    const csv = 'Location ID,Store Name\r\nloc-007,Renamed\r\n';
+    const mappings = suggestLocationImportHeaderMappings(['Location ID', 'Store Name']);
+    mappings[1] = { ...mappings[1], target: 'LocationId', kind: 'manual' };
+
+    assert.throws(
+      () => buildLocationImportPlan(csv, snapshot, undefined, undefined, { mappings }),
+      (error: unknown) => error instanceof LocationImportPreviewError
+        && error.code === 'unsupported_template'
+        && /Duplicate target mappings: LocationId/.test(error.message),
+    );
+  });
+
+  it('imports supported reporting-export attributes without inferring relationships from names', () => {
+    const csv = [
+      'StoreNumber,StoreName,District,StoreManager,StoreManagerPhone,DistrictManager,AssistantStoreManagers',
+      '007,Reporting Rename,Displayed District,Active Person,2135550199,District Name,Assistant Name',
+    ].join('\r\n');
+    const plan = buildLocationImportPlan(csv, snapshot);
+
+    assert.equal(plan.preview.rows[0].action, 'update');
+    assert.deepEqual(plan.preview.rows[0].changes, [{ field: 'name', before: 'Original Store', after: 'Reporting Rename' }]);
+    assert.equal(plan.writes[0].data.storeManagerId, undefined);
+    assert.equal(plan.writes[0].data.districtManagerId, undefined);
+    assert.equal(plan.writes[0].data.districtId, 'dist-1');
+  });
+
+  it('blocks additions in Update existing only mode but allows the same row in Add and update mode', () => {
+    const csv = 'StoreNumber,StoreName\r\n099,New Store\r\n';
+    const updateOnly = buildLocationImportPlan(csv, snapshot, undefined, undefined, { mode: 'update-existing-only' });
+    const addAndUpdate = buildLocationImportPlan(csv, snapshot, undefined, () => 'loc-new', { mode: 'add-and-update' });
+
+    assert.equal(updateOnly.preview.rows[0].action, 'blocked');
+    assert.ok(updateOnly.preview.rows[0].issues.some(issue => issue.code === 'new_location_not_allowed'));
+    assert.ok(addAndUpdate.preview.rows[0].issues.every(issue => issue.code !== 'new_location_not_allowed'));
   });
 
   it('preserves a supplied addition ID and generates one only when omitted', () => {
@@ -134,9 +217,9 @@ describe('Location CSV import preview', () => {
     ]);
   });
 
-  it('rejects duplicate headers, unsupported columns, and malformed row widths', () => {
-    assert.throws(() => previewLocationImport('SchemaVersion,SchemaVersion\r\nlocations-v1,locations-v1\r\n', snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'unsupported_template' && /Duplicate headers/.test(error.message));
-    assert.throws(() => previewLocationImport(`${LOCATION_IMPORT_COLUMNS.join(',')},Unexpected\r\n`, snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'unsupported_template' && /Unsupported headers/.test(error.message));
+  it('rejects duplicate target mappings, unreviewed unsupported columns, and malformed row widths', () => {
+    assert.throws(() => previewLocationImport('SchemaVersion,SchemaVersion\r\nlocations-v1,locations-v1\r\n', snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'unsupported_template' && /Duplicate target mappings/.test(error.message));
+    assert.throws(() => previewLocationImport(`${LOCATION_IMPORT_COLUMNS.join(',')},Unexpected\r\n`, snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'unsupported_template' && /Unsupported headings needing explicit Ignore/.test(error.message));
     assert.throws(() => previewLocationImport(`${LOCATION_IMPORT_COLUMNS.join(',')}\r\nlocations-v1,too,few\r\n`, snapshot), (error: unknown) => error instanceof LocationImportPreviewError && error.code === 'invalid_csv');
   });
 

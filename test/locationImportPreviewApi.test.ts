@@ -91,10 +91,10 @@ test('Location import preview rejects viewers, invalid templates, and unavailabl
   const authorized = await harness(account, { async readLocationImportSnapshot() { return seed; } });
   try {
     const response = await fetch(`${authorized.baseUrl}/api/imports/locations/preview`, { method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify({ csv: 'StoreNumber,StoreName,Type,Address,City,State,ZipCode,Phone,District,StoreManager,StoreManagerPhone,DistrictManager,AssistantStoreManagers,OperationalStatus,RecordStatus,GoogleReviewUrl,StorePageUrl\r\n' }) });
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 200);
     const body = await response.json();
-    assert.equal(body.error.code, 'directory_export_not_importable');
-    assert.equal(body.error.message, 'This is a directory export. Download the Blank Template to preview Location changes.');
+    assert.equal(body.summary.totalRows, 0);
+    assert.equal(body.mappings.find((mapping: { sourceHeader: string }) => mapping.sourceHeader === 'District').kind, 'informational');
   } finally { await authorized.close(); }
 
   let oversizedReads = 0;
@@ -141,19 +141,19 @@ test('eligible previews issue bound tokens and confirmation rejects tampering, m
     assert.equal(typeof preview.confirmationToken, 'string');
     assert.equal(preview.rows[0].locationId, 'loc-1');
 
-    const tampered = await post(app.baseUrl, 'confirm', { csv, confirmationToken: `${preview.confirmationToken}x`, operationId: preview.operationId, warningsReviewed: true });
+    const tampered = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { confirmationToken: `${preview.confirmationToken}x` }));
     assert.equal(tampered.status, 400);
     assert.equal((await tampered.json()).error.code, 'confirmation_tampered');
 
-    const mismatched = await post(app.baseUrl, 'confirm', { csv: `${csv}\r\n`, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    const mismatched = await post(app.baseUrl, 'confirm', confirmationRequest(preview, `${csv}\r\n`));
     assert.equal(mismatched.status, 409);
     assert.equal((await mismatched.json()).error.code, 'confirmation_mismatch');
 
-    const wrongOperation = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: 'locimp-other', warningsReviewed: true });
+    const wrongOperation = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { operationId: 'locimp-other' }));
     assert.equal(wrongOperation.status, 409);
     assert.equal((await wrongOperation.json()).error.code, 'confirmation_mismatch');
 
-    const confirmedResponse = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    const confirmedResponse = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv));
     assert.equal(confirmedResponse.status, 200);
     assert.equal((await confirmedResponse.json()).operationId, preview.operationId);
     assert.equal(confirmed?.sourceDigest.length, 43);
@@ -161,19 +161,19 @@ test('eligible previews issue bound tokens and confirmation rejects tampering, m
     assert.deepEqual(confirmed?.unchanged, []);
 
     currentAccount = { ...account, role: 'Directory Data Steward' };
-    const changedAuthority = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    const changedAuthority = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv));
     assert.equal(changedAuthority.status, 409);
     assert.equal((await changedAuthority.json()).error.code, 'confirmation_mismatch');
     currentAccount = account;
 
     currentAccount = { ...account, role: 'Viewer' };
-    const revoked = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    const revoked = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv));
     assert.equal(revoked.status, 403);
     assert.equal(confirmed?.operationId, preview.operationId);
     currentAccount = account;
 
     clock = new Date('2026-09-13T12:10:00.001Z');
-    const expired = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    const expired = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv));
     assert.equal(expired.status, 200);
     assert.equal((await expired.json()).replayed, true);
 
@@ -182,7 +182,7 @@ test('eligible previews issue bound tokens and confirmation rejects tampering, m
     const freshCsv = row({ LocationId: 'loc-1', StoreNumber: '001', StoreName: 'Another Name' });
     const freshPreview = await (await post(app.baseUrl, 'preview', { csv: freshCsv })).json();
     clock = new Date('2026-09-13T12:30:00.001Z');
-    const expiredUncommitted = await post(app.baseUrl, 'confirm', { csv: freshCsv, confirmationToken: freshPreview.confirmationToken, operationId: freshPreview.operationId, warningsReviewed: true });
+    const expiredUncommitted = await post(app.baseUrl, 'confirm', confirmationRequest(freshPreview, freshCsv));
     assert.equal(expiredUncommitted.status, 409);
     assert.equal((await expiredUncommitted.json()).error.code, 'confirmation_expired');
   } finally { await app.close(); }
@@ -192,7 +192,7 @@ test('eligible previews issue bound tokens and confirmation rejects tampering, m
     const csv = row({ StoreNumber: '0001', StoreName: 'Warning Rename' });
     const preview = await (await post(warningApp.baseUrl, 'preview', { csv })).json();
     assert.equal(preview.summary.warnings, 1);
-    const response = await post(warningApp.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: false });
+    const response = await post(warningApp.baseUrl, 'confirm', confirmationRequest(preview, csv, { warningsReviewed: false }));
     assert.equal(response.status, 409);
     assert.equal((await response.json()).error.code, 'warnings_not_reviewed');
   } finally { await warningApp.close(); }
@@ -239,8 +239,14 @@ test('preview reserves generated addition IDs, enforces batch limits, and only r
     assert.equal((await response.json()).error.code, 'batch_too_large');
     const tooManyChanges = csvRows(Array.from({ length: 41 }, (_, index) => additionValues(String(index + 2000))));
     const changedResponse = await post(app.baseUrl, 'preview', { csv: tooManyChanges });
-    assert.equal(changedResponse.status, 400);
-    assert.equal((await changedResponse.json()).error.code, 'batch_too_large');
+    assert.equal(changedResponse.status, 200);
+    const changedPreview = await changedResponse.json();
+    assert.deepEqual(changedPreview.selectedRowNumbers, []);
+    assert.equal(changedPreview.confirmationToken, undefined);
+    assert.match(changedPreview.confirmationDisabledReason, /Select up to 40 rows/);
+    const selectedTooMany = await post(app.baseUrl, 'preview', { csv: tooManyChanges, selectedRowNumbers: Array.from({ length: 41 }, (_, index) => index + 2) });
+    assert.equal(selectedTooMany.status, 400);
+    assert.equal((await selectedTooMany.json()).error.code, 'batch_too_large');
   } finally { await app.close(); }
 });
 
@@ -259,9 +265,58 @@ test('preview manifest binds unchanged Location identity and version alongside c
     ]);
     const preview = await (await post(app.baseUrl, 'preview', { csv })).json();
     assert.deepEqual(preview.summary, { totalRows: 2, additions: 0, updates: 1, unchanged: 1, blocked: 0, warnings: 0 });
-    const response = await post(app.baseUrl, 'confirm', { csv, confirmationToken: preview.confirmationToken, operationId: preview.operationId, warningsReviewed: true });
+    const response = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv));
     assert.equal(response.status, 200);
     assert.deepEqual(confirmed?.unchanged, [{ id: 'loc-2', expectedVersion: 7, storeNumber: '002' }]);
+  } finally { await app.close(); }
+});
+
+test('selected ready rows can be confirmed while blocked rows remain unchanged', async () => {
+  let confirmed: LocationImportManifest | undefined;
+  const app = await harness(account, {
+    async readLocationImportSnapshot() { return structuredClone(seed); },
+    async confirmLocationImport(manifest) { confirmed = manifest; return receipt(manifest); },
+  });
+  try {
+    const csv = csvRows([
+      { LocationId: 'loc-1', StoreName: 'Selected Rename' },
+      { StoreNumber: '002', StoreName: 'Incomplete Addition' },
+    ]);
+    const preview = await (await post(app.baseUrl, 'preview', { csv, selectedRowNumbers: [2] })).json();
+    assert.equal(preview.summary.updates, 1);
+    assert.equal(preview.summary.blocked, 1);
+    assert.deepEqual(preview.selectedRowNumbers, [2]);
+    assert.equal(typeof preview.confirmationToken, 'string');
+
+    const changedSelection = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { selectedRowNumbers: [] }));
+    assert.equal(changedSelection.status, 409);
+    assert.equal((await changedSelection.json()).error.code, 'confirmation_mismatch');
+    const changedMode = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { mode: 'update-existing-only' }));
+    assert.equal(changedMode.status, 409);
+    assert.equal((await changedMode.json()).error.code, 'confirmation_mismatch');
+    const changedMappings = preview.mappings.map((mapping: Record<string, unknown>) => mapping.sourceHeader === 'StoreName' ? { ...mapping, target: null } : mapping);
+    const mappingMismatch = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { mappings: changedMappings }));
+    assert.equal(mappingMismatch.status, 409);
+    assert.equal((await mappingMismatch.json()).error.code, 'confirmation_mismatch');
+
+    const response = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv));
+    assert.equal(response.status, 200);
+    assert.deepEqual(confirmed?.selectedRowNumbers, [2]);
+    assert.deepEqual(confirmed?.writes.map(write => write.rowNumber), [2]);
+    assert.equal(confirmed?.writes[0].data.name, 'Selected Rename');
+  } finally { await app.close(); }
+});
+
+test('excluding one side of a full-file identity collision cannot make it selectable', async () => {
+  const app = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } });
+  try {
+    const csv = csvRows([
+      { LocationId: 'loc-1', StoreName: 'First' },
+      { StoreNumber: '001', StoreName: 'Second' },
+    ]);
+    const response = await post(app.baseUrl, 'preview', { csv, selectedRowNumbers: [2] });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, 'invalid_selection');
   } finally { await app.close(); }
 });
 
@@ -302,6 +357,19 @@ async function harness(
 
 function post(baseUrl: string, action: 'preview' | 'confirm', body: unknown) {
   return fetch(`${baseUrl}/api/imports/locations/${action}`, { method: 'POST', headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+function confirmationRequest(preview: Record<string, any>, csv: string, overrides: Record<string, unknown> = {}) {
+  return {
+    csv,
+    confirmationToken: preview.confirmationToken,
+    operationId: preview.operationId,
+    warningsReviewed: true,
+    mappings: preview.mappings,
+    mode: preview.mode,
+    selectedRowNumbers: preview.selectedRowNumbers,
+    ...overrides,
+  };
 }
 
 function receipt(manifest: LocationImportManifest): LocationImportReceipt {

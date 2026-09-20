@@ -1,7 +1,13 @@
 import type { SessionUser } from './authSession';
 import type { PreparedLocationEditingExport } from './locationEditingExport';
 import type { LocationImportPreview, LocationImportReceipt } from './locationImportPreview';
-import { LOCATION_IMPORT_MAX_BYTES } from './locationImportSchema';
+import {
+  LOCATION_IMPORT_MAX_BYTES,
+  spreadsheetSafeCsvValue,
+  suggestLocationImportHeaderMappings,
+  type LocationImportHeaderMapping,
+  type LocationImportMode,
+} from './locationImportSchema';
 
 export type LocationImportDownload = 'template' | 'example' | 'fields' | 'references';
 
@@ -74,17 +80,44 @@ export interface LocationImportPreviewRequest {
   csv: string;
 }
 
-export async function previewLocationImport(user: SessionUser, file: File): Promise<LocationImportPreviewRequest> {
+export interface InspectedLocationImportFile {
+  csv: string;
+  filename: string;
+  mappings: LocationImportHeaderMapping[];
+  mode: LocationImportMode;
+}
+
+export interface LocationImportPreviewOptions extends InspectedLocationImportFile {
+  selectedRowNumbers?: number[];
+}
+
+export async function inspectLocationImportFile(file: File): Promise<InspectedLocationImportFile> {
   if (!file.name.toLowerCase().endsWith('.csv')) throw new Error('Choose a CSV file created from the supported template.');
   if (file.size === 0 || file.size > LOCATION_IMPORT_MAX_BYTES) throw new Error('Choose a non-empty CSV file no larger than 2 MB.');
   const csv = await file.text();
+  const headers = parseCsvHeader(csv);
+  return {
+    csv,
+    filename: file.name,
+    mappings: suggestLocationImportHeaderMappings(headers),
+    mode: /(?:^|_)locations_editing_v\d+(?:_|\.)/i.test(file.name) ? 'update-existing-only' : 'add-and-update',
+  };
+}
+
+export async function previewLocationImport(
+  user: SessionUser,
+  input: File | LocationImportPreviewOptions,
+): Promise<LocationImportPreviewRequest> {
+  const inspected = input instanceof File ? await inspectLocationImportFile(input) : input;
+  const { csv, mappings, mode } = inspected;
+  const selectedRowNumbers = 'selectedRowNumbers' in inspected ? inspected.selectedRowNumbers : undefined;
   const response = await fetch('/api/imports/locations/preview', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${await user.getIdToken()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ csv }),
+    body: JSON.stringify({ csv, mappings, mode, ...(selectedRowNumbers === undefined ? {} : { selectedRowNumbers }) }),
     cache: 'no-store',
     redirect: 'error',
   });
@@ -98,7 +131,15 @@ export async function previewLocationImport(user: SessionUser, file: File): Prom
 
 export async function confirmLocationImport(
   user: SessionUser,
-  request: { csv: string; confirmationToken: string; operationId: string; warningsReviewed: boolean },
+  request: {
+    csv: string;
+    confirmationToken: string;
+    operationId: string;
+    warningsReviewed: boolean;
+    mappings: LocationImportHeaderMapping[];
+    mode: LocationImportMode;
+    selectedRowNumbers: number[];
+  },
 ): Promise<LocationImportReceipt> {
   const token = await user.getIdToken();
   let response: Response;
@@ -125,6 +166,50 @@ export async function confirmLocationImport(
   }
   if (!isLocationImportReceipt(receipt) || receipt.operationId !== request.operationId) throw uncertainConfirmation();
   return receipt;
+}
+
+export function downloadLocationImportResults(preview: LocationImportPreview, receipt: LocationImportReceipt | null, filename = 'shiekh_location_import_results.csv'): void {
+  downloadBlob(new Blob([buildLocationImportResultsCsv(preview, receipt)], { type: 'text/csv;charset=utf-8' }), filename);
+}
+
+export function downloadLocationImportCorrections(preview: LocationImportPreview, filename = 'shiekh_location_import_corrections.csv'): void {
+  downloadBlob(new Blob([buildLocationImportCorrectionCsv(preview)], { type: 'text/csv;charset=utf-8' }), filename);
+}
+
+export function buildLocationImportResultsCsv(preview: LocationImportPreview, receipt: LocationImportReceipt | null): string {
+  const selected = new Set(preview.selectedRowNumbers || []);
+  const rows = preview.rows.flatMap(row => {
+    const status = selected.has(row.rowNumber) && (row.action === 'add' || row.action === 'update')
+      ? receipt ? 'saved' : 'ready'
+      : row.action === 'unchanged' ? 'unchanged' : row.action === 'blocked' ? 'blocked' : 'not selected';
+    const identity = row.locationId || row.storeNumber || '(missing identity)';
+    const issues = row.issues.length ? row.issues : [null];
+    return issues.map(issue => [
+      row.rowNumber,
+      identity,
+      status,
+      issue?.field || '',
+      formatCsvValue(issue?.suppliedValue),
+      formatCsvValue(issue?.currentValue),
+      issue?.reason || '',
+      issue?.correction || '',
+    ]);
+  });
+  return serializeBrowserCsv([
+    ['CsvRow', 'RecordIdentity', 'Result', 'Field', 'SuppliedValue', 'CurrentValue', 'Reason', 'CorrectionSteps'],
+    ...rows,
+  ]);
+}
+
+export function buildLocationImportCorrectionCsv(preview: LocationImportPreview): string {
+  const selected = new Set(preview.selectedRowNumbers || []);
+  const mappings = [...(preview.mappings || [])].sort((left, right) => left.sourceIndex - right.sourceIndex);
+  const unsuccessful = preview.rows.filter(row => row.action === 'blocked'
+    || ((row.action === 'add' || row.action === 'update') && !selected.has(row.rowNumber)));
+  return serializeBrowserCsv([
+    mappings.map(mapping => mapping.sourceHeader),
+    ...unsuccessful.map(row => row.sourceValues),
+  ]);
 }
 
 async function confirmationRequestError(response: Response) {
@@ -209,4 +294,49 @@ function isRoundTripSummary(value: PreparedLocationEditingExport['roundTrip']): 
 
 function optionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
+}
+
+function parseCsvHeader(csv: string): string[] {
+  const source = csv.replace(/^\uFEFF/, '');
+  const values: string[] = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (quoted) {
+      if (character === '"' && source[index + 1] === '"') {
+        value += '"';
+        index += 1;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        value += character;
+      }
+      continue;
+    }
+    if (character === '"' && value.length === 0) quoted = true;
+    else if (character === ',') {
+      values.push(value.trim());
+      value = '';
+    } else if (character === '\r' || character === '\n') {
+      values.push(value.trim());
+      return values;
+    } else value += character;
+  }
+  if (quoted) throw new Error('The CSV header has an unmatched quote. Correct the first row and try again.');
+  values.push(value.trim());
+  if (values.length === 1 && !values[0]) throw new Error('The CSV file does not contain a header row.');
+  return values;
+}
+
+function serializeBrowserCsv(rows: Array<Array<unknown>>): string {
+  return `\uFEFF${rows.map(row => row.map(value => {
+    const safe = spreadsheetSafeCsvValue(String(value ?? ''));
+    return `"${safe.replace(/"/g, '""')}"`;
+  }).join(',')).join('\r\n')}\r\n`;
+}
+
+function formatCsvValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return Array.isArray(value) ? value.join(';') : String(value);
 }

@@ -15,12 +15,13 @@ export function buildLocationImportTemplate(): string {
 export function buildLocationImportFieldDictionary(): string {
   const rows = LOCATION_IMPORT_FIELDS.map(field => ({
     Header: field.column,
+    Aliases: field.aliases?.join(' | ') || '',
     Purpose: field.purpose,
     Additions: field.additions,
     Updates: field.updates,
     Format: field.format,
     AllowedValues: field.allowedValues?.join(' | ') || '',
-    BlankBehavior: field.column === 'SchemaVersion' ? 'Not allowed' : 'Preserves an existing value; explicit clearing is not supported',
+    BlankBehavior: field.column === 'SchemaVersion' ? `Uses ${LOCATION_IMPORT_SCHEMA_VERSION} when omitted or blank` : 'Preserves an existing value; explicit clearing is not supported',
     Example: field.example,
   }));
   return stringify(rows, { header: true, record_delimiter: '\r\n', bom: true });

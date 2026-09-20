@@ -1,8 +1,26 @@
-# Location CSV Export
+# Location CSV Import and Export
+
+## Flexible import workflow
+
+Administrators may upload identity plus only the supported Location fields they intend to update. `LocationId` is matched first. When it is omitted, a unique digits-only `StoreNumber` may match an existing Location. Leading zeros are ignored for matching, but the supplied text remains the proposed stored Store Number. Nonnumeric Store Numbers are never reinterpreted, and Location, District, or Person names are never used as relationship identities.
+
+Omitted columns and blank cells preserve existing values. Explicit clearing is not supported. New Locations must provide all required fields; existing Locations need only identity plus changed fields. **Add and update** permits both outcomes. **Update existing only** blocks rows that do not resolve to an existing Location and is the default when an `shiekh_locations_editing_v1_...csv` file is selected.
+
+`SchemaVersion` may be omitted or blank and then uses the current `locations-v1` format. A supplied unsupported version is rejected on its row. The field dictionary lists canonical headers, approved aliases, formats, and allowed values. Heading matching ignores case and surrounding whitespace. Every suggested mapping must be reviewed. A source heading may be mapped to one supported target or explicitly ignored; duplicate target mappings and files without a mapped `LocationId` or `StoreNumber` are blocked.
+
+Both existing Store exports are recognized. **Export for Editing** maps all supported canonical ID fields. The reporting **Export All Stores** maps supported Location attributes, while `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, and `AssistantStoreManagers` are informational and ignored by default. Display names never become Region, District, or Person references; canonical `RegionId`, `DistrictId`, and Person ID columns are required to change relationships.
+
+Preview evaluates the complete file for duplicate and conflicting identities before row selection. Rows are labeled New, Updated, Unchanged, or Needs attention and show normalized before/after values plus CSV row, identity, field, supplied/current values, reason, and correction steps. Ready New or Updated rows may be selected independently. Excluding one row cannot resolve a duplicate identity found elsewhere in the file.
+
+Changing the file, mappings, mode, or selection requires a new server preview. The signed 10-minute confirmation binds those choices, normalized selected writes, unchanged assertions, and the actor. Confirmation re-reads authoritative Locations, People, Regions, and Districts, rechecks versions and dependencies, and saves all selected rows, audits, and the receipt in one transaction. A failure saves nothing. Retrying the same operation returns the existing receipt without duplicate records or audits.
+
+Limits are 2,000,000 UTF-8 bytes, 100 file rows, and 40 selected changed rows per atomic confirmation. Files with more than 40 ready rows remain previewable but start with no selected rows. The server never silently partitions an import.
+
+Results CSV downloads distinguish saved, unchanged, blocked, and not selected rows. Correction CSV downloads retain blocked and not selected source rows and headings. Formula-leading cells are protected for spreadsheet use and restored when re-imported. Preview and downloads never write directory records and remain subject to the same authenticated company-wide access restriction.
 
 ## Export for Editing
 
-`Export for Editing` is the import-compatible Location workflow. It is separate from the presentation export below and uses the exact shared `locations-v1` schema, headers, order, mappings, parser, and preview rules.
+`Export for Editing` is the import-compatible Location workflow. It is separate from the presentation export below and uses the shared `locations-v1` fields, canonical headers, parser, and preview rules.
 
 The server reads Locations, People, Regions, and Districts in one read-only transaction. System Administrators, Directory Data Stewards, and Editors require `Company` or `Company-wide` scope to prepare the export. The response reports the snapshot timestamp; total, Active, Draft, and Retired counts; part filenames and counts; immediate round-trip totals; and diagnostics by affected Location ID and field.
 
@@ -12,7 +30,7 @@ Canonical IDs are preserved for Locations, hierarchy, and leadership. Assistant 
 
 Each generated part is evaluated through the existing preview planner against the same snapshot. Invalid legacy values, reference problems, normalization changes, ambiguous identities, and populated unsupported fields are reported rather than cleaned. Unsupported Location fields, People-owned `Works at`/`Supports`, hierarchy registries, custom fields, hours/settings, permissions, and application configuration are not represented; this is an editing export, not a full backup.
 
-Each part must be imported independently. Preview still allows 100 total rows and confirmation still allows no more than 40 changed rows. The export snapshot does not lock versions: a later preview compares against current data, so review every proposed change. Dispatch 9 protects the interval between preview and confirmation. Blank cells preserve existing values, and removing a CSV row does not delete a Location.
+Each part must be imported independently. Preview allows 100 total rows and confirmation allows no more than 40 selected changed rows. The export snapshot does not lock versions: a later preview compares against current data, so review every proposed change. Confirmation protects the interval between preview and save. Blank cells preserve existing values, and removing a CSV row does not delete a Location.
 
 When opening a part in spreadsheet software, import Store Number, ZIP Code, and Phone columns as text to avoid automatic conversion. Do not add formulas to force formatting.
 
@@ -39,3 +57,10 @@ Column order is stable:
 Values are serialized as UTF-8 with a BOM for spreadsheet compatibility, including quoting for commas, quotation marks, CR/LF line breaks, and Unicode text. Valid US phone values use the shared readable display formatter and retain extensions; missing values remain blank. Store numbers and ZIP codes are emitted as text values and preserve leading zeros in the CSV. Spreadsheet applications may still apply automatic type conversion when opening CSV files. Stronger spreadsheet typing, formulas, or protected text cells require a separate XLSX export and are not part of this CSV contract.
 
 Leadership columns prefer canonical person IDs and canonical assignment relationships when present. If a valid canonical person exists, copied legacy names on the location record are ignored. Missing canonical person IDs produce blank leadership values and are counted in export metadata instead of falling back to stale copied names.
+
+## Approved subsequent scope
+
+These items are approved next steps and are not implemented by this workflow:
+
+1. Add District Code values such as `01` and `02` to existing Districts while preserving internal District IDs, with API and CSV/reference support.
+2. Add a separate People import/export built on the reviewed mapping, preview, selected-row confirmation, results, and correction workflow.

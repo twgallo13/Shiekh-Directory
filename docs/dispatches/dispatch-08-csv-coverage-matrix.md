@@ -1,20 +1,20 @@
-# Dispatch 8–10: CSV Coverage Matrix
+# Dispatch 8–11: CSV Coverage Matrix
 
 ## Reading the matrix
 
-`Preview` means the `locations-v1` dry-run contract. `Confirm` means Dispatch 9 can atomically persist an eligible preview using the same column and validation contract. `Editing export` means Dispatch 10 emits that exact import schema from one authoritative snapshot. `Presentation export` means the unchanged **Export All Stores** CSV. Preview, guidance, and editing-export routes remain read-only.
+`Preview` means the `locations-v1` dry-run contract. `Confirm` atomically persists explicitly selected ready rows using the same column and validation contract. `Editing export` emits the canonical import schema from one authoritative snapshot. `Presentation export` means **Export All Stores**, whose supported attributes can now be mapped while derived relationship names remain informational. Preview, guidance, report downloads, correction downloads, and editing-export routes remain read-only.
 
 ## Dispatch 9 confirmation coverage
 
 | Data group | Confirm | Boundary |
 |---|---|---|
-| Supported Location identity, profile, lifecycle, hierarchy, and Location-owned leadership columns listed below | Yes | Entire eligible batch only; additions are create-only and updates require reviewed versions |
+| Supported Location identity, profile, lifecycle, hierarchy, and Location-owned leadership columns listed below | Yes | Selected ready rows only; additions are create-only and updates require reviewed versions |
 | Unchanged Location rows | Verified, not written | Signed target identity and expected version must still match at confirmation |
 | Blank supported cells | Preserve only | Existing Dispatch 8 behavior; no explicit clearing syntax |
 | Person `Works at` / `Supports` | Dependency check only | Person-owned fields are never written by this import |
 | Regions, Districts, and People | Reference check only | Existing active canonical records are required; names never create or select records |
 | Unsupported Location fields and every non-Location group below | No | Preserved on updates where already present; no new CSV columns |
-| Export All Stores | No | Presentation export remains non-importable |
+| Export All Stores | Supported attributes only | District and leadership names/phone are explicitly ignored; canonical IDs are required for relationship changes |
 
 ## Dispatch 10 editing export coverage
 
@@ -29,9 +29,21 @@
 | Regions, Districts, and People records | No | Existing canonical IDs are references only; registries and People are not exported |
 | Version protection | Preview onward only | Export snapshot is informational; later preview compares with current state, then Dispatch 9 protects confirmation |
 
-Parts respect the existing 100-row and 2,000,000-byte limits. Each part is independently previewed/imported, and the existing 40-changed-row confirmation limit is unchanged. A record too large for one part fails explicitly with its Location ID and largest fields. Blank cells preserve values; omitted rows do not delete records.
+Parts respect the existing 100-row and 2,000,000-byte limits. Each part is independently previewed/imported, and at most 40 selected changed rows may be confirmed atomically. A file with more ready rows remains previewable but is never silently split. A record too large for one part fails explicitly with its Location ID and largest fields. Blank cells and omitted columns preserve values; omitted rows do not delete records.
 
-Confirmation binds the actor, schema, exact CSV digest, target identities, expected versions, normalized changed records, and unchanged-row assertions in a 10-minute signed manifest. The server revalidates the complete batch in one transaction and writes changed Locations, correlated before/after audits, and one idempotent receipt together. Limits are 100 total rows, 40 changed rows, a 1,000,000-byte signed token, and an 8,000,000-byte estimated atomic payload including audit and receipt data.
+Confirmation binds the actor, schema, exact CSV digest, reviewed mappings, import mode, selected row numbers, target identities, expected versions, normalized changed records, and unchanged-row assertions in a 10-minute signed manifest. Full-file identity conflicts are evaluated before selection. The server revalidates the selected batch and dependencies in one transaction and writes changed Locations, correlated before/after audits, and one idempotent receipt together. Limits are 100 total rows, 40 selected changed rows, a 1,000,000-byte signed token, and an 8,000,000-byte estimated atomic payload including audit and receipt data.
+
+## Dispatch 11 flexible import coverage
+
+| Capability | Coverage | Boundary |
+|---|---|---|
+| Partial columns | Yes | Identity plus changed fields; omitted and blank values preserve existing data; no clearing syntax |
+| Schema version | Yes | Missing/blank means current `locations-v1`; supplied unsupported values are blocked |
+| Header aliases and ignore | Yes | Shared schema suggestions ignore case/outer whitespace; duplicate targets blocked; unsupported/informational columns require reviewed Ignore |
+| Import mode | Yes | Add and update, or Update existing only; editing-export filenames default to update-only |
+| Selected rows | Yes | Ready New/Updated rows only; complete-file identity conflicts remain blocking; one atomic selected transaction |
+| Actionable downloads | Yes | Results identify saved/unchanged/blocked/not selected; correction CSV retains unsuccessful source rows with spreadsheet protection |
+| Explicit clearing | No | Remains unsupported; blank preserves |
 
 Recommended future bulk exchange uses separate linked Location and People CSV contracts. Canonical IDs join those contracts. Leadership is organizational data owned by Locations; application role/access scope is authorization data owned by user accounts. The application models `Works at`, `Supports`, Store Manager, Assistant Manager, Key Holder, District Manager, and Regional Manager. It does not model a general employee supervisor/reporting tree.
 
@@ -199,10 +211,10 @@ Source: `users` plus Firebase identity. These are authorization records, not org
 | Runtime project/database/service identity/deployment settings | Excluded | No | Environment and Cloud Run | Infrastructure configuration, never directory CSV |
 | Seed/default application configuration | Excluded | No | Code/initial data | Versioned code/config migration only |
 
-## Recommended linked contracts
+## Approved next linked contracts
 
-1. `locations-vN.csv`: canonical Location identity, profile, hierarchy IDs, and Location-owned leadership Person IDs.
-2. `people-vN.csv`: canonical Person identity, approved contact/privacy fields, lifecycle, `WorksAtLocationId`, and `SupportsLocationIds`.
-3. Separate registry/configuration contracts only where an approved backup/restore and authorization model exists.
+1. Add District Code (`01`, `02`, and similar) to existing Districts while preserving internal IDs, with API and Location CSV/reference support.
+2. Add a separate People import/export using the Dispatch 11 reviewed mapping, selected confirmation, result, and correction workflow.
+3. Keep other registry/configuration contracts separate unless an approved backup/restore and authorization model exists.
 
 Acceptance requires import-compatible round-trip exports, stable IDs, schema/version manifests, duplicate/dependency diagnostics, privacy filtering, optimistic concurrency, authorization revalidation, audit evidence, bounded atomic writes, backup/recovery, and reconciliation. Until then, Export All Stores and Reference IDs remain guidance/read products, not backups or re-import sources.

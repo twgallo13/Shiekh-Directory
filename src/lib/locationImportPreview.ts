@@ -7,10 +7,16 @@ import {
   LOCATION_IMPORT_COLUMNS,
   LOCATION_IMPORT_FIELDS,
   LOCATION_IMPORT_SCHEMA_VERSION,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING,
+  LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
   LOCATION_OPERATIONAL_STATUSES,
   LOCATION_RECORD_STATUSES,
   LOCATION_TIME_ZONES,
   LOCATION_TYPES,
+  restoreSpreadsheetSafeCsvValue,
+  suggestLocationImportHeaderMappings,
+  type LocationImportHeaderMapping,
+  type LocationImportMode,
 } from './locationImportSchema';
 import { normalizeLocationWriteValues } from './locationWriteContract';
 
@@ -37,7 +43,9 @@ export type LocationImportIssueCode =
   | 'inactive_person_reference'
   | 'retirement_dependency'
   | 'leading_zero_match'
-  | 'new_id_not_reserved';
+  | 'new_id_not_reserved'
+  | 'new_location_not_allowed'
+  | 'invalid_row_shape';
 
 export interface LocationImportIssue {
   severity: 'error' | 'warning';
@@ -67,6 +75,7 @@ export interface LocationImportPreviewRow {
   displayName: string;
   changes: LocationImportChange[];
   issues: LocationImportIssue[];
+  sourceValues: string[];
 }
 
 export interface LocationImportPreview {
@@ -77,6 +86,9 @@ export interface LocationImportPreview {
   batchId?: string;
   expiresAt?: string;
   confirmationDisabledReason?: string;
+  mode?: LocationImportMode;
+  mappings?: LocationImportHeaderMapping[];
+  selectedRowNumbers?: number[];
   summary: {
     totalRows: number;
     additions: number;
@@ -107,6 +119,7 @@ export interface LocationImportReceipt {
 }
 
 export interface LocationImportPlannedWrite {
+  rowNumber?: number;
   id: string;
   action: 'add' | 'update';
   expectedVersion: number | null;
@@ -123,6 +136,11 @@ export interface LocationImportPlan {
   preview: LocationImportPreview;
   writes: LocationImportPlannedWrite[];
   unchanged: LocationImportUnchangedAssertion[];
+}
+
+export interface LocationImportPlanOptions {
+  mappings?: LocationImportHeaderMapping[];
+  mode?: LocationImportMode;
 }
 
 export class LocationImportPreviewError extends Error {
@@ -195,8 +213,11 @@ export function buildLocationImportPlan(
   snapshot: PreviewSnapshot,
   snapshotReadAt = new Date().toISOString(),
   createLocationId: () => string = () => '',
+  options: LocationImportPlanOptions = {},
 ): LocationImportPlan {
-  const rows = parseImportRows(csv);
+  const parsed = parseImportRows(csv, options.mappings);
+  const rows = parsed.rows;
+  const mode = options.mode ?? 'add-and-update';
   const proposedWrites = new Map<number, Record<string, unknown>>();
   const locationsById = groupBy(snapshot.locations, location => location.id);
   const locationsByStore = groupBy(snapshot.locations, location => normalizeStoreNumber(location.storeNumber));
@@ -208,6 +229,23 @@ export function buildLocationImportPlan(
   const previewRows = rows.map((row, index) => {
     const rowNumber = index + 2;
     const issues: LocationImportIssue[] = [];
+    const rowShape = parsed.rowShapes[index];
+    if (rowShape.actual !== rowShape.expected) {
+      issues.push(issue(
+        'error',
+        'invalid_row_shape',
+        'CSV row',
+        parsed.sourceRows[index],
+        null,
+        `CSV row ${rowNumber} has ${rowShape.actual} cells for ${rowShape.expected} headings. Its values were preserved, but the row cannot be imported.`,
+        'Correct this row so it has exactly one cell for every heading, then preview the file again.',
+      ));
+    }
+    if (row.SpreadsheetEncoding && row.SpreadsheetEncoding !== LOCATION_IMPORT_SPREADSHEET_ENCODING) {
+      issues.push(issue('error', 'invalid_attribute', 'SpreadsheetEncoding', row.SpreadsheetEncoding, LOCATION_IMPORT_SPREADSHEET_ENCODING, 'The row supplies an unsupported spreadsheet encoding signal.', `Use ${LOCATION_IMPORT_SPREADSHEET_ENCODING} only for application-generated protected CSV, or leave the column blank for ordinary CSV.`));
+    } else if (parsed.spreadsheetEncoded && rowShape.actual === rowShape.expected && row.SpreadsheetEncoding !== LOCATION_IMPORT_SPREADSHEET_ENCODING) {
+      issues.push(issue('error', 'invalid_attribute', 'SpreadsheetEncoding', row.SpreadsheetEncoding, LOCATION_IMPORT_SPREADSHEET_ENCODING, 'Every complete row in a protected CSV must carry the spreadsheet encoding signal.', `Set SpreadsheetEncoding to ${LOCATION_IMPORT_SPREADSHEET_ENCODING}, or remove the signal from every row and use ordinary CSV values.`));
+    }
     const normalizedStore = normalizeStoreNumber(row.StoreNumber);
     validateRowIdentitySyntax(row, issues);
 
@@ -276,6 +314,9 @@ export function buildLocationImportPlan(
 
     validateImportedAttributes(row, proposedInput, existing as unknown as Record<string, unknown> | undefined, issues);
     const intendedAddition = !existing && !issues.some(item => ['conflicting_identity', 'duplicate_existing_identity'].includes(item.code));
+    if (intendedAddition && mode === 'update-existing-only') {
+      issues.push(issue('error', 'new_location_not_allowed', 'LocationId / StoreNumber', `${row.LocationId || '(blank)'} / ${row.StoreNumber || '(blank)'}`, null, 'This row does not match an existing Location and the import is in Update existing only mode.', 'Correct the identity to match an existing Location, or explicitly switch to Add and update mode.'));
+    }
     if (intendedAddition) {
       for (const [column, field] of requiredAdditionFields) {
         if (!proposedInput[field]) issues.push(issue('error', 'missing_required_field', column, row[column], null, `${column} is required for a new Location.`, `Enter ${fieldDefinition(column)?.format || 'a valid value'} and preview again.`));
@@ -356,6 +397,7 @@ export function buildLocationImportPlan(
       displayName: String(proposed.name || row.StoreName || `Row ${rowNumber}`),
       changes,
       issues,
+      sourceValues: parsed.sourceRows[index],
     } satisfies LocationImportPreviewRow;
   });
 
@@ -388,6 +430,8 @@ export function buildLocationImportPlan(
   const preview: LocationImportPreview = {
       schemaVersion: LOCATION_IMPORT_SCHEMA_VERSION,
       snapshotReadAt,
+      mode,
+      mappings: parsed.mappings,
       summary: {
         totalRows: evaluatedRows.length,
         additions: evaluatedRows.filter(row => row.action === 'add').length,
@@ -403,6 +447,7 @@ export function buildLocationImportPlan(
     writes: evaluatedRows.flatMap(row => {
       if ((row.action !== 'add' && row.action !== 'update') || !row.locationId) return [];
       return [{
+        rowNumber: row.rowNumber,
         id: row.locationId,
         action: row.action,
         expectedVersion: row.action === 'add' ? null : row.currentVersion,
@@ -415,41 +460,60 @@ export function buildLocationImportPlan(
   };
 }
 
-function parseImportRows(csv: string): ImportRow[] {
+function parseImportRows(csv: string, suppliedMappings?: LocationImportHeaderMapping[]): { rows: ImportRow[]; mappings: LocationImportHeaderMapping[]; sourceRows: string[][]; rowShapes: Array<{ actual: number; expected: number }>; spreadsheetEncoded: boolean } {
   let matrix: string[][];
   try {
-    matrix = parse(csv, { bom: true, skip_empty_lines: true, trim: true });
+    matrix = parse(csv, { bom: true, skip_empty_lines: true, trim: true, relax_column_count: true });
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Malformed row.';
     throw new LocationImportPreviewError('invalid_csv', `The file is not valid CSV: ${detail}`);
   }
   if (matrix.length === 0) throw new LocationImportPreviewError('invalid_csv', 'The CSV file is empty. Download the blank template and try again.');
   const headers = matrix[0].map(value => value.trim());
-  const duplicateHeaders = [...duplicateValues(headers)];
-  const missingColumns = LOCATION_IMPORT_COLUMNS.filter(column => !headers.includes(column));
-  const extraColumns = headers.filter(column => !LOCATION_IMPORT_COLUMNS.includes(column));
-  if (isDirectoryExport(headers)) {
-    throw new LocationImportPreviewError('directory_export_not_importable', 'This is a directory export. Download the Blank Template to preview Location changes.');
+  const suggestedMappings = suggestLocationImportHeaderMappings(headers);
+  const mappings = suppliedMappings ?? suggestedMappings;
+  if (mappings.length !== headers.length || mappings.some((mapping, index) => mapping.sourceIndex !== index || mapping.sourceHeader.trim() !== headers[index])) {
+    throw new LocationImportPreviewError('unsupported_template', 'The reviewed header mapping does not match this CSV file. Review the headings again.');
   }
-  if (duplicateHeaders.length || missingColumns.length || extraColumns.length || headers.length !== LOCATION_IMPORT_COLUMNS.length) {
+  const invalidTargets = mappings.filter(mapping => mapping.target !== null && !LOCATION_IMPORT_COLUMNS.includes(mapping.target));
+  const duplicateTargets = [...duplicateValues(mappings.flatMap(mapping => mapping.target ? [mapping.target] : []))];
+  const unsupportedWithoutReview = suppliedMappings === undefined
+    ? mappings.filter(mapping => mapping.kind === 'unsupported').map(mapping => mapping.sourceHeader)
+    : [];
+  const identityColumns = mappings.flatMap(mapping => mapping.target && ['LocationId', 'StoreNumber'].includes(mapping.target) ? [mapping.target] : []);
+  if (invalidTargets.length || duplicateTargets.length || unsupportedWithoutReview.length || identityColumns.length === 0) {
     throw new LocationImportPreviewError('unsupported_template', [
-      `Use the supported ${LOCATION_IMPORT_SCHEMA_VERSION} template.`,
-      `Duplicate headers: ${duplicateHeaders.join(', ') || 'none'}.`,
-      `Missing headers: ${missingColumns.join(', ') || 'none'}.`,
-      `Unsupported headers: ${extraColumns.join(', ') || 'none'}.`,
+      `Map supported ${LOCATION_IMPORT_SCHEMA_VERSION} columns and include LocationId or StoreNumber.`,
+      `Duplicate target mappings: ${duplicateTargets.join(', ') || 'none'}.`,
+      `Unsupported headings needing explicit Ignore: ${unsupportedWithoutReview.join(', ') || 'none'}.`,
     ].join(' '));
   }
-  return matrix.slice(1).map(values => Object.fromEntries(headers.map((header, index) => [header, values[index] || ''])));
-}
-
-function isDirectoryExport(headers: string[]): boolean {
-  return !headers.includes('SchemaVersion')
-    && ['StoreNumber', 'StoreName', 'StoreManager', 'StoreManagerPhone', 'DistrictManager', 'AssistantStoreManagers']
-      .every(header => headers.includes(header));
+  const parsedRows = matrix.slice(1);
+  const rowShapes = parsedRows.map(values => ({ actual: values.length, expected: headers.length }));
+  const encodingMapping = suggestedMappings.find(mapping => mapping.target === 'SpreadsheetEncoding');
+  const encodingValues = encodingMapping ? parsedRows.map(values => values[encodingMapping.sourceIndex] || '') : [];
+  const spreadsheetEncoded = headers.some(header => header === LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER)
+    || encodingValues.some(value => value === LOCATION_IMPORT_SPREADSHEET_ENCODING);
+  const sourceRows = parsedRows.map(values => spreadsheetEncoded ? values.map(restoreSpreadsheetSafeCsvValue) : values);
+  const rows = sourceRows.map((values, index) => {
+    const suggestedSchemaMapping = suggestedMappings.find(mapping => mapping.target === 'SchemaVersion');
+    const suppliedSchemaVersion = suggestedSchemaMapping
+      ? values[suggestedSchemaMapping.sourceIndex] || ''
+      : '';
+    const row: ImportRow = { SchemaVersion: suppliedSchemaVersion || LOCATION_IMPORT_SCHEMA_VERSION };
+    mappings.forEach(mapping => {
+      if (mapping.target && (mapping.target !== 'SchemaVersion' || !suppliedSchemaVersion)) {
+        row[mapping.target] = values[mapping.sourceIndex] || '';
+      }
+    });
+    if (!row.SchemaVersion) row.SchemaVersion = LOCATION_IMPORT_SCHEMA_VERSION;
+    return row;
+  });
+  return { rows, mappings, sourceRows, rowShapes, spreadsheetEncoded };
 }
 
 function validateRowIdentitySyntax(row: ImportRow, issues: LocationImportIssue[]): void {
-  if (row.SchemaVersion !== LOCATION_IMPORT_SCHEMA_VERSION) {
+  if (row.SchemaVersion && row.SchemaVersion !== LOCATION_IMPORT_SCHEMA_VERSION) {
     issues.push(issue('error', 'invalid_schema_version', 'SchemaVersion', row.SchemaVersion, LOCATION_IMPORT_SCHEMA_VERSION, 'The row uses an unsupported schema version.', `Set SchemaVersion to ${LOCATION_IMPORT_SCHEMA_VERSION}.`));
   }
   if (row.LocationId && !ID_PATTERN.test(row.LocationId)) {

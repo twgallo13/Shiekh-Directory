@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import { buildLocationEditingExport, LocationEditingExportError } from '../server/locationEditingExport';
-import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_MAX_BYTES, LOCATION_TYPES } from '../src/lib/locationImportSchema';
+import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_MAX_BYTES, LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, LOCATION_TYPES } from '../src/lib/locationImportSchema';
 import type { DirectorySeed } from '../src/lib/directorySeed';
 import type { LocationRecord } from '../src/types';
 
@@ -63,7 +63,9 @@ describe('Location editing export', () => {
     assert.equal(result.totalRecords, 0);
     assert.equal(result.parts.length, 1);
     assert.equal(result.parts[0].recordCount, 0);
-    assert.deepEqual(parse(result.parts[0].csv!, { bom: true }) as string[][], [LOCATION_IMPORT_COLUMNS]);
+    assert.deepEqual(parse(result.parts[0].csv!, { bom: true }) as string[][], [
+      LOCATION_IMPORT_COLUMNS.map(column => column === 'SpreadsheetEncoding' ? LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER : column),
+    ]);
   });
 
   it('round-trips conforming records unchanged with exact locations-v1 serialization', () => {
@@ -78,15 +80,34 @@ describe('Location editing export', () => {
     assert.ok((result.parts[0].byteCount) <= LOCATION_IMPORT_MAX_BYTES);
 
     const [row] = parse(result.parts[0].csv!, { bom: true, columns: true }) as Array<Record<string, string>>;
-    assert.deepEqual(Object.keys(row), LOCATION_IMPORT_COLUMNS);
+    assert.deepEqual(Object.keys(row), LOCATION_IMPORT_COLUMNS.map(column => column === 'SpreadsheetEncoding' ? LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER : column));
+    assert.equal(row[LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER], LOCATION_IMPORT_SPREADSHEET_ENCODING);
     assert.equal(row.LocationId, 'loc-007');
     assert.equal(row.StoreNumber, '007');
     assert.equal(row.StoreName, 'Café "North"');
     assert.equal(row.Address, '7 Main Street, Suite 2\nSecond floor');
     assert.equal(row.ZipCode, '09001');
-    assert.equal(row.Phone, '+12135550100 ext. 42');
+    assert.equal(row.Phone, "'+12135550100 ext. 42");
     assert.equal(row.AssistantStoreManagerIds, 'person-assistant-2;person-assistant-1');
     assert.equal(row.KeyHolderIds, 'person-key-2;person-key-1');
+  });
+
+  it('protects formula-leading values while preserving unchanged re-import semantics', () => {
+    const source = snapshotWith([location({ name: '=Formula Store' })]);
+    const result = buildLocationEditingExport(source, snapshotReadAt);
+    const [row] = parse(result.parts[0].csv!, { bom: true, columns: true }) as Array<Record<string, string>>;
+
+    assert.equal(row.StoreName, "'=Formula Store");
+    assert.deepEqual(result.roundTrip, { unchanged: 1, updates: 0, additions: 0, blocked: 0, warnings: 0 });
+  });
+
+  it('round-trips a literal leading apostrophe before a formula character', () => {
+    const source = snapshotWith([location({ name: "'=Literal Apostrophe" })]);
+    const result = buildLocationEditingExport(source, snapshotReadAt);
+    const [row] = parse(result.parts[0].csv!, { bom: true, columns: true }) as Array<Record<string, string>>;
+
+    assert.equal(row.StoreName, "''=Literal Apostrophe");
+    assert.deepEqual(result.roundTrip, { unchanged: 1, updates: 0, additions: 0, blocked: 0, warnings: 0 });
   });
 
   it('includes every Location type and lifecycle state without filtering', () => {

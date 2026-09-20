@@ -826,7 +826,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
                     {/* Card Footer: District & Manager */}
                     <div className="border-t border-neutral-100 pt-2 flex items-center justify-between text-[11px] text-neutral-500">
-                      <span className="truncate max-w-[140px]">{hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id))}</span>
+                      <span>{hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id))}</span>
                       <span className="font-medium text-neutral-700 truncate max-w-[130px]">
                         {leadershipByLocationId.get(loc.id)?.storeManager?.fullName ? `Mgr: ${leadershipByLocationId.get(loc.id)?.storeManager?.fullName}` : 'Vacant'}
                       </span>

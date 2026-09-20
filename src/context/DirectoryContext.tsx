@@ -20,7 +20,7 @@ import {
 } from '../types';
 import type { DirectorySeed } from '../lib/directorySeed';
 import { migrateDirectoryRelationships } from '../lib/directoryMigration';
-import { commitDirectory, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult } from '../lib/directoryClient';
+import { buildRegistryWrite, commitDirectory, fetchHierarchyRegistry, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult, type HierarchyRegistrySnapshot, type RegistrySaveIntent } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
 import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
@@ -43,8 +43,9 @@ interface DirectoryContextType {
   regions: RegionRecord[];
   districts: DistrictRecord[];
   customFieldDefinitions: CustomFieldDefinition[];
-  saveRegion: (region: RegionRecord, create: boolean) => Promise<void>;
-  saveDistrict: (district: DistrictRecord, create: boolean) => Promise<void>;
+  saveRegion: (region: RegionRecord, intent: RegistrySaveIntent) => Promise<void>;
+  saveDistrict: (district: DistrictRecord, intent: RegistrySaveIntent) => Promise<void>;
+  refreshHierarchyRegistry: () => Promise<HierarchyRegistrySnapshot>;
   saveCustomFieldDefinition: (definition: CustomFieldDefinition) => Promise<void>;
   saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => Promise<void>;
   persistenceError: string | null;
@@ -216,18 +217,23 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     setAuditLogs(prev => [log, ...prev].slice(0, 200));
   };
 
-  const saveRegion = async (region: RegionRecord, create: boolean) => {
-    const existing = regions.find(item => item.id === region.id);
-    await persist([{ collection: 'regions', id: region.id, operation: 'set', data: region as unknown as Record<string, unknown>, expectedVersion: create ? null : expectedVersionOf(existing) }], {
-      action: create ? 'Region Created' : 'Region Updated', entityType: 'Setting', entityId: region.id, entityName: region.name, details: `Saved Region ${region.name}.`,
+  const saveRegion = async (region: RegionRecord, intent: RegistrySaveIntent) => {
+    await persist([buildRegistryWrite('regions', region, intent)], {
+      action: intent.create ? 'Region Created' : 'Region Updated', entityType: 'Setting', entityId: region.id, entityName: region.name, details: `Saved Region ${region.name}.`,
     });
   };
 
-  const saveDistrict = async (district: DistrictRecord, create: boolean) => {
-    const existing = districts.find(item => item.id === district.id);
-    await persist([{ collection: 'districts', id: district.id, operation: 'set', data: district as unknown as Record<string, unknown>, expectedVersion: create ? null : expectedVersionOf(existing) }], {
-      action: create ? 'District Created' : 'District Updated', entityType: 'Setting', entityId: district.id, entityName: district.name, details: `Saved District ${district.name}.`,
+  const saveDistrict = async (district: DistrictRecord, intent: RegistrySaveIntent) => {
+    await persist([buildRegistryWrite('districts', district, intent)], {
+      action: intent.create ? 'District Created' : 'District Updated', entityType: 'Setting', entityId: district.id, entityName: district.name, details: `Saved District ${district.name}.`,
     });
+  };
+
+  const refreshHierarchyRegistry = async () => {
+    const registry = await fetchHierarchyRegistry(user);
+    setRegions(registry.regions);
+    setDistricts(registry.districts);
+    return registry;
   };
 
   const saveCustomFieldDefinition = async (input: CustomFieldDefinition) => {
@@ -906,6 +912,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         customFieldDefinitions,
         saveRegion,
         saveDistrict,
+        refreshHierarchyRegistry,
         saveCustomFieldDefinition,
         saveLocationRecord,
         persistenceError,

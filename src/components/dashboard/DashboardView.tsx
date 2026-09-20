@@ -5,6 +5,7 @@ import { OperationalStatusBadge } from '../common/StatusBadge';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
 import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { resolveActiveLocationManagers } from '../../lib/readProjectionContract';
 import { 
   Store, 
   Users, 
@@ -59,14 +60,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     location.id,
     resolveLocationHierarchy(location, { regions, districts }),
   ])), [locations, regions, districts]);
+  const leadershipByLocationId = useMemo(() => new Map(locations.map(location => [
+    location.id,
+    resolveActiveLocationManagers(location, people),
+  ])), [locations, people]);
 
   // Group all locations by district for Quick Reference Roster
   const districtMap = useMemo(() => {
-    const map = new Map<string, { dm?: string; stores: LocationRecord[] }>();
+    const map = new Map<string, { stores: LocationRecord[] }>();
     locations.forEach(l => {
       const dist = hierarchyDistrictLabel(hierarchyByLocationId.get(l.id));
       if (!map.has(dist)) {
-        map.set(dist, { dm: l.districtManagerName, stores: [] });
+        map.set(dist, { stores: [] });
       }
       map.get(dist)!.stores.push(l);
     });
@@ -87,18 +92,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       if (!quickSearch.trim()) return true;
       const q = quickSearch.toLowerCase().trim();
+      const leadership = leadershipByLocationId.get(l.id);
       return (
         l.storeNumber.toLowerCase().includes(q) ||
         l.name.toLowerCase().includes(q) ||
         l.city.toLowerCase().includes(q) ||
         l.state.toLowerCase().includes(q) ||
-        (l.storeManagerName && l.storeManagerName.toLowerCase().includes(q)) ||
+        leadership?.storeManager?.fullName.toLowerCase().includes(q) ||
         hierarchy?.districtName?.toLowerCase().includes(q) ||
         hierarchy?.districtId?.toLowerCase().includes(q) ||
-        (l.districtManagerName && l.districtManagerName.toLowerCase().includes(q))
+        leadership?.districtManager?.fullName.toLowerCase().includes(q)
       );
     });
-  }, [locations, selectedDistrict, quickSearch, hierarchyByLocationId]);
+  }, [locations, selectedDistrict, quickSearch, hierarchyByLocationId, leadershipByLocationId]);
 
   return (
     <div className="space-y-6">
@@ -299,6 +305,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
+                  aria-label="Search Quick Reference stores"
                   placeholder="Quick find store #, name, city, DM..."
                   value={quickSearch}
                   onChange={(e) => setQuickSearch(e.target.value)}
@@ -317,6 +324,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
 
               <select
+                aria-label="Filter Quick Reference stores by District"
                 value={selectedDistrict}
                 onChange={(e) => setSelectedDistrict(e.target.value)}
                 className="bg-neutral-50 border border-neutral-200 rounded-lg py-1.5 px-2.5 text-xs text-neutral-800 font-medium focus:outline-none focus:border-red-500 cursor-pointer max-w-[170px]"
@@ -333,8 +341,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[580px] pr-1">
             {quickRefStores.map(loc => {
               const hierarchy = hierarchyByLocationId.get(loc.id);
-              const dmPerson = people.find(person => person.id === loc.districtManagerId)
-                || people.find(person => person.fullName === loc.districtManagerName);
+              const leadership = leadershipByLocationId.get(loc.id);
+              const dmPerson = leadership?.districtManager;
+              const storeManager = leadership?.storeManager;
 
               return (
                 <div key={loc.id} className="group rounded-lg border border-neutral-200 bg-neutral-50 p-3 shadow-2xs transition-all hover:border-neutral-300 hover:bg-neutral-100/80">
@@ -374,7 +383,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div className="mt-2 pt-2 border-t border-neutral-200/70 flex items-center justify-between text-[10px] text-neutral-500">
                     <div className="flex items-center gap-1">
                       <span className="text-neutral-400">District:</span>
-                      <span className="font-semibold text-neutral-700 truncate max-w-[130px]">
+                      <span className="font-semibold text-neutral-700">
                         {hierarchyDistrictLabel(hierarchy)}
                       </span>
                       {dmPerson && (
@@ -391,6 +400,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                           <ExternalLink className="w-2.5 h-2.5 opacity-60" />
                         </button>
                       )}
+                      {!dmPerson && <span className="ml-1 text-neutral-500">(DM: Unassigned)</span>}
                     </div>
 
                     <button
@@ -399,7 +409,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       className="flex items-center gap-1 rounded font-medium text-neutral-700 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                       aria-label={`View store ${loc.storeNumber}`}
                     >
-                      <span>{loc.storeManagerName ? `Mgr: ${loc.storeManagerName}` : 'Mgr Vacant'}</span>
+                      <span>{storeManager ? `Mgr: ${storeManager.fullName}` : 'Mgr Vacant'}</span>
                       <ChevronRight className="w-3 h-3 text-neutral-400 group-hover:translate-x-0.5 transition-transform" />
                     </button>
                   </div>

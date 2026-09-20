@@ -536,7 +536,7 @@ Operating Status: ${location.operationalStatus}`;
                         <span className="text-neutral-400 italic text-xs">Unassigned</span>
                       )}
                     </div>
-                    <span className="max-w-64 truncate text-[11px] font-medium text-neutral-600" title={hierarchy.hierarchyIssues.join(' ') || undefined}>
+                    <span className="max-w-64 text-[11px] font-medium text-neutral-600">
                       {hierarchyDistrictLabel(hierarchy)}
                     </span>
                   </div>

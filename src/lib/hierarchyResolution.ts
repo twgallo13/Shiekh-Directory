@@ -61,9 +61,13 @@ export function canonicalHierarchyState(registry: HierarchyRegistry): string {
 }
 
 export function hierarchyDistrictLabel(hierarchy: ResolvedLocationHierarchy | undefined): string {
-  if (!hierarchy?.districtId) return 'Unassigned District';
-  const label = hierarchy.districtName ? `${hierarchy.districtName} (${hierarchy.districtId})` : `Unresolved District (${hierarchy.districtId})`;
-  return hierarchy.districtStatus === 'Retired' ? `${label} - Retired` : label;
+  if (!hierarchy) return 'Unassigned District';
+  const label = !hierarchy.districtId
+    ? 'Unassigned District'
+    : hierarchy.districtName
+      ? `${hierarchy.districtName} (${hierarchy.districtId})`
+      : `Unresolved District (${hierarchy.districtId})`;
+  return hierarchy.hierarchyIssues.length > 0 ? `${label} - ${hierarchy.hierarchyIssues.join(' ')}` : label;
 }
 
 function referenceId(value: unknown): string | null {

@@ -2,20 +2,20 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Archive, Building2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { DirectoryCommitError, type DirectoryDependency } from '../../lib/directoryClient';
+import { beginDistrictEdit, beginRegionEdit, discardRegistryDraft, reapplyRegistryDraft, registryEditRecord, reviewRegistryConflict, type RegistryEditState } from '../../lib/hierarchyRegistryEditing';
 import type { DistrictRecord, RegionRecord } from '../../types';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-type EditState = { kind: 'region'; id: string; name: string } | { kind: 'district'; id: string; name: string; regionId: string };
 type Feedback = { tone: 'pending' | 'success' | 'error'; message: string; dependencies?: DirectoryDependency[]; correction?: string; refresh?: boolean };
 
 export function HierarchyRegistryPanel() {
-  const { currentUser, regions, districts, saveRegion, saveDistrict } = useDirectory();
+  const { currentUser, regions, districts, saveRegion, saveDistrict, refreshHierarchyRegistry } = useDirectory();
   const [regionId, setRegionId] = useState('');
   const [regionName, setRegionName] = useState('');
   const [districtId, setDistrictId] = useState('');
   const [districtName, setDistrictName] = useState('');
   const [districtRegionId, setDistrictRegionId] = useState('');
-  const [editing, setEditing] = useState<EditState | null>(null);
+  const [editing, setEditing] = useState<RegistryEditState | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const editButtonRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -31,14 +31,14 @@ export function HierarchyRegistryPanel() {
     setPending(key);
     setFeedback({ tone: 'pending', message });
   };
-  const failed = (error: unknown, fallback: string) => {
+  const failed = (error: unknown, fallback: string, allowRefresh = false) => {
     const commitError = error instanceof DirectoryCommitError ? error : null;
     setFeedback({
       tone: 'error',
       message: error instanceof Error ? error.message : fallback,
       dependencies: commitError?.details?.dependencies,
       correction: commitError?.details?.correction,
-      refresh: commitError?.code === 'directory_conflict',
+      refresh: allowRefresh || commitError?.code === 'directory_conflict',
     });
   };
   const finishEditing = (state = editing) => {
@@ -56,7 +56,7 @@ export function HierarchyRegistryPanel() {
     }
     begin('new-region', `Saving Region ${id}...`);
     try {
-      await saveRegion({ id, name, status: 'Active' }, true);
+      await saveRegion({ id, name, status: 'Active' }, { create: true });
       setRegionId(''); setRegionName('');
       setFeedback({ tone: 'success', message: `Region ${name} (${id}) was created.` });
     } catch (error) { failed(error, 'Region could not be saved.'); }
@@ -72,7 +72,7 @@ export function HierarchyRegistryPanel() {
     }
     begin('new-district', `Saving District ${id}...`);
     try {
-      await saveDistrict({ id, name, regionId: districtRegionId, status: 'Active' }, true);
+      await saveDistrict({ id, name, regionId: districtRegionId, status: 'Active' }, { create: true });
       setDistrictId(''); setDistrictName(''); setDistrictRegionId('');
       setFeedback({ tone: 'success', message: `District ${name} (${id}) was created.` });
     } catch (error) { failed(error, 'District could not be saved.'); }
@@ -88,13 +88,9 @@ export function HierarchyRegistryPanel() {
     begin(key, `Saving ${editing.id}...`);
     try {
       if (editing.kind === 'region') {
-        const current = regions.find(region => region.id === editing.id);
-        if (!current) throw new Error('This Region is no longer available. Refresh the directory.');
-        await saveRegion({ ...current, id: editing.id, name: editing.name.trim() }, false);
+        await saveRegion(registryEditRecord(editing) as RegionRecord, { create: false, expectedVersion: editing.expectedVersion });
       } else {
-        const current = districts.find(district => district.id === editing.id);
-        if (!current) throw new Error('This District is no longer available. Refresh the directory.');
-        await saveDistrict({ ...current, id: editing.id, name: editing.name.trim(), regionId: editing.regionId }, false);
+        await saveDistrict(registryEditRecord(editing) as DistrictRecord, { create: false, expectedVersion: editing.expectedVersion });
       }
       finishEditing(editing);
       setFeedback({ tone: 'success', message: `${editing.kind === 'region' ? 'Region' : 'District'} ${editing.id} was updated.` });
@@ -105,7 +101,7 @@ export function HierarchyRegistryPanel() {
   const setRegionStatus = async (region: RegionRecord, status: RegionRecord['status']) => {
     begin(`region-${region.id}`, `${status === 'Retired' ? 'Retiring' : 'Reactivating'} ${region.id}...`);
     try {
-      await saveRegion({ ...region, id: region.id, status }, false);
+      await saveRegion({ ...region, id: region.id, status }, { create: false, expectedVersion: region.version ?? 0 });
       setFeedback({ tone: 'success', message: `${region.name} is now ${status}.` });
     } catch (error) { failed(error, 'Region status could not be updated.'); }
     finally { setPending(null); }
@@ -114,10 +110,43 @@ export function HierarchyRegistryPanel() {
   const setDistrictStatus = async (district: DistrictRecord, status: DistrictRecord['status']) => {
     begin(`district-${district.id}`, `${status === 'Retired' ? 'Retiring' : 'Reactivating'} ${district.id}...`);
     try {
-      await saveDistrict({ ...district, id: district.id, status }, false);
+      await saveDistrict({ ...district, id: district.id, status }, { create: false, expectedVersion: district.version ?? 0 });
       setFeedback({ tone: 'success', message: `${district.name} is now ${status}.` });
     } catch (error) { failed(error, 'District status could not be updated.'); }
     finally { setPending(null); }
+  };
+
+  const refreshConflict = async () => {
+    const draft = editing;
+    begin('refresh-registry', 'Refreshing the latest saved hierarchy values...');
+    try {
+      const registry = await refreshHierarchyRegistry();
+      if (draft?.kind === 'region') {
+        setEditing(reviewRegistryConflict(draft, registry.regions.find(region => region.id === draft.id) || null));
+      } else if (draft?.kind === 'district') {
+        setEditing(reviewRegistryConflict(draft, registry.districts.find(district => district.id === draft.id) || null));
+      }
+      setFeedback({ tone: 'success', message: draft ? 'Latest saved values loaded. Your draft is unchanged; compare it below and choose how to continue.' : 'The hierarchy registry was refreshed.' });
+    } catch (error) {
+      failed(error, 'The hierarchy registry could not be refreshed. Your draft is unchanged.', true);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const discardDraft = () => {
+    if (!editing) return;
+    const latest = discardRegistryDraft(editing);
+    finishEditing(editing);
+    setFeedback({ tone: 'success', message: latest ? 'Your draft was discarded. The latest saved record is in use.' : 'Your draft was discarded. The record is no longer available.' });
+  };
+
+  const reapplyDraft = () => {
+    if (!editing) return;
+    const reapplied = reapplyRegistryDraft(editing);
+    if (!reapplied) return;
+    setEditing(reapplied);
+    setFeedback({ tone: 'success', message: 'Your draft is now based on the latest saved version. Review it, then save explicitly.' });
   };
 
   return <section className="space-y-5" aria-label="Region and District registry">
@@ -125,7 +154,7 @@ export function HierarchyRegistryPanel() {
       <Building2 className="h-5 w-5 text-red-700" aria-hidden="true" />
       <div><h2 className="text-base font-semibold text-neutral-900">Region & District Registry</h2><p className="mt-1 text-xs text-neutral-600">IDs are permanent references used by this directory and other applications. Names and a District&apos;s parent Region may be updated; assigned Locations are never moved automatically.</p></div>
     </div>
-    {feedback && <FeedbackMessage feedback={feedback} />}
+    {feedback && <FeedbackMessage feedback={feedback} onRefresh={() => void refreshConflict()} />}
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-neutral-900">Regions</h3>
@@ -135,12 +164,12 @@ export function HierarchyRegistryPanel() {
         <div className="divide-y divide-neutral-100 border-t border-neutral-200 pt-2">{sortedRegions.length === 0 ? <EmptyRegistry /> : sortedRegions.map(region => {
           const isEditing = editing?.kind === 'region' && editing.id === region.id;
           return <div key={region.id} className="space-y-2 py-3 text-xs">
-            {isEditing ? <RegistryEditForm editing={editing} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} /> : <>
+            {isEditing ? <RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /> : <>
               <RegistryIdentity id={region.id} name={region.name} status={region.status} />
-              <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`region-${region.id}`, element); else editButtonRefs.current.delete(`region-${region.id}`); }} busy={Boolean(pending)} status={region.status} onEdit={() => setEditing({ kind: 'region', id: region.id, name: region.name })} onStatus={status => void setRegionStatus(region, status)} />
+              <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`region-${region.id}`, element); else editButtonRefs.current.delete(`region-${region.id}`); }} busy={Boolean(pending)} status={region.status} onEdit={() => setEditing(beginRegionEdit(region))} onStatus={status => void setRegionStatus(region, status)} />
             </>}
           </div>;
-        })}</div>
+        })}{editing?.kind === 'region' && editing.review?.latest === null && !regions.some(region => region.id === editing.id) && <div className="py-3 text-xs"><RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /></div>}</div>
       </div>
       <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-neutral-900">Districts</h3>
@@ -152,24 +181,24 @@ export function HierarchyRegistryPanel() {
           const parent = regions.find(region => region.id === district.regionId);
           const isEditing = editing?.kind === 'district' && editing.id === district.id;
           return <div key={district.id} className="space-y-2 py-3 text-xs">
-            {isEditing ? <RegistryEditForm editing={editing} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} /> : <>
+            {isEditing ? <RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /> : <>
               <RegistryIdentity id={district.id} name={district.name} status={district.status} />
-              <dl className="grid grid-cols-[auto_1fr] gap-x-2 text-neutral-600"><dt>Region ID</dt><dd className="font-mono text-neutral-900">{district.regionId}</dd><dt>Region Name</dt><dd>{parent?.name || 'Missing registry record'}</dd></dl>
-              <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`district-${district.id}`, element); else editButtonRefs.current.delete(`district-${district.id}`); }} busy={Boolean(pending)} status={district.status} onEdit={() => setEditing({ kind: 'district', id: district.id, name: district.name, regionId: district.regionId })} onStatus={status => void setDistrictStatus(district, status)} />
+              <dl className="grid grid-cols-[auto_1fr] gap-x-2 text-neutral-600"><dt>Region ID</dt><dd className="font-mono text-neutral-900">{district.regionId}</dd><dt>Region Name</dt><dd>{parent ? `${parent.name}${parent.status === 'Retired' ? ' - Retired/unavailable' : ''}` : 'Missing registry record - Unavailable'}</dd></dl>
+              <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`district-${district.id}`, element); else editButtonRefs.current.delete(`district-${district.id}`); }} busy={Boolean(pending)} status={district.status} onEdit={() => setEditing(beginDistrictEdit(district))} onStatus={status => void setDistrictStatus(district, status)} />
             </>}
           </div>;
-        })}</div>
+        })}{editing?.kind === 'district' && editing.review?.latest === null && !districts.some(district => district.id === editing.id) && <div className="py-3 text-xs"><RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /></div>}</div>
       </div>
     </div>
   </section>;
 }
 
-function FeedbackMessage({ feedback }: { feedback: Feedback }) {
+function FeedbackMessage({ feedback, onRefresh }: { feedback: Feedback; onRefresh: () => void }) {
   return <div role={feedback.tone === 'error' ? 'alert' : 'status'} className={`rounded-md border px-3 py-2 text-xs ${feedback.tone === 'error' ? 'border-red-200 bg-red-50 text-red-900' : feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
     <p>{feedback.message}</p>
     {feedback.correction && <p className="mt-1 font-medium">{feedback.correction}</p>}
     {feedback.dependencies && feedback.dependencies.length > 0 && <ul className="mt-2 space-y-1">{feedback.dependencies.map(item => <li key={`${item.type}-${item.id}`}>{item.href ? <a href={item.href} className="font-semibold underline">{item.name}{item.storeNumber ? ` (Store ${item.storeNumber})` : ''}</a> : <span className="font-semibold">{item.name} ({item.id})</span>} <span className="font-mono">{item.id}</span></li>)}</ul>}
-    {feedback.refresh && <button type="button" onClick={() => window.location.reload()} className="mt-2 inline-flex items-center gap-1 font-semibold underline"><RefreshCw className="h-3.5 w-3.5" />Refresh directory and review</button>}
+    {feedback.refresh && <button type="button" onClick={onRefresh} className="mt-2 inline-flex items-center gap-1 font-semibold underline"><RefreshCw className="h-3.5 w-3.5" />Refresh saved values and review</button>}
   </div>;
 }
 
@@ -181,16 +210,23 @@ function RegistryActions({ editButtonRef, busy, status, onEdit, onStatus }: { ed
   return <div className="flex flex-wrap gap-3"><button ref={editButtonRef} type="button" disabled={busy} onClick={onEdit} className="inline-flex items-center gap-1 font-semibold text-neutral-700 hover:text-neutral-950 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Edit</button>{status === 'Active' ? <button type="button" disabled={busy} onClick={() => onStatus('Retired')} className="inline-flex items-center gap-1 text-neutral-600 hover:text-red-700 disabled:opacity-50"><Archive className="h-3.5 w-3.5" />Retire</button> : <button type="button" disabled={busy} onClick={() => onStatus('Active')} className="text-neutral-600 hover:text-neutral-900 disabled:opacity-50">Reactivate</button>}</div>;
 }
 
-function RegistryEditForm({ editing, activeRegions, busy, onChange, onSave, onCancel }: { editing: EditState; activeRegions: RegionRecord[]; busy: boolean; onChange: (value: EditState) => void; onSave: () => Promise<void>; onCancel: () => void }) {
+function RegistryEditForm({ editing, regions, activeRegions, busy, onChange, onSave, onCancel, onDiscard, onReapply }: { editing: RegistryEditState; regions: RegionRecord[]; activeRegions: RegionRecord[]; busy: boolean; onChange: (value: RegistryEditState) => void; onSave: () => Promise<void>; onCancel: () => void; onDiscard: () => void; onReapply: () => void }) {
+  const currentParent = editing.kind === 'district' ? regions.find(region => region.id === editing.regionId) : undefined;
+  const missingCurrentParent = editing.kind === 'district' && !currentParent;
   const regionOptions = editing.kind === 'district' && !activeRegions.some(region => region.id === editing.regionId)
-    ? [{ id: editing.regionId, name: 'Current unavailable Region', status: 'Retired' as const }, ...activeRegions]
+    ? [{ id: editing.regionId, name: currentParent?.name || 'Missing registry record', status: currentParent?.status || 'Retired' as const }, ...activeRegions]
     : activeRegions;
+  const latest = editing.review?.latest;
   return <div className="space-y-2">
     <label className="block font-medium text-neutral-700">{editing.kind === 'region' ? 'Region' : 'District'} ID<input value={editing.id} readOnly aria-readonly="true" className="mt-1 w-full rounded-md border border-neutral-200 bg-neutral-100 px-3 py-2 font-mono text-sm text-neutral-600" /></label>
     <label className="block font-medium text-neutral-700">Name<input autoFocus value={editing.name} disabled={busy} onChange={event => onChange({ ...editing, name: event.target.value })} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" /></label>
-    {editing.kind === 'district' && <label className="block font-medium text-neutral-700">Parent Region<select value={editing.regionId} disabled={busy} onChange={event => onChange({ ...editing, regionId: event.target.value })} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm">{regionOptions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id})</option>)}</select></label>}
+    {editing.kind === 'district' && <label className="block font-medium text-neutral-700">Parent Region<select value={editing.regionId} disabled={busy || Boolean(editing.review)} onChange={event => onChange({ ...editing, regionId: event.target.value })} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm">{regionOptions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id}){missingCurrentParent && region.id === editing.regionId ? ' - Missing/unavailable' : region.status === 'Retired' ? ' - Retired/unavailable' : ''}</option>)}</select></label>}
+    {editing.review && <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950" role="status">
+      {latest ? <><p className="font-semibold">A newer saved version is available.</p><dl className="grid grid-cols-[auto_1fr] gap-x-2"><dt>Saved name</dt><dd>{latest.name}</dd>{editing.kind === 'district' && 'regionId' in latest && <><dt>Saved parent</dt><dd>{latest.regionId}</dd></>}</dl><p>Your draft remains: {editing.name}{editing.kind === 'district' ? ` (${editing.regionId})` : ''}.</p></> : <p className="font-semibold">This record is no longer available. It cannot be updated or recreated from this edit.</p>}
+      <div className="flex flex-wrap gap-3"><button type="button" disabled={busy} onClick={onDiscard} className="font-semibold underline">Discard draft and use latest</button>{latest && <button type="button" disabled={busy} onClick={onReapply} className="font-semibold underline">Reapply draft to latest version</button>}</div>
+    </div>}
     <p className="text-neutral-500">The ID is read-only because Locations and other applications depend on it.</p>
-    <div className="flex gap-3"><button type="button" disabled={busy} onClick={() => void onSave()} className="inline-flex items-center gap-1 rounded-md bg-neutral-900 px-3 py-2 font-semibold text-white disabled:opacity-50"><Save className="h-3.5 w-3.5" />Save</button><button type="button" disabled={busy} onClick={onCancel} className="inline-flex items-center gap-1 px-2 py-2 font-semibold text-neutral-700 disabled:opacity-50"><X className="h-3.5 w-3.5" />Cancel</button></div>
+    <div className="flex gap-3"><button type="button" disabled={busy || Boolean(editing.review)} onClick={() => void onSave()} className="inline-flex items-center gap-1 rounded-md bg-neutral-900 px-3 py-2 font-semibold text-white disabled:opacity-50"><Save className="h-3.5 w-3.5" />Save</button><button type="button" disabled={busy} onClick={onCancel} className="inline-flex items-center gap-1 px-2 py-2 font-semibold text-neutral-700 disabled:opacity-50"><X className="h-3.5 w-3.5" />Cancel</button></div>
   </div>;
 }
 

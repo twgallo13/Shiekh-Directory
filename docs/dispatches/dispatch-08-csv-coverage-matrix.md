@@ -91,8 +91,10 @@ Region/District source of truth: `regions` and `districts`. Leadership source of
 | Attribute | Preview | Export | Current management/class | Future representation, dependency, and acceptance test |
 |---|---|---|---|---|
 | `hierarchyApplicability` | `HierarchyApplicability`; writable | `HierarchyApplicability` | Location editor | Controlled enum linked to Location type; test all type combinations |
-| `regionId` | `RegionId`; writable/reference validated | Canonical `RegionId` | Location editor; Hierarchy Registry admin | Canonical Region ID only; test retired/missing references |
-| `districtId` | `DistrictId`; writable/parent validated | Canonical `DistrictId` | Location editor; Hierarchy Registry admin | Canonical District ID only; require matching Region; test mismatch |
+| `regionId` | `RegionId`; writable/reference validated | Canonical `RegionId` | Location editor; Hierarchy Registry admin | Canonical immutable Region ID only; exact string preserved |
+| Resolved Region name | `RegionName`; informational, never writable | Canonical `RegionName` | Resolved from Region registry | Rename appears without Location rewrite; blank when unresolved |
+| `districtId` | `DistrictId`; writable/parent validated | Canonical `DistrictId` | Location editor; Hierarchy Registry admin | Canonical immutable District ID only; preserve leading zeros such as `01` |
+| Resolved District name | `DistrictName`; informational, never writable | Canonical `DistrictName` | Resolved from District registry | Rename appears without Location rewrite; blank when unresolved |
 | `district` | Unsupported legacy projection | `District` display | Legacy/read projection; no authoritative editor | Derived/labeled compatibility field, never import identity |
 | `storeManagerId` | `StoreManagerId`; writable/active Person validated | Canonical `StoreManagerId` | Location editor; organizational leadership | Canonical Person ID; missing/inactive diagnostics |
 | `storeManagerName` | Unsupported derived/legacy copy | Resolved `StoreManager` | Derived compatibility | Exclude from import; regenerate and test stale copy ignored |
@@ -215,8 +217,9 @@ Source: `users` plus Firebase identity. These are authorization records, not org
 
 ## Approved next linked contracts
 
-1. Add District Code (`01`, `02`, and similar) to existing Districts while preserving internal IDs, with API and Location CSV/reference support.
-2. Add a separate People import/export using the Dispatch 11 reviewed mapping, selected confirmation, result, and correction workflow.
-3. Keep other registry/configuration contracts separate unless an approved backup/restore and authorization model exists.
+1. Add a separate People import/export using the Dispatch 11 reviewed mapping, selected confirmation, result, and correction workflow.
+2. Keep other registry/configuration contracts separate unless an approved backup/restore and authorization model exists.
+
+Dispatch 12 supersedes the earlier District Code proposal: values such as `01` are immutable District IDs, and no separate `districtCode` field is introduced.
 
 Acceptance requires import-compatible round-trip exports, stable IDs, schema/version manifests, duplicate/dependency diagnostics, privacy filtering, optimistic concurrency, authorization revalidation, audit evidence, bounded atomic writes, backup/recovery, and reconciliation. Until then, Export All Stores and Reference IDs remain guidance/read products, not backups or re-import sources.

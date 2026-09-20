@@ -234,6 +234,18 @@ describe('Location CSV import preview', () => {
     assert.ok(result.rows[1].issues.some(issue => issue.code === 'invalid_row_shape' && /3 cells for 2 headings/.test(issue.reason)));
   });
 
+  it('recognizes RegionName and DistrictName as informational and never derives assignments from them', () => {
+    const mappings = suggestLocationImportHeaderMappings(['LocationId', 'Region Name', 'DistrictName']);
+    assert.deepEqual(mappings.map(mapping => ({ target: mapping.target, kind: mapping.kind })), [
+      { target: 'LocationId', kind: 'exact' },
+      { target: null, kind: 'informational' },
+      { target: null, kind: 'informational' },
+    ]);
+    const result = previewLocationImport('LocationId,Region Name,DistrictName\r\nloc-007,Other Region,Other District\r\n', snapshot);
+    assert.equal(result.rows[0].action, 'unchanged');
+    assert.deepEqual(result.rows[0].changes, []);
+  });
+
   it('rejects the entire file when broken quoting makes row boundaries unreliable', () => {
     assert.throws(
       () => previewLocationImport('LocationId,StoreName\r\nloc-007,"Unclosed name\r\nloc-other,Other\r\n', snapshot),

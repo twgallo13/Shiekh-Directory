@@ -2,6 +2,7 @@ import { stringify } from 'csv-stringify/sync';
 import type { DirectorySeed } from '../src/lib/directorySeed';
 import type { LocationEditingExportDiagnostic, LocationEditingExportManifest } from '../src/lib/locationEditingExport';
 import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
+import { resolveLocationHierarchy } from '../src/lib/hierarchyResolution';
 import {
   LOCATION_IMPORT_COLUMNS,
   LOCATION_IMPORT_FIELDS,
@@ -70,7 +71,7 @@ export function buildLocationEditingExport(
 ): LocationEditingExportManifest {
   const entries = [...snapshot.locations]
     .sort(compareLocations)
-    .map(location => ({ location: location as ExportLocation, row: toEditingRow(location as ExportLocation) }));
+    .map(location => ({ location: location as ExportLocation, row: toEditingRow(location as ExportLocation, snapshot) }));
   const groupedEntries = partitionEntries(entries);
   const diagnostics: LocationEditingExportDiagnostic[] = entries.flatMap(({ location }) => unsupportedFieldDiagnostic(location));
   const roundTrip = { unchanged: 0, updates: 0, additions: 0, blocked: 0, warnings: 0 };
@@ -180,11 +181,14 @@ function serializeRows(rows: ExportRow[]): string {
   });
 }
 
-function toEditingRow(location: ExportLocation): ExportRow {
+function toEditingRow(location: ExportLocation, snapshot: LocationEditingExportSnapshot): ExportRow {
+  const hierarchy = resolveLocationHierarchy(location, snapshot);
   return Object.fromEntries(LOCATION_IMPORT_FIELDS.map(field => {
     if (field.column === 'SchemaVersion') return [field.column, LOCATION_IMPORT_SCHEMA_VERSION];
     if (field.column === 'SpreadsheetEncoding') return [field.column, LOCATION_IMPORT_SPREADSHEET_ENCODING];
     if (field.column === 'Phone') return [field.column, phoneWithExtension(location.phone, location.phoneExtension)];
+    if (field.column === 'RegionName') return [field.column, hierarchy.regionName || ''];
+    if (field.column === 'DistrictName') return [field.column, hierarchy.districtName || ''];
     if (field.column === 'AssistantStoreManagerIds') return [field.column, serializeIdList(location.assistantStoreManagerIds)];
     if (field.column === 'KeyHolderIds') return [field.column, serializeIdList(location.keyHolderIds)];
     return [field.column, field.field ? textValue(location[field.field]) : ''];

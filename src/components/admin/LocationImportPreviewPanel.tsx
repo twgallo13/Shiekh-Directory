@@ -4,7 +4,7 @@ import type { LocationRecord } from '../../types';
 import type { SessionUser } from '../../lib/authSession';
 import type { PreparedLocationEditingExport } from '../../lib/locationEditingExport';
 import type { LocationImportPreview, LocationImportReceipt } from '../../lib/locationImportPreview';
-import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_FIELDS, type LocationImportHeaderMapping, type LocationImportMode } from '../../lib/locationImportSchema';
+import { LOCATION_IMPORT_FIELDS, LOCATION_IMPORT_WRITABLE_COLUMNS, type LocationImportHeaderMapping, type LocationImportMode } from '../../lib/locationImportSchema';
 import { locationPath } from '../../lib/navigation';
 import { confirmLocationImport, downloadLocationEditingExportPart, downloadLocationImportCorrections, downloadLocationImportResource, downloadLocationImportResults, inspectLocationImportFile, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport, type LocationImportConfirmationOutcome, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
 
@@ -334,7 +334,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
                 <span className="mb-1 flex items-center justify-between gap-2"><span className="truncate font-semibold text-neutral-900">{mapping.sourceHeader || '(blank heading)'}</span><span className="text-[10px] uppercase text-neutral-500">{mapping.kind}</span></span>
                 <select value={mapping.target || ''} disabled={Boolean(busy) || outcomeUnknown} onChange={event => updateMapping(mapping.sourceIndex, event.target.value)} className="w-full rounded-md border border-neutral-300 bg-white px-2 py-2 text-xs">
                   <option value="">Ignore</option>
-                  {LOCATION_IMPORT_COLUMNS.map(column => <option key={column} value={column}>{column}</option>)}
+                  {LOCATION_IMPORT_WRITABLE_COLUMNS.map(column => <option key={column} value={column}>{column}</option>)}
                 </select>
               </label>
             ))}

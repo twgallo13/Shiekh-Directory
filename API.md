@@ -14,6 +14,7 @@ Query parameters:
 - `cursor`: optional opaque cursor returned in `pagination.nextCursor`.
 - `updatedSince`: optional valid ISO 8601 timestamp with a timezone and at most millisecond precision. Matching uses Firestore document update time, with an inclusive lower bound to permit safe boundary replay. Upsert by store number.
 - `customFieldsVersion`: schema version saved from the last completed synchronization. Send it with delta requests and their continuation pages. If omitted, the production repository returns a full reconciliation even when `updatedSince` is supplied, so field visibility changes cannot silently leave stale metadata downstream. A mismatched version returns `409 custom_fields_changed`.
+- `hierarchyVersion`: hierarchy version saved from the last completed synchronization. Send it with delta requests and continuation pages. If omitted from a delta request, the API returns a full reconciliation. A mismatch returns `409 hierarchy_changed`.
 
 The response contains active records only:
 
@@ -23,7 +24,9 @@ The response contains active records only:
   "sync": {
     "watermark": "2026-09-08T12:00:00.000Z",
     "mode": "full",
-    "fullReconciliationRequired": true
+    "fullReconciliationRequired": true,
+    "customFieldsVersion": "sha256",
+    "hierarchyVersion": "sha256"
   },
   "pagination": {
     "limit": 50,
@@ -57,6 +60,27 @@ Every location response now includes a `customMetadata` object. Only defined, ac
 }
 ```
 
+### Canonical Region and District Fields
+
+Location list and detail responses preserve the legacy `district` field with its existing compatibility meaning and separately expose canonical hierarchy resolution:
+
+```json
+{
+  "regionId": "reg-west",
+  "regionName": "West",
+  "regionStatus": "Active",
+  "districtId": "01",
+  "districtName": "District One",
+  "districtStatus": "Active",
+  "hierarchyStatus": "resolved",
+  "hierarchyIssues": []
+}
+```
+
+IDs are exact strings, so District ID `01` is not the number `1`. Names resolve from registries at read time; copied legacy names are not canonical. Missing assignments return null IDs and names. A missing registry record preserves its stored ID and returns a null name. Retired records retain their names and report `Retired`. `hierarchyStatus` is `unassigned`, `resolved`, `retired-reference`, `unresolved-reference`, or `parent-mismatch`; `hierarchyIssues` explains non-resolved references.
+
+List responses include `sync.hierarchyVersion`; detail responses include top-level `hierarchyVersion`. The version covers registry IDs, names, statuses, and District parent links at the Location snapshot. Continuation pages resolve names from that same historical snapshot and also compare the cursor version with the current registry; a later registry change affects ETags without rewriting Locations and invalidates the cursor with `409 hierarchy_changed`.
+
 ### `GET /api/v1/location-fields`
 
 Requires the same Bearer credential and `locations:read` scope as location reads. Returns `Cache-Control: no-store` with `{ "version": "<sha256>", "fields": [...] }`. Only API-visible, active definitions are returned, sorted by display order and key. Each definition contains `id` (the permanent metadata key), `label`, `type`, `helpText`, `options`, `order`, `apiVisible`, and `retired`. Types are `url`, `text`, `number`, `boolean`, and `select`.
@@ -67,9 +91,9 @@ Consumer synchronization rules:
 
 1. Start with `GET /api/v1/locations` and follow all continuation pages.
 2. Replace each received location's entire `customMetadata` object; do not merge it with stale keys. `{}` means there are no currently published custom values for that location.
-3. Save the watermark and `customFieldsVersion` only after the final page succeeds. Keep the same filter/version query parameters on continuation requests.
-4. Send both `updatedSince=<watermark>` and `customFieldsVersion=<version>` for subsequent delta runs. A client that omits the version receives full results instead.
-5. On `409 custom_fields_changed`, discard the incomplete run and start a full reconciliation without `cursor`, `updatedSince`, or `customFieldsVersion`. Do not merely substitute the latest version into a delta request: older records may need fields added or removed.
+3. Save the watermark, `customFieldsVersion`, and `hierarchyVersion` only after the final page succeeds. Keep the same filter/version query parameters on continuation requests.
+4. Send `updatedSince=<watermark>`, `customFieldsVersion=<version>`, and `hierarchyVersion=<version>` for subsequent delta runs. Omitting either version requires full results instead.
+5. On `409 custom_fields_changed` or `409 hierarchy_changed`, discard the incomplete run and start a full reconciliation without `cursor`, `updatedSince`, `customFieldsVersion`, or `hierarchyVersion`. Do not substitute a latest version into a delta request because unchanged Locations may need schema or resolved-name updates.
 
 The full-reconciliation requirement for retired/deleted stores still applies. Removing a field from this API cannot erase copies already held by a consumer; consumers must follow replacement and reconciliation rules.
 
@@ -220,7 +244,7 @@ Prefer a backend-to-backend request. The Store Manager browser must call its own
 
 ```ts
 const response = await fetch(
-  `${process.env.DIRECTORY_API_ORIGIN}/api/v1/locations?limit=100&updatedSince=${encodeURIComponent(lastSyncAt)}`,
+  `${process.env.DIRECTORY_API_ORIGIN}/api/v1/locations?limit=100&updatedSince=${encodeURIComponent(lastSyncAt)}&customFieldsVersion=${encodeURIComponent(lastCustomFieldsVersion)}&hierarchyVersion=${encodeURIComponent(lastHierarchyVersion)}`,
   {
     headers: {
       Authorization: `Bearer ${process.env.DIRECTORY_API_TOKEN}`,

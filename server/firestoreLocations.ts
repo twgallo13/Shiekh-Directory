@@ -1,7 +1,8 @@
-import { FieldPath, Firestore, Timestamp, type DocumentSnapshot } from "@google-cloud/firestore";
+import { FieldPath, Firestore, Timestamp, type DocumentSnapshot, type Transaction } from "@google-cloud/firestore";
 import type { LocationDocument, LocationRepository, LocationPageOptions, LocationPage } from "./directoryApi";
 import { assertUniqueStoreNumbers } from "./directoryApi";
 import { parseCustomFieldDefinition } from "../src/lib/customFields";
+import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
 
 export const DEFAULT_GOOGLE_CLOUD_PROJECT = "gen-lang-client-0801664258";
 export const DEFAULT_FIRESTORE_DATABASE = "ai-studio-shiekhlocationco-00e1a479-af25-4ab6-9565-5c8b804c56a4";
@@ -20,6 +21,8 @@ const PUBLIC_LOCATION_FIELDS = [
   "phonePrivacy",
   "timeZone",
   "district",
+  "regionId",
+  "districtId",
   "operationalStatus",
   "activeNotice",
   "standardHours",
@@ -59,13 +62,37 @@ export class FirestoreLocationRepository implements LocationRepository {
     }, { readOnly: true, readTime: Timestamp.fromDate(snapshotAt) });
   }
 
-  async findActiveByStoreNumber(storeNumber: string): Promise<LocationDocument | null> {
-    const snapshot = await this.firestore
+  async readHierarchy(snapshotAt?: Date): Promise<HierarchyRegistry> {
+    const read = async (transaction: Transaction): Promise<HierarchyRegistry> => {
+      const [regions, districts] = await Promise.all([
+        transaction.get(this.firestore.collection('regions').select('name', 'status')),
+        transaction.get(this.firestore.collection('districts').select('name', 'regionId', 'status')),
+      ]);
+      return {
+        regions: regions.docs.map(document => ({
+          id: document.id,
+          name: String(document.data().name || ''),
+          status: document.data().status === 'Retired' ? 'Retired' : 'Active',
+        })),
+        districts: districts.docs.map(document => ({
+          id: document.id,
+          name: String(document.data().name || ''),
+          regionId: String(document.data().regionId || ''),
+          status: document.data().status === 'Retired' ? 'Retired' : 'Active',
+        })),
+      };
+    };
+    return snapshotAt
+      ? this.firestore.runTransaction(read, { readOnly: true, readTime: Timestamp.fromDate(snapshotAt) })
+      : this.firestore.runTransaction(read, { readOnly: true });
+  }
+
+  async findActiveByStoreNumber(storeNumber: string, snapshotAt = new Date()): Promise<LocationDocument | null> {
+    const snapshot = await this.firestore.runTransaction(transaction => transaction.get(this.firestore
       .collection("locations")
       .where("storeNumber", "==", storeNumber)
       .select(...PUBLIC_LOCATION_FIELDS)
-      .limit(2)
-      .get();
+      .limit(2)), { readOnly: true, readTime: Timestamp.fromDate(snapshotAt) });
 
     assertUniqueStoreNumbers(snapshot.docs.map(toLocationDocument));
     return snapshot.empty ? null : toLocationDocument(snapshot.docs[0]);

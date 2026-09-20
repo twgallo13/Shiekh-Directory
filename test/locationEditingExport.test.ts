@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { parse } from 'csv-parse/sync';
 import { buildLocationEditingExport, LocationEditingExportError } from '../server/locationEditingExport';
 import { LOCATION_IMPORT_COLUMNS, LOCATION_IMPORT_MAX_BYTES, LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, LOCATION_TYPES } from '../src/lib/locationImportSchema';
+import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
 import type { DirectorySeed } from '../src/lib/directorySeed';
 import type { LocationRecord } from '../src/types';
 
@@ -88,8 +89,29 @@ describe('Location editing export', () => {
     assert.equal(row.Address, '7 Main Street, Suite 2\nSecond floor');
     assert.equal(row.ZipCode, '09001');
     assert.equal(row.Phone, "'+12135550100 ext. 42");
+    assert.equal(row.RegionId, 'reg-west');
+    assert.equal(row.RegionName, 'West');
+    assert.equal(row.DistrictId, 'dist-1');
+    assert.equal(row.DistrictName, 'District 1');
     assert.equal(row.AssistantStoreManagerIds, 'person-assistant-2;person-assistant-1');
     assert.equal(row.KeyHolderIds, 'person-key-2;person-key-1');
+  });
+
+  it('preserves leading-zero hierarchy IDs and treats exported names as informational', () => {
+    const source = snapshotWith([location({ districtId: '01' })]);
+    source.districts = [{ id: '01', name: 'District One', regionId: 'reg-west', status: 'Active' }];
+    const result = buildLocationEditingExport(source, snapshotReadAt);
+    const csv = result.parts[0].csv!;
+    const [row] = parse(csv, { bom: true, columns: true }) as Array<Record<string, string>>;
+
+    assert.equal(row.DistrictId, '01');
+    assert.equal(row.DistrictName, 'District One');
+    assert.deepEqual(result.roundTrip, { unchanged: 1, updates: 0, additions: 0, blocked: 0, warnings: 0 });
+
+    const changedNameOnly = csv.replace('District One', 'Not a registry update');
+    const preview = buildLocationImportPlan(changedNameOnly, source, snapshotReadAt).preview;
+    assert.equal(preview.rows[0].action, 'unchanged');
+    assert.deepEqual(preview.rows[0].changes, []);
   });
 
   it('protects formula-leading values while preserving unchanged re-import semantics', () => {

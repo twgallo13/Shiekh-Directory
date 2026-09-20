@@ -8,7 +8,7 @@ Omitted columns and blank cells preserve existing values. Explicit clearing is n
 
 `SchemaVersion` may be omitted or blank and then uses the current `locations-v1` format. A supplied unsupported version is rejected on its row. The field dictionary lists canonical headers, approved aliases, formats, and allowed values. Heading matching ignores case and surrounding whitespace. Every suggested mapping must be reviewed. A source heading may be mapped to one supported target or explicitly ignored; duplicate target mappings and files without a mapped `LocationId` or `StoreNumber` are blocked.
 
-Both existing Store exports are recognized. **Export for Editing** maps all supported canonical ID fields. The reporting **Export All Stores** maps supported Location attributes, while `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, and `AssistantStoreManagers` are informational and ignored by default. Display names never become Region, District, or Person references; canonical `RegionId`, `DistrictId`, and Person ID columns are required to change relationships.
+Both existing Store exports are recognized. **Export for Editing** maps all supported canonical ID fields. `RegionName` and `DistrictName` are automatically recognized as informational and cannot be mapped as write targets. The reporting **Export All Stores** maps supported Location attributes, while `RegionName`, `DistrictName`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, and `AssistantStoreManagers` are informational and ignored by default. Display names never become Region, District, or Person references; canonical `RegionId`, `DistrictId`, and Person ID columns are required to change relationships.
 
 Preview evaluates the complete file for duplicate and conflicting identities before row selection. Rows are labeled New, Updated, Unchanged, or Needs attention and show normalized before/after values plus CSV row, identity, field, supplied/current values, reason, and correction steps. Ready New or Updated rows may be selected independently. Excluding one row cannot resolve a duplicate identity found elsewhere in the file.
 
@@ -32,7 +32,7 @@ The server reads Locations, People, Regions, and Districts in one read-only tran
 
 Every Location type and lifecycle state is included in deterministic Store Number/Location ID order. Parts contain at most 100 rows and 2,000,000 UTF-8 bytes, use a BOM and the established CSV serializer, and are named `shiekh_locations_editing_v1_part_NNN_of_NNN.csv`. A single record that cannot fit fails explicitly rather than being omitted or truncated.
 
-Canonical IDs are preserved for Locations, hierarchy, and leadership. Assistant Manager and Key Holder IDs remain in source order and use semicolons. Phone extensions use `ext. <digits>` in the existing `Phone` column. Leading zeros, Unicode, quoted values, and line breaks are serialized as text without spreadsheet formulas.
+Canonical IDs are preserved for Locations, hierarchy, and leadership. `RegionName` and `DistrictName` resolve from the registry at export time and are informational on re-import. An unresolved assignment retains its ID with a blank name and a diagnostic; missing assignments leave both fields blank. Assistant Manager and Key Holder IDs remain in source order and use semicolons. Phone extensions use `ext. <digits>` in the existing `Phone` column. Leading zeros such as District ID `01`, Unicode, quoted values, and line breaks are serialized as text without spreadsheet formulas.
 
 Each generated part is evaluated through the existing preview planner against the same snapshot. Invalid legacy values, reference problems, normalization changes, ambiguous identities, and populated unsupported fields are reported rather than cleaned. Unsupported Location fields, People-owned `Works at`/`Supports`, hierarchy registries, custom fields, hours/settings, permissions, and application configuration are not represented; this is an editing export, not a full backup.
 
@@ -50,7 +50,7 @@ The authenticated response includes every bounded CSV part from one snapshot. Th
 
 `Export All Stores` is a server-owned export. The browser requests export metadata from `/api/exports/locations/prepare`, shows the server count and effective authorization scope, and downloads only after the user confirms. The download uses `/api/exports/locations/:token` with the current Firebase ID token; screen filters, selected rows, pagination, local storage, and bootstrapped browser state are not export inputs.
 
-The server validates the Firebase ID token, resolves the active directory user record and access scope, reads `locations` and `people` from the configured named Firestore database, and builds a CSV from one read-only snapshot. `(default)` Firestore is rejected. Company and `Company-wide` scopes receive all active stores. `Store <number>` scopes receive only the matching active store. Other scope formats fail closed until a future requirement defines them.
+The server validates the Firebase ID token, resolves the active directory user record and access scope, reads `locations`, `people`, `regions`, and `districts` from the configured named Firestore database, and builds a CSV from one read-only snapshot. `(default)` Firestore is rejected. Company and `Company-wide` scopes receive all active stores. `Store <number>` scopes receive only the matching active store. Other scope formats fail closed until a future requirement defines them.
 
 The export rejects duplicate location IDs and duplicate normalized active store numbers before download. Metadata includes export mode, active lifecycle, record count, effective authorization scope, generation timestamp, filename, token expiry, a SHA-256 digest of the exported store-number set, and the count of missing canonical person references.
 
@@ -58,7 +58,9 @@ The export rejects duplicate location IDs and duplicate normalized active store 
 
 Column order is stable. The first heading is the explicit protected-file signal:
 
-`SpreadsheetEncoding=shiekh-safe-v1`, `StoreNumber`, `StoreName`, `Type`, `Address`, `City`, `State`, `ZipCode`, `Phone`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, `AssistantStoreManagers`, `OperationalStatus`, `RecordStatus`, `GoogleReviewUrl`, `StorePageUrl`.
+`SpreadsheetEncoding=shiekh-safe-v1`, `StoreNumber`, `StoreName`, `Type`, `Address`, `City`, `State`, `ZipCode`, `Phone`, `RegionId`, `RegionName`, `DistrictId`, `DistrictName`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, `AssistantStoreManagers`, `OperationalStatus`, `RecordStatus`, `GoogleReviewUrl`, `StorePageUrl`.
+
+`RegionId` and `DistrictId` are saved Location assignments. `RegionName` and `DistrictName` are current registry resolutions and are informational. The legacy `District` column retains its prior compatibility behavior and is not a canonical identity or rename mechanism. Name-only CSV changes never update registry records or assignments.
 
 Values are serialized as UTF-8 with a BOM for spreadsheet compatibility, including quoting for commas, quotation marks, CR/LF line breaks, and Unicode text. Valid US phone values use the shared readable display formatter and retain extensions; missing values remain blank. Store numbers and ZIP codes are emitted as text values and preserve leading zeros in the CSV. Spreadsheet applications may still apply automatic type conversion when opening CSV files. Stronger spreadsheet typing, formulas, or protected text cells require a separate XLSX export and are not part of this CSV contract.
 
@@ -68,5 +70,6 @@ Leadership columns prefer canonical person IDs and canonical assignment relation
 
 These items are approved next steps and are not implemented by this workflow:
 
-1. Add District Code values such as `01` and `02` to existing Districts while preserving internal District IDs, with API and CSV/reference support.
-2. Add a separate People import/export built on the reviewed mapping, preview, selected-row confirmation, results, and correction workflow.
+1. Add a separate People import/export built on the reviewed mapping, preview, selected-row confirmation, results, and correction workflow.
+
+District IDs such as `01` are existing immutable string identities, not separate District Codes. No `districtCode` field is planned by this contract.

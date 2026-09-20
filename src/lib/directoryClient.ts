@@ -5,6 +5,12 @@ export interface DirectoryWrite { collection: DirectoryCollection; id: string; o
 export interface DirectoryAudit { action: string; entityType: 'Location' | 'Person' | 'User' | 'Setting' | 'Request' | 'Communication'; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data: Record<string, unknown> | null }
 export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
+export interface DirectoryDependency { type: 'Location' | 'District'; id: string; name: string; storeNumber?: string; href?: string }
+export class DirectoryCommitError extends Error {
+  constructor(message: string, public readonly code?: string, public readonly details?: { dependencies?: DirectoryDependency[]; correction?: string }) {
+    super(message);
+  }
+}
 
 export async function commitDirectory(user: SessionUser, writes: DirectoryWrite[], audit: DirectoryAudit): Promise<DirectoryCommitResult> {
   const response = await fetch('/api/directory/commit', {
@@ -18,6 +24,10 @@ export async function commitDirectory(user: SessionUser, writes: DirectoryWrite[
     body: JSON.stringify({ writes, audit }),
   });
   if (response.ok) return await response.json() as DirectoryCommitResult;
-  const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-  throw new Error(body?.error?.message || (response.status === 403 ? 'Your role cannot make this directory change.' : 'The directory database could not save this change.'));
+  const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string; details?: { dependencies?: DirectoryDependency[]; correction?: string } } } | null;
+  throw new DirectoryCommitError(
+    body?.error?.message || (response.status === 403 ? 'Your role cannot make this directory change.' : 'The directory database could not save this change.'),
+    body?.error?.code,
+    body?.error?.details,
+  );
 }

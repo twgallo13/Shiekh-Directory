@@ -132,3 +132,22 @@ Return:
 - A short manual checklist covering edit/cancel/save, stale conflicts, dependency errors, rename visibility, separate CSV fields, and API responses/reconciliation.
 
 No merge, deployment, production import, migration, production repair, automatic reassignment, or People CSV implementation. Preserve existing deployment configuration and secrets. People CSV remains the next separate approved feature.
+
+## Completion evidence
+
+Implemented on `feat/dispatch-12-hierarchy-registry-api`:
+
+- Added editable Region/District registry names and controlled District parent changes with immutable IDs, optimistic concurrency, structured dependency errors, and committed-record reconciliation.
+- Added canonical read-time hierarchy resolution across primary Location views, selectors, API responses, and both Location CSV exports. Legacy copied District text remains compatibility-only.
+- Added hierarchy-version binding for list snapshots, cursors, deltas, detail responses, and ETags. Missing or stale versions require full reconciliation.
+- Added informational `RegionName` and `DistrictName` CSV columns while keeping only canonical ID columns writable.
+- Added focused coverage for exact `01` preservation, registry integrity, API reconciliation, missing/retired/mismatched references, Firestore snapshot reads, and CSV round trips.
+
+Final automated verification on 2026-09-20:
+
+- `npm run lint`: passed.
+- `npm run test:api`: 232 passed, 0 failed.
+- `npm run build`: passed with the existing Vite chunk-size warning.
+- `git diff --check`: passed.
+
+Delivery references are recorded in the draft pull request. Browser automation was intentionally not run; manual browser validation remains assigned to Theo.

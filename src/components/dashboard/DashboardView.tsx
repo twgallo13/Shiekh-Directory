@@ -4,6 +4,7 @@ import { LocationRecord, PersonRecord } from '../../types';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
+import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { 
   Store, 
   Users, 
@@ -37,7 +38,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToPeople,
   onNavigateToRequests,
 }) => {
-  const { locations, people, requests } = useDirectory();
+  const { locations, people, requests, regions, districts } = useDirectory();
 
   // Quick Reference Search & District Filter
   const [quickSearch, setQuickSearch] = useState('');
@@ -54,19 +55,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   }, [locations]);
 
   const verifiedStores = locations.filter(l => l.lastVerifiedAt);
+  const hierarchyByLocationId = useMemo(() => new Map(locations.map(location => [
+    location.id,
+    resolveLocationHierarchy(location, { regions, districts }),
+  ])), [locations, regions, districts]);
 
   // Group all locations by district for Quick Reference Roster
   const districtMap = useMemo(() => {
     const map = new Map<string, { dm?: string; stores: LocationRecord[] }>();
     locations.forEach(l => {
-      const dist = l.district || 'Unassigned District';
+      const dist = hierarchyDistrictLabel(hierarchyByLocationId.get(l.id));
       if (!map.has(dist)) {
         map.set(dist, { dm: l.districtManagerName, stores: [] });
       }
       map.get(dist)!.stores.push(l);
     });
     return map;
-  }, [locations]);
+  }, [locations, hierarchyByLocationId]);
 
   // Unique list of districts for filter selector
   const districtList = useMemo(() => {
@@ -76,7 +81,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Filtered store list for Quick Reference panel
   const quickRefStores = useMemo(() => {
     return locations.filter(l => {
-      const matchesDistrict = selectedDistrict === 'all' || (l.district || 'Unassigned District') === selectedDistrict;
+      const hierarchy = hierarchyByLocationId.get(l.id);
+      const matchesDistrict = selectedDistrict === 'all' || hierarchyDistrictLabel(hierarchy) === selectedDistrict;
       if (!matchesDistrict) return false;
 
       if (!quickSearch.trim()) return true;
@@ -87,11 +93,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         l.city.toLowerCase().includes(q) ||
         l.state.toLowerCase().includes(q) ||
         (l.storeManagerName && l.storeManagerName.toLowerCase().includes(q)) ||
-        (l.district && l.district.toLowerCase().includes(q)) ||
+        hierarchy?.districtName?.toLowerCase().includes(q) ||
+        hierarchy?.districtId?.toLowerCase().includes(q) ||
         (l.districtManagerName && l.districtManagerName.toLowerCase().includes(q))
       );
     });
-  }, [locations, selectedDistrict, quickSearch]);
+  }, [locations, selectedDistrict, quickSearch, hierarchyByLocationId]);
 
   return (
     <div className="space-y-6">
@@ -325,7 +332,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Quick Reference Store Cards List */}
           <div className="space-y-2.5 flex-1 overflow-y-auto max-h-[580px] pr-1">
             {quickRefStores.map(loc => {
-              const dmPerson = people.find(p => p.district === loc.district || p.fullName === loc.districtManagerName);
+              const hierarchy = hierarchyByLocationId.get(loc.id);
+              const dmPerson = people.find(person => person.id === loc.districtManagerId)
+                || people.find(person => person.fullName === loc.districtManagerName);
 
               return (
                 <div key={loc.id} className="group rounded-lg border border-neutral-200 bg-neutral-50 p-3 shadow-2xs transition-all hover:border-neutral-300 hover:bg-neutral-100/80">
@@ -366,7 +375,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="flex items-center gap-1">
                       <span className="text-neutral-400">District:</span>
                       <span className="font-semibold text-neutral-700 truncate max-w-[130px]">
-                        {loc.district || 'Unassigned'}
+                        {hierarchyDistrictLabel(hierarchy)}
                       </span>
                       {dmPerson && (
                         <button

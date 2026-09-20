@@ -30,6 +30,7 @@ export const LOCATION_HIERARCHY_APPLICABILITY = ['Applicable', 'Not Applicable',
 export interface LocationImportFieldDefinition {
   column: string;
   field?: string;
+  informational?: boolean;
   aliases?: readonly string[];
   purpose: string;
   additions: string;
@@ -54,7 +55,9 @@ export const LOCATION_IMPORT_FIELDS: readonly LocationImportFieldDefinition[] = 
   { column: 'TimeZone', field: 'timeZone', aliases: ['Time Zone'], purpose: 'Location time zone.', additions: 'Required', updates: 'Optional', format: 'One allowed IANA value', allowedValues: LOCATION_TIME_ZONES, example: 'America/Los_Angeles' },
   { column: 'HierarchyApplicability', field: 'hierarchyApplicability', aliases: ['Hierarchy Applicability'], purpose: 'Whether controlled Region/District hierarchy applies.', additions: 'Optional; type-based default applies', updates: 'Optional', format: 'One allowed value', allowedValues: LOCATION_HIERARCHY_APPLICABILITY, example: 'Applicable' },
   { column: 'RegionId', field: 'regionId', aliases: ['Region ID'], purpose: 'Canonical Region reference.', additions: 'Optional', updates: 'Optional', format: 'Existing active Region ID from Reference IDs', example: 'REPLACE_WITH_REGION_ID' },
+  { column: 'RegionName', informational: true, aliases: ['Region Name'], purpose: 'Resolved Region display name for review only. Never changes a registry or assignment.', additions: 'Informational; ignored on import', updates: 'Informational; ignored on import', format: 'Resolved from RegionId', example: 'SYNTHETIC EXAMPLE - West Region' },
   { column: 'DistrictId', field: 'districtId', aliases: ['District ID'], purpose: 'Canonical District reference within RegionId.', additions: 'Optional', updates: 'Optional', format: 'Existing active District ID from Reference IDs', example: 'REPLACE_WITH_DISTRICT_ID' },
+  { column: 'DistrictName', informational: true, aliases: ['District Name'], purpose: 'Resolved District display name for review only. Never changes a registry or assignment.', additions: 'Informational; ignored on import', updates: 'Informational; ignored on import', format: 'Resolved from DistrictId', example: 'SYNTHETIC EXAMPLE - District 01' },
   { column: 'StoreManagerId', field: 'storeManagerId', aliases: ['Store Manager ID'], purpose: 'Canonical Store Manager leadership assignment.', additions: 'Optional', updates: 'Optional', format: 'Existing active Person ID', example: 'REPLACE_WITH_ACTIVE_PERSON_ID' },
   { column: 'DistrictManagerId', field: 'districtManagerId', aliases: ['District Manager ID'], purpose: 'Canonical District Manager leadership assignment.', additions: 'Optional', updates: 'Optional', format: 'Existing active Person ID', example: 'REPLACE_WITH_ACTIVE_PERSON_ID' },
   { column: 'RegionalManagerId', field: 'regionalManagerId', aliases: ['Regional Manager ID'], purpose: 'Canonical Regional Manager leadership assignment.', additions: 'Optional', updates: 'Optional', format: 'Existing active Person ID', example: 'REPLACE_WITH_ACTIVE_PERSON_ID' },
@@ -67,10 +70,13 @@ export const LOCATION_IMPORT_FIELDS: readonly LocationImportFieldDefinition[] = 
 ];
 
 export const LOCATION_IMPORT_COLUMNS = LOCATION_IMPORT_FIELDS.map(field => field.column);
+export const LOCATION_IMPORT_WRITABLE_COLUMNS = LOCATION_IMPORT_FIELDS.filter(field => !field.informational).map(field => field.column);
 export type LocationImportColumn = typeof LOCATION_IMPORT_COLUMNS[number];
 export type LocationImportMode = 'add-and-update' | 'update-existing-only';
 
 export const LOCATION_IMPORT_INFORMATIONAL_COLUMNS = [
+  'RegionName',
+  'DistrictName',
   'District',
   'StoreManager',
   'StoreManagerPhone',
@@ -88,10 +94,13 @@ export interface LocationImportHeaderMapping {
 }
 
 export function suggestLocationImportHeaderMappings(headers: readonly string[]): LocationImportHeaderMapping[] {
-  const fields = LOCATION_IMPORT_FIELDS.flatMap(field => [field.column, ...(field.aliases || [])]
+  const fields = LOCATION_IMPORT_FIELDS.filter(field => !field.informational).flatMap(field => [field.column, ...(field.aliases || [])]
     .map(alias => [normalizeImportHeading(alias), field.column] as const));
   const targets = new Map(fields);
-  const informational = new Set(LOCATION_IMPORT_INFORMATIONAL_COLUMNS.map(normalizeImportHeading));
+  const informational = new Set([
+    ...LOCATION_IMPORT_INFORMATIONAL_COLUMNS,
+    ...LOCATION_IMPORT_FIELDS.filter(field => field.informational).flatMap(field => [field.column, ...(field.aliases || [])]),
+  ].map(normalizeImportHeading));
   return headers.map((sourceHeader, sourceIndex) => {
     const normalized = normalizeImportHeading(sourceHeader);
     const target = targets.get(normalized) || null;

@@ -3,6 +3,8 @@ import type { ErrorRequestHandler, Request, RequestHandler, Response } from "exp
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { publicCustomMetadata, sortedCustomFields, type CustomFieldDefinition } from "../src/lib/customFields";
+import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
+import { canonicalHierarchyState, resolveLocationHierarchy } from "../src/lib/hierarchyResolution";
 
 export const LOCATION_READ_SCOPE = "locations:read";
 
@@ -22,7 +24,8 @@ export interface LocationDocument {
 
 export interface LocationRepository {
   readPage(options: LocationPageOptions): Promise<LocationPage>;
-  findActiveByStoreNumber(storeNumber: string): Promise<LocationDocument | null>;
+  findActiveByStoreNumber(storeNumber: string, snapshotAt?: Date): Promise<LocationDocument | null>;
+  readHierarchy?(snapshotAt?: Date): Promise<HierarchyRegistry>;
   readCustomFieldDefinitions?(): Promise<CustomFieldDefinition[]>;
 }
 
@@ -67,6 +70,7 @@ interface CursorPayload {
   updatedSince: string | null;
   snapshotAt: string;
   customFieldsVersion?: string;
+  hierarchyVersion?: string;
 }
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -201,7 +205,20 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
       || (request.query.customFieldsVersion !== undefined && request.query.customFieldsVersion !== customFieldsVersion)) {
       return sendError(response, 409, 'custom_fields_changed', 'Custom fields changed. Restart a full reconciliation without a cursor, updatedSince, or customFieldsVersion.');
     }
-    const effectiveUpdatedSince = response.locals.hasCustomFieldSchema && request.query.customFieldsVersion === undefined ? null : updatedSince;
+    const hierarchy = await readHierarchy(options.locations, snapshotAt);
+    const hierarchyVersion = digestHierarchy(hierarchy);
+    const currentHierarchyVersion = (cursor || request.query.hierarchyVersion !== undefined) && options.locations.readHierarchy
+      ? digestHierarchy(await readHierarchy(options.locations))
+      : hierarchyVersion;
+    if ((cursor && (cursor.hierarchyVersion !== hierarchyVersion || cursor.hierarchyVersion !== currentHierarchyVersion))
+      || (request.query.hierarchyVersion !== undefined
+        && (request.query.hierarchyVersion !== hierarchyVersion || request.query.hierarchyVersion !== currentHierarchyVersion))) {
+      return sendError(response, 409, 'hierarchy_changed', 'The Region/District registry changed. Restart a full reconciliation without a cursor, updatedSince, customFieldsVersion, or hierarchyVersion.');
+    }
+    const effectiveUpdatedSince = (response.locals.hasCustomFieldSchema && request.query.customFieldsVersion === undefined)
+      || (options.locations.readHierarchy && request.query.hierarchyVersion === undefined)
+      ? null
+      : updatedSince;
 
     const result = await options.locations.readPage({ snapshotAt, limit, afterId: cursor?.id });
     const page = result.records
@@ -215,15 +232,17 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
           updatedSince: canonicalUpdatedSince,
           snapshotAt: snapshotAt.toISOString(),
           customFieldsVersion,
+          hierarchyVersion,
         }, options.tokenHmacSecret)
       : null;
 
     return sendCacheableJson(request, response, {
-      data: page.map(record => mapPublicLocation(record, response.locals.customFieldDefinitions)),
+      data: page.map(record => mapPublicLocation(record, response.locals.customFieldDefinitions, hierarchy)),
       sync: {
         watermark: snapshotAt.toISOString(),
         mode: effectiveUpdatedSince ? "delta" : "full",
         customFieldsVersion,
+        hierarchyVersion,
         fullReconciliationRequired: true,
       },
       pagination: {
@@ -239,12 +258,20 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
       return sendError(response, 400, "invalid_store_number", "storeNumber is invalid.");
     }
 
-    const location = await options.locations.findActiveByStoreNumber(storeNumber);
+    const snapshotAt = new Date(Math.floor(now().getTime() / 1000) * 1000);
+    const [location, hierarchy] = await Promise.all([
+      options.locations.findActiveByStoreNumber(storeNumber, snapshotAt),
+      readHierarchy(options.locations, snapshotAt),
+    ]);
     if (!location || location.data.recordStatus !== "Active") {
       return sendError(response, 404, "location_not_found", "Location not found.");
     }
 
-    return sendCacheableJson(request, response, { data: mapPublicLocation(location, response.locals.customFieldDefinitions), customFieldsVersion: response.locals.customFieldsVersion });
+    return sendCacheableJson(request, response, {
+      data: mapPublicLocation(location, response.locals.customFieldDefinitions, hierarchy),
+      customFieldsVersion: response.locals.customFieldsVersion,
+      hierarchyVersion: digestHierarchy(hierarchy),
+    });
   });
 
   router.use((_request, response) => {
@@ -357,14 +384,16 @@ function sendCacheableJson(request: Request, response: Response, payload: unknow
   return response.type("application/json").send(body);
 }
 
-function mapPublicLocation(record: LocationDocument, definitions: CustomFieldDefinition[]): Record<string, unknown> {
+function mapPublicLocation(record: LocationDocument, definitions: CustomFieldDefinition[], hierarchy: HierarchyRegistry): Record<string, unknown> {
   const source = record.data;
+  const resolvedHierarchy = resolveLocationHierarchy(source, hierarchy);
   const location: Record<string, unknown> = {
     id: record.id,
     storeNumber: getStoreNumber(record),
     recordStatus: "Active",
     updatedAt: record.updatedAt.toISOString(),
     customMetadata: publicCustomMetadata(source.customMetadata, definitions),
+    ...resolvedHierarchy,
   };
 
   copyStrings(source, location, [
@@ -403,6 +432,14 @@ function mapPublicLocation(record: LocationDocument, definitions: CustomFieldDef
   if (specialHours) location.specialHours = specialHours;
 
   return location;
+}
+
+async function readHierarchy(repository: LocationRepository, snapshotAt?: Date): Promise<HierarchyRegistry> {
+  return repository.readHierarchy?.(snapshotAt) || { regions: [], districts: [] };
+}
+
+function digestHierarchy(registry: HierarchyRegistry): string {
+  return createHash('sha256').update(canonicalHierarchyState(registry)).digest('hex');
 }
 
 function mapWeeklySchedule(value: unknown): Record<string, unknown> | undefined {

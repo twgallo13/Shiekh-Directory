@@ -3,11 +3,12 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
 import { buildDistrictManagerGroupLabel, resolveActivePerson } from '../../lib/readProjectionContract';
+import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
 
 export const PrintSheetView: React.FC = () => {
-  const { locations, people } = useDirectory();
+  const { locations, people, regions, districts } = useDirectory();
   const [districtFilter, setDistrictFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -26,14 +27,19 @@ export const PrintSheetView: React.FC = () => {
     return map;
   }, [locations, people]);
 
+  const hierarchyByLocationId = useMemo(() => new Map(locations.map(location => [
+    location.id,
+    resolveLocationHierarchy(location, { regions, districts }),
+  ])), [locations, regions, districts]);
+
   // Get distinct districts sorted
   const distinctDistricts = Array.from(
-    new Set(locations.map(l => l.district).filter(Boolean))
+    new Set(locations.map(location => hierarchyDistrictLabel(hierarchyByLocationId.get(location.id))))
   ).sort() as string[];
 
   // Filter locations
   const filteredLocations = locations.filter(loc => {
-    if (districtFilter !== 'all' && loc.district !== districtFilter) return false;
+    if (districtFilter !== 'all' && hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id)) !== districtFilter) return false;
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     const leadership = leadershipByLocationId.get(loc.id);
@@ -53,12 +59,12 @@ export const PrintSheetView: React.FC = () => {
 
   // Ensure consistent district ordering
   const sortedDistricts = Array.from(
-    new Set(filteredLocations.map(l => l.district || 'Unassigned District'))
+    new Set(filteredLocations.map(location => hierarchyDistrictLabel(hierarchyByLocationId.get(location.id))))
   ).sort();
 
   sortedDistricts.forEach(districtName => {
     const storesInDistrict = filteredLocations
-      .filter(l => (l.district || 'Unassigned District') === districtName)
+      .filter(location => hierarchyDistrictLabel(hierarchyByLocationId.get(location.id)) === districtName)
       .sort((a, b) => {
         const numA = parseInt(a.storeNumber, 10);
         const numB = parseInt(b.storeNumber, 10);

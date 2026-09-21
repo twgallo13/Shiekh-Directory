@@ -303,3 +303,30 @@ Push the documentation to the implementation branch. Keep both PRs unmerged and 
 Return a short business-language handoff: deployed application SHA, documentation SHA, revision, traffic, live URL, rollback target, and any failed/not-run checks. Only say “ready on the live site for manual testing” after successful promotion and verification. Do not claim Theo's browser acceptance.
 
 Theo's first checks: hard-refresh the branded site, sign in as System Administrator, open Region & District Registry, confirm Edit/Save/Cancel and separate ID/Name labels, then follow the existing manual checklist above. If the new UI is still missing, inspect the serving revision and frontend assets before proposing another code change.
+
+## Authorized deployment result — manual acceptance environment
+
+Deployed on 2026-09-21 from the exact tested application commit `e74e57c1a4ebb6cb553dca109b3355832282c6dc` using a clean detached checkout. Cloud Build `2eca527a-7ffc-4c39-b766-48dc274b66ba` produced Ready revision `shiekh-location-company-directory-dispatch12-e74e57c` with image digest `sha256:befe36a492c4d1e74f75e17c977520d693aff04ef0481e9d7dea081eb98ae900`.
+
+- PASS — the actual pre-deployment rollback baseline was `shiekh-location-company-directory-dispatch11-e4e332c` at 100% desired and observed traffic.
+- PASS — the candidate was created with tag `d12-e74e57c` and no traffic; Dispatch 11 remained at 100% while candidate checks ran.
+- PASS — runtime identity, environment, existing secret references, resources, scaling, networking, probes, and container settings matched the rollback revision. Only expected image/build/revision metadata differed.
+- PASS — candidate root returned 200; unauthenticated `/api/auth/me` returned 401 `invalid_token`; the unknown API route returned 404 `api_route_not_found`.
+- PASS — all 80 discovered candidate assets returned 200 and nonzero bytes. `AdminIntegrationsView-D6acayXL.js` contained the reviewed Region/District Edit and conflict-review UI.
+- PASS — final desired and observed traffic identify `shiekh-location-company-directory-dispatch12-e74e57c` as the sole percentage-bearing revision at 100%.
+- PASS — the tagged candidate, default Cloud Run URL, and `https://shiekh-dir.ai.studio` serve entry bundle `index-prWzG0UR.js` and the same verified Admin bundle. The branded mapping is Ready and DomainRoutable.
+- PASS — final unauthenticated checks on the default and branded URLs returned 200 at root, 401 `invalid_token` for `/api/auth/me`, and 404 `api_route_not_found` for the unknown API route.
+- PASS — two verifier-only guard failures conservatively restored Dispatch 11 to 100% before the final corrected promotion. Neither represented an application failure; each rollback was verified before retry.
+- NOT RUN — browser automation and authenticated functional acceptance. Theo owns manual browser validation.
+- NOT RUN — merge, production import, migration, repair, business-record edit, automatic reassignment, secret rotation, or configuration change.
+
+Live URL: `https://shiekh-dir.ai.studio`. Exact rollback target: `shiekh-location-company-directory-dispatch11-e4e332c`.
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+	--project gen-lang-client-0801664258 \
+	--region us-west1 \
+	--to-revisions=shiekh-location-company-directory-dispatch11-e4e332c=100
+```
+
+The original worktree's unrelated `docs/cloud-run-deployment-runbook.md` modification remained untouched and excluded. This deployment record was prepared in an isolated documentation worktree; the outstanding local runbook history still requires separate reconciliation. PRs #9 and #10 remain unmerged, and PR #10 remains draft.

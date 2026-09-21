@@ -122,7 +122,7 @@ This review does not implement either correction. A later approved patch should:
 5. Identify and approve contact/verification for external API, CSV, scheduled-job, integration, and direct-database consumers before compatibility changes.
 6. Approve any future write plan only after before/after evidence, version checks, and a database-level reversal procedure are prepared.
 
-District reconciliation proposal ready for approval. No live assignments were changed.
+District reconciliation proposal was ready for approval. Theo's subsequent approved mapping and execution planning are recorded in [Dispatch 12B](../dispatch-12b-approved-hierarchy-update-plan.md) and [the exact update plan](dispatch-12b-update-plan.md). No live assignments were changed by Dispatch 12A.
 
 
 ## Owner clarification and review follow-up — 2026-09-21

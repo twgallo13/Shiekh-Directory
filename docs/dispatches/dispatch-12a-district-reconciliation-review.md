@@ -94,3 +94,39 @@ Return the commit SHA, report links, PASS/FAIL/NOT RUN evidence, classification 
 Stop with “District reconciliation proposal ready for approval” only when the authoritative proposal is complete; otherwise identify the blocked portion.
 
 No production assignment changes, database repairs, imports, compatibility-field deletion/repurposing, application deployment, secret/configuration changes, merge, or People CSV expansion. Earlier authorization to deploy Dispatch 12 does not authorize any new deployment or data repair in this pass.
+
+
+## Review amendment — correct the reconciliation evidence before approval
+
+Review target: `9a5dd3dadba1c9b2b68cf0910886cd2b31fd7be5`. PR #10 was verified open/draft on its existing Dispatch 11 base. This amendment concerns the review helper, tests, and evidence only. It does not approve Location assignments or changes to the application.
+
+### Findings requiring correction
+
+1. `scripts/dispatch12aReconciliation.ts` reads three collections using independent `get()` calls in `Promise.all`. This does not establish the single consistent snapshot claimed in the report.
+2. The helper only classifies records whose saved applicability is exactly `Applicable`. Missing applicability, explicit `Not Applicable`, and explicit `Unknown` all fall into the same missing-field explanation. This omits the existing retail defaults in `validateLocationHierarchyFields` in `src/lib/hierarchyAssignmentContract.ts`.
+3. Ambiguous matches, retired references, valid canonical references with contradictory legacy text, and candidate parent conflicts are not all distinguished. A valid canonical assignment must remain authoritative even when copied text differs.
+4. Missing versions are collapsed to numeric zero, so the CSV cannot distinguish an absent version from a saved zero. The source document ID can also be overwritten by an embedded `id` because of object spread order.
+5. The committed report says the full API/build suite was NOT RUN, while the returned summary says it passed. No focused helper tests were included in the reviewed commit. The report also retains obsolete access-blocked wording.
+
+### Required corrections
+
+- Fetch the latest branch and check worktree readiness. Preserve the unrelated local runbook edit. Restrict edits to this investigation's helper, focused tests, report, CSV, and dispatch evidence.
+- Use a supported read-only transaction or shared read timestamp for all three collection reads. Record evidence of the shared snapshot, the actual read time, project/database, tool source commit, and application baseline separately. Do not label a wall-clock generation time as a database snapshot guarantee. Read only the necessary fields and retain lifecycle coverage.
+- Keep the actual document ID authoritative; report any conflicting embedded ID as a blocker rather than silently replacing either value. Detect duplicate identities before constructing lookup maps.
+- Report saved applicability separately from the effective behavior under the current application contract and explain the default used. Missing applicability on the three recognized retail types must not automatically suppress review candidates. Explicit Unknown remains explicit Unknown. For Corporate/DC/Other records, show existing application behavior and unresolved business intent separately; do not assign a District by type.
+- Compute exact-name candidate evidence independently from applicability decisions. Only a nonempty trimmed, case-normalized legacy name matching exactly one Active District with an Active parent qualifies. Any resulting candidate remains unapproved. Do not use fuzzy matching, ID conversion, geography, or Person territory.
+- Distinguish no match from multiple matches, missing from retired references, invalid applicability from missing applicability, and parent mismatch from missing parent. Show additional issues when more than one applies, with one primary classification per Location so totals reconcile.
+- Retain valid canonical assignments even when legacy text differs, but explicitly flag the discrepancy. If a proposed candidate's parent conflicts with an existing Region reference, show the conflict and both values; do not present the proposed parent change as routine or approved.
+- Preserve raw version presence/value and separately report the effective concurrency version, including absent versus explicit zero. Flag invalid versions. Preserve exact IDs, leading zeros, lifecycle values, and source text.
+- Regenerate the complete review CSV and report from the corrected read. Reconcile every Location once and all lifecycle/classification totals. Do not hard-code the prior 50/2/3 counts if the refreshed snapshot differs. Keep the review CSV visibly not import-ready.
+- Store 150's proposed District `02` remains pending Theo's business approval. No approval is implied by this amendment. Provide a concise grouped candidate table for the remaining retail stores and a separate list of genuinely unresolved decisions.
+
+### Validation and delivery
+
+Add focused fixture tests for: missing retail applicability; explicit Unknown and Not Applicable; non-retail intent; unique/ambiguous/empty names; missing/retired District and Region; mismatched parent; valid canonical versus conflicting legacy text; embedded/document ID conflict; absent and explicit-zero versions; leading-zero IDs; and Store 150's invalid reference. Test that report generation has no business-record write or import/repair path, and that all collection reads use the same read-only snapshot mechanism.
+
+Run the focused tests, lint/typecheck, full API suite, build, and diff-check as required above. Record exact commands, counts, exit results, and tested source state consistently in the report and PR. If a check was not run, say NOT RUN; do not reuse historical passes. Preserve spreadsheet-safe handling and exact text when generating the review CSV.
+
+Update the existing report and CSV, remove obsolete blocked-access wording, and distinguish verified source findings from external consumers that remain NOT VERIFIED. Commit and push only scoped files; update PR #10's evidence. Return the commit, changed-file purposes, report links, pass/fail/not-run results, and remaining owner decisions.
+
+Stop at a corrected proposal ready for review. No live assignments, imports, repairs, migration, compatibility-field changes, application changes, deployment, merge, secret/configuration changes, or browser automation.

@@ -4,7 +4,7 @@ import { LocationRecord, PersonRecord } from '../../types';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
-import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { resolveActiveLocationManagers } from '../../lib/readProjectionContract';
 import { 
   Store, 
@@ -65,29 +65,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     resolveActiveLocationManagers(location, people),
   ])), [locations, people]);
 
-  // Group all locations by district for Quick Reference Roster
+  // Group all locations by stable hierarchy group for Quick Reference Roster
   const districtMap = useMemo(() => {
-    const map = new Map<string, { stores: LocationRecord[] }>();
+    const map = new Map<string, { label: string; stores: LocationRecord[] }>();
     locations.forEach(l => {
-      const dist = hierarchyDistrictLabel(hierarchyByLocationId.get(l.id));
-      if (!map.has(dist)) {
-        map.set(dist, { stores: [] });
+      const hierarchy = hierarchyByLocationId.get(l.id);
+      const key = resolveHierarchyGroupKey(hierarchy);
+      const id = hierarchyGroupId(key);
+      if (!map.has(id)) {
+        map.set(id, { label: hierarchyGroupLabel(key, hierarchy), stores: [] });
       }
-      map.get(dist)!.stores.push(l);
+      map.get(id)!.stores.push(l);
     });
     return map;
   }, [locations, hierarchyByLocationId]);
 
-  // Unique list of districts for filter selector
+  // Unique list of stable group ids for filter selector
   const districtList = useMemo(() => {
-    return Array.from(districtMap.keys()).sort();
+    return Array.from(districtMap.entries()).sort((a, b) => a[1].label.localeCompare(b[1].label));
   }, [districtMap]);
 
   // Filtered store list for Quick Reference panel
   const quickRefStores = useMemo(() => {
     return locations.filter(l => {
       const hierarchy = hierarchyByLocationId.get(l.id);
-      const matchesDistrict = selectedDistrict === 'all' || hierarchyDistrictLabel(hierarchy) === selectedDistrict;
+      const matchesDistrict = selectedDistrict === 'all' || hierarchyGroupId(resolveHierarchyGroupKey(hierarchy)) === selectedDistrict;
       if (!matchesDistrict) return false;
 
       if (!quickSearch.trim()) return true;
@@ -330,8 +332,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 className="bg-neutral-50 border border-neutral-200 rounded-lg py-1.5 px-2.5 text-xs text-neutral-800 font-medium focus:outline-none focus:border-red-500 cursor-pointer max-w-[170px]"
               >
                 <option value="all">All Districts ({districtList.length})</option>
-                {districtList.map(dist => (
-                  <option key={dist} value={dist}>{dist}</option>
+                {districtList.map(([id, { label }]) => (
+                  <option key={id} value={id}>{label}</option>
                 ))}
               </select>
             </div>

@@ -70,7 +70,6 @@ const LOCATION_EXPORT_COLUMNS = [
   "DistrictId",
   "DistrictName",
   "District",
-  "HierarchyApplicability",
   "StoreManager",
   "StoreManagerPhone",
   "DistrictManager",
@@ -79,6 +78,7 @@ const LOCATION_EXPORT_COLUMNS = [
   "RecordStatus",
   "GoogleReviewUrl",
   "StorePageUrl",
+  "HierarchyApplicability",
 ] as const;
 
 const EXPORT_TOKEN_TTL_MS = 2 * 60_000;
@@ -256,7 +256,10 @@ function toCsvRow(
   people: ReadProjectionPerson[] = [],
   hierarchyRegistry: HierarchyRegistry = { regions: [], districts: [] },
 ): Record<typeof LOCATION_EXPORT_COLUMNS[number], string> {
-  const hierarchy = resolveLocationHierarchy({ regionId: location.regionId, districtId: location.districtId }, hierarchyRegistry);
+  const hierarchy = resolveLocationHierarchy(
+    { regionId: location.regionId, districtId: location.districtId, type: location.type, hierarchyApplicability: location.hierarchyApplicability },
+    hierarchyRegistry,
+  );
   const projection = buildLocationReadProjection(
     {
       id: String(location.id ?? ''),
@@ -312,7 +315,6 @@ function toCsvRow(
     DistrictId: hierarchy.districtId || '',
     DistrictName: hierarchy.districtName || '',
     District: projection.district,
-    HierarchyApplicability: hierarchy.hierarchyApplicability,
     StoreManager: projection.storeManager,
     StoreManagerPhone: storeManagerPhone,
     DistrictManager: projection.districtManager,
@@ -321,6 +323,7 @@ function toCsvRow(
     RecordStatus: stringField(location.recordStatus),
     GoogleReviewUrl: stringField(location.googleReviewUrl),
     StorePageUrl: stringField(location.storePageUrl),
+    HierarchyApplicability: hierarchy.hierarchyApplicability,
   };
 }
 

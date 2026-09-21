@@ -3,7 +3,7 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
-import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
@@ -123,7 +123,15 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
     resolveLocationHierarchy(location, { regions, districts: registryDistricts }),
   ])), [locations, regions, registryDistricts]);
 
-  const districtOptions = useMemo(() => Array.from(new Set(locations.map(location => hierarchyDistrictLabel(hierarchyByLocationId.get(location.id))))).sort(), [locations, hierarchyByLocationId]);
+  const districtOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    locations.forEach(location => {
+      const hierarchy = hierarchyByLocationId.get(location.id);
+      const key = resolveHierarchyGroupKey(hierarchy);
+      byId.set(hierarchyGroupId(key), hierarchyGroupLabel(key, hierarchy));
+    });
+    return Array.from(byId.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [locations, hierarchyByLocationId]);
 
   const states = useMemo(() => {
     return Array.from(new Set(locations.map(l => l.state).filter(Boolean))).sort() as string[];
@@ -136,7 +144,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
     return locations.filter(loc => {
       if (!includeRetired && loc.recordStatus === 'Retired') return false;
       const hierarchy = hierarchyByLocationId.get(loc.id);
-      if (districtFilter !== 'all' && hierarchyDistrictLabel(hierarchy) !== districtFilter) return false;
+      if (districtFilter !== 'all' && hierarchyGroupId(resolveHierarchyGroupKey(hierarchy)) !== districtFilter) return false;
       if (stateFilter !== 'all' && loc.state !== stateFilter) return false;
       if (statusFilter !== 'all' && loc.operationalStatus !== statusFilter) return false;
       if (typeFilter !== 'all' && loc.type !== typeFilter) return false;
@@ -161,13 +169,15 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
   // District Groups calculation
   const districtGroups = useMemo(() => {
-    const map = new Map<string, LocationRecord[]>();
+    const map = new Map<string, { label: string; stores: LocationRecord[] }>();
     filtered.forEach(loc => {
-      const d = hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id));
-      if (!map.has(d)) map.set(d, []);
-      map.get(d)!.push(loc);
+      const hierarchy = hierarchyByLocationId.get(loc.id);
+      const key = resolveHierarchyGroupKey(hierarchy);
+      const id = hierarchyGroupId(key);
+      if (!map.has(id)) map.set(id, { label: hierarchyGroupLabel(key, hierarchy), stores: [] });
+      map.get(id)!.stores.push(loc);
     });
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return Array.from(map.entries()).sort((a, b) => a[1].label.localeCompare(b[1].label));
   }, [filtered, hierarchyByLocationId]);
 
   // Multi-select helpers
@@ -352,8 +362,8 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
             className="bg-neutral-50 hover:bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
           >
             <option value="all">All Districts</option>
-            {districtOptions.map(d => (
-              <option key={d} value={d}>{d}</option>
+            {districtOptions.map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
             ))}
           </select>
 
@@ -653,13 +663,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
               No districts match the active filter criteria.
             </div>
           ) : (
-            districtGroups.map(([districtName, distLocs]) => {
+            districtGroups.map(([groupId, { label: districtName, stores: distLocs }]) => {
               const allInDistSelected = distLocs.every(l => selectedStoreIds.includes(l.id));
               const someInDistSelected = !allInDistSelected && distLocs.some(l => selectedStoreIds.includes(l.id));
               const districtManager = distLocs.map(l => leadershipByLocationId.get(l.id)?.districtManager).find(Boolean);
 
               return (
-                <div key={districtName} className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-xs">
+                <div key={groupId} className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-xs">
                   {/* District Header */}
                   <div className="bg-neutral-50 px-4 py-3 border-b border-neutral-200 flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">

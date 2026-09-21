@@ -249,6 +249,8 @@ describe("Directory API location responses", () => {
     assert.equal(body.data[0].districtId, "01");
     assert.equal(body.data[0].districtName, "District One");
     assert.equal(body.data[0].hierarchyStatus, "resolved");
+    assert.equal(body.data[0].hierarchyApplicability, "Applicable");
+    assert.equal(body.data[1].hierarchyApplicability, "Not Applicable");
     assert.equal(typeof body.sync.hierarchyVersion, "string");
     assert.deepEqual(body.data[0].standardHours.monday, {
       isClosed: false,
@@ -266,6 +268,31 @@ describe("Directory API location responses", () => {
       "privateNote",
     ]) {
       assert.equal(serialized.includes(privateField), false, `${privateField} must not appear in the response`);
+    }
+  });
+
+  it("distinguishes malformed saved applicability, empty strings, and absent values without broadening valid enum values", async () => {
+    const scoped = await startTestServer({
+      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => NOW,
+      locations: {
+        ...repository,
+        async readPage(options) {
+          return fixturePage([
+            { ...records[0], id: "loc-empty-string", data: { ...records[0].data, storeNumber: "40", hierarchyApplicability: "" } },
+            { ...records[0], id: "loc-malformed", data: { ...records[0].data, storeNumber: "41", hierarchyApplicability: "Sometimes" } },
+            { ...records[0], id: "loc-explicit-unknown", data: { ...records[0].data, storeNumber: "42", hierarchyApplicability: "Unknown" } },
+          ], options);
+        },
+      },
+    });
+    try {
+      const body = await (await apiFetch(scoped.baseUrl, "/api/v1/locations", READ_TOKEN)).json();
+      const byStore = new Map(body.data.map((location: { storeNumber: string; hierarchyApplicability: string }) => [location.storeNumber, location.hierarchyApplicability]));
+      assert.equal(byStore.get("40"), "Applicable"); // empty string behaves like absent, using the canonical-reference default
+      assert.equal(byStore.get("41"), "Unknown"); // unsupported saved values remain visible as Unknown, never silently accepted
+      assert.equal(byStore.get("42"), "Unknown");
+    } finally {
+      await closeServer(scoped.server);
     }
   });
 

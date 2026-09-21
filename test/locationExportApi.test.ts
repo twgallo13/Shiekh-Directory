@@ -126,6 +126,29 @@ test("reporting export separates canonical hierarchy IDs and names while retaini
   } finally { await app.close(); }
 });
 
+test("HierarchyApplicability is appended after every pre-existing reporting column", async () => {
+  const app = await harness({
+    account: companyAccount,
+    people: [],
+    locations: [location('07', { type: 'Enclosed Mall' })],
+  });
+  try {
+    const prepared = await prepare(app.baseUrl, 'token');
+    const csv = await download(app.baseUrl, prepared.token, 'token');
+    const headerLine = csv.split('\n')[0].trim();
+    const headers = parse(Buffer.from(headerLine), { columns: false })[0] as string[];
+    const preexisting = [
+      LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, "StoreNumber", "StoreName", "Type", "Address", "City", "State", "ZipCode", "Phone",
+      "RegionId", "RegionName", "DistrictId", "DistrictName", "District", "StoreManager", "StoreManagerPhone", "DistrictManager",
+      "AssistantStoreManagers", "OperationalStatus", "RecordStatus", "GoogleReviewUrl", "StorePageUrl",
+    ];
+    assert.deepEqual(headers.slice(0, preexisting.length), preexisting);
+    assert.equal(headers.at(-1), "HierarchyApplicability");
+    const rows = parse(csv, { columns: true }) as (CsvRow & { HierarchyApplicability: string })[];
+    assert.equal(rows[0].HierarchyApplicability, "Applicable");
+  } finally { await app.close(); }
+});
+
 test("inactive activeStatus managers and unmatched copied assistant names produce blanks and metadata", async () => {
   const app = await harness({
     account: companyAccount,

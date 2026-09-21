@@ -25,6 +25,7 @@ import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent }
 import { useAuth } from './AuthContext';
 import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
 import { resolvePersonPhone, serializePersonUpdate } from '../lib/personContacts';
+import { PERSON_LEADERSHIP_NAME_FIELDS, reconcileLocationLeadershipCopy } from '../lib/personLocationRelationships';
 import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
 
 interface DirectoryContextType {
@@ -363,27 +364,18 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       ? updatedPerson
       : people.find(person => person.id === personId);
 
-    const updatesLeadershipCopies = ['fullName', 'name', 'phone', 'workPhone', 'phonePrivacy']
-      .some(field => Object.hasOwn(updates, field));
+    const updatedFields = Object.keys(updates);
+    const updatesLeadershipCopies = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
     const affectsLocation = (location: LocationRecord) => updatesLeadershipCopies && (location.storeManagerId === id || location.districtManagerId === id
       || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id));
-    const updatedLocations = locations.map(location => affectsLocation(location) ? ({
-      ...location,
-      ...(location.storeManagerId === id ? {
-        storeManagerName: updatedPerson.fullName,
-        storeManagerPhone: resolvePersonPhone(updatedPerson).value,
-        storeManagerPhonePrivacy: updatedPerson.phonePrivacy,
-      } : {}),
-      ...(location.districtManagerId === id ? {
-        districtManagerName: updatedPerson.fullName,
-      } : {}),
-      assistantStoreManagerNames: (location.assistantStoreManagerIds || [])
-        .map(personId => personById(personId)?.fullName)
-        .filter((name): name is string => Boolean(name)),
-      keyHolderNames: (location.keyHolderIds || [])
-        .map(personId => personById(personId)?.fullName)
-        .filter((name): name is string => Boolean(name)),
-    }) : location);
+    const updatedLocations = locations.map(location => reconcileLocationLeadershipCopy(
+      location,
+      id,
+      updatedPerson,
+      resolvePersonPhone(updatedPerson).value,
+      personId => personById(personId)?.fullName,
+      updatedFields,
+    ));
     setPeople(previous => previous.map(person => person.id === id ? updatedPerson : person));
     setLocations(updatedLocations);
     try {

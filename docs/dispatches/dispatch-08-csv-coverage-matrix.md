@@ -14,7 +14,7 @@
 | Person `Works at` / `Supports` | Dependency check only | Person-owned fields are never written by this import |
 | Regions, Districts, and People | Reference check only | Existing active canonical records are required; names never create or select records |
 | Unsupported Location fields and every non-Location group below | No | Preserved on updates where already present; no new CSV columns |
-| Export All Stores | Supported attributes only | District and leadership names/phone are explicitly ignored; canonical IDs are required for relationship changes |
+| Export All Stores | Supported attributes only | District and leadership names/phone are explicitly ignored; canonical IDs are required for relationship changes. `HierarchyApplicability` is appended as the last column and reports the effective enum, not necessarily the raw saved value; re-importing it can propose saving that default and the preview shows the change |
 
 ## Dispatch 10 editing export coverage
 
@@ -90,7 +90,7 @@ Region/District source of truth: `regions` and `districts`. Leadership source of
 
 | Attribute | Preview | Export | Current management/class | Future representation, dependency, and acceptance test |
 |---|---|---|---|---|
-| `hierarchyApplicability` | `HierarchyApplicability`; writable | `HierarchyApplicability` | Location editor | Controlled enum linked to Location type; test all type combinations |
+| `hierarchyApplicability` | `HierarchyApplicability`; writable | Editing export: raw saved value, blank when absent. Reporting export: effective enum appended as the last column | Location editor | Controlled enum linked to Location type; test all type combinations and the reporting-effective-vs-saved distinction |
 | `regionId` | `RegionId`; writable/reference validated | Canonical `RegionId` | Location editor; Hierarchy Registry admin | Canonical immutable Region ID only; exact string preserved |
 | Resolved Region name | `RegionName`; informational, never writable | Canonical `RegionName` | Resolved from Region registry | Rename appears without Location rewrite; blank when unresolved |
 | `districtId` | `DistrictId`; writable/parent validated | Canonical `DistrictId` | Location editor; Hierarchy Registry admin | Canonical immutable District ID only; preserve leading zeros such as `01` |

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { hierarchyDistrictLabel, resolveHierarchyApplicability, resolveLocationHierarchy } from '../src/lib/hierarchyResolution';
+import { canSelectNotApplicableHierarchy, hierarchyDistrictLabel, isRetailHierarchyType, resolveHierarchyApplicability, resolveLocationHierarchy } from '../src/lib/hierarchyResolution';
 
 const activeDistrict = { id: '01', name: 'District One', regionId: 'west', status: 'Active' as const };
 
@@ -53,5 +53,16 @@ describe('hierarchy display resolution', () => {
     assert.deepEqual(resolveHierarchyApplicability({ type: 'Enclosed Mall', hierarchyApplicability: 'Unknown' }), { value: 'Unknown', issues: [] });
     assert.match(resolveHierarchyApplicability({ type: 'Enclosed Mall', hierarchyApplicability: 'Not Applicable' }).issues.join(' '), /Retail/);
     assert.match(resolveHierarchyApplicability({ hierarchyApplicability: 'invalid' }).issues.join(' '), /Unsupported/);
+  });
+
+  it('shared Quick Add/Location Edit control restriction matches the retail applicability contract', () => {
+    for (const type of ['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location']) {
+      assert.equal(isRetailHierarchyType(type), true);
+      assert.equal(canSelectNotApplicableHierarchy(type), false);
+    }
+    for (const type of ['Warehouse / Distribution Center', 'Other Company Location', 'Corporate Office', undefined]) {
+      assert.equal(isRetailHierarchyType(type), false);
+      assert.equal(canSelectNotApplicableHierarchy(type), true);
+    }
   });
 });

@@ -9,7 +9,7 @@ import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
-import { resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { 
   X, 
   Save, 
@@ -860,6 +860,33 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <p className="mt-1 text-[11px] text-neutral-500">The selected value is the permanent District ID. Names are resolved from the registry.</p>
                     {hierarchy && hierarchy.hierarchyStatus !== 'resolved' && hierarchy.hierarchyStatus !== 'unassigned' && (
                       <p className="mt-1 text-[11px] font-medium text-amber-700">{hierarchy.hierarchyIssues.join(' ')}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">
+                      Retail hierarchy
+                    </label>
+                    <select
+                      value={formData.hierarchyApplicability || ''}
+                      onChange={(e) => setFormData({ ...formData, hierarchyApplicability: (e.target.value || undefined) as typeof formData.hierarchyApplicability })}
+                      className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
+                    >
+                      <option value="">Use existing applicability</option>
+                      <option value="Applicable">Retail hierarchy applies</option>
+                      {canSelectNotApplicableHierarchy(formData.type) && (
+                        <option value="Not Applicable">No retail hierarchy</option>
+                      )}
+                      <option value="Unknown">Needs review</option>
+                    </select>
+                    {!canSelectNotApplicableHierarchy(formData.type) && (
+                      <p className="mt-1 text-[11px] text-neutral-500">Retail locations cannot be marked No retail hierarchy.</p>
+                    )}
+                    {canSelectNotApplicableHierarchy(formData.type) && (formData.regionId || formData.districtId) && (
+                      <p className="mt-1 text-[11px] text-amber-700">Clear the existing Region/District above before choosing No retail hierarchy; selecting it here does not remove current assignments.</p>
+                    )}
+                    {hierarchy && hierarchy.applicabilityIssues.length > 0 && (
+                      <p className="mt-1 text-[11px] font-medium text-amber-700">{hierarchy.applicabilityIssues.join(' ')}</p>
                     )}
                   </div>
 

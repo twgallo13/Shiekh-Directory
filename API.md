@@ -73,11 +73,14 @@ Location list and detail responses preserve the legacy `district` field with its
   "districtName": "District One",
   "districtStatus": "Active",
   "hierarchyStatus": "resolved",
-  "hierarchyIssues": []
+  "hierarchyIssues": [],
+  "hierarchyApplicability": "Applicable"
 }
 ```
 
 IDs are exact strings, so District ID `01` is not the number `1`. Names resolve from registries at read time; copied legacy names are not canonical. Missing assignments return null IDs and names. A missing registry record preserves its stored ID and returns a null name. Retired records retain their names and report `Retired`. `hierarchyStatus` is `unassigned`, `resolved`, `retired-reference`, `unresolved-reference`, or `parent-mismatch`; `hierarchyIssues` explains non-resolved references.
+
+`hierarchyApplicability` is the *effective* value: `Applicable`, `Not Applicable`, or `Unknown`. When a Location has no saved value, Enclosed Mall, Strip Center / Shopping Center, and Street / Standalone Location default to `Applicable`; other types default to `Applicable` only when a canonical Region or District reference exists, otherwise `Not Applicable`. An explicit saved `Unknown` remains `Unknown`. An unsupported saved value also resolves to `Unknown`. A retail type saved as `Not Applicable`, or any `Not Applicable` record that still carries canonical references, is a visible inconsistency, not a healthy operational center; consult `hierarchyIssues` for the exact reason. The API does not expose the raw saved value separately; join by `districtId`/`regionId`, never by `hierarchyApplicability` alone, to distinguish operational centers from stores awaiting assignment.
 
 List responses include `sync.hierarchyVersion`; detail responses include top-level `hierarchyVersion`. The version covers registry IDs, names, statuses, and District parent links at the Location snapshot. Continuation pages resolve names from that same historical snapshot and also compare the cursor version with the current registry; a later registry change affects ETags without rewriting Locations and invalidates the cursor with `409 hierarchy_changed`.
 

@@ -62,6 +62,17 @@ describe('Location CSV import preview', () => {
     assert.equal(result.mappings?.find(mapping => mapping.sourceHeader === 'StoreManager')?.target, null);
   });
 
+  it('re-importing the current reporting export visibly proposes saving a calculated applicability default', () => {
+    const noSavedApplicability = { ...baseLocation, id: 'loc-008', storeNumber: '008', hierarchyApplicability: undefined };
+    const reportingSnapshot = { ...snapshot, locations: [...snapshot.locations, noSavedApplicability] };
+    const reportingHeaders = 'StoreNumber,StoreName,Type,Address,City,State,ZipCode,Phone,RegionId,RegionName,DistrictId,DistrictName,District,StoreManager,StoreManagerPhone,DistrictManager,AssistantStoreManagers,OperationalStatus,RecordStatus,GoogleReviewUrl,StorePageUrl,HierarchyApplicability\r\n';
+    const reportingRow = `${reportingHeaders}008,Original Store,Street / Standalone Location,7 Main Street,Los Angeles,CA,90001,555-0100,reg-west,West,dist-1,District 1,,,,,,Open \u2014 Normal Operations,Active,,,Applicable\r\n`;
+    const result = previewLocationImport(reportingRow, reportingSnapshot);
+    const mapping = result.mappings?.find(entry => entry.sourceHeader === 'HierarchyApplicability');
+    assert.equal(mapping?.target, 'HierarchyApplicability');
+    assert.deepEqual(result.rows[0].changes, [{ field: 'hierarchyApplicability', before: null, after: 'Applicable' }]);
+  });
+
   it('shows exact updates while preserving blank fields and without mutating the snapshot', () => {
     const before = structuredClone(snapshot);
     const result = previewLocationImport(csvRow({ LocationId: 'loc-007', StoreNumber: '007', StoreName: 'Renamed Store' }), snapshot);

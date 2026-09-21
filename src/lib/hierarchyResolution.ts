@@ -16,9 +16,25 @@ export interface ResolvedLocationHierarchy {
   applicabilityIssues: string[];
 }
 
-const retailTypes = new Set(['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location']);
+export const RETAIL_HIERARCHY_TYPES = ['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location'] as const;
+const retailTypes = new Set<string>(RETAIL_HIERARCHY_TYPES);
 
-export function resolveHierarchyApplicability(location: { type?: unknown; hierarchyApplicability?: unknown; regionId?: unknown; districtId?: unknown }): { value: EffectiveHierarchyApplicability; issues: string[] } {
+export function isRetailHierarchyType(type: unknown): boolean {
+  return retailTypes.has(String(type ?? ''));
+}
+
+export function canSelectNotApplicableHierarchy(type: unknown): boolean {
+  return !isRetailHierarchyType(type);
+}
+
+export interface HierarchyResolutionInput {
+  regionId?: unknown;
+  districtId?: unknown;
+  type?: unknown;
+  hierarchyApplicability?: unknown;
+}
+
+export function resolveHierarchyApplicability(location: HierarchyResolutionInput): { value: EffectiveHierarchyApplicability; issues: string[] } {
   const saved = location.hierarchyApplicability;
   if (saved === 'Applicable' || saved === 'Not Applicable' || saved === 'Unknown') {
     const issues: string[] = [];
@@ -32,7 +48,7 @@ export function resolveHierarchyApplicability(location: { type?: unknown; hierar
 }
 
 export function resolveLocationHierarchy(
-  location: { regionId?: unknown; districtId?: unknown },
+  location: HierarchyResolutionInput,
   registry: HierarchyRegistry,
 ): ResolvedLocationHierarchy {
   const regionId = referenceId(location.regionId);
@@ -88,8 +104,42 @@ export function hierarchyDistrictLabel(hierarchy: ResolvedLocationHierarchy | un
     : hierarchy.districtName
       ? `${hierarchy.districtName} (${hierarchy.districtId})`
       : `Unresolved District (${hierarchy.districtId})`;
-  return hierarchy.hierarchyIssues.length > 0 ? `${label} - ${hierarchy.hierarchyIssues.join(' ')}` : label;
+  const issues = [...hierarchy.hierarchyIssues, ...hierarchy.applicabilityIssues];
+  return issues.length > 0 ? `${label} - ${issues.join(' ')}` : label;
 }
+
+export type HierarchyGroupKind = 'district' | 'unassigned-retail' | 'operational-centers' | 'needs-review';
+
+export interface HierarchyGroupKey {
+  kind: HierarchyGroupKind;
+  districtId?: string;
+}
+
+// Namespaced so a District ID can never collide with a non-District group key or a renamed label.
+export function resolveHierarchyGroupKey(hierarchy: ResolvedLocationHierarchy | undefined): HierarchyGroupKey {
+  if (hierarchy?.districtId) return { kind: 'district', districtId: hierarchy.districtId };
+  if (hierarchy?.hierarchyApplicability === 'Not Applicable' && hierarchy.applicabilityIssues.length === 0) {
+    return { kind: 'operational-centers' };
+  }
+  if (hierarchy?.hierarchyApplicability === 'Applicable') return { kind: 'unassigned-retail' };
+  return { kind: 'needs-review' };
+}
+
+export function hierarchyGroupId(key: HierarchyGroupKey): string {
+  return key.kind === 'district' ? `district:${key.districtId}` : key.kind;
+}
+
+export function hierarchyGroupLabel(key: HierarchyGroupKey, hierarchy: ResolvedLocationHierarchy | undefined): string {
+  if (key.kind === 'district') {
+    const base = hierarchy?.districtName ? `${hierarchy.districtName} (${key.districtId})` : `Unresolved District (${key.districtId})`;
+    const issues = [...(hierarchy?.hierarchyIssues || []), ...(hierarchy?.applicabilityIssues || [])];
+    return issues.length > 0 ? `${base} - ${issues.join(' ')}` : base;
+  }
+  if (key.kind === 'operational-centers') return 'Operational Centers / Non-retail Locations';
+  if (key.kind === 'unassigned-retail') return 'Unassigned Retail Locations';
+  return 'Needs Review';
+}
+
 
 function referenceId(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;

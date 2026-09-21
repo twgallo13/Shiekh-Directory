@@ -58,9 +58,11 @@ The export rejects duplicate location IDs and duplicate normalized active store 
 
 Column order is stable. The first heading is the explicit protected-file signal:
 
-`SpreadsheetEncoding=shiekh-safe-v1`, `StoreNumber`, `StoreName`, `Type`, `Address`, `City`, `State`, `ZipCode`, `Phone`, `RegionId`, `RegionName`, `DistrictId`, `DistrictName`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, `AssistantStoreManagers`, `OperationalStatus`, `RecordStatus`, `GoogleReviewUrl`, `StorePageUrl`.
+`SpreadsheetEncoding=shiekh-safe-v1`, `StoreNumber`, `StoreName`, `Type`, `Address`, `City`, `State`, `ZipCode`, `Phone`, `RegionId`, `RegionName`, `DistrictId`, `DistrictName`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, `AssistantStoreManagers`, `OperationalStatus`, `RecordStatus`, `GoogleReviewUrl`, `StorePageUrl`, `HierarchyApplicability`.
 
 `RegionId` and `DistrictId` are saved Location assignments. `RegionName` and `DistrictName` are current registry resolutions and are informational. The legacy `District` column retains its prior compatibility behavior and is not a canonical identity or rename mechanism. Name-only CSV changes never update registry records or assignments.
+
+`HierarchyApplicability` is appended after every pre-existing column. It reports the *effective* enum (`Applicable`, `Not Applicable`, `Unknown`) computed at export time from the saved value, Location type, and canonical references — it is not necessarily the raw saved value. Because this heading is writable on import, re-importing this reporting export can propose saving an effective default as an explicit value; the preview lists that change like any other. This reporting export is not a full backup and does not round-trip every field unchanged; use Export for Editing for an unchanged-value round trip.
 
 Values are serialized as UTF-8 with a BOM for spreadsheet compatibility, including quoting for commas, quotation marks, CR/LF line breaks, and Unicode text. Valid US phone values use the shared readable display formatter and retain extensions; missing values remain blank. Store numbers and ZIP codes are emitted as text values and preserve leading zeros in the CSV. Spreadsheet applications may still apply automatic type conversion when opening CSV files. Stronger spreadsheet typing, formulas, or protected text cells require a separate XLSX export and are not part of this CSV contract.
 
@@ -73,3 +75,5 @@ These items are approved next steps and are not implemented by this workflow:
 1. Add a separate People import/export built on the reviewed mapping, preview, selected-row confirmation, results, and correction workflow.
 
 District IDs such as `01` are existing immutable string identities, not separate District Codes. No `districtCode` field is planned by this contract.
+
+Editing exports and re-imports preserve the raw saved `HierarchyApplicability` value, including a blank when no value is saved; unchanged editing round trips do not turn a calculated default into a saved value.

@@ -123,3 +123,37 @@ This review does not implement either correction. A later approved patch should:
 6. Approve any future write plan only after before/after evidence, version checks, and a database-level reversal procedure are prepared.
 
 District reconciliation proposal ready for approval. No live assignments were changed.
+
+
+## Owner clarification and review follow-up — 2026-09-21
+
+This section records Theo's latest business clarification and supersedes the pending Store 150 decision above. It does not change the captured snapshot, generated review CSV, or any application record.
+
+### Confirmed by Theo
+
+- Store `150` belongs to District `02`, Inland Empire, San Diego & LA South (whose current registry parent is `region-west`). The intended District is approved. Execution of a data repair remains subject to the bounded write/reversal plan required by this dispatch.
+- Location `001` is the Ecommerce fulfillment center and has no District.
+- Location described by Theo as `086` is the returns center and likewise has no District. The reviewed source record is `loc-86`, with Store Number `86`; this clarification does not authorize renumbering it to `086`.
+
+### Recommended representation for the two centers
+
+Keep both as Active company Locations outside the retail Region/District hierarchy. In a future reviewed change, explicitly represent retail hierarchy applicability as `Not Applicable`, with no canonical Region or District reference. This agrees with their currently effective application behavior and the owner's stated absence of a District; no placeholder District or ID such as `00`, `N/A`, or `Unassigned` should be created.
+
+Location `001` already has type `Warehouse / Distribution Center`. Recommend that type for the returns center as well, with a clear business name identifying its returns function; its current type is `Other Company Location` and its saved name is blank. This is a recommendation, not an approved rename or type update.
+
+Retain each existing Location identity, status, contact information, People relationships, and operational ownership. Lack of a retail District must not mean that the location is inactive, deleted, or excluded from the directory. The API/CSV contract and consuming apps should distinguish intentional non-applicability from an applicable retail store with a missing assignment. Preserve existing field/empty-value conventions until a reviewed compatibility change specifies otherwise.
+
+The review CSV's legacy-name candidate `01` for `loc-86` is not an approved assignment. The owner's clarification says this center has no District. Preserve the original evidence; flag the copied legacy District text for the later approved compatibility cleanup rather than assigning the center from that text.
+
+### Still pending
+
+- Owner approval of the 47 grouped retail candidates.
+- The bounded repair plan, current version checks, before/after evidence, and data reversal procedure.
+- Implementation approval for legacy write-path corrections and compatibility changes.
+- External-consumer verification remains NOT VERIFIED.
+
+### Evidence correction still needed before closing the investigation
+
+At reviewed commit `4085ebbf4d8c9b8efdc79d936e39bae0c3efcfa3`, the Validation section still says the full API suite and production build were NOT RUN after the amendment, while Copilot's delivery summary reports passes. Reconcile the committed report with actual execution evidence and exact tested source state. Do not infer a pass or rerun tests solely to manufacture consistency if existing verifiable results are available.
+
+Documentation only: no live data, application behavior, import, repair, deployment, or merge is authorized or performed by this update.

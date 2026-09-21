@@ -19,6 +19,19 @@ export interface ResolvedLocationHierarchy {
 export const RETAIL_HIERARCHY_TYPES = ['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location'] as const;
 const retailTypes = new Set<string>(RETAIL_HIERARCHY_TYPES);
 
+export const KNOWN_NON_RETAIL_HIERARCHY_TYPES = ['Corporate Office', 'Warehouse / Distribution Center', 'Other Company Location'] as const;
+const knownNonRetailTypes = new Set<string>(KNOWN_NON_RETAIL_HIERARCHY_TYPES);
+
+export type LocationTypeClassification = 'retail' | 'non-retail' | 'unclassified';
+
+// Missing and unrecognized types are both 'unclassified'; only the two existing recognized sets are certified.
+export function classifyHierarchyLocationType(type: unknown): LocationTypeClassification {
+  const value = String(type ?? '');
+  if (retailTypes.has(value)) return 'retail';
+  if (knownNonRetailTypes.has(value)) return 'non-retail';
+  return 'unclassified';
+}
+
 export function isRetailHierarchyType(type: unknown): boolean {
   return retailTypes.has(String(type ?? ''));
 }
@@ -97,24 +110,30 @@ export function canonicalHierarchyState(registry: HierarchyRegistry): string {
   });
 }
 
-export function hierarchyDistrictLabel(hierarchy: ResolvedLocationHierarchy | undefined, isRetail = false): string {
+export function hierarchyDistrictLabel(hierarchy: ResolvedLocationHierarchy | undefined, type?: unknown): string {
   if (!hierarchy) return 'Unassigned District';
   if (hierarchy.districtId) {
     const base = hierarchy.districtName ? `${hierarchy.districtName} (${hierarchy.districtId})` : `Unresolved District (${hierarchy.districtId})`;
     const issues = [...hierarchy.hierarchyIssues, ...hierarchy.applicabilityIssues];
     return issues.length > 0 ? `${base} - ${issues.join(' ')}` : base;
   }
-  const key = resolveHierarchyGroupKey(hierarchy, isRetail);
+  const typeClass = classifyHierarchyLocationType(type);
+  const key = resolveHierarchyGroupKeyForClass(hierarchy, typeClass);
   if (key.kind === 'operational-centers') return 'No retail district';
   if (key.kind === 'unassigned-retail') return 'Unassigned District';
-  return `Needs Review - ${needsReviewReason(hierarchy, isRetail)}`;
+  return `Needs Review - ${needsReviewReason(hierarchy, typeClass, type)}`;
 }
 
-function needsReviewReason(hierarchy: ResolvedLocationHierarchy, isRetail: boolean): string {
+function needsReviewReason(hierarchy: ResolvedLocationHierarchy, typeClass: LocationTypeClassification, type: unknown): string {
   const issues = [...hierarchy.hierarchyIssues, ...hierarchy.applicabilityIssues];
+  if (typeClass === 'unclassified') {
+    const typeText = type === undefined || type === null || type === '' ? 'missing' : `'${String(type)}'`;
+    const base = `Location type is ${typeText}, not a recognized business type.`;
+    return issues.length > 0 ? `${base} ${issues.join(' ')}` : base;
+  }
   if (issues.length > 0) return issues.join(' ');
   if (hierarchy.hierarchyApplicability === 'Unknown') return 'Hierarchy applicability is Unknown.';
-  if (!isRetail) return 'Applicable to hierarchy but missing its District assignment.';
+  if (typeClass === 'non-retail') return 'Applicable to hierarchy but missing its District assignment.';
   return 'Hierarchy applicability needs review.';
 }
 
@@ -126,16 +145,21 @@ export interface HierarchyGroupKey {
 }
 
 /**
- * `isRetail` reflects the Location's business type (see `isRetailHierarchyType`), independent of
- * `hierarchyApplicability`. Applicability answers whether hierarchy applies; it never identifies
- * whether a Location is a retail store, so callers must pass the type-derived flag explicitly.
+ * `type` is the Location's raw business type, classified via `classifyHierarchyLocationType`
+ * independent of `hierarchyApplicability`. Applicability answers whether hierarchy applies; it never
+ * identifies whether a Location is retail, a recognized non-retail type, or an unrecognized/missing type.
  */
 // Namespaced so a District ID can never collide with a non-District group key or a renamed label.
-export function resolveHierarchyGroupKey(hierarchy: ResolvedLocationHierarchy | undefined, isRetail: boolean): HierarchyGroupKey {
+export function resolveHierarchyGroupKey(hierarchy: ResolvedLocationHierarchy | undefined, type: unknown): HierarchyGroupKey {
+  return resolveHierarchyGroupKeyForClass(hierarchy, classifyHierarchyLocationType(type));
+}
+
+function resolveHierarchyGroupKeyForClass(hierarchy: ResolvedLocationHierarchy | undefined, typeClass: LocationTypeClassification): HierarchyGroupKey {
   if (hierarchy?.districtId) return { kind: 'district', districtId: hierarchy.districtId };
+  if (typeClass === 'unclassified') return { kind: 'needs-review' };
   const applicability = hierarchy?.hierarchyApplicability;
-  const hasIssues = (hierarchy?.applicabilityIssues.length ?? 0) > 0;
-  if (isRetail) {
+  const hasIssues = (hierarchy?.applicabilityIssues.length ?? 0) > 0 || (hierarchy?.hierarchyIssues.length ?? 0) > 0;
+  if (typeClass === 'retail') {
     if (applicability === 'Applicable' && !hasIssues) return { kind: 'unassigned-retail' };
     return { kind: 'needs-review' };
   }

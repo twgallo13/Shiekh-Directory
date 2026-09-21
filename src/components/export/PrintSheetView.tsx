@@ -3,7 +3,7 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
 import { buildDistrictManagerGroupLabel, resolveActivePerson } from '../../lib/readProjectionContract';
-import { HierarchyGroupKey, hierarchyGroupId, hierarchyGroupLabel, isRetailHierarchyType, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { HierarchyGroupKey, classifyHierarchyLocationType, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
 
@@ -34,7 +34,7 @@ export const PrintSheetView: React.FC = () => {
 
   const groupKeyByLocationId = useMemo(() => new Map(locations.map(location => [
     location.id,
-    resolveHierarchyGroupKey(hierarchyByLocationId.get(location.id), isRetailHierarchyType(location.type)),
+    resolveHierarchyGroupKey(hierarchyByLocationId.get(location.id), location.type),
   ])), [locations, hierarchyByLocationId]);
 
   // Stable group identities: a registry rename changes the label, never the filter/group identity.
@@ -62,8 +62,9 @@ export const PrintSheetView: React.FC = () => {
     );
   });
 
-  const retailCount = filteredLocations.filter(loc => isRetailHierarchyType(loc.type)).length;
-  const nonRetailCount = filteredLocations.length - retailCount;
+  const retailCount = filteredLocations.filter(loc => classifyHierarchyLocationType(loc.type) === 'retail').length;
+  const nonRetailCount = filteredLocations.filter(loc => classifyHierarchyLocationType(loc.type) === 'non-retail').length;
+  const unclassifiedCount = filteredLocations.length - retailCount - nonRetailCount;
 
   // Group filtered locations by stable group identity, not a formatted display label.
   const groupedById = new Map<string, { key: HierarchyGroupKey; label: string; dmLabel: string | null; stores: LocationRecord[] }>();
@@ -106,7 +107,7 @@ export const PrintSheetView: React.FC = () => {
       <div className="print:hidden">
         <PageHeader
           title="1-Sheet Retail Directory PDF"
-          description={`Compact landscape export grouped by District, Operational Centers, and Unassigned Retail Locations (${filteredLocations.length} of ${locations.length} Locations displayed: ${retailCount} retail, ${nonRetailCount} non-retail/unresolved)`}
+          description={`Compact landscape export grouped by District, Operational Centers, and Unassigned Retail Locations (${filteredLocations.length} of ${locations.length} Locations displayed: ${retailCount} retail, ${nonRetailCount} non-retail, ${unclassifiedCount} unclassified)`}
         />
       </div>
 
@@ -173,7 +174,7 @@ export const PrintSheetView: React.FC = () => {
           </div>
           <div className="text-right">
             <div className="text-[11px] font-bold text-neutral-900 font-mono">
-              Total Locations: {filteredLocations.length} ({retailCount} retail, {nonRetailCount} non-retail/unresolved)
+              Total Locations: {filteredLocations.length} ({retailCount} retail, {nonRetailCount} non-retail, {unclassifiedCount} unclassified)
             </div>
             <div className="text-[9px] text-neutral-500">
               Published: {currentDate} • Internal Operational Reference

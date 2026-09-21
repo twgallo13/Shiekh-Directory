@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { canSelectNotApplicableHierarchy, hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, isRetailHierarchyType, resolveHierarchyApplicability, resolveHierarchyGroupKey, resolveLocationHierarchy, applyLocationRegionSelection, applyLocationDistrictSelection, applyQuickAddRegionSelection, applyQuickAddDistrictSelection } from '../src/lib/hierarchyResolution';
+import { canSelectNotApplicableHierarchy, classifyHierarchyLocationType, hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, isRetailHierarchyType, resolveHierarchyApplicability, resolveHierarchyGroupKey, resolveLocationHierarchy, applyLocationRegionSelection, applyLocationDistrictSelection, applyQuickAddRegionSelection, applyQuickAddDistrictSelection } from '../src/lib/hierarchyResolution';
 
 const activeDistrict = { id: '01', name: 'District One', regionId: 'west', status: 'Active' as const };
 
@@ -40,11 +40,11 @@ describe('hierarchy display resolution', () => {
 
   it('distinguishes unassigned and unresolved Districts without legacy fallback', () => {
     assert.equal(
-      hierarchyDistrictLabel(resolveLocationHierarchy({ type: 'Enclosed Mall' }, { regions: [], districts: [] }), true),
+      hierarchyDistrictLabel(resolveLocationHierarchy({ type: 'Enclosed Mall' }, { regions: [], districts: [] }), 'Enclosed Mall'),
       'Unassigned District',
     );
     assert.equal(
-      hierarchyDistrictLabel(resolveLocationHierarchy({}, { regions: [], districts: [] }), false),
+      hierarchyDistrictLabel(resolveLocationHierarchy({ type: 'Warehouse / Distribution Center' }, { regions: [], districts: [] }), 'Warehouse / Distribution Center'),
       'No retail district',
     );
     assert.match(
@@ -78,28 +78,78 @@ describe('hierarchy display resolution', () => {
 
     // Warehouse / Distribution Center with a valid Region and no District: non-retail, incomplete assignment, never a retail store.
     const dcWithRegion = resolveLocationHierarchy({ type: 'Warehouse / Distribution Center', regionId: 'reg-west' }, activeRegistry);
-    const dcKey = resolveHierarchyGroupKey(dcWithRegion, isRetailHierarchyType('Warehouse / Distribution Center'));
+    const dcKey = resolveHierarchyGroupKey(dcWithRegion, 'Warehouse / Distribution Center');
     assert.deepEqual(dcKey, { kind: 'needs-review' });
-    assert.match(hierarchyDistrictLabel(dcWithRegion, false), /^Needs Review/);
+    assert.match(hierarchyDistrictLabel(dcWithRegion, 'Warehouse / Distribution Center'), /^Needs Review/);
 
     // Enclosed Mall with explicit Unknown applicability: remains a retail Location, in a separate Needs Review state.
     const mallUnknown = resolveLocationHierarchy({ type: 'Enclosed Mall', hierarchyApplicability: 'Unknown' }, activeRegistry);
-    const mallKey = resolveHierarchyGroupKey(mallUnknown, isRetailHierarchyType('Enclosed Mall'));
+    const mallKey = resolveHierarchyGroupKey(mallUnknown, 'Enclosed Mall');
     assert.deepEqual(mallKey, { kind: 'needs-review' });
     assert.equal(isRetailHierarchyType('Enclosed Mall'), true);
-    assert.match(hierarchyDistrictLabel(mallUnknown, true), /^Needs Review - Hierarchy applicability is Unknown\./);
+    assert.match(hierarchyDistrictLabel(mallUnknown, 'Enclosed Mall'), /^Needs Review - Hierarchy applicability is Unknown\./);
 
     // Warehouse / Distribution Center explicit Not Applicable with no references: healthy center, "No retail district".
     const dcCenter = resolveLocationHierarchy({ type: 'Warehouse / Distribution Center', hierarchyApplicability: 'Not Applicable' }, activeRegistry);
-    const dcCenterKey = resolveHierarchyGroupKey(dcCenter, isRetailHierarchyType('Warehouse / Distribution Center'));
+    const dcCenterKey = resolveHierarchyGroupKey(dcCenter, 'Warehouse / Distribution Center');
     assert.deepEqual(dcCenterKey, { kind: 'operational-centers' });
-    assert.equal(hierarchyDistrictLabel(dcCenter, false), 'No retail district');
+    assert.equal(hierarchyDistrictLabel(dcCenter, 'Warehouse / Distribution Center'), 'No retail district');
+  });
+
+  it('preserves Region-only errors in presentation: an invalid Region reference is Needs Review, not a healthy or ordinary state', () => {
+    const registry = { regions: [], districts: [] };
+
+    // Retail with a missing Region reference and no District: the reference error must not disappear into Unassigned Retail Locations.
+    const retailMissingRegion = resolveLocationHierarchy({ type: 'Enclosed Mall', regionId: 'missing' }, registry);
+    assert.equal(retailMissingRegion.hierarchyIssues.length > 0, true);
+    const retailKey = resolveHierarchyGroupKey(retailMissingRegion, 'Enclosed Mall');
+    assert.deepEqual(retailKey, { kind: 'needs-review' });
+    assert.match(hierarchyDistrictLabel(retailMissingRegion, 'Enclosed Mall'), /^Needs Review - Region missing is missing/);
+
+    // A retired Region reference behaves the same way.
+    const retiredRegistry = { regions: [{ id: 'reg-west', name: 'West', status: 'Retired' as const }], districts: [] };
+    const retailRetiredRegion = resolveLocationHierarchy({ type: 'Enclosed Mall', regionId: 'reg-west' }, retiredRegistry);
+    assert.deepEqual(resolveHierarchyGroupKey(retailRetiredRegion, 'Enclosed Mall'), { kind: 'needs-review' });
+    assert.match(hierarchyDistrictLabel(retailRetiredRegion, 'Enclosed Mall'), /^Needs Review - Region reg-west is retired/);
+
+    // A genuinely valid, applicable retail record without any reference remains ordinary Unassigned Retail Locations.
+    const validUnassignedRetail = resolveLocationHierarchy({ type: 'Enclosed Mall' }, registry);
+    assert.deepEqual(resolveHierarchyGroupKey(validUnassignedRetail, 'Enclosed Mall'), { kind: 'unassigned-retail' });
+    assert.equal(hierarchyDistrictLabel(validUnassignedRetail, 'Enclosed Mall'), 'Unassigned District');
+
+    // District-ID grouping and its per-row diagnostics are unaffected by this fix.
+    const withDistrict = resolveLocationHierarchy({ type: 'Enclosed Mall', regionId: 'missing', districtId: '01' }, registry);
+    assert.deepEqual(resolveHierarchyGroupKey(withDistrict, 'Enclosed Mall'), { kind: 'district', districtId: '01' });
+    assert.equal(withDistrict.hierarchyStatus, 'unresolved-reference');
+  });
+
+  it('does not equate an unrecognized or missing business type with a known non-retail type', () => {
+    const registry = { regions: [], districts: [] };
+
+    assert.equal(classifyHierarchyLocationType('Unsupported Type'), 'unclassified');
+    assert.equal(classifyHierarchyLocationType(undefined), 'unclassified');
+    assert.equal(classifyHierarchyLocationType('Warehouse / Distribution Center'), 'non-retail');
+    assert.equal(classifyHierarchyLocationType('Enclosed Mall'), 'retail');
+
+    // An unrecognized type with no references must not be certified as a healthy Operational Center.
+    const unsupported = resolveLocationHierarchy({ type: 'Unsupported Type', hierarchyApplicability: 'Not Applicable' }, registry);
+    assert.deepEqual(resolveHierarchyGroupKey(unsupported, 'Unsupported Type'), { kind: 'needs-review' });
+    assert.equal(hierarchyDistrictLabel(unsupported, 'Unsupported Type'), "Needs Review - Location type is 'Unsupported Type', not a recognized business type.");
+
+    // A missing type behaves the same way as an unrecognized one.
+    const missingType = resolveLocationHierarchy({ hierarchyApplicability: 'Not Applicable' }, registry);
+    assert.deepEqual(resolveHierarchyGroupKey(missingType, undefined), { kind: 'needs-review' });
+    assert.equal(hierarchyDistrictLabel(missingType, undefined), 'Needs Review - Location type is missing, not a recognized business type.');
+
+    // A genuinely known non-retail type with no references still resolves as a healthy center.
+    const knownCenter = resolveLocationHierarchy({ type: 'Corporate Office', hierarchyApplicability: 'Not Applicable' }, registry);
+    assert.deepEqual(resolveHierarchyGroupKey(knownCenter, 'Corporate Office'), { kind: 'operational-centers' });
   });
 
   it('a District group heading never borrows a single member\'s warning; only per-row diagnostics carry it', () => {
     const registry = { regions: [{ id: 'reg-west', name: 'West', status: 'Retired' as const }], districts: [{ id: '01', name: 'District One', regionId: 'reg-west', status: 'Active' as const }] };
     const healthyMember = resolveLocationHierarchy({ type: 'Enclosed Mall', regionId: 'reg-west', districtId: '01' }, registry);
-    const key = resolveHierarchyGroupKey(healthyMember, true);
+    const key = resolveHierarchyGroupKey(healthyMember, 'Enclosed Mall');
     assert.deepEqual(key, { kind: 'district', districtId: '01' });
     // The group heading uses only the shared registry name/ID, never a member's hierarchyIssues/applicabilityIssues.
     assert.equal(hierarchyGroupLabel(key, healthyMember), 'District One (01)');
@@ -111,8 +161,8 @@ describe('hierarchy display resolution', () => {
     const before = { regions: [{ id: 'reg-west', name: 'West', status: 'Active' as const }], districts: [{ id: '01', name: 'District One', regionId: 'reg-west', status: 'Active' as const }] };
     const after = { regions: before.regions, districts: [{ ...before.districts[0], name: 'District One Renamed' }] };
     const location = { type: 'Enclosed Mall', regionId: 'reg-west', districtId: '01' };
-    const keyBefore = resolveHierarchyGroupKey(resolveLocationHierarchy(location, before), true);
-    const keyAfter = resolveHierarchyGroupKey(resolveLocationHierarchy(location, after), true);
+    const keyBefore = resolveHierarchyGroupKey(resolveLocationHierarchy(location, before), 'Enclosed Mall');
+    const keyAfter = resolveHierarchyGroupKey(resolveLocationHierarchy(location, after), 'Enclosed Mall');
     assert.equal(hierarchyGroupId(keyBefore), hierarchyGroupId(keyAfter));
     assert.equal(hierarchyGroupLabel(keyBefore, resolveLocationHierarchy(location, before)), 'District One (01)');
     assert.equal(hierarchyGroupLabel(keyAfter, resolveLocationHierarchy(location, after)), 'District One Renamed (01)');
@@ -132,7 +182,7 @@ describe('hierarchy display resolution', () => {
     assert.equal(fixture.length - retailCount, 2);
 
     const groupCounts = fixture.reduce((totals, location) => {
-      const key = resolveHierarchyGroupKey(resolveLocationHierarchy(location, registry), isRetailHierarchyType(location.type));
+      const key = resolveHierarchyGroupKey(resolveLocationHierarchy(location, registry), location.type);
       const id = hierarchyGroupId(key);
       totals[id] = (totals[id] || 0) + 1;
       return totals;

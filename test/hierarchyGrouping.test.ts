@@ -5,6 +5,7 @@ import { parse } from "csv-parse/sync";
 import {
   hierarchyGroupId,
   hierarchyGroupLabel,
+  isRetailHierarchyType,
   resolveHierarchyGroupKey,
   resolveLocationHierarchy,
 } from "../src/lib/hierarchyResolution";
@@ -34,7 +35,7 @@ test("a proposed-after fixture from the approved manifest groups into 14/12/22 r
 
   const counts = after.reduce((totals, location) => {
     const hierarchy = resolveLocationHierarchy(location, registry);
-    const key = resolveHierarchyGroupKey(hierarchy);
+    const key = resolveHierarchyGroupKey(hierarchy, isRetailHierarchyType(location.type));
     const id = hierarchyGroupId(key);
     totals[id] = (totals[id] || 0) + 1;
     return totals;
@@ -61,11 +62,12 @@ test("the before fixture truthfully keeps Store 150 unresolved and the two cente
   const hierarchy150 = resolveLocationHierarchy(store150, registry);
   assert.equal(hierarchy150.districtId, "DIS-01");
   assert.equal(hierarchy150.hierarchyStatus, "unresolved-reference");
-  assert.equal(hierarchyGroupId(resolveHierarchyGroupKey(hierarchy150)), "district:DIS-01");
-  assert.match(hierarchyGroupLabel(resolveHierarchyGroupKey(hierarchy150), hierarchy150), /Unresolved District \(DIS-01\)/);
+  const key150 = resolveHierarchyGroupKey(hierarchy150, isRetailHierarchyType(store150.type));
+  assert.equal(hierarchyGroupId(key150), "district:DIS-01");
+  assert.match(hierarchyGroupLabel(key150, hierarchy150), /Unresolved District \(DIS-01\)/);
 
   const counts = before.reduce((totals, location) => {
-    const id = hierarchyGroupId(resolveHierarchyGroupKey(resolveLocationHierarchy(location, registry)));
+    const id = hierarchyGroupId(resolveHierarchyGroupKey(resolveLocationHierarchy(location, registry), isRetailHierarchyType(location.type)));
     totals[id] = (totals[id] || 0) + 1;
     return totals;
   }, {} as Record<string, number>);

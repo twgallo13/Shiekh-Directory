@@ -79,11 +79,30 @@ Live update execution remains blocked by the separate Dispatch 12B fresh-version
 
 Legacy `district` fields and headers remain fully compatible and unchanged in meaning. Store 86's legacy copied text remains a known, disclosed compatibility inconsistency pending a separately approved transition.
 
-## Verification
+## Follow-up correction — business type vs. hierarchy applicability (source review of `306fd351`)
 
-- Focused tests: `node --import tsx --test test/hierarchyResolution.test.ts test/hierarchyGrouping.test.ts test/personLocationLeadershipCopy.test.ts test/directoryApi.test.ts test/locationExportApi.test.ts test/locationImportPreview.test.ts` — all pass individually and as part of the full suite below.
+A source review of application SHA `306fd351e24a0f2fd1c5c39c4a946598394811b9` reproduced two remaining defects locally with synthetic fixtures and no database access:
+
+1. **Business type conflated with hierarchy applicability.** `PrintSheetView`'s retail/non-retail totals and `resolveHierarchyGroupKey` both used `hierarchyApplicability === 'Applicable'` as a proxy for "is a retail store." A non-retail Location (e.g. Warehouse / Distribution Center) with a Region reference but no District was miscounted as retail and grouped under Unassigned Retail Locations; an Enclosed Mall with explicit `Unknown` applicability was excluded from retail totals entirely. **Fixed:** `resolveHierarchyGroupKey` now takes an explicit `isRetail` flag derived from `isRetailHierarchyType(location.type)`, independent of applicability. Retail/non-retail totals in `PrintSheetView` now count by type. A non-retail record with an incomplete assignment or a retail record with `Unknown`/inconsistent applicability now lands in a distinct `needs-review` group, never silently certified as a healthy center or a retail store awaiting assignment.
+2. **Individual display disagreed with grouping.** `hierarchyDistrictLabel` always returned `Unassigned District` when `districtId` was absent, regardless of type or applicability, so a correctly grouped Operational Center displayed as a missing assignment when opened. **Fixed:** `hierarchyDistrictLabel` now accepts the same `isRetail` flag and returns `No retail district` for a healthy non-retail center, `Unassigned District` only for a retail record actually awaiting assignment, and `Needs Review - <reason>` for Unknown/inconsistent/incomplete cases. A separate defect was also corrected: `hierarchyGroupLabel` previously computed a District group's heading from one sample member's `hierarchyIssues`/`applicabilityIssues`, presenting a single Location's warning as the condition of the whole group; the heading now uses only the shared registry name/ID, and per-row diagnostics remain the only place warnings are shown.
+
+Changed files for this correction: `src/lib/hierarchyResolution.ts` (`resolveHierarchyGroupKey`/`hierarchyDistrictLabel`/`hierarchyGroupLabel` signatures and logic; new `applyLocationRegionSelection`/`applyLocationDistrictSelection`/`applyQuickAddRegionSelection`/`applyQuickAddDistrictSelection` pure control-transition helpers), `src/components/export/PrintSheetView.tsx`, `src/components/locations/LocationsView.tsx`, `src/components/locations/LocationDetailModal.tsx`, `src/components/dashboard/DashboardView.tsx` (all pass the type-derived `isRetail` flag through to grouping/labeling), `src/components/locations/LocationEditModal.tsx` and `src/components/admin/AdminIntegrationsView.tsx` (Region/District selection now calls the shared pure helpers instead of inline object spreads, making the exact production transition directly testable), and `test/hierarchyResolution.test.ts`/`test/hierarchyGrouping.test.ts`.
+
+The `ResolvedLocationHierarchy` shape returned by `resolveLocationHierarchy` — which is spread directly into the public API response in `server/directoryApi.ts` — was deliberately left unchanged; the retail/non-retail flag is passed as a separate parameter derived from `location.type` (already public), not added to that object, so the public API contract is unaffected.
+
+### New focused regressions (all in `test/hierarchyResolution.test.ts` unless noted)
+
+- The three reproduced cases: non-retail with a Region and no District (→ `needs-review`, never retail), retail with explicit `Unknown` (→ `needs-review`, still counted as retail), non-retail explicit `Not Applicable` with no references (→ `operational-centers`, label `No retail district`).
+- Mixed retail/non-retail/Unknown fixture proving type-based totals and correct distinct group counts (`district:01`, `unassigned-retail`, `needs-review`, `operational-centers`).
+- A District group heading test proving it never borrows a member's `hierarchyIssues`/`applicabilityIssues`, while the same member's row-level diagnostic remains available.
+- A rename regression (`test/hierarchyGrouping.test.ts` already covered the manifest-derived fixture; a second, isolated case here) proving a selected District ID's group ID is unchanged after the District's name changes, while its label updates.
+- Control-transition regressions against the newly shared pure helpers: Region selection clears the prior District and preserves unrelated fields; District selection alone sets explicit `Applicable`; the Quick Add draft-shape equivalents behave the same way with its required-string convention; selecting Not Applicable never erases an existing Region/District reference (confirmed the resulting inconsistency remains visible via `applicabilityIssues`, not silently resolved).
+- Unrelated Person edits preserving omitted applicability is already proven by `test/personLocationLeadershipCopy.test.ts` (`reconcileLocationLeadershipCopy` returns the identical Location reference, hierarchyApplicability included, for a territory-only or unrelated-field edit); cited here rather than duplicated.
+- Stale-save/conflict-draft retention for the manual-save contract that Location Edit and Quick Add reuse is already proven by `test/hierarchyRegistryEditing.test.ts` (`preserves a draft and its opening version while reviewing a conflict`, `requires an explicit choice to discard or reapply a District draft`) and the expected-version rejection in `test/hierarchyAssignmentContract.test.ts` (`validateMetadataWrites` concurrency conflict check); cited here as the existing proven coverage for this behavior rather than duplicated with a new test.
+
+
 - `npm run lint` (tsc --noEmit): **PASS**, exit 0.
-- `npm run test:api`: **PASS** — final test-runner summary: `tests 267, pass 267, fail 0, cancelled 0, skipped 0`.
+- `npm run test:api`: **PASS** — final test-runner summary: `tests 274, pass 274, fail 0, cancelled 0, skipped 0`.
 - `npm run build`: **PASS**, exit 0. Inspected `dist/assets/*.js` for the prior browser Buffer/Node CSV import failure: no `csv-parse`/`csv-stringify`/`Buffer.from`/`Buffer.isBuffer` references found in the built bundles.
 - `git diff --check`: **PASS**, no whitespace errors.
 - Approved manifest checksum reverified unchanged: `d81ef01a59163f864f34c065c424b8ef26abf41c01c6a2d7ebdc12272dfd36a6`.
@@ -95,13 +114,13 @@ Legacy `district` fields and headers remain fully compatible and unchanged in me
 2. In Fleet Quick Add, select a Region, confirm the District list is limited to that Region's active Districts, then change the Region and confirm the District selection clears; confirm no legacy free-text District value is saved regardless of the applicability choice.
 3. Edit a Person's territory-only field and confirm every Location the person leads keeps its existing legacy District text unchanged; edit the Person's name and confirm the linked Location's Store/District Manager display name updates without changing legacy District text.
 4. Confirm Store 150 still shows its existing live state (invalid `DIS-01`, no District 02 assignment) — this dispatch does not repair it.
-5. On the Location list, dashboard Quick Reference, and 1-Sheet Directory PDF, confirm Operational Centers and Unassigned Retail Locations appear as separate, clearly labeled groups from District groups, and that renaming a District in the registry updates the displayed name without moving stores into a different group or losing the active filter.
-6. Generate the 1-Sheet Directory PDF and confirm scoped/filtered totals match the displayed rows, unresolved/retired/parent-mismatch warnings remain visible per row, and landscape/page-break layout remains readable.
+5. On the Location list, dashboard Quick Reference, and 1-Sheet Directory PDF, confirm Operational Centers and Unassigned Retail Locations appear as separate, clearly labeled groups from District groups, that a non-retail Location with an incomplete assignment or a retail Location marked Unknown appears under Needs Review rather than being mislabeled retail or a healthy center, and that renaming a District in the registry updates the displayed name without moving stores into a different group or losing the active filter.
+6. Generate the 1-Sheet Directory PDF and confirm scoped/filtered totals match the displayed rows (retail counted by type, not by applicability), unresolved/retired/parent-mismatch warnings remain visible per row rather than on the group heading, and landscape/page-break layout remains readable.
 
 ## Source and PR status
 
 - Application implementation source: this commit; the exact SHA is recorded in PR #10's evidence comment.
-- Dispatch authorization: `440e063ab80d5e1281c52e59a05914bd602800c3`. Amendment authorization: `e3eebfb857f500fb1722986675a9c8581a5de729`.
+- Dispatch authorization: `440e063ab80d5e1281c52e59a05914bd602800c3`. Amendment authorization: `e3eebfb857f500fb1722986675a9c8581a5de729`. Follow-up source review authorization: `d5af2a0` (docs: record remaining Dispatch 12C classification and display defects).
 - PR #10 remains draft on its current base.
 
 Dispatch 12C implementation ready for review; live assignments unchanged.

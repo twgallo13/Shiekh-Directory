@@ -45,7 +45,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PageHeader } from '../common/PageHeader';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
-import { canSelectNotApplicableHierarchy } from '../../lib/hierarchyResolution';
+import { applyQuickAddDistrictSelection, applyQuickAddRegionSelection, canSelectNotApplicableHierarchy } from '../../lib/hierarchyResolution';
 import { normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
@@ -1854,7 +1854,7 @@ export const AdminIntegrationsView: React.FC = () => {
                   <label className="block text-neutral-700 font-semibold mb-1">Region</label>
                   <select
                     value={newStoreForm.regionId}
-                    onChange={(e) => setNewStoreForm({ ...newStoreForm, regionId: e.target.value, districtId: '', hierarchyApplicability: e.target.value ? 'Applicable' : newStoreForm.hierarchyApplicability })}
+                    onChange={(e) => setNewStoreForm(applyQuickAddRegionSelection(newStoreForm, e.target.value))}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
                   >
                     <option value="">No controlled Region selected</option>
@@ -1866,7 +1866,7 @@ export const AdminIntegrationsView: React.FC = () => {
                   <select
                     value={newStoreForm.districtId}
                     disabled={!newStoreForm.regionId}
-                    onChange={(e) => setNewStoreForm({ ...newStoreForm, districtId: e.target.value, hierarchyApplicability: e.target.value ? 'Applicable' : newStoreForm.hierarchyApplicability })}
+                    onChange={(e) => setNewStoreForm(applyQuickAddDistrictSelection(newStoreForm, e.target.value))}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:bg-neutral-100"
                   >
                     <option value="">{newStoreForm.regionId ? 'No controlled District selected' : 'Select a Region first'}</option>

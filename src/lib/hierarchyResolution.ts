@@ -97,15 +97,25 @@ export function canonicalHierarchyState(registry: HierarchyRegistry): string {
   });
 }
 
-export function hierarchyDistrictLabel(hierarchy: ResolvedLocationHierarchy | undefined): string {
+export function hierarchyDistrictLabel(hierarchy: ResolvedLocationHierarchy | undefined, isRetail = false): string {
   if (!hierarchy) return 'Unassigned District';
-  const label = !hierarchy.districtId
-    ? 'Unassigned District'
-    : hierarchy.districtName
-      ? `${hierarchy.districtName} (${hierarchy.districtId})`
-      : `Unresolved District (${hierarchy.districtId})`;
+  if (hierarchy.districtId) {
+    const base = hierarchy.districtName ? `${hierarchy.districtName} (${hierarchy.districtId})` : `Unresolved District (${hierarchy.districtId})`;
+    const issues = [...hierarchy.hierarchyIssues, ...hierarchy.applicabilityIssues];
+    return issues.length > 0 ? `${base} - ${issues.join(' ')}` : base;
+  }
+  const key = resolveHierarchyGroupKey(hierarchy, isRetail);
+  if (key.kind === 'operational-centers') return 'No retail district';
+  if (key.kind === 'unassigned-retail') return 'Unassigned District';
+  return `Needs Review - ${needsReviewReason(hierarchy, isRetail)}`;
+}
+
+function needsReviewReason(hierarchy: ResolvedLocationHierarchy, isRetail: boolean): string {
   const issues = [...hierarchy.hierarchyIssues, ...hierarchy.applicabilityIssues];
-  return issues.length > 0 ? `${label} - ${issues.join(' ')}` : label;
+  if (issues.length > 0) return issues.join(' ');
+  if (hierarchy.hierarchyApplicability === 'Unknown') return 'Hierarchy applicability is Unknown.';
+  if (!isRetail) return 'Applicable to hierarchy but missing its District assignment.';
+  return 'Hierarchy applicability needs review.';
 }
 
 export type HierarchyGroupKind = 'district' | 'unassigned-retail' | 'operational-centers' | 'needs-review';
@@ -115,13 +125,21 @@ export interface HierarchyGroupKey {
   districtId?: string;
 }
 
+/**
+ * `isRetail` reflects the Location's business type (see `isRetailHierarchyType`), independent of
+ * `hierarchyApplicability`. Applicability answers whether hierarchy applies; it never identifies
+ * whether a Location is a retail store, so callers must pass the type-derived flag explicitly.
+ */
 // Namespaced so a District ID can never collide with a non-District group key or a renamed label.
-export function resolveHierarchyGroupKey(hierarchy: ResolvedLocationHierarchy | undefined): HierarchyGroupKey {
+export function resolveHierarchyGroupKey(hierarchy: ResolvedLocationHierarchy | undefined, isRetail: boolean): HierarchyGroupKey {
   if (hierarchy?.districtId) return { kind: 'district', districtId: hierarchy.districtId };
-  if (hierarchy?.hierarchyApplicability === 'Not Applicable' && hierarchy.applicabilityIssues.length === 0) {
-    return { kind: 'operational-centers' };
+  const applicability = hierarchy?.hierarchyApplicability;
+  const hasIssues = (hierarchy?.applicabilityIssues.length ?? 0) > 0;
+  if (isRetail) {
+    if (applicability === 'Applicable' && !hasIssues) return { kind: 'unassigned-retail' };
+    return { kind: 'needs-review' };
   }
-  if (hierarchy?.hierarchyApplicability === 'Applicable') return { kind: 'unassigned-retail' };
+  if (applicability === 'Not Applicable' && !hasIssues) return { kind: 'operational-centers' };
   return { kind: 'needs-review' };
 }
 
@@ -129,11 +147,11 @@ export function hierarchyGroupId(key: HierarchyGroupKey): string {
   return key.kind === 'district' ? `district:${key.districtId}` : key.kind;
 }
 
+// District names are shared registry data, so group headings may show them; per-Location diagnostics
+// (hierarchyIssues/applicabilityIssues) are never summarized at the group level and are shown per row.
 export function hierarchyGroupLabel(key: HierarchyGroupKey, hierarchy: ResolvedLocationHierarchy | undefined): string {
   if (key.kind === 'district') {
-    const base = hierarchy?.districtName ? `${hierarchy.districtName} (${key.districtId})` : `Unresolved District (${key.districtId})`;
-    const issues = [...(hierarchy?.hierarchyIssues || []), ...(hierarchy?.applicabilityIssues || [])];
-    return issues.length > 0 ? `${base} - ${issues.join(' ')}` : base;
+    return hierarchy?.districtName ? `${hierarchy.districtName} (${key.districtId})` : `Unresolved District (${key.districtId})`;
   }
   if (key.kind === 'operational-centers') return 'Operational Centers / Non-retail Locations';
   if (key.kind === 'unassigned-retail') return 'Unassigned Retail Locations';
@@ -143,4 +161,34 @@ export function hierarchyGroupLabel(key: HierarchyGroupKey, hierarchy: ResolvedL
 
 function referenceId(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+export interface LocationHierarchyControlFields {
+  regionId?: string;
+  districtId?: string;
+  hierarchyApplicability?: EffectiveHierarchyApplicability;
+}
+
+// Selecting a Region clears the prior District and, once a reference exists, makes the record explicitly Applicable.
+export function applyLocationRegionSelection<T extends LocationHierarchyControlFields>(current: T, regionId: string): T {
+  return { ...current, regionId: regionId || undefined, districtId: undefined, hierarchyApplicability: regionId ? 'Applicable' : current.hierarchyApplicability };
+}
+
+export function applyLocationDistrictSelection<T extends LocationHierarchyControlFields>(current: T, districtId: string): T {
+  return { ...current, districtId: districtId || undefined, hierarchyApplicability: districtId ? 'Applicable' : current.hierarchyApplicability };
+}
+
+export interface QuickAddHierarchyControlFields {
+  regionId: string;
+  districtId: string;
+  hierarchyApplicability: '' | EffectiveHierarchyApplicability;
+}
+
+// Fleet Quick Add uses required string fields (empty string, not undefined) for its uncommitted draft form state.
+export function applyQuickAddRegionSelection<T extends QuickAddHierarchyControlFields>(current: T, regionId: string): T {
+  return { ...current, regionId, districtId: '', hierarchyApplicability: regionId ? 'Applicable' : current.hierarchyApplicability };
+}
+
+export function applyQuickAddDistrictSelection<T extends QuickAddHierarchyControlFields>(current: T, districtId: string): T {
+  return { ...current, districtId, hierarchyApplicability: districtId ? 'Applicable' : current.hierarchyApplicability };
 }

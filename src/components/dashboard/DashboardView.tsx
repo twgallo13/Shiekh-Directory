@@ -4,7 +4,7 @@ import { LocationRecord, PersonRecord } from '../../types';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
-import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, isRetailHierarchyType, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { resolveActiveLocationManagers } from '../../lib/readProjectionContract';
 import { 
   Store, 
@@ -70,7 +70,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const map = new Map<string, { label: string; stores: LocationRecord[] }>();
     locations.forEach(l => {
       const hierarchy = hierarchyByLocationId.get(l.id);
-      const key = resolveHierarchyGroupKey(hierarchy);
+      const key = resolveHierarchyGroupKey(hierarchy, isRetailHierarchyType(l.type));
       const id = hierarchyGroupId(key);
       if (!map.has(id)) {
         map.set(id, { label: hierarchyGroupLabel(key, hierarchy), stores: [] });
@@ -89,7 +89,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const quickRefStores = useMemo(() => {
     return locations.filter(l => {
       const hierarchy = hierarchyByLocationId.get(l.id);
-      const matchesDistrict = selectedDistrict === 'all' || hierarchyGroupId(resolveHierarchyGroupKey(hierarchy)) === selectedDistrict;
+      const matchesDistrict = selectedDistrict === 'all' || hierarchyGroupId(resolveHierarchyGroupKey(hierarchy, isRetailHierarchyType(l.type))) === selectedDistrict;
       if (!matchesDistrict) return false;
 
       if (!quickSearch.trim()) return true;
@@ -386,7 +386,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div className="flex items-center gap-1">
                       <span className="text-neutral-400">District:</span>
                       <span className="font-semibold text-neutral-700">
-                        {hierarchyDistrictLabel(hierarchy)}
+                        {hierarchyDistrictLabel(hierarchy, isRetailHierarchyType(loc.type))}
                       </span>
                       {dmPerson && (
                         <button

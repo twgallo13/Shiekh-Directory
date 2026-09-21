@@ -3,7 +3,7 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
 import { buildDistrictManagerGroupLabel, resolveActivePerson } from '../../lib/readProjectionContract';
-import { HierarchyGroupKey, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { HierarchyGroupKey, hierarchyGroupId, hierarchyGroupLabel, isRetailHierarchyType, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
 
@@ -34,7 +34,7 @@ export const PrintSheetView: React.FC = () => {
 
   const groupKeyByLocationId = useMemo(() => new Map(locations.map(location => [
     location.id,
-    resolveHierarchyGroupKey(hierarchyByLocationId.get(location.id)),
+    resolveHierarchyGroupKey(hierarchyByLocationId.get(location.id), isRetailHierarchyType(location.type)),
   ])), [locations, hierarchyByLocationId]);
 
   // Stable group identities: a registry rename changes the label, never the filter/group identity.
@@ -62,7 +62,7 @@ export const PrintSheetView: React.FC = () => {
     );
   });
 
-  const retailCount = filteredLocations.filter(loc => hierarchyByLocationId.get(loc.id)?.hierarchyApplicability === 'Applicable').length;
+  const retailCount = filteredLocations.filter(loc => isRetailHierarchyType(loc.type)).length;
   const nonRetailCount = filteredLocations.length - retailCount;
 
   // Group filtered locations by stable group identity, not a formatted display label.

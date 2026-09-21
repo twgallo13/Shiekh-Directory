@@ -9,7 +9,7 @@ import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
-import { canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { 
   X, 
   Save, 
@@ -827,7 +827,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       value={formData.regionId || ''}
-                      onChange={(e) => setFormData({ ...formData, regionId: e.target.value || undefined, districtId: undefined, hierarchyApplicability: e.target.value ? 'Applicable' : formData.hierarchyApplicability })}
+                      onChange={(e) => setFormData(applyLocationRegionSelection(formData, e.target.value))}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                     >
                       <option value="">No controlled Region selected</option>
@@ -847,7 +847,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       value={formData.districtId || ''}
                       disabled={!formData.regionId}
                       onChange={(e) => {
-                        setFormData({ ...formData, districtId: e.target.value || undefined, hierarchyApplicability: e.target.value ? 'Applicable' : formData.hierarchyApplicability });
+                        setFormData(applyLocationDistrictSelection(formData, e.target.value));
                       }}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 disabled:cursor-not-allowed disabled:bg-neutral-100"
                     >

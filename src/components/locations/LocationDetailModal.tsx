@@ -9,7 +9,7 @@ import { CustomMetadataFields } from './CustomMetadataFields';
 import { formatUsPhone } from '../../lib/contactNormalization';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
-import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { hierarchyDistrictLabel, isRetailHierarchyType, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { 
   X, 
   MapPin, 
@@ -537,7 +537,7 @@ Operating Status: ${location.operationalStatus}`;
                       )}
                     </div>
                     <span className="max-w-64 text-[11px] font-medium text-neutral-600">
-                      {hierarchyDistrictLabel(hierarchy)}
+                      {hierarchyDistrictLabel(hierarchy, isRetailHierarchyType(location.type))}
                     </span>
                   </div>
 

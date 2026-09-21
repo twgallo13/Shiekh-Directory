@@ -3,7 +3,7 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
-import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, isRetailHierarchyType, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
@@ -127,7 +127,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
     const byId = new Map<string, string>();
     locations.forEach(location => {
       const hierarchy = hierarchyByLocationId.get(location.id);
-      const key = resolveHierarchyGroupKey(hierarchy);
+      const key = resolveHierarchyGroupKey(hierarchy, isRetailHierarchyType(location.type));
       byId.set(hierarchyGroupId(key), hierarchyGroupLabel(key, hierarchy));
     });
     return Array.from(byId.entries()).sort((a, b) => a[1].localeCompare(b[1]));
@@ -144,7 +144,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
     return locations.filter(loc => {
       if (!includeRetired && loc.recordStatus === 'Retired') return false;
       const hierarchy = hierarchyByLocationId.get(loc.id);
-      if (districtFilter !== 'all' && hierarchyGroupId(resolveHierarchyGroupKey(hierarchy)) !== districtFilter) return false;
+      if (districtFilter !== 'all' && hierarchyGroupId(resolveHierarchyGroupKey(hierarchy, isRetailHierarchyType(loc.type))) !== districtFilter) return false;
       if (stateFilter !== 'all' && loc.state !== stateFilter) return false;
       if (statusFilter !== 'all' && loc.operationalStatus !== statusFilter) return false;
       if (typeFilter !== 'all' && loc.type !== typeFilter) return false;
@@ -172,7 +172,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
     const map = new Map<string, { label: string; stores: LocationRecord[] }>();
     filtered.forEach(loc => {
       const hierarchy = hierarchyByLocationId.get(loc.id);
-      const key = resolveHierarchyGroupKey(hierarchy);
+      const key = resolveHierarchyGroupKey(hierarchy, isRetailHierarchyType(loc.type));
       const id = hierarchyGroupId(key);
       if (!map.has(id)) map.set(id, { label: hierarchyGroupLabel(key, hierarchy), stores: [] });
       map.get(id)!.stores.push(loc);
@@ -836,7 +836,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
                     {/* Card Footer: District & Manager */}
                     <div className="border-t border-neutral-100 pt-2 flex items-center justify-between text-[11px] text-neutral-500">
-                      <span>{hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id))}</span>
+                      <span>{hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id), isRetailHierarchyType(loc.type))}</span>
                       <span className="font-medium text-neutral-700 truncate max-w-[130px]">
                         {leadershipByLocationId.get(loc.id)?.storeManager?.fullName ? `Mgr: ${leadershipByLocationId.get(loc.id)?.storeManager?.fullName}` : 'Vacant'}
                       </span>

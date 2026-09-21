@@ -116,3 +116,37 @@ The current shared restriction test establishes allowed types, not the full edit
 Correct the implementation report's statement that all related surfaces are consistent until these cases pass. Report exact tests performed, including any manual-only checks, rather than treating helper coverage as UI acceptance. Run the normal required verification once after the scoped corrections and return application SHA plus report link.
 
 Preserve all existing boundaries: same draft PR/base, unchanged approved manifest and legacy fields, unrelated runbook edit excluded, no deployment/merge/live writes/import execution/migration/Playwright. External-consumer and live recovery requirements remain separate. This is completion of Dispatch 12C, not approval to execute Dispatch 12B.
+
+
+## Narrow follow-up — application 92c96b6
+
+Source review and isolated execution of the exact committed `hierarchyResolution.ts` confirm the three previously reproduced cases now pass: non-retail with an incomplete assignment is Needs Review; retail with Unknown applicability remains retail and Needs Review; a healthy center displays No retail district. Region/District transition helpers are wired into both production forms. Preserve these fixes.
+
+Two remaining edge cases violate the existing requirements to retain invalid-reference warnings and not certify unsupported business types. Complete only these corrections and their targeted tests; no new phase or redesign.
+
+### A. Preserve Region-only errors in presentation
+
+Reproduction: `{type: 'Enclosed Mall', regionId: 'missing'}` against a registry without that Region produces:
+- hierarchyIssues: Region missing is missing from the hierarchy registry.
+- group: unassigned-retail.
+- individual label: Unassigned District (the error disappears from this label).
+
+Cause: the no-District path of `resolveHierarchyGroupKey` checks only applicabilityIssues, and `hierarchyDistrictLabel` returns the unassigned label without hierarchyIssues.
+
+For records without a District, check both issue collections before returning a healthy-center or ordinary-unassigned group. Invalid/retired Region-only references must appear in Needs Review with their exact reference diagnostic. Keep valid applicable retail records without District in Unassigned Retail Locations. Preserve District-ID grouping and its per-row diagnostics, and leave the public hierarchyStatus contract unchanged.
+
+### B. Do not equate an unrecognized type with a known non-retail type
+
+Reproduction: `{type: 'Unsupported Type'}` with no references produces operational-centers / No retail district. An absent type has the same problem. The type predicate returns false for both recognized non-retail and unknown types, so callers lose the distinction.
+
+Distinguish the three existing retail types, the existing recognized non-retail types (Corporate Office, Warehouse / Distribution Center, Other Company Location), and missing/unsupported types. Derive allowed types from the existing contract wherever practical. Unknown types must appear in Needs Review with a type diagnostic and an unclassified count, rather than being certified as operational centers. Preserve valid non-retail behavior. Do not broaden server validation, infer assignments, migrate data, or change the public API shape merely to support UI classification.
+
+Update the affected labels/grouping/count callers so the distinction survives the complete presentation path. Keep type classification and hierarchy applicability separate. Use total = retail + known non-retail + unclassified for displayed data; hierarchy review status is a separate dimension.
+
+### Verification and handoff
+
+Add focused regressions for missing and retired Region-only retail references; missing/unsupported business types; known centers; valid unassigned retail; and counts for a filtered mixed fixture. Re-run the three previously corrected cases to guard against regressions. Update the return report with exact coverage and remaining manual-only acceptance; do not claim unrelated registry-editor tests prove Location Edit draft retention.
+
+Run normal lint/API/build/diff gates after the change, then return application SHA and report link. Full-suite results of 274/274 at the reviewed SHA were builder-reported, not independently rerun by this review. The isolated reproductions above were run by the reviewer with synthetic records and no database access.
+
+PR #10 was verified open/draft at 92c96b6 on its existing base. Keep that PR/base, the approved manifest, legacy values, and unrelated local runbook edit intact. No deployment, merge, live writes, import execution, migrations, or browser automation. These are narrow completions of the existing warning/classification contract; preserve all already verified work.

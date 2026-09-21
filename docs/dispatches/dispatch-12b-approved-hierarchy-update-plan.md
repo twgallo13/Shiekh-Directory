@@ -60,6 +60,45 @@ Document exact files, proposed behavior, dependencies, and tests; do not impleme
 - API/CSV: retain DistrictId and registry-resolved DistrictName; retain legacy District/district fields and meanings until a separately reviewed compatibility transition. Do not delete DistrictName or treat legacy text as an ID. Document how non-applicability is exposed today and any consumer gap without changing contracts in this pass.
 - Inventory the affected database readers/writers, Location/People UI, registry administration, directory API and version/cache behavior, CSV preview/confirmation and both exports, dashboard, print, requests, jobs, workflows, and integrations. Cite source paths and classify changed, verified unaffected, or NOT VERIFIED. External consumers remain unverified unless evidence establishes otherwise; do not contact owners automatically.
 
+## Cross-system completeness amendment — verified before handoff
+
+This section adds concrete coverage to Deliverable 2. It does not authorize implementation or live writes. Do not label the cleanup complete solely because Location documents have the intended IDs.
+
+### Verified gap: non-applicability is not exposed consistently
+
+At the reviewed source:
+- `src/lib/locationImportSchema.ts` includes writable `HierarchyApplicability`; the editing export is generated from that shared schema.
+- `server/locationExport.ts` reporting CSV headers include Region/District IDs and names and legacy District, but omit HierarchyApplicability.
+- `server/firestoreLocations.ts` public field selection omits hierarchyApplicability; `server/directoryApi.ts` public mapping also omits it.
+- `src/lib/hierarchyResolution.ts` only receives hierarchy IDs and reports no IDs as unassigned; `hierarchyDistrictLabel` labels them Unassigned District.
+- `src/components/export/PrintSheetView.tsx` uses those labels for grouping/filtering and describes every displayed Location as a Store.
+
+Therefore a data-only update will not make intentionally non-retail centers distinguishable from missing retail assignments on all surfaces. The plan must specify a minimal additive applicability contract for API/reporting export and applicable UI projections, or identify that part as blocked. Preserve existing hierarchyStatus values and legacy fields unless an explicit compatibility decision approves a change; do not silently redefine unassigned. Show exact proposed field names, allowed values, saved-versus-effective rules, missing/Unknown behavior, examples, and schema/documentation implications.
+
+### Required impact and acceptance matrix
+
+For each row below, identify exact source paths, present behavior, proposed change or verified-unaffected reason, test evidence, and any external owner/verification gap. Use the same scoped sample Locations across surfaces, including one per District, 150, 001, and 86, plus an invalid-reference fixture.
+
+| Surface | Required plan and acceptance coverage |
+|---|---|
+| Direct database/system access | Trace named-database reads/writes, document IDs, registry IDs, versions, audit receipts, seed/bootstrap paths, and scripts/migrateFirestoreFromCsv.ts. Registry name remains stored once on its District record; a Location relationship uses districtId. Document how direct readers must resolve names and how direct writers can bypass application validation. Do not migrate raw records, alter security rules, or run seed/migration scripts in this pass. |
+| Manual edits and administration | Location create/edit, Fleet Quick Add, Person edits, and Registry edit/retire must preserve canonical relationships and unaffected contacts. Test omission versus explicit clearing through existing manual-save semantics, stale draft refresh, dependent records, retired references, and no reintroduction of legacy defaults. Do not broaden CSV clearing support. |
+| CSV templates, reference downloads, mapping, preview | Keep schema, field dictionary, guidance, aliases, examples, and references consistent. DistrictId is the writable relationship; DistrictName and legacy District are informational and cannot assign a district. Check partial columns, leading zeros, ignored columns, update-only identity, invalid/retired references, wrong parents, centers, and exact normalized before/after values. |
+| CSV confirmation, results, correction files | Preserve selected-row authorization, signature/token binding, warning acknowledgement, revalidation, transaction receipts, stale rejection, and retry protection. Keep 40-change limit and report separate batch outcomes accurately. Results and correction files must retain IDs and correct row/field explanations without leaking unauthorized data. |
+| Reporting export versus editing export | Specify both contracts separately, including any proposed additive applicability field. Export all authorized scoped rows without miscounting centers as stores or silently removing them. Editing export immediately re-previewed against unchanged data must yield unchanged rows or existing explicit diagnostics, never silent rewrites. Test supported edits after re-import. Reporting exports retain informational fields and are not full backups; preserve unsupported fields in subsequent updates. Maintain spreadsheet-safe reversible encoding and leading-zero IDs. |
+| Directory API and synchronization | Inspect list and single-record responses, Firestore selected fields, authentication/scope, public contact privacy, nullable IDs/names, applicability, error states, and schema documentation. Test assignment updates through updatedAt/full/delta reads; registry renames through hierarchyVersion, ETag, stale cursor rejection and full reconciliation. Do not claim registry renames rewrite Location timestamps. A scorecard consumer must join stable IDs, handle intentional non-applicability, and never derive identity from a display label. |
+| 1-Sheet Directory PDF | Inspect PrintSheetView and the actual browser print output. Propose separate Operational Centers (no retail district) and Unassigned Retail Locations groups; preserve explicit unresolved/retired/mismatch warnings. Update displayed/filtered totals, district filters, title/description, group labels and empty states consistently. Group retail records by stable district identity so a rename does not strand a filter. Keep contacts/manager links, privacy and scope behavior; do not create a district-level manager assignment from uniform per-store names. Preserve readable landscape printing and page breaks without promising every possible roster fits one page. Theo verifies generated PDF manually; no browser automation in this pass. |
+| Other UI, requests, and integrations | Verify Location list/detail/search, dashboard totals, People Works at/Supports, registry/reference selection, pending correction approvals, and exports after refresh/consecutive saves. Trace mail/jobs/reports/workflows and external scorecard consumers where evidence exists. Preserve pending request conflict checks. List unavailable consumers as NOT VERIFIED with exact contract checks needed; do not assume absent repository code means no downstream dependency. |
+
+### Concrete acceptance samples and completion boundary
+
+- Under the approved full roster, the intended business totals are 14/12/22 retail stores across Districts 01/02/03 plus 2 operational centers. Filtered/scope-limited views must calculate their own totals, not display company-wide counts.
+- Store 150 resolves to District 02 and its registry name; no formatting-based DIS-01 conversion.
+- Centers 001/86 remain Active and findable, have no canonical retail Region/District assignments, and are distinguishable from unassigned retail stores on every proposed updated surface. Their existing manager/People links remain unchanged.
+- Retain loc-86's legacy district as historical compatibility data for now and explicitly explain that it is not the center's canonical assignment. Until legacy consumers transition, record this inconsistency as a known limitation; do not claim all consumers now agree.
+- Identify the later deployment/data-update ordering and verify the same approved manifest through database readback, API, both CSV exports, UI, and PDF. Freeze a common verification snapshot or explain legitimate intervening changes; compare values by record ID.
+- Provide separate statuses for plan completeness, implementation readiness, live data verification, and external-consumer verification. This dispatch ends with a reviewable plan, not a claim that the system-wide cleanup has already shipped.
+
 ## Validation and acceptance
 
 - Approved mapping reconciles to District 01: 14, District 02: 12, District 03: 22, plus 2 centers, subject to explicit reporting of current drift.

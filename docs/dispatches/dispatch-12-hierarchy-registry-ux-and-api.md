@@ -330,3 +330,68 @@ gcloud run services update-traffic shiekh-location-company-directory \
 ```
 
 The original worktree's unrelated `docs/cloud-run-deployment-runbook.md` modification remained untouched and excluded. This deployment record was prepared in an isolated documentation worktree; the outstanding local runbook history still requires separate reconciliation. PRs #9 and #10 remain unmerged, and PR #10 remains draft.
+
+## District field and assignment audit — 2026-09-21
+
+Status: audit findings and proposed cleanup sequence only. This section does not authorize data repair, schema removal, migration, deployment, or merge.
+
+### Evidence and readiness
+
+- Reviewed application source: `e74e57c1a4ebb6cb553dca109b3355832282c6dc`.
+- PR #10 was observed draft/open at `a4180696db7f8b46a1f1a0d05aea3226699a272c`, based on `dispatch-11-flexible-location-csv`. Its deployment record reports the reviewed application at 100% traffic; Cloud Run was not independently queried for this audit.
+- Theo supplied `shiekh_active_store_directory_2026-09-21.csv`, SHA-256 `e9603bface8d221b3c917b267dc9c5eb5d93b1a16bdf83d766147bb462cda06c`, and a registry screenshot. The CSV is an exported snapshot, not a complete database inventory.
+- No business records or application code were changed during this audit.
+
+### Confirmed findings
+
+The three export columns have distinct sources:
+- `DistrictId`: saved Location reference to a District registry record.
+- `DistrictName`: read-time resolution of that record's current name. It is not a newly stored second name on every Location.
+- `District`: copied legacy Location text, preserved by the existing compatibility contract.
+
+The supplied file contains 50 rows:
+- 49 have no `DistrictId`; 48 of these have a legacy District name.
+- One row has a District ID, and all 50 have blank `DistrictName`.
+- Store `001` (Ecommerce, Warehouse / Distribution Center) has no District fields populated. This alone does not establish an error; hierarchy applicability must be respected.
+- Store `150` (Broadway LA) has `RegionId=region-west`, `RegionName=West`, `DistrictId=DIS-01`, blank `DistrictName`, and legacy `District=Inland Empire, San Diego & LA South`.
+- The screenshot shows District IDs `01`, `02`, and `03`; the Inland Empire name belongs to `02`. Do not turn `DIS-01` into `01` by stripping a prefix. The desired Store 150 assignment requires owner confirmation and an authoritative record read.
+- Legacy-name counts are 22 Northern California/Nevada/Northwest/Texas, 15 Central & Southern California, and 12 Inland Empire/San Diego/LA South. These counts can inform a proposal, not an automatic migration.
+
+The CSV and resolver are consistent with unpopulated or unresolved canonical assignments. They do not establish export loss. Renaming/removing a column would not populate those assignments.
+
+### Impact inventory
+
+| Surface | Verified source behavior and cleanup impact |
+|---|---|
+| Registry and direct database model | `src/types.ts` separates registry id/name from Location districtId and legacy district. Preserve existing registry IDs and record history. No live database scan performed. |
+| Reporting CSV | `server/locationExport.ts` emits all three columns; `src/lib/readProjectionContract.ts` uses Location district for the compatibility value. Header removal or changing its meaning affects existing consumers. |
+| Editing CSV and import | `server/locationEditingExport.ts` exports canonical ID/name and excludes legacy district from the editing contract. `src/lib/locationImportSchema.ts` ignores District and DistrictName as informational. Only IDs change assignments. Keep historical files readable. |
+| Directory API | `server/directoryApi.ts` exposes canonical hierarchy resolution and separately copies legacy district. `server/firestoreLocations.ts` selects both. Preserve current API consumers until a documented transition; a stable field name alone does not preserve semantics. |
+| Location UI, dashboard, print | Canonical resolver drives the primary hierarchy displays/grouping. Changing copied text alone does not establish these relationships. |
+| People editing and browser writes | `PersonEditorForm.tsx` still edits a compatibility territory/district string. `DirectoryContext.updatePerson` can copy that string onto Locations where the Person is District Manager, without changing districtId. This competing legacy write path must be addressed in a future cleanup, not mistaken for authoritative ownership. |
+| Quick Add Location | `AdminIntegrationsView.tsx` has a reachable Fleet CSV Add Store handler that writes a default legacy district string without canonical hierarchy IDs. Future cleanup must remove the misleading default or route creation through controlled hierarchy selection; it must not fabricate assignments. |
+| People search/profile/selector | PeopleView, PersonDetailModal, PersonSelector, UniversalSearchModal, and DM option descriptions still read Person district. A global deletion of a field named district would affect distinct People compatibility behavior. |
+| Seeds, migration, jobs, mail | Initial data contains legacy names; the migration script and legacy write/read paths require explicit review before removal. Repository tree inspection found no dedicated scheduled-job/workflow definitions; inspected mail modules have no district references. External scheduled jobs or direct database clients remain unverified. |
+| Documentation/tests | API.md, CSV guide, shared dictionary/templates/examples, coverage matrix, and API/export/import/registry tests must track any transition. The coverage matrix currently understates the verified Person territory editor and legacy write paths. |
+| Downstream apps | Actual scorecard integrations, spreadsheet consumers, and external database readers were not accessible. Their owners must verify fields consumed before a compatibility field is removed or repurposed. |
+
+### Recommended sequence
+
+1. Preserve `DistrictId` and registry-resolved `DistrictName` as the authoritative contract. Retain legacy `District` temporarily for existing consumers and label its legacy meaning in guidance. The user-facing word “District” can label the resolved name without changing its stored/API contract.
+2. Prepare an authorized read-only reconciliation report from one authoritative snapshot of Locations and registries. Include Location ID, Store Number, legacy value, current IDs/names, proposed Region/District IDs/names, reason, version, conflicts, and applicability. Names may suggest candidates in this report; never silently create relationships. Separately flag Store 150, duplicates, missing/retired references, and contradictory assignments.
+3. Obtain approval of the exact proposed assignments before any writes. Use the existing governed partial Location update workflow or a separately approved bounded migration with version/dependency revalidation, audit evidence, before/after records, and recovery instructions. Respect existing row/change limits. Treat database recovery separately from Cloud Run traffic rollback; rolling back an application revision does not undo data changes.
+4. Address the legacy-copy writers and Quick Add behavior so edits cannot recreate competing District values. Preserve People organizational meaning and unrelated data; do not infer organizational ownership from a manager's free-text territory.
+5. Simplify the normal export to one ID and one registry-resolved name under a documented, compatible transition. Keep the current API's `district` semantics and existing CSV consumers supported until verified migration. Do not simply delete `DistrictName` and continue trusting the old copied text. Any decision to expose the resolved name under the header `District` must explicitly address old/new file identification and downstream behavior.
+
+### Verification required before cleanup closure
+
+- Approved applicable Locations resolve to the intended registry records; non-applicable locations are not forced into a District.
+- IDs such as `01` remain exact strings through editing, CSV, and API use. Store 150's confirmed assignment is covered explicitly.
+- Registry renames propagate through UI/API/exports without copying names into every Location.
+- Person edits cannot override authoritative Location hierarchy.
+- Quick Add produces no invented District value.
+- Old supported CSV files still preview safely; names alone never assign or rename a District.
+- API compatibility, hierarchy-version reconciliation, conflict rejection, audit evidence, privacy, and selected-row import protections remain intact.
+- Owner confirms downstream consumers; unverified consumers are listed, not declared passing.
+
+Verdict: the new ID/name contract is correct, but canonical assignment completion and legacy retirement remain unfinished. Recommend the staged reconciliation/compatibility cleanup above rather than a header-only deletion. A separately scoped execution dispatch should follow agreement on the cleanup plan and precise data assignments.

@@ -150,3 +150,24 @@ Add focused regressions for missing and retired Region-only retail references; m
 Run normal lint/API/build/diff gates after the change, then return application SHA and report link. Full-suite results of 274/274 at the reviewed SHA were builder-reported, not independently rerun by this review. The isolated reproductions above were run by the reviewer with synthetic records and no database access.
 
 PR #10 was verified open/draft at 92c96b6 on its existing base. Keep that PR/base, the approved manifest, legacy values, and unrelated local runbook edit intact. No deployment, merge, live writes, import execution, migrations, or browser automation. These are narrow completions of the existing warning/classification contract; preserve all already verified work.
+
+
+## Review of 25be0ffc — one remaining early-return defect
+
+The reviewer independently ran eight synthetic cases against the exact committed helper. Missing/retired Region-only references, missing/unsupported types without references, healthy centers, valid unassigned retail, retail Unknown applicability, and non-retail incomplete assignments all passed. The changed production callers pass raw Location type and PDF counts distinguish unclassified records. Preserve those fixes.
+
+One requirement from the narrow follow-up is still incomplete: unclassified types must remain visibly in need of review when a District reference exists. Both `resolveHierarchyGroupKeyForClass` and `hierarchyDistrictLabel` return through their District-ID branch before considering type classification.
+
+Exact isolated reproduction at application SHA `25be0ffc3ec796c2d1f23aca7acc736b5142d4ea`:
+- Active Region `west`, Active District `01` named District One with parent `west`.
+- Location input: `{type: 'Unsupported Type', regionId: 'west', districtId: '01'}`.
+- Actual classification: unclassified.
+- Actual group: `district:01`.
+- Actual individual label: `District One (01)`, with no type warning.
+- The implementation report currently claims unclassified records go to Needs Review regardless of references; this case contradicts that claim.
+
+Complete the existing unclassified-type behavior before ordinary District grouping/label early returns. Missing or unsupported types must go to Needs Review and expose the type diagnostic even when a District is assigned. Preserve and display the original District ID/resolved name and all hierarchy reference diagnostics; do not erase assignments, alter public hierarchyStatus/API shape, or rewrite data. Known business types retain existing stable District-ID grouping.
+
+Add a compact parameterized regression covering missing and unsupported types with (a) no references, (b) a valid assigned District, and (c) an unresolved/retired/mismatched reference. Assert both group and individual label, preserving exact IDs and all relevant diagnostics. Keep the eight previously corrected cases passing. This fixes ordering of existing checks; no broader feature work is requested.
+
+Update the implementation report, run normal verification, and return the new application SHA. Full-suite 276/276 and build/lint results remain builder-reported; the reviewer ran only the isolated helper cases above. PR #10 was verified open/draft on its existing base. Keep the approved manifest and unrelated runbook edit intact. No deployment, merge, live data changes, imports, migrations, or browser automation.

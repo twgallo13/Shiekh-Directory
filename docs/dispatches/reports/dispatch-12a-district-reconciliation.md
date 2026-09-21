@@ -124,6 +124,10 @@ This review does not implement either correction. A later approved patch should:
 
 District reconciliation proposal was ready for approval. Theo's subsequent approved mapping and execution planning are recorded in [Dispatch 12B](../dispatch-12b-approved-hierarchy-update-plan.md) and [the exact update plan](dispatch-12b-update-plan.md). No live assignments were changed by Dispatch 12A.
 
+## Evidence follow-up — 2026-09-21
+
+The later Dispatch 12B delivery review performed a new read-only transaction-backed refresh at `2026-09-21T04:45:22.248Z` and recorded its corrected raw saved-value, batch, checksum, and recovery evidence in [the Dispatch 12B update plan](dispatch-12b-update-plan.md). This does not alter the historical Dispatch 12A snapshot or its original evidence status.
+
 
 ## Owner clarification and review follow-up — 2026-09-21
 

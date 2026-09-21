@@ -9,12 +9,13 @@ This is a read-only review. No Location, Region, or District assignment was chan
 - Branch was fast-forwarded to `1745917` from `origin/feat/dispatch-12-hierarchy-registry-api`. The pre-existing unrelated edit to `docs/cloud-run-deployment-runbook.md` remains local and is not part of this report.
 - The configured authoritative identity is project `gen-lang-client-0801664258` and named Firestore database `ai-studio-shiekhlocationco-00e1a479-af25-4ab6-9565-5c8b804c56a4`, as defined in `server/firestoreLocations.ts`.
 - A consistent read-only snapshot was taken from the `locations`, `regions`, and `districts` collections after ADC reauthentication, using the configured identity and named database. Snapshot time: `2026-09-21T02:01:21.367Z`.
-- The authoritative snapshot contains 50 Active Locations, 2 Active Regions, and 3 Active Districts. One Location (Store 150) is hierarchy-applicable; the other 49 have missing `HierarchyApplicability` and are classified `UnknownApplicability`, not assigned by type.
+- The authoritative snapshot contains 50 Active Locations, 2 Active Regions, and 3 Active Districts. The current application contract makes missing applicability effective `Applicable` for recognized retail types; non-retail records default to `Not Applicable` when no references exist. The corrected classifications are 47 `UniqueNameCandidate`, 1 `MissingReference`, and 2 `NonApplicable`.
 - The application contract distinguishes canonical `DistrictId`, registry-resolved `DistrictName`, and legacy copied `District`. `server/locationExport.ts` emits all three fields and preserves the legacy field pending an approved transition.
 - `DirectoryContext.updatePerson` includes `district` in leadership fields copied from a Person update and writes that free text to affected Location records when the person is a district manager. This is a verified legacy write path.
 - Fleet Quick Add in `src/components/admin/AdminIntegrationsView.tsx` initializes the form with `District 1 — Northern CA` and saves the form's `district` value while supplying no canonical Region/District references. This is a second verified legacy write path.
 - Repository evidence cannot verify external applications, scheduled jobs, direct database readers, or downstream exports outside this repository. Those consumers remain **NOT VERIFIED**.
 - The active registry contains Regions `region-west` (`West`) and `region-Central` (`Central`), plus Districts `01`, `02`, and `03`, all Active and parented to `region-west`.
+- The helper preserves Firestore document IDs as authoritative, records conflicting embedded IDs as blockers, and reads all three collections inside one read-only Firestore transaction. Read wall-clock interval was `2026-09-21T02:19:07.569Z` to `2026-09-21T02:19:09.002Z`; the interval is not represented as a database generation timestamp.
 
 ## Snapshot provenance and limits
 
@@ -24,25 +25,43 @@ This is a read-only review. No Location, Region, or District assignment was chan
 | Source database | `ai-studio-shiekhlocationco-00e1a479-af25-4ab6-9565-5c8b804c56a4` |
 | Requested source collections | `locations`, `regions`, `districts` |
 | Access mode | Read-only Firestore SDK reads |
-| Snapshot result | PASS; read-only records returned |
+| Snapshot result | PASS; read-only records returned in one transaction |
 | Authentication | ADC reauthenticated with local gcloud CLI; no credential values recorded |
 | Location/Region/District counts | 50 / 2 / 3 |
 | Location lifecycle totals | Active 50; Draft 0; Retired 0 |
-| Source application | `1745917` (branch head after fetch) |
+| Review helper source | `44d5119eb5a04a4ddbad38c1e21d045c3dd7fec1` |
+| Application baseline | `e74e57c1a4ebb6cb553dca109b3355832282c6dc` |
 
 The prior CSV/screenshot observations were treated as historical leads only. The live snapshot confirms Store 150 has `DIS-01` with no resolved name, but the live registry now supplies the exact comparison: legacy text matches District `02`; this remains a proposal, not a repair.
 
 ## Proposed mapping
 
-The review CSV contains one row for every authoritative Location and is explicitly **not import-ready**. Classification totals are: `CanonicalConflict` 1, `UnknownApplicability` 49, total 50. There are no approved assignments. The read-only generator emits `Current*` and `Proposed*` fields without invoking business-record writes. Missing Location versions are represented as `0`, explicitly distinguishing legacy missing versions from observed positive versions.
+The review CSV contains one row for every authoritative Location and is explicitly **not import-ready**. Classification totals are: `UniqueNameCandidate` 47, `MissingReference` 1, `NonApplicable` 2, total 50. There are no approved assignments. The read-only generator emits `Current*` and `Proposed*` fields without invoking business-record writes. Missing Location versions remain blank with `CurrentVersionPresent=false`, while `EffectiveConcurrencyVersion=0` records the application fallback; explicit zero remains present and distinct.
 
-The intended row contract, once read access is restored, is documented in [the review CSV](dispatch-12a-district-reconciliation-review.csv). Each Location must appear exactly once and retain Store Number and IDs as text. The future classification set is: `AlreadyValid`, `UniqueNameCandidate`, `AmbiguousCandidate`, `MissingReference`, `RetiredReference`, `ParentMismatch`, `CanonicalConflict`, `NonApplicable`, and `Unassigned`.
+The row contract is documented in [the review CSV](dispatch-12a-district-reconciliation-review.csv). Each Location appears exactly once and retains Store Number and IDs as text. The classifier distinguishes `AlreadyValid`, `UniqueNameCandidate`, `AmbiguousCandidate`, `MissingReference`, `RetiredReference`, `ParentMismatch`, `IdentityConflict`, `InvalidApplicability`, `NonApplicable`, and `Unassigned`.
+
+### Grouped candidate table
+
+These are exact trimmed/case-normalized legacy-name matches to one Active District with an Active parent. They are review candidates only; no assignment is approved. Store numbers are shown as text.
+
+| Proposed District | Candidate stores | Count |
+|---|---|---:|
+| `01` Central & Southern California | 103, 11, 14, 17, 21, 32, 33, 36, 37, 38, 53, 57, 59, 97 | 14 |
+| `02` Inland Empire, San Diego & LA South | 105, 116, 143, 146, 29, 34, 35, 48, 52, 82, 87 | 11 |
+| `03` Northern California, Nevada, Northwest & Texas | 07, 09, 108, 115, 118, 119, 120, 131, 133, 15, 19, 23, 25, 42, 47, 51, 61, 73, 91, 92, 95, 98 | 22 |
+
+The 47 candidates have missing saved applicability but effective `Applicable` behavior because their types are recognized retail types. They still require owner approval before any write.
 
 ### Store 150
 
 The authoritative record is `loc-150`, Store Number `150`, `Broadway LA`, type `Street / Standalone Location`, Active, version `5`, updated `2026-09-13T00:02:04.064Z`, and `HierarchyApplicability=Applicable`. It has Region `region-west` / `West`, `districtId=DIS-01`, no resolved District, and legacy text `Inland Empire, San Diego & LA South`. `DIS-01` does not exist in the live registry. The legacy text exactly matches the single Active District `02`, `Inland Empire, San Diego & LA South`, under Active Region `region-west` / `West`.
 
-Review status: **CanonicalConflict**. Proposed candidate: Region `region-west` / `West`, District `02` / `Inland Empire, San Diego & LA South`. Do not convert `DIS-01` to `01`; the proposal requires Theo to confirm that District `02` is the owner's intended assignment before any write.
+Review status: **MissingReference** with an exact-name proposal. Proposed candidate: Region `region-west` / `West`, District `02` / `Inland Empire, San Diego & LA South`. Do not convert `DIS-01` to `01`; the proposal requires Theo to confirm that District `02` is the owner's intended assignment before any write.
+
+### Other unresolved decisions
+
+- Ecommerce / Store `001` (`Warehouse / Distribution Center`) and Store `86` (`Other Company Location`) are effectively `Not Applicable` under the current contract because they have no controlled hierarchy references. Theo must confirm whether either record should remain outside the hierarchy or receive an explicit business-approved applicability and assignment.
+- No ambiguous-name, retired-reference, parent-mismatch, valid-canonical-conflict, or identity-conflict rows occurred in this snapshot; the helper and fixture tests cover those classifications for future snapshots.
 
 ## Repository impact matrix
 
@@ -86,19 +105,21 @@ This review does not implement either correction. A later approved patch should:
 - PASS: confirmed configured project and named database from repository configuration.
 - PASS: confirmed source evidence for both legacy write paths and the three export fields.
 - PASS: no write-capable application path, import confirmation, database repair, deployment, merge, or browser automation was invoked.
-- PASS: authoritative count reconciliation: 50 Location rows are represented once in the CSV; 1 `CanonicalConflict` plus 49 `UnknownApplicability` equals 50.
+- PASS: authoritative count reconciliation: 50 Location rows are represented once in the CSV; 47 `UniqueNameCandidate` + 1 `MissingReference` + 2 `NonApplicable` equals 50.
 - PASS: live registry/reference check: Store 150's `DIS-01` is missing; legacy text has exactly one active name candidate (`02`) with an active parent Region.
-- PASS: IDs and Store Numbers are emitted as text in the review CSV, preserving `150`, `02`, and `03` exactly.
-- PASS: `scripts/dispatch12aReconciliation.ts` performs only collection reads and stdout generation; no commit, import confirmation, repair, audit receipt, or business-record write is invoked.
-- PASS: focused TypeScript validation (`npx tsc --noEmit`) and generator execution; CSV has 51 lines including header.
-- NOT RUN: full application API/build suite, because the executable helper is a read-only review utility and no application runtime code changed.
+- PASS: IDs, Store Numbers, embedded/document IDs, raw version presence, and leading-zero values are preserved in the review CSV.
+- PASS: `scripts/dispatch12aReconciliation.ts` performs only three collection reads inside one read-only transaction and stdout generation; no commit, import confirmation, repair, audit receipt, or business-record write is invoked.
+- PASS: focused helper tests: `node --import tsx --test test/dispatch12aReconciliation.test.ts` (11 passed).
+- PASS: `npx tsc --noEmit --pretty false`.
+- NOT RUN: full API suite and production build after this amendment; run before delivery.
 
 ## Decisions requiring Theo's approval
 
 1. Confirm Store 150's intended District is `02` or provide another owner-approved District; do not infer from `DIS-01`, `01`, or the historical screenshot.
-2. Decide applicability for the 49 Locations with missing `HierarchyApplicability` before any hierarchy assignment proposal is converted to a write.
-3. Approve the future correction of the Person territory copy and Fleet Quick Add default, including the desired explicit-unassigned behavior.
-4. Identify and approve contact/verification for external API, CSV, scheduled-job, integration, and direct-database consumers before compatibility changes.
-5. Approve any future write plan only after before/after evidence, version checks, and a database-level reversal procedure are prepared.
+2. Approve or reject the 47 grouped exact-name candidates, including whether missing retail applicability may remain implicitly Applicable or must be explicitly saved.
+3. Decide whether Ecommerce `001` and Other Company Location `86` remain outside the hierarchy or need explicit applicability and assignment.
+4. Approve the future correction of the Person territory copy and Fleet Quick Add default, including the desired explicit-unassigned behavior.
+5. Identify and approve contact/verification for external API, CSV, scheduled-job, integration, and direct-database consumers before compatibility changes.
+6. Approve any future write plan only after before/after evidence, version checks, and a database-level reversal procedure are prepared.
 
 District reconciliation proposal ready for approval. No live assignments were changed.

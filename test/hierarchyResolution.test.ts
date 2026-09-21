@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../src/lib/hierarchyResolution';
+import { hierarchyDistrictLabel, resolveHierarchyApplicability, resolveLocationHierarchy } from '../src/lib/hierarchyResolution';
 
 const activeDistrict = { id: '01', name: 'District One', regionId: 'west', status: 'Active' as const };
 
@@ -44,5 +44,14 @@ describe('hierarchy display resolution', () => {
       hierarchyDistrictLabel(resolveLocationHierarchy({ districtId: 'missing' }, { regions: [], districts: [] })),
       /^Unresolved District \(missing\).*District missing is missing/,
     );
+  });
+
+  it('derives effective applicability without hiding saved inconsistencies', () => {
+    assert.deepEqual(resolveHierarchyApplicability({ type: 'Enclosed Mall' }), { value: 'Applicable', issues: [] });
+    assert.deepEqual(resolveHierarchyApplicability({ type: 'Warehouse / Distribution Center' }), { value: 'Not Applicable', issues: [] });
+    assert.deepEqual(resolveHierarchyApplicability({ type: 'Warehouse / Distribution Center', districtId: '01' }), { value: 'Applicable', issues: [] });
+    assert.deepEqual(resolveHierarchyApplicability({ type: 'Enclosed Mall', hierarchyApplicability: 'Unknown' }), { value: 'Unknown', issues: [] });
+    assert.match(resolveHierarchyApplicability({ type: 'Enclosed Mall', hierarchyApplicability: 'Not Applicable' }).issues.join(' '), /Retail/);
+    assert.match(resolveHierarchyApplicability({ hierarchyApplicability: 'invalid' }).issues.join(' '), /Unsupported/);
   });
 });

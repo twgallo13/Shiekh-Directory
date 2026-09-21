@@ -363,7 +363,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       ? updatedPerson
       : people.find(person => person.id === personId);
 
-    const updatesLeadershipCopies = ['fullName', 'name', 'phone', 'workPhone', 'phonePrivacy', 'district']
+    const updatesLeadershipCopies = ['fullName', 'name', 'phone', 'workPhone', 'phonePrivacy']
       .some(field => Object.hasOwn(updates, field));
     const affectsLocation = (location: LocationRecord) => updatesLeadershipCopies && (location.storeManagerId === id || location.districtManagerId === id
       || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id));
@@ -376,7 +376,6 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       } : {}),
       ...(location.districtManagerId === id ? {
         districtManagerName: updatedPerson.fullName,
-        district: updatedPerson.district || location.district,
       } : {}),
       assistantStoreManagerNames: (location.assistantStoreManagerIds || [])
         .map(personId => personById(personId)?.fullName)

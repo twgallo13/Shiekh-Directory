@@ -21,6 +21,7 @@ const PUBLIC_LOCATION_FIELDS = [
   "phonePrivacy",
   "timeZone",
   "district",
+  "hierarchyApplicability",
   "regionId",
   "districtId",
   "operationalStatus",

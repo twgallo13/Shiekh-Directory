@@ -163,7 +163,7 @@ export const AdminIntegrationsView: React.FC = () => {
     state: 'CA',
     zipCode: '',
     phone: '',
-    district: 'District 1 — Northern CA',
+    district: '',
     googleReviewUrl: '',
     storePageUrl: ''
   });
@@ -282,7 +282,6 @@ export const AdminIntegrationsView: React.FC = () => {
       ...(phone.extension ? { phoneExtension: phone.extension } : {}),
       phonePrivacy: 'Public',
       timeZone: 'America/Los_Angeles',
-      district: newStoreForm.district,
       operationalStatus: 'Open — Normal Operations',
       standardHours: DEFAULT_WEEKLY_HOURS,
       recordStatus: 'Active',
@@ -299,7 +298,7 @@ export const AdminIntegrationsView: React.FC = () => {
       state: 'CA',
       zipCode: '',
       phone: '',
-      district: 'District 1 — Northern CA',
+      district: '',
       googleReviewUrl: '',
       storePageUrl: ''
     });

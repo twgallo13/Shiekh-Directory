@@ -1,6 +1,7 @@
 import type { HierarchyRegistry } from './hierarchyAssignmentContract';
 
 export type HierarchyResolutionStatus = 'unassigned' | 'resolved' | 'retired-reference' | 'unresolved-reference' | 'parent-mismatch';
+export type EffectiveHierarchyApplicability = 'Applicable' | 'Not Applicable' | 'Unknown';
 
 export interface ResolvedLocationHierarchy {
   regionId: string | null;
@@ -11,6 +12,23 @@ export interface ResolvedLocationHierarchy {
   districtStatus: 'Active' | 'Retired' | null;
   hierarchyStatus: HierarchyResolutionStatus;
   hierarchyIssues: string[];
+  hierarchyApplicability: EffectiveHierarchyApplicability;
+  applicabilityIssues: string[];
+}
+
+const retailTypes = new Set(['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location']);
+
+export function resolveHierarchyApplicability(location: { type?: unknown; hierarchyApplicability?: unknown; regionId?: unknown; districtId?: unknown }): { value: EffectiveHierarchyApplicability; issues: string[] } {
+  const saved = location.hierarchyApplicability;
+  if (saved === 'Applicable' || saved === 'Not Applicable' || saved === 'Unknown') {
+    const issues: string[] = [];
+    if (retailTypes.has(String(location.type || '')) && saved === 'Not Applicable') issues.push('Retail location is marked Not Applicable.');
+    if (saved === 'Not Applicable' && (referenceId(location.regionId) || referenceId(location.districtId))) issues.push('Not Applicable location retains canonical hierarchy references.');
+    return { value: saved, issues };
+  }
+  if (saved !== undefined && saved !== null && saved !== '') return { value: 'Unknown', issues: [`Unsupported hierarchy applicability value: ${String(saved)}.`] };
+  if (retailTypes.has(String(location.type || ''))) return { value: 'Applicable', issues: [] };
+  return { value: referenceId(location.regionId) || referenceId(location.districtId) ? 'Applicable' : 'Not Applicable', issues: [] };
 }
 
 export function resolveLocationHierarchy(
@@ -22,6 +40,7 @@ export function resolveLocationHierarchy(
   const region = regionId ? registry.regions.find(item => item.id === regionId) : undefined;
   const district = districtId ? registry.districts.find(item => item.id === districtId) : undefined;
   const hierarchyIssues: string[] = [];
+  const applicability = resolveHierarchyApplicability(location);
 
   if (regionId && !region) hierarchyIssues.push(`Region ${regionId} is missing from the hierarchy registry.`);
   if (districtId && !district) hierarchyIssues.push(`District ${districtId} is missing from the hierarchy registry.`);
@@ -46,6 +65,8 @@ export function resolveLocationHierarchy(
     districtStatus: district?.status || null,
     hierarchyStatus,
     hierarchyIssues,
+    hierarchyApplicability: applicability.value,
+    applicabilityIssues: applicability.issues,
   };
 }
 

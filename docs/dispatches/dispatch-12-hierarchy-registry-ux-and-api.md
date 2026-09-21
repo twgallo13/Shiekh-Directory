@@ -257,3 +257,49 @@ Completed on 2026-09-20. Tested application commit: `e74e57c1a4ebb6cb553dca109b3
 - Check Quick Reference with valid, missing, inactive, and duplicate-name People; only the exact active canonical manager should display, link, and match search.
 - Export reporting and editing CSVs and confirm separate `RegionId`, `RegionName`, `DistrictId`, and `DistrictName` fields, exact text ID `01`, informational name handling, and unchanged legacy `District` compatibility behavior.
 - Exercise Location API list/detail, pagination, cursor invalidation, ETags, `hierarchyVersion`, and full-reconciliation restart after a registry-only rename.
+
+## Authorized deployment handoff — manual acceptance environment
+
+Date: 2026-09-21. Theo authorized proceeding with the deployment handoff after reporting that the live registry still shows the old Add/Retire interface. This section supersedes the earlier no-deployment boundary only for the reviewed build below. It does not authorize merging PR #9 or #10, changing application code, or altering business records.
+
+### Objective and exact release
+
+Make the reviewed Region/District editing interface available at `https://shiekh-dir.ai.studio` for Theo's manual acceptance.
+
+- Tested application SHA: `e74e57c1a4ebb6cb553dca109b3355832282c6dc`.
+- Completion-report SHA: `a57187506e7f891da50170e683dda37ece94add8`; verified to change only this dispatch after the application SHA.
+- Implementation branch: `feat/dispatch-12-hierarchy-registry-api`; draft PR #10 is based on `dispatch-11-flexible-location-csv`. The application includes its Dispatch 11 base. Preserve this PR relationship.
+- Source review found corrections A–C implemented. Copilot reports lint, 244 API tests, build, and diff-check passing. Browser acceptance remains pending.
+
+### Readiness and deployment impact
+
+Read `docs/cloud-run-deployment-runbook.md` and this complete dispatch before acting. The committed runbook's current-revision summary is historical and must not determine today's rollback target.
+
+1. Fetch current refs, inspect PR heads and the local worktree, and verify the exact release is available. Preserve the pre-existing uncommitted runbook modification. Deploy from a clean isolated checkout of the tested application SHA so unrelated local files cannot enter the build. Do not reset or discard the original worktree.
+2. Read Cloud Run's actual service, serving traffic entries, Ready revision, URLs, and current configuration. Record the current known-working serving revision and traffic allocation as the rollback baseline. If the reviewed application is already live, verify it and report that no duplicate deployment is needed.
+3. Verify the tested source includes the existing live application's accepted changes; do not silently replace a newer incompatible release with this older snapshot. Report material divergence before changing traffic.
+4. This release affects the registry UI, hierarchy API responses/reconciliation, CSV projections, and Dashboard manager display. It does not require migrations, data repairs, registry reassignment, secret rotation, or changes in permissions.
+5. Use the existing service `shiekh-location-company-directory`, project `gen-lang-client-0801664258`, region `us-west1`. Preserve its domain mapping, identity, runtime settings, database, access controls, and existing secret references, including `LOCATION_IMPORT_TOKEN_SECRET`. Do not print secret values.
+
+### Execute the approved deployment
+
+- Follow the runbook's established source-deployment process. Create a uniquely identified no-traffic candidate from the exact application SHA. Use a short traffic tag within Cloud Run's length limits.
+- Keep existing traffic unchanged until the candidate is Ready and checks pass. Reuse the proven verification commands and correct Cloud Run response fields; a tag-only traffic entry is not the serving percentage.
+- Compare the candidate configuration with the recorded baseline. Only expected image/build provenance and revision metadata should differ.
+- On the candidate URL verify root HTTP 200, unauthenticated `/api/auth/me` HTTP 401, and unknown API route HTTP 404, including the established JSON error shape. Do not test deployment by importing or editing records.
+- Verify the candidate serves its newly built frontend assets. Availability checks alone do not prove the Edit controls work; Theo will verify those after deployment.
+- Once the checks pass, explicitly promote this exact candidate to 100% traffic using the runbook's `update-traffic --to-revisions` pattern. Verify the actual serving percentage, default URL, branded URL, and that the branded site serves the candidate's frontend assets.
+- On a confirmed post-promotion failure, restore the recorded known-working traffic baseline and report the failure and rollback evidence. Do not change application code or improvise unrelated infrastructure fixes within this deployment.
+- Do not run Playwright or other browser automation. No merge, production import, migration, business-record edit, automatic reassignment, or additional feature work.
+
+### Repository record and return
+
+Record actual SHA, build/revision, observed prior revision, traffic, URLs, verification results, configuration comparison, and exact rollback command in the runbook and append a deployment result here.
+
+Preserve the existing local runbook work and inspect its diff. Add and commit only this deployment's scoped documentation; do not silently include or discard unrelated earlier edits. If safe separation is not possible, keep the existing edit intact and record the new deployment evidence in this dispatch, explicitly identifying the outstanding runbook reconciliation.
+
+Push the documentation to the implementation branch. Keep both PRs unmerged and PR #10 draft. Update PR #10's verification summary to the actual 244-test correction baseline, preserving earlier results as historical where relevant.
+
+Return a short business-language handoff: deployed application SHA, documentation SHA, revision, traffic, live URL, rollback target, and any failed/not-run checks. Only say “ready on the live site for manual testing” after successful promotion and verification. Do not claim Theo's browser acceptance.
+
+Theo's first checks: hard-refresh the branded site, sign in as System Administrator, open Region & District Registry, confirm Edit/Save/Cancel and separate ID/Name labels, then follow the existing manual checklist above. If the new UI is still missing, inspect the serving revision and frontend assets before proposing another code change.

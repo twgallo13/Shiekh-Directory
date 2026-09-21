@@ -1,6 +1,6 @@
 # Dispatch 12A District Assignment Reconciliation
 
-Status: **BLOCKED for authoritative mapping; repository impact review complete**
+Status: **Authoritative proposal complete; assignment changes remain blocked pending approval**
 
 This is a read-only review. No Location, Region, or District assignment was changed. No compatibility field was removed or repurposed, and no import, repair, migration, deployment, merge, or browser automation was run.
 
@@ -8,12 +8,13 @@ This is a read-only review. No Location, Region, or District assignment was chan
 
 - Branch was fast-forwarded to `1745917` from `origin/feat/dispatch-12-hierarchy-registry-api`. The pre-existing unrelated edit to `docs/cloud-run-deployment-runbook.md` remains local and is not part of this report.
 - The configured authoritative identity is project `gen-lang-client-0801664258` and named Firestore database `ai-studio-shiekhlocationco-00e1a479-af25-4ab6-9565-5c8b804c56a4`, as defined in `server/firestoreLocations.ts`.
-- The required read was attempted against the `locations`, `regions`, and `districts` collections using the configured identity and named database. Application-default credential resolution failed before any snapshot was returned with Google OAuth `invalid_grant`, subtype `invalid_rapt` (reauthentication required).
-- Therefore current authoritative counts, records, registry statuses, Store 150 contents, and a current store-by-store mapping are unavailable. No old CSV, screenshot, seed data, or inferred numeric ID was used as a current mapping.
+- A consistent read-only snapshot was taken from the `locations`, `regions`, and `districts` collections after ADC reauthentication, using the configured identity and named database. Snapshot time: `2026-09-21T02:01:21.367Z`.
+- The authoritative snapshot contains 50 Active Locations, 2 Active Regions, and 3 Active Districts. One Location (Store 150) is hierarchy-applicable; the other 49 have missing `HierarchyApplicability` and are classified `UnknownApplicability`, not assigned by type.
 - The application contract distinguishes canonical `DistrictId`, registry-resolved `DistrictName`, and legacy copied `District`. `server/locationExport.ts` emits all three fields and preserves the legacy field pending an approved transition.
 - `DirectoryContext.updatePerson` includes `district` in leadership fields copied from a Person update and writes that free text to affected Location records when the person is a district manager. This is a verified legacy write path.
 - Fleet Quick Add in `src/components/admin/AdminIntegrationsView.tsx` initializes the form with `District 1 — Northern CA` and saves the form's `district` value while supplying no canonical Region/District references. This is a second verified legacy write path.
 - Repository evidence cannot verify external applications, scheduled jobs, direct database readers, or downstream exports outside this repository. Those consumers remain **NOT VERIFIED**.
+- The active registry contains Regions `region-west` (`West`) and `region-Central` (`Central`), plus Districts `01`, `02`, and `03`, all Active and parented to `region-west`.
 
 ## Snapshot provenance and limits
 
@@ -23,22 +24,25 @@ This is a read-only review. No Location, Region, or District assignment was chan
 | Source database | `ai-studio-shiekhlocationco-00e1a479-af25-4ab6-9565-5c8b804c56a4` |
 | Requested source collections | `locations`, `regions`, `districts` |
 | Access mode | Read-only Firestore SDK reads |
-| Snapshot result | BLOCKED before records returned |
-| Access error | `invalid_grant`, `invalid_rapt` during metadata/plugin credential resolution |
-| Location/Region/District counts | NOT AVAILABLE |
+| Snapshot result | PASS; read-only records returned |
+| Authentication | ADC reauthenticated with local gcloud CLI; no credential values recorded |
+| Location/Region/District counts | 50 / 2 / 3 |
+| Location lifecycle totals | Active 50; Draft 0; Retired 0 |
 | Source application | `1745917` (branch head after fetch) |
 
-The prior 50-row CSV/screenshot observations remain historical leads only: 48 rows with legacy District text and no District ID, one unassigned warehouse, and Store 150 showing `DIS-01` with no resolved name. They are not reproduced as current records here.
+The prior CSV/screenshot observations were treated as historical leads only. The live snapshot confirms Store 150 has `DIS-01` with no resolved name, but the live registry now supplies the exact comparison: legacy text matches District `02`; this remains a proposal, not a repair.
 
 ## Proposed mapping
 
-No authoritative Location records were returned, so there are no mapping rows and no classification totals. The review CSV is intentionally header-only and **not import-ready**. Producing rows from the prior CSV, screenshot, seed data, name guesses, or numeric conversion would violate Dispatch 12A.
+The review CSV contains one row for every authoritative Location and is explicitly **not import-ready**. Classification totals are: `CanonicalConflict` 1, `UnknownApplicability` 49, total 50. There are no approved assignments. The read-only generator emits `Current*` and `Proposed*` fields without invoking business-record writes. Missing Location versions are represented as `0`, explicitly distinguishing legacy missing versions from observed positive versions.
 
 The intended row contract, once read access is restored, is documented in [the review CSV](dispatch-12a-district-reconciliation-review.csv). Each Location must appear exactly once and retain Store Number and IDs as text. The future classification set is: `AlreadyValid`, `UniqueNameCandidate`, `AmbiguousCandidate`, `MissingReference`, `RetiredReference`, `ParentMismatch`, `CanonicalConflict`, `NonApplicable`, and `Unassigned`.
 
 ### Store 150
 
-Store 150 could not be inspected because the authoritative Location read was blocked. The historical `DIS-01` observation is not enough to establish whether that value is a canonical District ID, legacy text, or malformed data. Do not convert it to `01`. The prior screenshot association with District `02` is also only an unapproved lead. Theo must confirm the owner's intended District after the live record, registry records, parent Region, and status are available.
+The authoritative record is `loc-150`, Store Number `150`, `Broadway LA`, type `Street / Standalone Location`, Active, version `5`, updated `2026-09-13T00:02:04.064Z`, and `HierarchyApplicability=Applicable`. It has Region `region-west` / `West`, `districtId=DIS-01`, no resolved District, and legacy text `Inland Empire, San Diego & LA South`. `DIS-01` does not exist in the live registry. The legacy text exactly matches the single Active District `02`, `Inland Empire, San Diego & LA South`, under Active Region `region-west` / `West`.
+
+Review status: **CanonicalConflict**. Proposed candidate: Region `region-west` / `West`, District `02` / `Inland Empire, San Diego & LA South`. Do not convert `DIS-01` to `01`; the proposal requires Theo to confirm that District `02` is the owner's intended assignment before any write.
 
 ## Repository impact matrix
 
@@ -82,16 +86,19 @@ This review does not implement either correction. A later approved patch should:
 - PASS: confirmed configured project and named database from repository configuration.
 - PASS: confirmed source evidence for both legacy write paths and the three export fields.
 - PASS: no write-capable application path, import confirmation, database repair, deployment, merge, or browser automation was invoked.
-- PASS: review CSV contains headers only and no fabricated Location rows.
-- NOT RUN: authoritative count reconciliation, duplicate/reference/parent validation, Store 150 inspection, and complete mapping classification; blocked by credential reauthentication failure.
-- NOT RUN: application lint/API/build tests, because this change is documentation/report-only and no executable code was added.
+- PASS: authoritative count reconciliation: 50 Location rows are represented once in the CSV; 1 `CanonicalConflict` plus 49 `UnknownApplicability` equals 50.
+- PASS: live registry/reference check: Store 150's `DIS-01` is missing; legacy text has exactly one active name candidate (`02`) with an active parent Region.
+- PASS: IDs and Store Numbers are emitted as text in the review CSV, preserving `150`, `02`, and `03` exactly.
+- PASS: `scripts/dispatch12aReconciliation.ts` performs only collection reads and stdout generation; no commit, import confirmation, repair, audit receipt, or business-record write is invoked.
+- PASS: focused TypeScript validation (`npx tsc --noEmit`) and generator execution; CSV has 51 lines including header.
+- NOT RUN: full application API/build suite, because the executable helper is a read-only review utility and no application runtime code changed.
 
 ## Decisions requiring Theo's approval
 
-1. Provide or authorize refreshed application-default credentials with read-only access to the configured project/database, then rerun the snapshot.
-2. Confirm Store 150's intended District after inspecting its authoritative record and the active registry; do not infer from `DIS-01`, `01`, or the historical screenshot.
+1. Confirm Store 150's intended District is `02` or provide another owner-approved District; do not infer from `DIS-01`, `01`, or the historical screenshot.
+2. Decide applicability for the 49 Locations with missing `HierarchyApplicability` before any hierarchy assignment proposal is converted to a write.
 3. Approve the future correction of the Person territory copy and Fleet Quick Add default, including the desired explicit-unassigned behavior.
 4. Identify and approve contact/verification for external API, CSV, scheduled-job, integration, and direct-database consumers before compatibility changes.
 5. Approve any future write plan only after before/after evidence, version checks, and a database-level reversal procedure are prepared.
 
-District reconciliation proposal is **not ready for approval** because the authoritative snapshot is blocked. The repository impact review is ready for Theo's decisions above.
+District reconciliation proposal ready for approval. No live assignments were changed.

@@ -70,3 +70,49 @@ The approved manifest SHA-256 must remain:
 No deployment, traffic promotion, merge, live assignment changes, imports, repair/migration execution, registry changes, secret/IAM changes, private backup commits, or compatibility-field removal. Do not invent external-consumer approval or recovery evidence. Keep PR #10 draft on its existing base.
 
 Only report “Dispatch 12C implementation ready for review; live assignments unchanged” when the implementation requirements are complete. Otherwise report the exact remaining blocker without claiming readiness.
+
+
+## Follow-up source review — application 306fd351
+
+Review outcome: **Two remaining correctness issues; complete these before deployment/manual acceptance.** This section narrows the follow-up to defects in the delivered implementation, not a new feature phase.
+
+Verified remotely: PR #10 remains open/draft on `dispatch-11-flexible-location-csv` at application SHA `306fd351e24a0f2fd1c5c39c4a946598394811b9`. Verified in source: reporting header order is corrected, the reporting resolver now receives type and saved applicability, canonical Quick Add/applicability controls exist, stable group IDs are used, and the Person legacy writer remains removed. The approved manifest is not in the application comparison's changed-file set. Full-suite/lint/build results remain builder-reported; this review did not rerun the full suite.
+
+### 1. Separate business type from hierarchy applicability
+
+`PrintSheetView.tsx` currently calculates retailCount from `hierarchyApplicability === 'Applicable'`. `resolveHierarchyGroupKey` likewise puts every Applicable record without a District into unassigned-retail. Applicability answers whether hierarchy applies; it does not identify whether the Location is a retail store.
+
+Reproduced locally using the exact committed helper, with isolated synthetic records and no database access:
+
+| Synthetic input | Actual result at 306fd351 | Required behavior |
+|---|---|---|
+| Warehouse / Distribution Center with a valid Region and no District | Group unassigned-retail; PDF counts it as retail | Remains non-retail; incomplete District assignment must not label it a retail store |
+| Enclosed Mall with explicit Unknown applicability | PDF excludes it from retail and counts it under non-retail/unresolved | Remains a retail Location, with a separate Needs Review hierarchy state |
+| Warehouse / Distribution Center with explicit Not Applicable and no references | Operational Centers group, but detail label Unassigned District | Healthy non-retail center; show No retail district |
+
+Use the existing recognized Location types for retail/non-retail totals. Keep hierarchy review state separate from business type; unknown/unsupported Location types must be visibly unclassified rather than silently certified. Totals must use the authorized, lifecycle-filtered, displayed dataset.
+
+Carry sufficient type context into grouping without changing public API semantics. Only actual retail records awaiting assignment belong to Unassigned Retail Locations. A non-retail Applicable record lacking its District belongs in Needs Review with clear incomplete-assignment guidance, preserving its existing Region. Continue to group canonical District assignments by stable IDs, retain row-specific diagnostics, and preserve the existing hierarchyStatus contract. Do not change validation or infer new assignments.
+
+### 2. Make the individual display agree with grouping
+
+`hierarchyDistrictLabel` still returns Unassigned District whenever districtId is absent. LocationDetailModal and other row displays consume this helper. Consequently a healthy operational center is presented as having a missing assignment when opened from the correctly grouped list.
+
+Use shared applicability-aware presentation consistently in detail screens and existing row/search displays:
+- Healthy non-retail Not Applicable, no contradictory references: No retail district.
+- Applicable retail without District: Unassigned District/Unassigned Retail guidance.
+- Unknown or inconsistent applicability: Needs Review with the reason.
+- Unresolved/retired/mismatched references: retain the actual ID and diagnostic.
+- Do not rewrite records, copy names into legacy fields, or change API hierarchyStatus to fix display wording.
+
+Group headings must not borrow a single member's warning and present it as the condition of every member; show diagnostics on the affected rows. Inspect existing consumers of the shared labels so a helper fix cannot hide reference issues elsewhere.
+
+### Focused acceptance and delivery
+
+Add behavioral regressions for the three reproduced cases above, mixed retail/non-retail/Unknown counts, filtered totals, and identical center semantics across group/detail presentations. Add a rename regression demonstrating a selected District ID remains selected after its label changes. Preserve the approved 14/12/22 plus two-center fixture and truthful before-state fixture.
+
+The current shared restriction test establishes allowed types, not the full edit/save workflow. Add targeted coverage using existing test infrastructure for new control transitions and emitted save values: Region change clears District, selecting Not Applicable does not silently erase references, unrelated edits preserve omitted applicability, and stale saves retain the draft. Reuse existing proven tests where applicable and cite them; no browser automation or new test framework is required.
+
+Correct the implementation report's statement that all related surfaces are consistent until these cases pass. Report exact tests performed, including any manual-only checks, rather than treating helper coverage as UI acceptance. Run the normal required verification once after the scoped corrections and return application SHA plus report link.
+
+Preserve all existing boundaries: same draft PR/base, unchanged approved manifest and legacy fields, unrelated runbook edit excluded, no deployment/merge/live writes/import execution/migration/Playwright. External-consumer and live recovery requirements remain separate. This is completion of Dispatch 12C, not approval to execute Dispatch 12B.

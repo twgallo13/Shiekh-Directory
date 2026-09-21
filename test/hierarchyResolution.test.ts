@@ -48,7 +48,7 @@ describe('hierarchy display resolution', () => {
       'No retail district',
     );
     assert.match(
-      hierarchyDistrictLabel(resolveLocationHierarchy({ districtId: 'missing' }, { regions: [], districts: [] })),
+      hierarchyDistrictLabel(resolveLocationHierarchy({ type: 'Enclosed Mall', districtId: 'missing' }, { regions: [], districts: [] }), 'Enclosed Mall'),
       /^Unresolved District \(missing\).*District missing is missing/,
     );
   });
@@ -229,5 +229,67 @@ describe('hierarchy display resolution', () => {
     const registry = { regions: [{ id: 'reg-west', name: 'West', status: 'Active' as const }], districts: [{ id: '01', name: 'District One', regionId: 'reg-west', status: 'Active' as const }] };
     const hierarchy = resolveLocationHierarchy(afterNotApplicable, registry);
     assert.match(hierarchy.applicabilityIssues.join(' '), /retains canonical hierarchy references/);
+  });
+
+  it('an unclassified type is Needs Review even when a District is assigned, preserving the District ID/name and reference diagnostics', () => {
+    const registry = {
+      regions: [{ id: 'west', name: 'West', status: 'Active' as const }],
+      districts: [{ id: '01', name: 'District One', regionId: 'west', status: 'Active' as const }],
+    };
+    const cases: Array<[string, unknown]> = [
+      ['missing type', undefined],
+      ['unsupported type', 'Unsupported Type'],
+    ];
+
+    for (const [description, type] of cases) {
+      // (a) no references: still Needs Review, never certified as a healthy center.
+      const noRefs = resolveLocationHierarchy({ type }, registry);
+      assert.deepEqual(resolveHierarchyGroupKey(noRefs, type), { kind: 'needs-review' }, `${description}: no references group`);
+      assert.match(hierarchyDistrictLabel(noRefs, type), /^Needs Review - Location type is/, `${description}: no references label`);
+
+      // (b) a valid assigned District: exact reproduction from the review — must not silently return through the District-ID branch.
+      const validDistrict = resolveLocationHierarchy({ type, regionId: 'west', districtId: '01' }, registry);
+      const validKey = resolveHierarchyGroupKey(validDistrict, type);
+      assert.deepEqual(validKey, { kind: 'needs-review' }, `${description}: assigned District group`);
+      const validLabel = hierarchyDistrictLabel(validDistrict, type);
+      assert.match(validLabel, /^Needs Review - Location type is/, `${description}: assigned District label prefix`);
+      assert.match(validLabel, /District One \(01\)/, `${description}: assigned District label preserves resolved name/ID`);
+
+      // (c) an unresolved reference: the exact reference diagnostic must still appear alongside the type diagnostic.
+      const unresolved = resolveLocationHierarchy({ type, districtId: 'missing' }, registry);
+      assert.equal(unresolved.districtId, 'missing');
+      assert.deepEqual(resolveHierarchyGroupKey(unresolved, type), { kind: 'needs-review' }, `${description}: unresolved reference group`);
+      const unresolvedLabel = hierarchyDistrictLabel(unresolved, type);
+      assert.match(unresolvedLabel, /^Needs Review - Location type is/, `${description}: unresolved reference label prefix`);
+      assert.match(unresolvedLabel, /Unresolved District \(missing\)/, `${description}: unresolved reference label preserves the ID`);
+      assert.match(unresolvedLabel, /District missing is missing from the hierarchy registry\./, `${description}: unresolved reference diagnostic preserved`);
+    }
+
+    // A retired District reference behaves the same way for an unclassified type.
+    const retiredRegistry = {
+      regions: [{ id: 'west', name: 'West', status: 'Active' as const }],
+      districts: [{ id: '01', name: 'District One', regionId: 'west', status: 'Retired' as const }],
+    };
+    const retired = resolveLocationHierarchy({ type: 'Unsupported Type', regionId: 'west', districtId: '01' }, retiredRegistry);
+    assert.deepEqual(resolveHierarchyGroupKey(retired, 'Unsupported Type'), { kind: 'needs-review' });
+    const retiredLabel = hierarchyDistrictLabel(retired, 'Unsupported Type');
+    assert.match(retiredLabel, /District One \(01\)/);
+    assert.match(retiredLabel, /District 01 is retired\./);
+
+    // A parent-mismatched District reference behaves the same way for an unclassified type.
+    const mismatchRegistry = {
+      regions: [{ id: 'west', name: 'West', status: 'Active' as const }, { id: 'east', name: 'East', status: 'Active' as const }],
+      districts: [{ id: '01', name: 'District One', regionId: 'west', status: 'Active' as const }],
+    };
+    const mismatch = resolveLocationHierarchy({ type: 'Unsupported Type', regionId: 'east', districtId: '01' }, mismatchRegistry);
+    assert.deepEqual(resolveHierarchyGroupKey(mismatch, 'Unsupported Type'), { kind: 'needs-review' });
+    const mismatchLabel = hierarchyDistrictLabel(mismatch, 'Unsupported Type');
+    assert.match(mismatchLabel, /District One \(01\)/);
+    assert.match(mismatchLabel, /District 01 belongs to Region west, not east\./);
+
+    // Known business types are unaffected: they retain existing stable District-ID grouping.
+    const known = resolveLocationHierarchy({ type: 'Enclosed Mall', regionId: 'west', districtId: '01' }, registry);
+    assert.deepEqual(resolveHierarchyGroupKey(known, 'Enclosed Mall'), { kind: 'district', districtId: '01' });
+    assert.equal(hierarchyDistrictLabel(known, 'Enclosed Mall'), 'District One (01)');
   });
 });

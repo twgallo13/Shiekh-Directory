@@ -257,3 +257,23 @@ gcloud run services update-traffic shiekh-location-company-directory \
 ## Known access gap
 
 The exact historical `gcloud run deploy` invocations (precise flags, revision-suffix/tag conventions actually used per release) are not stored anywhere in this repository — there is no Dockerfile, `cloudbuild.yaml`, or GitHub Actions workflow. They exist only in the operator's prior shell history or Cloud Console/Cloud Audit Logs, which were not queried here. This runbook's deployment command is reconstructed from the live service's build metadata (Artifact Registry path, revision-suffix pattern, `package.json` scripts), not read directly from a stored command.
+
+## 2026-09-21 Dispatch 12 manual acceptance deployment
+
+1. Verified a clean detached checkout exactly matched application commit `e74e57c1a4ebb6cb553dca109b3355832282c6dc`. Its Dispatch 11 base is the previously deployed commit, and no later application commit existed on the implementation branch. PRs #9 and #10 remained open and unmerged; PR #10 remained draft.
+2. Recorded the actual serving rollback baseline before deployment: revision `shiekh-location-company-directory-dispatch11-e4e332c` was the sole percentage-bearing entry at 100% in desired and observed traffic. The service and `shiekh-dir.ai.studio` mapping were Ready, and the mapping was DomainRoutable.
+3. Deployed from the exact checkout with `--revision-suffix=dispatch12-e74e57c --tag=d12-e74e57c --no-traffic`. Cloud Build `2eca527a-7ffc-4c39-b766-48dc274b66ba` produced Ready revision `shiekh-location-company-directory-dispatch12-e74e57c` at 0%, with image digest `sha256:befe36a492c4d1e74f75e17c977520d693aff04ef0481e9d7dea081eb98ae900` and tagged URL `https://d12-e74e57c---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+4. Compared the candidate with the rollback revision before promotion. Service identity, every environment setting, both existing secret references, resources, timeout, concurrency, ingress, autoscaling, CPU settings, probes, container port, volumes, VPC/network settings, and execution environment matched. Only expected image, build, revision, and generated metadata differed. No secret value was read or changed.
+5. Candidate checks passed: `/` returned 200; unauthenticated `/api/auth/me` returned structured 401 `invalid_token`; `/api/does-not-exist` returned structured 404 `api_route_not_found`; all 80 discovered frontend assets returned 200 and nonzero bytes. The lazy Admin bundle `AdminIntegrationsView-D6acayXL.js` was 169,858 bytes with SHA-256 `16daedf6e98e8e396ab80b740da56e36eaab69ddc5fd5253cc0d6f969e75e0f7` and contained the Dispatch 12 registry editing and conflict-review controls.
+6. Two conservative promotion guards restored Dispatch 11 to 100% after verifier-only failures: the first used an invalid domain-mapping read and expected the lazy Admin chunk in root HTML; the second compared a full image reference to a bare digest and read the correct domain route from the wrong object instance. In both cases the application health checks passed, the rollback completed, and Dispatch 11 was verified as the sole 100% serving revision before retry.
+7. The corrected direct guard explicitly promoted `shiekh-location-company-directory-dispatch12-e74e57c` to 100%. Desired and observed traffic identify it as the sole percentage-bearing 100% revision. The candidate tag, default URL, and `https://shiekh-dir.ai.studio` each returned 200 at `/`, 401 `invalid_token` at unauthenticated `/api/auth/me`, and 404 `api_route_not_found` at the unknown API route. Each host served entry bundle `index-prWzG0UR.js` and the exact verified Admin bundle above. The domain mapping remained Ready and DomainRoutable. Rollback was not needed after the final successful promotion.
+8. No merge, browser automation, authenticated edit, production import, migration, business-data change, automatic reassignment, secret rotation, or configuration change was performed. Manual browser acceptance remains with Theo. The original worktree's pre-existing runbook update was preserved and intentionally excluded from this deployment documentation commit; it still requires separate reconciliation.
+
+**Dispatch 12 rollback command:**
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-dispatch11-e4e332c=100
+```

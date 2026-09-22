@@ -126,3 +126,16 @@ test('metadata validation and scope failures return actionable non-success respo
     } finally { await app.close(); }
   }
 });
+
+test('hierarchy dependency failures return structured corrective details', async () => {
+  const details = {
+    dependencies: [{ type: 'Location' as const, id: 'loc-01', name: 'Store One', storeNumber: '001', href: '/locations/loc-01' }],
+    correction: 'Reassign the affected Location before changing the District parent.',
+  };
+  const app = await harness('System Administrator', async () => { throw new DirectoryValidationError('District move blocked.', details); });
+  try {
+    const response = await app.request({ writes: [{ collection: 'districts', id: '01', operation: 'set', expectedVersion: 1, data: { id: '01', name: 'District One', regionId: 'reg-east', status: 'Active' } }], audit });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), { error: { code: 'invalid_metadata', message: 'District move blocked.', details } });
+  } finally { await app.close(); }
+});

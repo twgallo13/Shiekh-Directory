@@ -9,6 +9,7 @@ import { CustomMetadataFields } from './CustomMetadataFields';
 import { formatUsPhone } from '../../lib/contactNormalization';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
+import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { 
   X, 
   MapPin, 
@@ -46,7 +47,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   onRequestCorrection,
   onSelectPerson,
 }) => {
-  const { currentUser, people, hoursTemplates, verifyLocation, auditLogs, customFieldDefinitions } = useDirectory();
+  const { currentUser, people, regions, districts, hoursTemplates, verifyLocation, auditLogs, customFieldDefinitions } = useDirectory();
 
   // Tabbed Navigation State
   const [activeTab, setActiveTab] = useState<LocationDetailTab>('overview');
@@ -76,6 +77,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   const regionalManager = resolveActivePerson(location.regionalManagerId, people);
   const assistantManagers = resolveActivePersonList(location.assistantStoreManagerIds, people);
   const keyHolders = resolveActivePersonList(location.keyHolderIds, people);
+  const hierarchy = resolveLocationHierarchy(location, { regions, districts });
   const primaryEmployees = people.filter(person => person.primaryLocationId === location.id);
   const supportingEmployees = people.filter(person => person.supportedLocationIds?.includes(location.id));
   const hoursTemplate = hoursTemplates.find(template => template.id === location.hoursTemplateId);
@@ -534,8 +536,8 @@ Operating Status: ${location.operationalStatus}`;
                         <span className="text-neutral-400 italic text-xs">Unassigned</span>
                       )}
                     </div>
-                    <span className="max-w-64 truncate text-[11px] font-medium text-neutral-600" title={location.district}>
-                        {location.district || 'Unassigned District'}
+                    <span className="max-w-64 text-[11px] font-medium text-neutral-600">
+                      {hierarchyDistrictLabel(hierarchy, location.type)}
                     </span>
                   </div>
 

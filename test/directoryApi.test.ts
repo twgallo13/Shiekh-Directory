@@ -15,6 +15,7 @@ import {
   type LocationRepository,
   type LocationPageOptions,
 } from "../server/directoryApi";
+import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
 
 const NOW = new Date("2026-09-08T12:00:00.000Z");
 const TOKEN_SECRET = "test-only-hmac-secret-with-high-entropy";
@@ -38,6 +39,8 @@ const records: LocationDocument[] = [
       phone: "555-0107",
       phonePrivacy: "Public",
       timeZone: "America/Los_Angeles",
+      regionId: "reg-west",
+      districtId: "01",
       storeManagerName: "Private Manager",
       storeManagerPhone: "555-9999",
       storeManagerId: "person-private",
@@ -73,6 +76,11 @@ const records: LocationDocument[] = [
   },
 ];
 
+const hierarchy: HierarchyRegistry = {
+  regions: [{ id: "reg-west", name: "West Region", status: "Active" }],
+  districts: [{ id: "01", name: "District One", regionId: "reg-west", status: "Active" }],
+};
+
 const repository: LocationRepository = {
   async readPage(options) {
     return fixturePage(records, options);
@@ -80,6 +88,7 @@ const repository: LocationRepository = {
   async findActiveByStoreNumber(storeNumber) {
     return records.find((record) => record.data.storeNumber === storeNumber) ?? null;
   },
+  async readHierarchy() { return structuredClone(hierarchy); },
 };
 
 const credentials: ApiCredential[] = [
@@ -235,6 +244,14 @@ describe("Directory API location responses", () => {
     assert.deepEqual(body.data.map((location: { storeNumber: string }) => location.storeNumber), ["07", "08"]);
     assert.equal(body.data[0].phone, "555-0107");
     assert.equal(body.data[1].phone, undefined);
+    assert.equal(body.data[0].regionId, "reg-west");
+    assert.equal(body.data[0].regionName, "West Region");
+    assert.equal(body.data[0].districtId, "01");
+    assert.equal(body.data[0].districtName, "District One");
+    assert.equal(body.data[0].hierarchyStatus, "resolved");
+    assert.equal(body.data[0].hierarchyApplicability, "Applicable");
+    assert.equal(body.data[1].hierarchyApplicability, "Not Applicable");
+    assert.equal(typeof body.sync.hierarchyVersion, "string");
     assert.deepEqual(body.data[0].standardHours.monday, {
       isClosed: false,
       open: "10:00",
@@ -251,6 +268,31 @@ describe("Directory API location responses", () => {
       "privateNote",
     ]) {
       assert.equal(serialized.includes(privateField), false, `${privateField} must not appear in the response`);
+    }
+  });
+
+  it("distinguishes malformed saved applicability, empty strings, and absent values without broadening valid enum values", async () => {
+    const scoped = await startTestServer({
+      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => NOW,
+      locations: {
+        ...repository,
+        async readPage(options) {
+          return fixturePage([
+            { ...records[0], id: "loc-empty-string", data: { ...records[0].data, storeNumber: "40", hierarchyApplicability: "" } },
+            { ...records[0], id: "loc-malformed", data: { ...records[0].data, storeNumber: "41", hierarchyApplicability: "Sometimes" } },
+            { ...records[0], id: "loc-explicit-unknown", data: { ...records[0].data, storeNumber: "42", hierarchyApplicability: "Unknown" } },
+          ], options);
+        },
+      },
+    });
+    try {
+      const body = await (await apiFetch(scoped.baseUrl, "/api/v1/locations", READ_TOKEN)).json();
+      const byStore = new Map(body.data.map((location: { storeNumber: string; hierarchyApplicability: string }) => [location.storeNumber, location.hierarchyApplicability]));
+      assert.equal(byStore.get("40"), "Applicable"); // empty string behaves like absent, using the canonical-reference default
+      assert.equal(byStore.get("41"), "Unknown"); // unsupported saved values remain visible as Unknown, never silently accepted
+      assert.equal(byStore.get("42"), "Unknown");
+    } finally {
+      await closeServer(scoped.server);
     }
   });
 
@@ -274,9 +316,10 @@ describe("Directory API location responses", () => {
   });
 
   it("filters by document update timestamp and rejects malformed timestamps", async () => {
+    const baseline = await (await apiFetch(baseUrl, "/api/v1/locations?limit=1", READ_TOKEN)).json();
     const response = await apiFetch(
       baseUrl,
-      "/api/v1/locations?updatedSince=2026-09-03T00%3A00%3A00Z",
+      `/api/v1/locations?updatedSince=2026-09-03T00%3A00%3A00Z&hierarchyVersion=${baseline.sync.hierarchyVersion}`,
       READ_TOKEN,
     );
     const body = await response.json();
@@ -305,6 +348,92 @@ describe("Directory API location responses", () => {
 
     const second = await apiFetch(baseUrl, "/api/v1/locations/07", READ_TOKEN, { "If-None-Match": etag });
     assert.equal(second.status, 304);
+  });
+
+  it("reconciles registry-only changes through hierarchy versions, cursors, and ETags", async () => {
+    let currentHierarchy = structuredClone(hierarchy);
+    const snapshotHierarchy = structuredClone(hierarchy);
+    let testNow = NOW;
+    const changing = await startTestServer({
+      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => testNow,
+      locations: {
+        ...repository,
+        async readHierarchy(snapshotAt) {
+          return structuredClone(snapshotAt?.getTime() === NOW.getTime() ? snapshotHierarchy : currentHierarchy);
+        },
+      },
+    });
+    try {
+      const firstResponse = await apiFetch(changing.baseUrl, "/api/v1/locations?limit=1", READ_TOKEN);
+      const firstEtag = firstResponse.headers.get("etag");
+      const first = await firstResponse.json();
+      assert.equal(first.data[0].districtId, "01");
+      assert.equal(first.data[0].districtName, "District One");
+      assert.equal(first.sync.mode, "full");
+      assert.ok(first.sync.hierarchyVersion);
+
+      currentHierarchy = {
+        ...currentHierarchy,
+        districts: [{ ...currentHierarchy.districts[0], name: "District 01" }],
+      };
+      testNow = new Date(NOW.getTime() + 1000);
+
+      const staleCursor = await apiFetch(changing.baseUrl, `/api/v1/locations?limit=1&cursor=${encodeURIComponent(first.pagination.nextCursor)}`, READ_TOKEN);
+      assert.equal(staleCursor.status, 409);
+      assert.equal((await staleCursor.json()).error.code, "hierarchy_changed");
+
+      const staleVersion = await apiFetch(changing.baseUrl, `/api/v1/locations?updatedSince=2026-09-01T00%3A00%3A00Z&hierarchyVersion=${first.sync.hierarchyVersion}`, READ_TOKEN);
+      assert.equal(staleVersion.status, 409);
+      assert.equal((await staleVersion.json()).error.code, "hierarchy_changed");
+
+      const restartedResponse = await apiFetch(changing.baseUrl, "/api/v1/locations?updatedSince=2026-09-01T00%3A00%3A00Z", READ_TOKEN);
+      const restarted = await restartedResponse.json();
+      assert.equal(restarted.sync.mode, "full");
+      assert.notEqual(restarted.sync.hierarchyVersion, first.sync.hierarchyVersion);
+      assert.equal(restarted.data[0].districtName, "District 01");
+      assert.notEqual(restartedResponse.headers.get("etag"), firstEtag);
+
+      const detail = await (await apiFetch(changing.baseUrl, "/api/v1/locations/07", READ_TOKEN)).json();
+      assert.equal(detail.data.districtId, "01");
+      assert.equal(detail.data.districtName, "District 01");
+      assert.equal(detail.hierarchyVersion, restarted.sync.hierarchyVersion);
+    } finally { await closeServer(changing.server); }
+  });
+
+  it("distinguishes unresolved, retired, unassigned, and parent-mismatched hierarchy references", async () => {
+    const cases: LocationDocument[] = [
+      { id: "loc-missing", updatedAt: NOW, data: { storeNumber: "101", recordStatus: "Active", regionId: "missing", districtId: "missing" } },
+      { id: "loc-retired", updatedAt: NOW, data: { storeNumber: "102", recordStatus: "Active", regionId: "reg-retired", districtId: "02" } },
+      { id: "loc-unassigned", updatedAt: NOW, data: { storeNumber: "103", recordStatus: "Active" } },
+      { id: "loc-mismatch", updatedAt: NOW, data: { storeNumber: "104", recordStatus: "Active", regionId: "reg-west", districtId: "03" } },
+    ];
+    const states = await startTestServer({
+      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => NOW,
+      locations: {
+        async readPage(options) { return fixturePage(cases, options); },
+        async findActiveByStoreNumber(storeNumber) { return cases.find(record => record.data.storeNumber === storeNumber) || null; },
+        async readHierarchy() {
+          return {
+            regions: [...hierarchy.regions, { id: "reg-retired", name: "Retired Region", status: "Retired" }],
+            districts: [
+              ...hierarchy.districts,
+              { id: "02", name: "Retired District", regionId: "reg-retired", status: "Retired" },
+              { id: "03", name: "East District", regionId: "reg-east", status: "Active" },
+            ],
+          };
+        },
+      },
+    });
+    try {
+      const body = await (await apiFetch(states.baseUrl, "/api/v1/locations", READ_TOKEN)).json();
+      const byStore = new Map(body.data.map((location: Record<string, unknown>) => [location.storeNumber, location]));
+      assert.equal((byStore.get("101") as Record<string, unknown>).hierarchyStatus, "unresolved-reference");
+      assert.equal((byStore.get("101") as Record<string, unknown>).regionName, null);
+      assert.equal((byStore.get("102") as Record<string, unknown>).hierarchyStatus, "retired-reference");
+      assert.equal((byStore.get("102") as Record<string, unknown>).districtName, "Retired District");
+      assert.equal((byStore.get("103") as Record<string, unknown>).hierarchyStatus, "unassigned");
+      assert.equal((byStore.get("104") as Record<string, unknown>).hierarchyStatus, "parent-mismatch");
+    } finally { await closeServer(states.server); }
   });
 });
 

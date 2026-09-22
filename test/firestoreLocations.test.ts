@@ -64,6 +64,8 @@ test("Firestore pages use read-only fixed snapshots, one identity scan, startAft
   assert.equal(fake.reads[2].limit, 2);
   assert.equal(fake.reads[2].afterId, "a");
   assert.equal(fake.transactions(), 2);
+  assert.equal(fake.reads[1].fields.includes("regionId"), true);
+  assert.equal(fake.reads[1].fields.includes("districtId"), true);
   for (const read of fake.reads) assert.equal(read.fields.includes("storeManagerPhone"), false);
 });
 
@@ -76,6 +78,29 @@ test("Firestore duplicate identities abort the first page before any public fiel
 
 test("Firestore detail requests use two-match detection rather than selecting a generation", async () => {
   const fake = fakeFirestore(true);
-  await assert.rejects(fake.repository.findActiveByStoreNumber("07"), LocationConflictError);
+  await assert.rejects(fake.repository.findActiveByStoreNumber("07", snapshotAt), LocationConflictError);
   assert.equal(fake.reads[0].limit, 2);
+});
+
+test("Firestore hierarchy reads preserve exact IDs and use the requested fixed snapshot", async () => {
+  const collections = {
+    regions: [{ id: "reg-west", data: () => ({ name: "West", status: "Active" }) }],
+    districts: [{ id: "01", data: () => ({ name: "District One", regionId: "reg-west", status: "Active" }) }],
+  };
+  const firestore = {
+    collection(name: keyof typeof collections) {
+      return { select() { return this; }, async get() { return { docs: collections[name] }; } };
+    },
+    async runTransaction(callback: (transaction: { get: (query: { get: () => Promise<unknown> }) => Promise<unknown> }) => unknown, options: { readOnly: boolean; readTime: Timestamp }) {
+      assert.equal(options.readOnly, true);
+      assert.equal(options.readTime.toDate().toISOString(), snapshotAt.toISOString());
+      return callback({ get: query => query.get() });
+    },
+  };
+  const repository = new FirestoreLocationRepository(firestore as unknown as Firestore);
+  const hierarchy = await repository.readHierarchy(snapshotAt);
+  assert.deepEqual(hierarchy, {
+    regions: [{ id: "reg-west", name: "West", status: "Active" }],
+    districts: [{ id: "01", name: "District One", regionId: "reg-west", status: "Active" }],
+  });
 });

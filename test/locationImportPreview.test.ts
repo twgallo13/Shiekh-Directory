@@ -62,6 +62,17 @@ describe('Location CSV import preview', () => {
     assert.equal(result.mappings?.find(mapping => mapping.sourceHeader === 'StoreManager')?.target, null);
   });
 
+  it('re-importing the current reporting export visibly proposes saving a calculated applicability default', () => {
+    const noSavedApplicability = { ...baseLocation, id: 'loc-008', storeNumber: '008', hierarchyApplicability: undefined };
+    const reportingSnapshot = { ...snapshot, locations: [...snapshot.locations, noSavedApplicability] };
+    const reportingHeaders = 'StoreNumber,StoreName,Type,Address,City,State,ZipCode,Phone,RegionId,RegionName,DistrictId,DistrictName,District,StoreManager,StoreManagerPhone,DistrictManager,AssistantStoreManagers,OperationalStatus,RecordStatus,GoogleReviewUrl,StorePageUrl,HierarchyApplicability\r\n';
+    const reportingRow = `${reportingHeaders}008,Original Store,Street / Standalone Location,7 Main Street,Los Angeles,CA,90001,555-0100,reg-west,West,dist-1,District 1,,,,,,Open \u2014 Normal Operations,Active,,,Applicable\r\n`;
+    const result = previewLocationImport(reportingRow, reportingSnapshot);
+    const mapping = result.mappings?.find(entry => entry.sourceHeader === 'HierarchyApplicability');
+    assert.equal(mapping?.target, 'HierarchyApplicability');
+    assert.deepEqual(result.rows[0].changes, [{ field: 'hierarchyApplicability', before: null, after: 'Applicable' }]);
+  });
+
   it('shows exact updates while preserving blank fields and without mutating the snapshot', () => {
     const before = structuredClone(snapshot);
     const result = previewLocationImport(csvRow({ LocationId: 'loc-007', StoreNumber: '007', StoreName: 'Renamed Store' }), snapshot);
@@ -232,6 +243,18 @@ describe('Location CSV import preview', () => {
     assert.equal(result.rows[1].action, 'blocked');
     assert.deepEqual(result.rows[1].sourceValues, ['loc-other', 'Too', 'Many']);
     assert.ok(result.rows[1].issues.some(issue => issue.code === 'invalid_row_shape' && /3 cells for 2 headings/.test(issue.reason)));
+  });
+
+  it('recognizes RegionName and DistrictName as informational and never derives assignments from them', () => {
+    const mappings = suggestLocationImportHeaderMappings(['LocationId', 'Region Name', 'DistrictName']);
+    assert.deepEqual(mappings.map(mapping => ({ target: mapping.target, kind: mapping.kind })), [
+      { target: 'LocationId', kind: 'exact' },
+      { target: null, kind: 'informational' },
+      { target: null, kind: 'informational' },
+    ]);
+    const result = previewLocationImport('LocationId,Region Name,DistrictName\r\nloc-007,Other Region,Other District\r\n', snapshot);
+    assert.equal(result.rows[0].action, 'unchanged');
+    assert.deepEqual(result.rows[0].changes, []);
   });
 
   it('rejects the entire file when broken quoting makes row boundaries unreliable', () => {

@@ -9,6 +9,7 @@ import {
   LOCATION_IMPORT_SCHEMA_VERSION,
   LOCATION_IMPORT_SPREADSHEET_ENCODING,
   LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
+  LOCATION_IMPORT_WRITABLE_COLUMNS,
   LOCATION_OPERATIONAL_STATUSES,
   LOCATION_RECORD_STATUSES,
   LOCATION_TIME_ZONES,
@@ -475,7 +476,7 @@ function parseImportRows(csv: string, suppliedMappings?: LocationImportHeaderMap
   if (mappings.length !== headers.length || mappings.some((mapping, index) => mapping.sourceIndex !== index || mapping.sourceHeader.trim() !== headers[index])) {
     throw new LocationImportPreviewError('unsupported_template', 'The reviewed header mapping does not match this CSV file. Review the headings again.');
   }
-  const invalidTargets = mappings.filter(mapping => mapping.target !== null && !LOCATION_IMPORT_COLUMNS.includes(mapping.target));
+  const invalidTargets = mappings.filter(mapping => mapping.target !== null && !LOCATION_IMPORT_WRITABLE_COLUMNS.includes(mapping.target));
   const duplicateTargets = [...duplicateValues(mappings.flatMap(mapping => mapping.target ? [mapping.target] : []))];
   const unsupportedWithoutReview = suppliedMappings === undefined
     ? mappings.filter(mapping => mapping.kind === 'unsupported').map(mapping => mapping.sourceHeader)

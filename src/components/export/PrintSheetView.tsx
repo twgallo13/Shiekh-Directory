@@ -3,11 +3,12 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
 import { buildDistrictManagerGroupLabel, resolveActivePerson } from '../../lib/readProjectionContract';
+import { HierarchyGroupKey, classifyHierarchyLocationType, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
 
 export const PrintSheetView: React.FC = () => {
-  const { locations, people } = useDirectory();
+  const { locations, people, regions, districts } = useDirectory();
   const [districtFilter, setDistrictFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -26,14 +27,27 @@ export const PrintSheetView: React.FC = () => {
     return map;
   }, [locations, people]);
 
-  // Get distinct districts sorted
-  const distinctDistricts = Array.from(
-    new Set(locations.map(l => l.district).filter(Boolean))
-  ).sort() as string[];
+  const hierarchyByLocationId = useMemo(() => new Map(locations.map(location => [
+    location.id,
+    resolveLocationHierarchy(location, { regions, districts }),
+  ])), [locations, regions, districts]);
+
+  const groupKeyByLocationId = useMemo(() => new Map(locations.map(location => [
+    location.id,
+    resolveHierarchyGroupKey(hierarchyByLocationId.get(location.id), location.type),
+  ])), [locations, hierarchyByLocationId]);
+
+  // Stable group identities: a registry rename changes the label, never the filter/group identity.
+  const distinctGroups = Array.from(
+    new Map(locations.map(location => {
+      const key = groupKeyByLocationId.get(location.id)!;
+      return [hierarchyGroupId(key), key] as const;
+    })).values(),
+  );
 
   // Filter locations
   const filteredLocations = locations.filter(loc => {
-    if (districtFilter !== 'all' && loc.district !== districtFilter) return false;
+    if (districtFilter !== 'all' && hierarchyGroupId(groupKeyByLocationId.get(loc.id)!) !== districtFilter) return false;
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     const leadership = leadershipByLocationId.get(loc.id);
@@ -48,30 +62,38 @@ export const PrintSheetView: React.FC = () => {
     );
   });
 
-  // Group filtered locations by district
-  const groupedByDistrict = new Map<string, { dmLabel: string; stores: LocationRecord[] }>();
+  const retailCount = filteredLocations.filter(loc => classifyHierarchyLocationType(loc.type) === 'retail').length;
+  const nonRetailCount = filteredLocations.filter(loc => classifyHierarchyLocationType(loc.type) === 'non-retail').length;
+  const unclassifiedCount = filteredLocations.length - retailCount - nonRetailCount;
 
-  // Ensure consistent district ordering
-  const sortedDistricts = Array.from(
-    new Set(filteredLocations.map(l => l.district || 'Unassigned District'))
-  ).sort();
+  // Group filtered locations by stable group identity, not a formatted display label.
+  const groupedById = new Map<string, { key: HierarchyGroupKey; label: string; dmLabel: string | null; stores: LocationRecord[] }>();
 
-  sortedDistricts.forEach(districtName => {
-    const storesInDistrict = filteredLocations
-      .filter(l => (l.district || 'Unassigned District') === districtName)
+  const sortedGroupIds = Array.from(new Set(filteredLocations.map(location => hierarchyGroupId(groupKeyByLocationId.get(location.id)!))))
+    .sort((left, right) => {
+      const leftIsDistrict = left.startsWith('district:');
+      const rightIsDistrict = right.startsWith('district:');
+      if (leftIsDistrict !== rightIsDistrict) return leftIsDistrict ? -1 : 1;
+      return left.localeCompare(right);
+    });
+
+  sortedGroupIds.forEach(groupId => {
+    const storesInGroup = filteredLocations
+      .filter(location => hierarchyGroupId(groupKeyByLocationId.get(location.id)!) === groupId)
       .sort((a, b) => {
         const numA = parseInt(a.storeNumber, 10);
         const numB = parseInt(b.storeNumber, 10);
         if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
         return a.storeNumber.localeCompare(b.storeNumber);
       });
+    if (storesInGroup.length === 0) return;
 
-    if (storesInDistrict.length > 0) {
-      const dmLabel = buildDistrictManagerGroupLabel(
-        storesInDistrict.map(store => leadershipByLocationId.get(store.id)?.districtManagerName),
-      );
-      groupedByDistrict.set(districtName, { dmLabel, stores: storesInDistrict });
-    }
+    const key = groupKeyByLocationId.get(storesInGroup[0].id)!;
+    const label = hierarchyGroupLabel(key, hierarchyByLocationId.get(storesInGroup[0].id));
+    const dmLabel = key.kind === 'district'
+      ? buildDistrictManagerGroupLabel(storesInGroup.map(store => leadershipByLocationId.get(store.id)?.districtManagerName))
+      : null;
+    groupedById.set(groupId, { key, label, dmLabel, stores: storesInGroup });
   });
 
   const currentDate = new Date().toLocaleDateString('en-US', {
@@ -85,7 +107,7 @@ export const PrintSheetView: React.FC = () => {
       <div className="print:hidden">
         <PageHeader
           title="1-Sheet Retail Directory PDF"
-          description={`Compact landscape export grouped by District Manager (${filteredLocations.length} stores displayed)`}
+          description={`Compact landscape export grouped by District, Operational Centers, and Unassigned Retail Locations (${filteredLocations.length} of ${locations.length} Locations displayed: ${retailCount} retail, ${nonRetailCount} non-retail, ${unclassifiedCount} unclassified)`}
         />
       </div>
 
@@ -109,10 +131,13 @@ export const PrintSheetView: React.FC = () => {
               onChange={(e) => setDistrictFilter(e.target.value)}
               className="bg-neutral-50 border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none cursor-pointer"
             >
-              <option value="all">All Districts ({locations.length} Stores)</option>
-              {distinctDistricts.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
+              <option value="all">All Groups ({locations.length} Locations)</option>
+              {distinctGroups.map(key => {
+                const id = hierarchyGroupId(key);
+                const sampleLocation = locations.find(location => hierarchyGroupId(groupKeyByLocationId.get(location.id)!) === id);
+                const label = hierarchyGroupLabel(key, sampleLocation ? hierarchyByLocationId.get(sampleLocation.id) : undefined);
+                return <option key={id} value={id}>{label}</option>;
+              })}
             </select>
           </div>
 
@@ -149,7 +174,7 @@ export const PrintSheetView: React.FC = () => {
           </div>
           <div className="text-right">
             <div className="text-[11px] font-bold text-neutral-900 font-mono">
-              Total Fleet: {filteredLocations.length} Stores
+              Total Locations: {filteredLocations.length} ({retailCount} retail, {nonRetailCount} non-retail, {unclassifiedCount} unclassified)
             </div>
             <div className="text-[9px] text-neutral-500">
               Published: {currentDate} • Internal Operational Reference
@@ -159,17 +184,19 @@ export const PrintSheetView: React.FC = () => {
 
         {/* Directory Tables Grouped By District */}
         <div className="print-sheet-groups space-y-4 print:space-y-1">
-          {Array.from(groupedByDistrict.entries()).map(([districtName, { dmLabel, stores }]) => (
-            <div key={districtName} className="print-district break-inside-avoid">
+          {Array.from(groupedById.entries()).map(([groupId, { key, label, dmLabel, stores }]) => (
+            <div key={groupId} className="print-district break-inside-avoid">
               
-              {/* District Sub-Header Bar */}
+              {/* Group Sub-Header Bar */}
               <div className="print-district-header mb-1 flex items-center justify-between border-y border-neutral-300 bg-neutral-100 px-3 py-1 text-[11px] font-bold text-neutral-900">
                 <span className="uppercase tracking-wider text-red-700">
-                  {districtName} ({stores.length} Locations)
+                  {label} ({stores.length} {key.kind === 'district' ? 'Stores' : 'Locations'})
                 </span>
-                <span className="text-neutral-700 text-[10px] font-medium">
-                  District Manager: <strong className="text-neutral-900 font-semibold">{dmLabel}</strong>
-                </span>
+                {dmLabel && (
+                  <span className="text-neutral-700 text-[10px] font-medium">
+                    District Manager: <strong className="text-neutral-900 font-semibold">{dmLabel}</strong>
+                  </span>
+                )}
               </div>
 
               {/* Stores Table */}
@@ -189,6 +216,8 @@ export const PrintSheetView: React.FC = () => {
                 <tbody className="divide-y divide-neutral-100 font-normal">
                   {stores.map((loc, idx) => {
                     const hasNotice = loc.operationalStatus !== 'Open — Normal Operations' || Boolean(loc.activeNotice);
+                    const hierarchy = hierarchyByLocationId.get(loc.id);
+                    const hierarchyWarnings = [...(hierarchy?.hierarchyIssues || []), ...(hierarchy?.applicabilityIssues || [])];
                     return (
                       <tr 
                         key={loc.id} 
@@ -198,15 +227,18 @@ export const PrintSheetView: React.FC = () => {
                           #{loc.storeNumber}
                         </td>
                         <td className="py-1 px-1.5 font-medium text-neutral-900">
-                          {hasNotice && (
+                          {(hasNotice || hierarchyWarnings.length > 0) && (
                             <span 
-                              title={`Notice: ${loc.activeNotice?.shortDescription || loc.operationalStatus}`}
+                              title={[hasNotice ? `Notice: ${loc.activeNotice?.shortDescription || loc.operationalStatus}` : null, ...hierarchyWarnings].filter(Boolean).join(' ')}
                               className="inline-flex items-center text-amber-600 mr-1 align-middle"
                             >
                               <AlertTriangle className="w-3 h-3 inline" />
                             </span>
                           )}
                           <span>{loc.name}</span>
+                          {hierarchyWarnings.length > 0 && (
+                            <span className="block text-[9px] font-normal text-amber-700">{hierarchyWarnings.join(' ')}</span>
+                          )}
                         </td>
                         <td className="py-1 px-1.5 text-neutral-600 truncate max-w-[180px]">
                           {loc.address}

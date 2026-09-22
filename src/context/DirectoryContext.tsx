@@ -20,11 +20,12 @@ import {
 } from '../types';
 import type { DirectorySeed } from '../lib/directorySeed';
 import { migrateDirectoryRelationships } from '../lib/directoryMigration';
-import { commitDirectory, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult } from '../lib/directoryClient';
+import { buildRegistryWrite, commitDirectory, fetchHierarchyRegistry, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult, type HierarchyRegistrySnapshot, type RegistrySaveIntent } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
 import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFieldValue } from '../lib/customFields';
 import { resolvePersonPhone, serializePersonUpdate } from '../lib/personContacts';
+import { PERSON_LEADERSHIP_NAME_FIELDS, reconcileLocationLeadershipCopy } from '../lib/personLocationRelationships';
 import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
 
 interface DirectoryContextType {
@@ -43,8 +44,9 @@ interface DirectoryContextType {
   regions: RegionRecord[];
   districts: DistrictRecord[];
   customFieldDefinitions: CustomFieldDefinition[];
-  saveRegion: (region: RegionRecord, create: boolean) => Promise<void>;
-  saveDistrict: (district: DistrictRecord, create: boolean) => Promise<void>;
+  saveRegion: (region: RegionRecord, intent: RegistrySaveIntent) => Promise<void>;
+  saveDistrict: (district: DistrictRecord, intent: RegistrySaveIntent) => Promise<void>;
+  refreshHierarchyRegistry: () => Promise<HierarchyRegistrySnapshot>;
   saveCustomFieldDefinition: (definition: CustomFieldDefinition) => Promise<void>;
   saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => Promise<void>;
   persistenceError: string | null;
@@ -216,18 +218,23 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     setAuditLogs(prev => [log, ...prev].slice(0, 200));
   };
 
-  const saveRegion = async (region: RegionRecord, create: boolean) => {
-    const existing = regions.find(item => item.id === region.id);
-    await persist([{ collection: 'regions', id: region.id, operation: 'set', data: region as unknown as Record<string, unknown>, expectedVersion: create ? null : expectedVersionOf(existing) }], {
-      action: create ? 'Region Created' : 'Region Updated', entityType: 'Setting', entityId: region.id, entityName: region.name, details: `Saved Region ${region.name}.`,
+  const saveRegion = async (region: RegionRecord, intent: RegistrySaveIntent) => {
+    await persist([buildRegistryWrite('regions', region, intent)], {
+      action: intent.create ? 'Region Created' : 'Region Updated', entityType: 'Setting', entityId: region.id, entityName: region.name, details: `Saved Region ${region.name}.`,
     });
   };
 
-  const saveDistrict = async (district: DistrictRecord, create: boolean) => {
-    const existing = districts.find(item => item.id === district.id);
-    await persist([{ collection: 'districts', id: district.id, operation: 'set', data: district as unknown as Record<string, unknown>, expectedVersion: create ? null : expectedVersionOf(existing) }], {
-      action: create ? 'District Created' : 'District Updated', entityType: 'Setting', entityId: district.id, entityName: district.name, details: `Saved District ${district.name}.`,
+  const saveDistrict = async (district: DistrictRecord, intent: RegistrySaveIntent) => {
+    await persist([buildRegistryWrite('districts', district, intent)], {
+      action: intent.create ? 'District Created' : 'District Updated', entityType: 'Setting', entityId: district.id, entityName: district.name, details: `Saved District ${district.name}.`,
     });
+  };
+
+  const refreshHierarchyRegistry = async () => {
+    const registry = await fetchHierarchyRegistry(user);
+    setRegions(registry.regions);
+    setDistricts(registry.districts);
+    return registry;
   };
 
   const saveCustomFieldDefinition = async (input: CustomFieldDefinition) => {
@@ -357,28 +364,18 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       ? updatedPerson
       : people.find(person => person.id === personId);
 
-    const updatesLeadershipCopies = ['fullName', 'name', 'phone', 'workPhone', 'phonePrivacy', 'district']
-      .some(field => Object.hasOwn(updates, field));
+    const updatedFields = Object.keys(updates);
+    const updatesLeadershipCopies = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
     const affectsLocation = (location: LocationRecord) => updatesLeadershipCopies && (location.storeManagerId === id || location.districtManagerId === id
       || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id));
-    const updatedLocations = locations.map(location => affectsLocation(location) ? ({
-      ...location,
-      ...(location.storeManagerId === id ? {
-        storeManagerName: updatedPerson.fullName,
-        storeManagerPhone: resolvePersonPhone(updatedPerson).value,
-        storeManagerPhonePrivacy: updatedPerson.phonePrivacy,
-      } : {}),
-      ...(location.districtManagerId === id ? {
-        districtManagerName: updatedPerson.fullName,
-        district: updatedPerson.district || location.district,
-      } : {}),
-      assistantStoreManagerNames: (location.assistantStoreManagerIds || [])
-        .map(personId => personById(personId)?.fullName)
-        .filter((name): name is string => Boolean(name)),
-      keyHolderNames: (location.keyHolderIds || [])
-        .map(personId => personById(personId)?.fullName)
-        .filter((name): name is string => Boolean(name)),
-    }) : location);
+    const updatedLocations = locations.map(location => reconcileLocationLeadershipCopy(
+      location,
+      id,
+      updatedPerson,
+      resolvePersonPhone(updatedPerson).value,
+      personId => personById(personId)?.fullName,
+      updatedFields,
+    ));
     setPeople(previous => previous.map(person => person.id === id ? updatedPerson : person));
     setLocations(updatedLocations);
     try {
@@ -906,6 +903,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         customFieldDefinitions,
         saveRegion,
         saveDistrict,
+        refreshHierarchyRegistry,
         saveCustomFieldDefinition,
         saveLocationRecord,
         persistenceError,

@@ -214,9 +214,10 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
 
   const changedRows = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber) && (row.action === 'add' || row.action === 'update')).length || 0;
   const selectedReadyRows = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber) && (row.action === 'add' || row.action === 'update')) || [];
+  const isRetirement = (row: typeof selectedReadyRows[number]) => row.action === 'update' && row.changes.some(change => change.field === 'recordStatus' && change.after === 'Retired');
   const selectedAdditions = selectedReadyRows.filter(row => row.action === 'add').length;
-  const selectedUpdates = selectedReadyRows.filter(row => row.action === 'update').length;
-  const selectedRetirements = selectedReadyRows.filter(row => row.action === 'update' && row.changes.some(change => change.field === 'recordStatus' && change.after === 'Retired')).length;
+  const selectedUpdates = selectedReadyRows.filter(row => row.action === 'update' && !isRetirement(row)).length;
+  const selectedRetirements = selectedReadyRows.filter(isRetirement).length;
   const selectedWarnings = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber)).flatMap(row => row.issues).filter(issue => issue.severity === 'warning').length || 0;
   const mappedTargets = mappings.flatMap(mapping => mapping.target ? [mapping.target] : []);
   const duplicateMappings = [...new Set(mappedTargets.filter((target, index) => mappedTargets.indexOf(target) !== index))];
@@ -528,7 +529,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
       <ConfirmDialog
         isOpen={confirmationDialogOpen}
         title="Confirm production import"
-        description={`This writes production directory data and creates audit and import-receipt records. Additions: ${selectedAdditions}. Updates, including retirements: ${selectedUpdates}. Retirements: ${selectedRetirements}. Total selected ready rows: ${selectedReadyRows.length}. Cancel makes no changes.`}
+        description={`This writes production directory data and creates audit and import-receipt records. Additions: ${selectedAdditions}. Updates: ${selectedUpdates}. Retirements: ${selectedRetirements}. Total selected ready rows: ${selectedReadyRows.length}. Cancel makes no changes.`}
         confirmLabel={busy === 'confirm' ? 'Saving...' : `Confirm and write ${selectedReadyRows.length} rows`}
         confirmDisabled={!eligibleForConfirmation || Boolean(busy)}
         cancelDisabled={busy === 'confirm'}
@@ -539,7 +540,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           <p className="text-xs font-semibold text-neutral-800">Selected locations</p>
           <ul aria-label="Selected locations to be written" className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-neutral-200 bg-neutral-50 p-2 text-xs text-neutral-700">
             {selectedReadyRows.map(row => {
-              const retirement = row.action === 'update' && row.changes.some(change => change.field === 'recordStatus' && change.after === 'Retired');
+              const retirement = isRetirement(row);
               const action = row.action === 'add' ? 'Addition' : retirement ? 'Retirement' : 'Update';
               return <li key={row.rowNumber}>{action} · Store {row.storeNumber || 'not provided'} · {row.displayName} · {row.locationId || 'new Location'}</li>;
             })}

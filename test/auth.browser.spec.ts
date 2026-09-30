@@ -149,12 +149,17 @@ async function restore(page: Page, signedIn: boolean) {
 }
 
 function commitResponseFor(body: { writes: Array<{ collection: string; id: string; operation: string; data?: Record<string, unknown> }> }) {
+  const versionedCollections = new Set(['locations', 'people', 'users', 'requests']);
   return {
     records: body.writes.map(write => ({
       collection: write.collection,
       id: write.id,
       operation: write.operation,
-      data: write.operation === 'set' ? { ...write.data, id: write.id, version: ((write.data?.version as number | undefined) ?? 0) + 1 } : null,
+      data: write.operation === 'set' ? {
+        ...write.data,
+        id: write.id,
+        ...(versionedCollections.has(write.collection) ? { version: ((write.data?.version as number | undefined) ?? 0) + 1 } : {}),
+      } : null,
     })),
   };
 }
@@ -169,11 +174,13 @@ async function prepareCustomFields(page: Page, role = 'System Administrator') {
   await page.route('**/api/directory/commit', async route => {
     const body = route.request().postDataJSON(); commits.push(body);
     if (fail) return route.fulfill({ status: 409, json: { error: { message: 'Custom metadata changed. Reload the directory before saving.' } } });
-    for (const write of body.writes) {
+    const response = commitResponseFor(body);
+    for (const [index, write] of body.writes.entries()) {
       const key = write.collection === 'custom_field_definitions' ? 'customFieldDefinitions' : 'locations';
-      seed[key] = [...seed[key].filter((record: any) => record.id !== write.id), { ...write.data, id: write.id }];
+      const committed = response.records[index].data;
+      seed[key] = [...seed[key].filter((record: any) => record.id !== write.id), committed];
     }
-    await route.fulfill({ json: commitResponseFor(body) });
+    await route.fulfill({ json: response });
   });
   return { seed, commits, failWrites: () => { fail = true; } };
 }
@@ -197,7 +204,7 @@ test('Location edit reconciles committed versions across consecutive saves and r
   await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
   await page.getByLabel('Capacity', { exact: true }).fill('3');
   await page.getByRole('button', { name: /Save.*Record/ }).click();
-  await expect(page.getByText('Custom metadata changed. Reload the directory before saving.')).toBeVisible();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Custom metadata changed. Reload the directory before saving.');
 });
 
 for (const width of [1440, 390]) {
@@ -407,10 +414,11 @@ test("Location CSV template upload shows a no-write field-level preview", async 
     await previewGate;
     await route.fulfill({ json: {
       schemaVersion: 'locations-v1',
-      summary: { totalRows: 2, additions: 0, updates: 1, unchanged: 0, blocked: 1 },
+      snapshotReadAt: '2026-09-30T12:00:00.000Z',
+      summary: { totalRows: 2, additions: 0, updates: 1, unchanged: 0, blocked: 1, warnings: 0 },
       rows: [
         { rowNumber: 2, action: 'update', locationId: 'loc-1', storeNumber: '001', displayName: 'Renamed Store', issues: [], changes: [{ field: 'name', before: 'Original Store', after: 'Renamed Store' }] },
-        { rowNumber: 3, action: 'blocked', locationId: null, storeNumber: '002', displayName: 'Blocked Store', changes: [], issues: [{ code: 'missing_person_reference', field: 'storeManagerId', message: 'storeManagerId references missing Person ID missing-person.' }] },
+        { rowNumber: 3, action: 'blocked', locationId: null, storeNumber: '002', displayName: 'Blocked Store', changes: [], issues: [{ severity: 'error', code: 'missing_person_reference', field: 'storeManagerId', suppliedValue: 'missing-person', currentValue: null, proposedValue: 'missing-person', reason: 'storeManagerId references missing Person ID missing-person.', correction: 'Choose an active Person ID.' }] },
       ],
     } });
   });
@@ -420,14 +428,17 @@ test("Location CSV template upload shows a no-write field-level preview", async 
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Blank Template' }).click();
   expect((await download).suggestedFilename()).toBe('shiekh_locations_import_v1.csv');
-  await page.getByLabel('Upload Location CSV').setInputFiles({ name: 'locations.csv', mimeType: 'text/csv', buffer: Buffer.from('SchemaVersion\r\nlocations-v1\r\n') });
+  await page.getByLabel('Upload Location CSV').setInputFiles({ name: 'locations.csv', mimeType: 'text/csv', buffer: Buffer.from('SchemaVersion,LocationId,StoreNumber\r\nlocations-v1,,\r\n') });
   await expect(page.getByText('locations.csv', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Building Preview...' })).toBeDisabled();
+  expect(previewCalls).toBe(0);
+  await page.getByLabel('I reviewed every heading, including ignored informational and unsupported columns.').check();
+  await page.getByRole('button', { name: 'Validate and Preview' }).click();
+  await expect(page.getByRole('button', { name: 'Validating...' })).toBeDisabled();
   await expect(page.getByRole('status')).toContainText('Controls are disabled until the request finishes.');
   releasePreview();
-  await expect(page.getByText('Preview only. No directory records were saved.')).toBeVisible();
+  await expect(page.getByText('Preview only. No directory records have been saved yet.')).toBeVisible();
   await expect(page.getByText('Original Store')).toBeVisible();
-  await expect(page.getByText('Renamed Store')).toBeVisible();
+  await expect(page.getByText('Renamed Store', { exact: true })).toHaveCount(2);
   await expect(page.getByText('storeManagerId references missing Person ID missing-person.')).toBeVisible();
   await expect(page.getByRole('button', { name: /Confirm Import/i })).toHaveCount(0);
   expect(previewCalls).toBe(1);
@@ -453,12 +464,16 @@ test('Location CSV upload identifies directory exports and retries the same file
   const file = { name: 'shiekh_active_store_directory.csv', mimeType: 'text/csv', buffer: Buffer.from('StoreNumber,StoreName\r\n001,Store One\r\n') };
   await upload.setInputFiles(file);
   await expect(page.getByText(file.name, { exact: true })).toBeVisible();
+  await page.getByLabel('I reviewed every heading, including ignored informational and unsupported columns.').check();
+  await page.getByRole('button', { name: 'Validate and Preview' }).click();
   await expect(page.getByRole('alert')).toContainText('This is a directory export. Download the Blank Template to preview Location changes.');
   await expect(page.getByRole('button', { name: 'Download Blank Template' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Choose File Again' })).toBeEnabled();
 
   await upload.setInputFiles(file);
-  await expect(page.getByText('Preview only. No directory records were saved.')).toBeVisible();
+  await page.getByLabel('I reviewed every heading, including ignored informational and unsupported columns.').check();
+  await page.getByRole('button', { name: 'Validate and Preview' }).click();
+  await expect(page.getByText('Preview only. No directory records have been saved yet.')).toBeVisible();
   await expect(page.getByText('The CSV contains no data rows.')).toBeVisible();
   expect(previewCalls).toBe(2);
 });
@@ -472,7 +487,7 @@ test('Location CSV write requires final confirmation and Cancel or Enter on the 
   await importButton.click();
   let dialog = page.getByRole('alertdialog', { name: 'Confirm production import' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText(/Additions: 1\. Updates, including retirements: 2\. Retirements: 1\. Total selected ready rows: 3\./)).toBeVisible();
+  await expect(dialog.getByText(/Additions: 1\. Updates: 1\. Retirements: 1\. Total selected ready rows: 3\./)).toBeVisible();
   await expect(dialog.getByRole('list', { name: 'Selected locations to be written' })).toContainText('Store 9001 · SYNTHETIC ADD · loc-synthetic-new');
   await expect(dialog.getByRole('list', { name: 'Selected locations to be written' })).toContainText('Retirement · Store 9003 · SYNTHETIC RETIRE · loc-synthetic-retire');
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();

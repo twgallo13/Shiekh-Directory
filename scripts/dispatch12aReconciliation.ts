@@ -1,5 +1,6 @@
 import { Firestore } from "@google-cloud/firestore";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "../server/firestoreLocations";
+import { spreadsheetSafeCsvValue } from "../src/lib/locationImportSchema";
 
 export const REPORT_FIELDS = [
   "LocationId", "EmbeddedLocationId", "LocationName", "StoreNumber", "LocationType",
@@ -19,10 +20,13 @@ const retailTypes = new Set(["Enclosed Mall", "Strip Center / Shopping Center", 
 const normalize = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase();
 const has = (record: ReviewRecord, field: string) => Object.prototype.hasOwnProperty.call(record, field);
 const text = (value: unknown) => String(value ?? "");
-const csv = (value: unknown) => `"${text(value).replaceAll('"', '""')}"`;
+const csv = (value: unknown) => `"${spreadsheetSafeCsvValue(text(value)).replaceAll('"', '""')}"`;
 
 export function effectiveApplicability(location: ReviewRecord): { saved: string; effective: string; issue: string } {
   const saved = has(location, "hierarchyApplicability") ? text(location.hierarchyApplicability) : "";
+  if (!new Set(["", "Applicable", "Not Applicable", "Unknown"]).has(saved)) {
+    return { saved, effective: saved, issue: `Unsupported saved hierarchy applicability value: ${saved}` };
+  }
   if (saved === "Unknown") return { saved, effective: "Unknown", issue: "" };
   if (retailTypes.has(text(location.type))) {
     if (saved === "Not Applicable") return { saved, effective: "Not Applicable", issue: "Retail location is explicitly marked Not Applicable under the application contract" };
@@ -40,13 +44,18 @@ export function effectiveApplicability(location: ReviewRecord): { saved: string;
 
 function identityIssues(records: ReviewRecord[], label: string): string[] {
   const embedded = new Map<string, string[]>();
+  const mismatches: string[] = [];
   for (const record of records) {
     if (!has(record, "id")) continue;
     const value = text(record.id);
+    if (value !== record.documentId) mismatches.push(`Embedded ${label} id ${value} conflicts with document id ${record.documentId}`);
     embedded.set(value, [...(embedded.get(value) || []), record.documentId]);
   }
-  return [...embedded.entries()].flatMap(([id, documents]) => documents.length > 1
-    ? [`Duplicate embedded ${label} id ${id} in documents ${documents.join(", ")}`] : []);
+  return [
+    ...mismatches,
+    ...[...embedded.entries()].flatMap(([id, documents]) => documents.length > 1
+      ? [`Duplicate embedded ${label} id ${id} in documents ${documents.join(", ")}`] : []),
+  ];
 }
 
 export function classifyReconciliation(snapshot: ReviewSnapshot): ReviewRow[] {
@@ -60,16 +69,28 @@ export function classifyReconciliation(snapshot: ReviewSnapshot): ReviewRow[] {
     const applicability = effectiveApplicability(location);
     const region = regionById.get(text(location.regionId));
     const district = districtById.get(text(location.districtId));
-    const candidates = snapshot.districts.filter(candidate => candidate.status === "Active"
+    const allCandidates = snapshot.districts.filter(candidate => candidate.status === "Active"
       && regionById.get(text(candidate.regionId))?.status === "Active"
       && normalize(candidate.name) !== ""
       && normalize(candidate.name) === normalize(location.district));
+    const candidates = location.regionId
+      ? allCandidates.filter(candidate => text(candidate.regionId) === text(location.regionId))
+      : allCandidates;
+    const conflictingParentCandidates = location.regionId
+      ? allCandidates.filter(candidate => text(candidate.regionId) !== text(location.regionId))
+      : [];
+    const canonicalReference = Boolean(location.districtId);
+    const canonicalAssignmentIsValid = canonicalReference && district?.status === "Active"
+      && region?.status === "Active" && district.regionId === text(location.regionId);
     const additional: string[] = [
       ...regionIdentityIssues,
       ...districtIdentityIssues,
       ...(has(location, "id") && text(location.id) !== location.documentId
         ? [`Embedded Location id ${text(location.id)} conflicts with document id ${location.documentId}`] : []),
       ...(applicability.issue ? [applicability.issue] : []),
+      ...(conflictingParentCandidates.length > 0 && candidates.length === 0
+        ? [`Legacy District name matches active Districts outside saved Region ${text(location.regionId)}: ${conflictingParentCandidates.map(candidate => text(candidate.documentId)).join(", ")}`]
+        : []),
     ];
     const versionPresent = has(location, "version");
     const version = text(location.version);
@@ -85,9 +106,13 @@ export function classifyReconciliation(snapshot: ReviewSnapshot): ReviewRow[] {
     let proposedDistrict = "";
     let proposedDistrictName = "";
     const conflict = has(location, "id") && text(location.id) !== location.documentId;
-    const canonicalReference = Boolean(location.districtId);
     const candidate = candidates.length === 1 ? candidates[0] : undefined;
-    if (candidate) {
+    if (canonicalAssignmentIsValid && region && district) {
+      proposedRegion = region.documentId;
+      proposedRegionName = text(region.name);
+      proposedDistrict = district.documentId;
+      proposedDistrictName = text(district.name);
+    } else if (candidate) {
       const candidateRegion = regionById.get(text(candidate.regionId));
       proposedRegion = candidateRegion?.documentId || text(candidate.regionId);
       proposedRegionName = text(candidateRegion?.name);
@@ -95,14 +120,18 @@ export function classifyReconciliation(snapshot: ReviewSnapshot): ReviewRow[] {
       proposedDistrictName = text(candidate.name);
     }
 
-    if (conflict || additional.some(issue => issue.startsWith("Duplicate embedded"))) {
+    if (conflict || regionIdentityIssues.length > 0 || districtIdentityIssues.length > 0) {
       status = "IdentityConflict";
       evidence = "Document identity conflicts with embedded identity; do not construct an assignment from this row";
       decision = "Resolve the identity conflict before any reconciliation decision";
+    } else if (applicability.issue) {
+      status = "InvalidApplicability";
+      evidence = applicability.issue;
+      decision = "Theo must correct applicability intent";
     } else if (applicability.effective === "Not Applicable") {
-      status = applicability.issue ? "InvalidApplicability" : "NonApplicable";
-      evidence = applicability.issue || "Effective application contract treats this record as Not Applicable";
-      decision = applicability.issue ? "Theo must correct applicability intent" : "No hierarchy assignment unless owner changes applicability";
+      status = "NonApplicable";
+      evidence = "Effective application contract treats this record as Not Applicable";
+      decision = "No hierarchy assignment unless owner changes applicability";
     } else if (applicability.effective === "Unknown") {
       status = "UnknownApplicability";
       evidence = "Explicit Unknown applicability; do not infer hierarchy intent from type or legacy text";
@@ -132,6 +161,10 @@ export function classifyReconciliation(snapshot: ReviewSnapshot): ReviewRow[] {
       if (normalize(location.district) && normalize(location.district) !== normalize(district.name)) {
         additional.push("Legacy District text contradicts the valid canonical District name");
       }
+    } else if (!canonicalReference && location.regionId && candidates.length === 0 && conflictingParentCandidates.length > 0) {
+      status = "ParentMismatch";
+      evidence = `Legacy District name matches active Districts under a different Region than saved Region ${text(location.regionId)}`;
+      decision = "Theo must review the proposed District parent before any assignment";
     } else if (candidates.length > 1) {
       status = "AmbiguousCandidate";
       evidence = `Legacy text matches ${candidates.length} Active District names after trim/case normalization`;

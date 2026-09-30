@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { parse } from "csv-parse/sync";
 import { test } from "node:test";
 import { Timestamp } from "@google-cloud/firestore";
 import {
   classifyReconciliation,
   effectiveApplicability,
   readAuthoritativeSnapshot,
+  renderCsv,
   type ReviewSnapshot,
 } from "../scripts/dispatch12aReconciliation";
 
@@ -23,6 +25,16 @@ test("missing retail applicability defaults to Applicable and still evaluates a 
 test("explicit Unknown and Not Applicable remain visible and are not silently assigned", () => {
   assert.equal(row(snapshot({ hierarchyApplicability: "Unknown", district: "North" })).ReviewStatus, "UnknownApplicability");
   assert.equal(row(snapshot({ hierarchyApplicability: "Not Applicable", district: "North" })).ReviewStatus, "InvalidApplicability");
+});
+
+test("unsupported and inconsistent applicability blocks assignment classification", () => {
+  const unsupported = row(snapshot({ hierarchyApplicability: "Sometimes", district: "North" }));
+  assert.equal(unsupported.ReviewStatus, "InvalidApplicability");
+  assert.match(unsupported.ApplicabilityIssue, /Unsupported saved hierarchy applicability/);
+
+  const nonRetailWithoutReference = row(snapshot({ type: "Other Company Location", hierarchyApplicability: "Applicable", district: "North" }));
+  assert.equal(nonRetailWithoutReference.ReviewStatus, "InvalidApplicability");
+  assert.match(nonRetailWithoutReference.ApplicabilityIssue, /has no controlled hierarchy reference/);
 });
 
 test("non-retail missing applicability follows the application default without forcing a District", () => {
@@ -50,9 +62,23 @@ test("missing and retired Region parents are distinguished from mismatched paren
 });
 
 test("valid canonical assignments remain authoritative when legacy text conflicts", () => {
-  const result = row(snapshot({ regionId: "region-west", districtId: "01", hierarchyApplicability: "Applicable", district: "Old Name" }));
+  const result = row(snapshot({ regionId: "region-west", districtId: "01", hierarchyApplicability: "Applicable", district: "South" }, [district("01", "North"), district("02", "South")]));
   assert.equal(result.ReviewStatus, "AlreadyValid");
   assert.match(result.AdditionalIssues, /contradicts/);
+  assert.equal(result.ProposedRegionId, "region-west");
+  assert.equal(result.ProposedDistrictId, "01");
+});
+
+test("a legacy candidate under another Region is not proposed over a saved Region", () => {
+  const result = row(snapshot(
+    { regionId: "region-west", district: "South" },
+    [district("02", "South", "region-east")],
+    [region("region-west"), region("region-east", "East")],
+  ));
+  assert.equal(result.ReviewStatus, "ParentMismatch");
+  assert.equal(result.ProposedRegionId, "");
+  assert.equal(result.ProposedDistrictId, "");
+  assert.match(result.Evidence, /different Region/);
 });
 
 test("identity conflicts and duplicate embedded registry IDs block lookup assumptions", () => {
@@ -62,6 +88,25 @@ test("identity conflicts and duplicate embedded registry IDs block lookup assump
   const duplicate = row(snapshot({ district: "North" }, [district("01", "North"), district("02", "South")], [region("region-west"), region("region-west")]))
   assert.equal(duplicate.ReviewStatus, "IdentityConflict");
   assert.match(duplicate.AdditionalIssues, /Duplicate embedded Region id/);
+
+  const mismatchedRegion = row(snapshot({ district: "North" }, [district("01", "North")], [{ ...region("region-west"), id: "embedded-region" }]));
+  assert.equal(mismatchedRegion.ReviewStatus, "IdentityConflict");
+  assert.match(mismatchedRegion.AdditionalIssues, /Embedded Region id embedded-region conflicts with document id region-west/);
+
+  const mismatchedDistrict = row(snapshot({ district: "North" }, [{ ...district("01", "North"), id: "embedded-district" }]));
+  assert.equal(mismatchedDistrict.ReviewStatus, "IdentityConflict");
+  assert.match(mismatchedDistrict.AdditionalIssues, /Embedded District id embedded-district conflicts with document id 01/);
+});
+
+test("reconciliation CSV protects formula-leading names and legacy text", () => {
+  const result = row(snapshot(
+    { name: "=HYPERLINK('https://bad.example')", regionId: "region-west", districtId: "01", hierarchyApplicability: "Applicable", district: "@North" },
+    [district("01", "+North")],
+  ));
+  const [csvRow] = parse(renderCsv([result]), { columns: true }) as Array<Record<string, string>>;
+  assert.equal(csvRow.LocationName, "'=HYPERLINK('https://bad.example')");
+  assert.equal(csvRow.CurrentDistrictName, "'+North");
+  assert.equal(csvRow.LegacyDistrict, "'@North");
 });
 
 test("absent and explicit-zero versions remain distinguishable and IDs retain leading zeros", () => {

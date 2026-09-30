@@ -10,6 +10,7 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   tone?: 'danger' | 'primary';
   confirmDisabled?: boolean;
+  cancelDisabled?: boolean;
   confirmationText?: string;
   confirmationValue?: string;
   onConfirmationValueChange?: (value: string) => void;
@@ -26,6 +27,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   cancelLabel = 'Cancel',
   tone = 'danger',
   confirmDisabled = false,
+  cancelDisabled = false,
   confirmationText,
   confirmationValue = '',
   onConfirmationValueChange,
@@ -52,7 +54,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
+        if (!cancelDisabled && event.target === event.currentTarget) onCancel();
       }}
     >
       <div
@@ -90,9 +92,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           </div>
           <button
             type="button"
+            disabled={cancelDisabled}
             onClick={onCancel}
             aria-label="Close confirmation"
-            className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"
+            className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -101,8 +104,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <button
             ref={cancelButtonRef}
             type="button"
+            disabled={cancelDisabled}
             onClick={onCancel}
-            className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"
+            className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {cancelLabel}
           </button>

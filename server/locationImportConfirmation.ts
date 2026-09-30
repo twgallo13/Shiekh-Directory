@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Account } from './authAuthority';
 import type { LocationImportPlannedWrite, LocationImportPreview, LocationImportUnchangedAssertion } from '../src/lib/locationImportPreview';
-import { LOCATION_IMPORT_SCHEMA_VERSION } from '../src/lib/locationImportSchema';
+import { LOCATION_IMPORT_SCHEMA_VERSION, type LocationImportHeaderMapping, type LocationImportMode } from '../src/lib/locationImportSchema';
 
 export const LOCATION_IMPORT_MAX_ROWS = 100;
 export const LOCATION_IMPORT_MAX_CHANGED_ROWS = 40;
@@ -14,6 +14,10 @@ export interface LocationImportManifest {
   schema: typeof LOCATION_IMPORT_SCHEMA_VERSION;
   actorDigest: string;
   sourceDigest: string;
+  requestDigest?: string;
+  mode?: LocationImportMode;
+  mappings?: LocationImportHeaderMapping[];
+  selectedRowNumbers?: number[];
   operationId: string;
   batchId: string;
   issuedAt: string;
@@ -56,6 +60,15 @@ export function digestLocationImportSource(csv: string): string {
   return sha256(csv);
 }
 
+export function digestLocationImportRequest(value: {
+  csv: string;
+  mappings: LocationImportHeaderMapping[];
+  mode: LocationImportMode;
+  selectedRowNumbers: number[];
+}): string {
+  return sha256(JSON.stringify(value));
+}
+
 export function digestLocationImportManifest(manifest: LocationImportManifest): string {
   return sha256(JSON.stringify(manifest));
 }
@@ -86,12 +99,19 @@ export function verifyLocationImportManifest(token: string, secret: string, now:
   try { manifest = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as LocationImportManifest; }
   catch { throw tampered(); }
   if (manifest.version !== 1 || manifest.schema !== LOCATION_IMPORT_SCHEMA_VERSION
+    || typeof manifest.requestDigest !== 'string'
+    || !['add-and-update', 'update-existing-only'].includes(String(manifest.mode))
+    || !Array.isArray(manifest.mappings)
+    || !Array.isArray(manifest.selectedRowNumbers)
+    || manifest.selectedRowNumbers.some(rowNumber => !Number.isInteger(rowNumber) || rowNumber < 2)
+    || new Set(manifest.selectedRowNumbers).size !== manifest.selectedRowNumbers.length
     || !Array.isArray(manifest.writes) || manifest.writes.length > LOCATION_IMPORT_MAX_CHANGED_ROWS
     || !Array.isArray(manifest.unchanged)
     || manifest.summary?.totalRows > LOCATION_IMPORT_MAX_ROWS
     || manifest.summary?.additions + manifest.summary?.updates !== manifest.writes.length
     || manifest.summary?.unchanged !== manifest.unchanged.length
-    || manifest.summary?.totalRows !== manifest.writes.length + manifest.unchanged.length) throw tampered();
+    || manifest.summary?.totalRows !== manifest.writes.length + manifest.unchanged.length
+    || manifest.writes.some(write => !write.rowNumber || !manifest.selectedRowNumbers?.includes(write.rowNumber))) throw tampered();
   const issuedAt = Date.parse(manifest.issuedAt);
   const expiresAt = Date.parse(manifest.expiresAt);
   if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || expiresAt - issuedAt !== LOCATION_IMPORT_CONFIRMATION_TTL_MS) throw tampered();

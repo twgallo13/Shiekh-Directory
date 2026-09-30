@@ -5,6 +5,7 @@ import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
 import { formatUsPhone } from "../src/lib/contactNormalization";
+import { LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, spreadsheetSafeCsvValue } from "../src/lib/locationImportSchema";
 import { buildLocationReadProjection, type ReadProjectionPerson } from "../src/lib/readProjectionContract";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
@@ -51,6 +52,7 @@ export class LocationExportFailure extends Error {
 }
 
 const LOCATION_EXPORT_COLUMNS = [
+  LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
   "StoreNumber",
   "StoreName",
   "Type",
@@ -146,7 +148,8 @@ export async function prepareLocationExport(account: Account, store: LocationExp
   const storeNumbers = sortedLocations.map(location => stringField(location.storeNumber));
   const missingReferences = new Set<string>();
   const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences, people));
-  const csv = stringify(rows, { header: true, columns: [...LOCATION_EXPORT_COLUMNS], record_delimiter: "\r\n", bom: true });
+  const safeRows = rows.map(row => Object.fromEntries(Object.entries(row).map(([column, value]) => [column, spreadsheetSafeCsvValue(value)])));
+  const csv = stringify(safeRows, { header: true, columns: [...LOCATION_EXPORT_COLUMNS], record_delimiter: "\r\n", bom: true });
   const generatedIso = generatedAt.toISOString();
   const expiresAt = new Date(generatedAt.getTime() + EXPORT_TOKEN_TTL_MS).toISOString();
   const metadata: LocationExportMetadata = {
@@ -272,6 +275,7 @@ function toCsvRow(
   );
 
   return {
+    [LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER]: LOCATION_IMPORT_SPREADSHEET_ENCODING,
     StoreNumber: stringField(location.storeNumber),
     StoreName: stringField(location.name),
     Type: stringField(location.type),

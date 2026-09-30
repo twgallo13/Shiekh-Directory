@@ -14,6 +14,7 @@ import {
   LOCATION_IMPORT_MAX_ROWS,
   LocationImportConfirmationError,
   digestLocationImportActor,
+  digestLocationImportRequest,
   digestLocationImportSource,
   expiredConfirmation,
   signLocationImportManifest,
@@ -23,6 +24,7 @@ import {
 } from './locationImportConfirmation';
 import { DirectoryConflict, DirectoryValidationError, FirestoreDirectoryStore, LocationImportIdempotencyConflict, LocationImportPayloadTooLarge } from './firestoreDirectory';
 import { buildLocationEditingExport, LocationEditingExportError } from './locationEditingExport';
+import type { LocationImportHeaderMapping, LocationImportMode } from '../src/lib/locationImportSchema';
 
 const PREVIEW_ROLES: Account['role'][] = ['System Administrator', 'Directory Data Steward', 'Editor'];
 export type LocationImportSnapshot = Pick<DirectorySeed, 'locations' | 'people' | 'regions' | 'districts'>;
@@ -110,36 +112,60 @@ export function createLocationImportPreviewRouter(
       }
       const snapshot = await store.readLocationImportSnapshot();
       const issuedAt = now();
-      const plan = buildLocationImportPlan(csv, snapshot, issuedAt.toISOString(), () => `loc-${randomUUID()}`);
+      const mode = parseImportMode(request.body?.mode);
+      const mappings = parseImportMappings(request.body?.mappings);
+      const plan = buildLocationImportPlan(csv, snapshot, issuedAt.toISOString(), () => `loc-${randomUUID()}`, { mode, mappings });
       if (plan.preview.summary.totalRows > LOCATION_IMPORT_MAX_ROWS) throw new PreviewHttpError(400, 'batch_too_large', `Location imports support at most ${LOCATION_IMPORT_MAX_ROWS} rows.`);
-      if (plan.writes.length > LOCATION_IMPORT_MAX_CHANGED_ROWS) throw new PreviewHttpError(400, 'batch_too_large', `Location imports support at most ${LOCATION_IMPORT_MAX_CHANGED_ROWS} changed rows.`);
-      const eligible = plan.preview.summary.blocked === 0 && plan.writes.length > 0;
-      if (!eligible) return response.status(200).json(plan.preview);
+      const defaultSelectionExceedsLimit = request.body?.selectedRowNumbers === undefined && plan.writes.length > LOCATION_IMPORT_MAX_CHANGED_ROWS;
+      const selectedRowNumbers = defaultSelectionExceedsLimit ? [] : parseSelectedRows(request.body?.selectedRowNumbers, plan);
+      const selectedWrites = plan.writes.filter(write => selectedRowNumbers.includes(write.rowNumber || -1));
+      if (selectedWrites.length > LOCATION_IMPORT_MAX_CHANGED_ROWS) throw new PreviewHttpError(400, 'batch_too_large', `Select at most ${LOCATION_IMPORT_MAX_CHANGED_ROWS} changed rows for one atomic import.`);
+      const preview = {
+        ...plan.preview,
+        mode,
+        mappings: plan.preview.mappings,
+        selectedRowNumbers,
+        ...(defaultSelectionExceedsLimit ? { confirmationDisabledReason: `This file has more than ${LOCATION_IMPORT_MAX_CHANGED_ROWS} ready changes. Select up to ${LOCATION_IMPORT_MAX_CHANGED_ROWS} rows and revalidate; the server will not split the import.` } : {}),
+      };
+      if (selectedWrites.length === 0) return response.status(200).json(preview);
       if (!options.tokenSecret || !store.confirmLocationImport) {
         return response.status(200).json({
-          ...plan.preview,
+          ...preview,
           confirmationDisabledReason: 'Location import confirmation is not configured. You can still review this preview, but no changes can be saved.',
         });
       }
       const operationId = `locimp-${randomUUID()}`;
       const batchId = `batch-${randomUUID()}`;
       const expiresAt = new Date(issuedAt.getTime() + LOCATION_IMPORT_CONFIRMATION_TTL_MS).toISOString();
+      const selectedRows = plan.preview.rows.filter(row => selectedRowNumbers.includes(row.rowNumber));
+      const selectedSummary = {
+        totalRows: selectedWrites.length + plan.unchanged.length,
+        additions: selectedWrites.filter(write => write.action === 'add').length,
+        updates: selectedWrites.filter(write => write.action === 'update').length,
+        unchanged: plan.unchanged.length,
+        blocked: 0,
+        warnings: selectedRows.flatMap(row => row.issues).filter(issue => issue.severity === 'warning').length,
+      };
       const manifest: LocationImportManifest = {
         version: 1,
         schema: plan.preview.schemaVersion,
         actorDigest: digestLocationImportActor(account),
         sourceDigest: digestLocationImportSource(csv),
+        requestDigest: digestLocationImportRequest({ csv, mappings: plan.preview.mappings || [], mode, selectedRowNumbers }),
+        mode,
+        mappings: plan.preview.mappings,
+        selectedRowNumbers,
         operationId,
         batchId,
         issuedAt: issuedAt.toISOString(),
         expiresAt,
-        summary: plan.preview.summary,
-        warningCount: plan.preview.summary.warnings,
-        writes: plan.writes,
+        summary: selectedSummary,
+        warningCount: selectedSummary.warnings,
+        writes: selectedWrites,
         unchanged: plan.unchanged,
       };
       response.status(200).json({
-        ...plan.preview,
+        ...preview,
         confirmationToken: signLocationImportManifest(manifest, options.tokenSecret),
         operationId,
         batchId,
@@ -163,6 +189,12 @@ export function createLocationImportPreviewRouter(
       const manifest = verifyLocationImportManifest(confirmationToken, options.tokenSecret, confirmedAt, true);
       if (manifest.operationId !== operationId) throw new LocationImportConfirmationError('confirmation_mismatch', 'The operation ID does not match this confirmation.');
       if (manifest.sourceDigest !== digestLocationImportSource(csv)) throw new LocationImportConfirmationError('confirmation_mismatch', 'The CSV does not match this confirmation.');
+      const mode = parseImportMode(request.body?.mode);
+      const mappings = parseImportMappings(request.body?.mappings);
+      const selectedRowNumbers = parseConfirmationSelectedRows(request.body?.selectedRowNumbers);
+      if (manifest.requestDigest !== digestLocationImportRequest({ csv, mappings, mode, selectedRowNumbers })) {
+        throw new LocationImportConfirmationError('confirmation_mismatch', 'The file, mappings, mode, or selected rows changed after review. Preview again.');
+      }
       if (manifest.actorDigest !== digestLocationImportActor(account)) throw new LocationImportConfirmationError('confirmation_mismatch', 'Your current authority does not match this confirmation.');
       if (manifest.warningCount > 0 && warningsReviewed !== true) throw new PreviewHttpError(409, 'warnings_not_reviewed', 'Review and acknowledge all warnings before confirming.');
       try {
@@ -179,6 +211,40 @@ export function createLocationImportPreviewRouter(
   });
 
   return router;
+}
+
+function parseImportMode(value: unknown): LocationImportMode {
+  if (value === undefined) return 'add-and-update';
+  if (value === 'add-and-update' || value === 'update-existing-only') return value;
+  throw new PreviewHttpError(400, 'invalid_import_mode', 'Choose Add and update or Update existing only.');
+}
+
+function parseImportMappings(value: unknown): LocationImportHeaderMapping[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some(mapping => !mapping || typeof mapping !== 'object'
+    || !Number.isInteger(mapping.sourceIndex) || typeof mapping.sourceHeader !== 'string'
+    || (mapping.target !== null && typeof mapping.target !== 'string'))) {
+    throw new PreviewHttpError(400, 'invalid_mapping', 'Review every CSV heading and choose a supported field or Ignore.');
+  }
+  return value as LocationImportHeaderMapping[];
+}
+
+function parseSelectedRows(value: unknown, plan: ReturnType<typeof buildLocationImportPlan>): number[] {
+  const ready = new Set(plan.preview.rows.filter(row => row.action === 'add' || row.action === 'update').map(row => row.rowNumber));
+  if (value === undefined) return [...ready];
+  const selected = parseConfirmationSelectedRows(value);
+  if (selected.some(rowNumber => !ready.has(rowNumber))) {
+    throw new PreviewHttpError(400, 'invalid_selection', 'Only ready New or Updated rows can be selected. Preview the complete file again.');
+  }
+  return selected;
+}
+
+function parseConfirmationSelectedRows(value: unknown): number[] {
+  if (!Array.isArray(value) || value.some(rowNumber => !Number.isInteger(rowNumber) || rowNumber < 2)
+    || new Set(value).size !== value.length) {
+    throw new PreviewHttpError(400, 'invalid_selection', 'Selected CSV rows must be unique row numbers from this preview.');
+  }
+  return value as number[];
 }
 
 export class FirestoreLocationImportPreviewStore implements LocationImportPreviewStore {

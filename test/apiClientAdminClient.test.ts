@@ -14,6 +14,14 @@ test("API client controls are SysAdmin-gated and credentials stay outside browse
   assert.doesNotMatch(contextSource, /ApiClient|apiClient|issuedToken/);
   assert.match(panelSource, /setIssuedToken\(null\)/);
   assert.match(panelSource, /Dismiss one-time token/);
+  assert.match(panelSource, /const controlsLocked = busy \|\| Boolean\(issuedToken\)/);
+  assert.match(panelSource, /if \(controlsLocked \|\| !name\.trim\(\)\) return/);
+  assert.match(panelSource, /if \(!pending \|\| controlsLocked\) return/);
+  assert.match(panelSource, /disabled=\{controlsLocked \|\| !name\.trim\(\)\}/);
+  assert.equal((panelSource.match(/disabled=\{controlsLocked\}/g) || []).length >= 6, true);
+  const createHandler = panelSource.slice(panelSource.indexOf("const create ="), panelSource.indexOf("const enable ="));
+  const lifecycleHandler = panelSource.slice(panelSource.indexOf("const confirmAction ="), panelSource.indexOf("const copyToken ="));
+  assert.doesNotMatch(`${createHandler}\n${lifecycleHandler}`, /setIssuedToken\(null\)/);
 });
 
 test("browser requests use Firebase bearer authentication and fixed server management routes", () => {

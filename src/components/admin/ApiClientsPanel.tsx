@@ -26,6 +26,7 @@ export function ApiClientsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const controlsLocked = busy || Boolean(issuedToken);
 
   const load = async () => {
     setLoading(true); setError('');
@@ -42,8 +43,8 @@ export function ApiClientsPanel() {
 
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (busy || !name.trim()) return;
-    setBusy(true); setError(''); setNotice(''); setIssuedToken(null);
+    if (controlsLocked || !name.trim()) return;
+    setBusy(true); setError(''); setNotice('');
     try {
       const issued = await createApiClient(name.trim());
       replaceClient(issued.client); setIssuedToken(issued.token); setName('');
@@ -52,6 +53,7 @@ export function ApiClientsPanel() {
   };
 
   const enable = async (client: ApiClientSummary) => {
+    if (controlsLocked) return;
     setBusy(true); setError(''); setNotice('');
     try { replaceClient(await enableApiClient(client.id)); setNotice(`${client.name} re-enabled.`); }
     catch (failure) { setError(failure instanceof Error ? failure.message : 'The API client could not be re-enabled.'); }
@@ -59,9 +61,9 @@ export function ApiClientsPanel() {
   };
 
   const confirmAction = async () => {
-    if (!pending || busy) return;
+    if (!pending || controlsLocked) return;
     const action = pending;
-    setBusy(true); setError(''); setNotice(''); setIssuedToken(null);
+    setBusy(true); setError(''); setNotice('');
     try {
       if (action.kind === 'disable') {
         replaceClient(await disableApiClient(action.client.id)); setNotice(`${action.client.name} disabled.`);
@@ -86,7 +88,7 @@ export function ApiClientsPanel() {
     <section className="space-y-4 border-t border-neutral-200 pt-5" aria-labelledby="api-clients-title">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h3 id="api-clients-title" className="text-sm font-bold text-neutral-900">API Clients</h3><p className="text-xs text-neutral-500">System Administrator managed server credentials</p></div>
-        <button type="button" title="Refresh clients" aria-label="Refresh API clients" disabled={loading || busy} onClick={() => void load()} className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-300 text-neutral-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" /></button>
+        <button type="button" title="Refresh clients" aria-label="Refresh API clients" disabled={loading || controlsLocked} onClick={() => void load()} className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-300 text-neutral-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" /></button>
       </div>
 
       {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
@@ -98,8 +100,8 @@ export function ApiClientsPanel() {
       </div>}
 
       <form onSubmit={create} className="flex flex-col gap-2 sm:flex-row">
-        <label className="min-w-0 flex-1 text-xs font-semibold text-neutral-700">Client name<input required maxLength={100} autoComplete="off" value={name} onChange={event => setName(event.target.value)} placeholder="Store Manager sync" className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm" /></label>
-        <button type="submit" disabled={busy || !name.trim()} className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Plus className="h-4 w-4" />Create client</button>
+        <label className="min-w-0 flex-1 text-xs font-semibold text-neutral-700">Client name<input required disabled={controlsLocked} maxLength={100} autoComplete="off" value={name} onChange={event => setName(event.target.value)} placeholder="Store Manager sync" className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm" /></label>
+        <button type="submit" disabled={controlsLocked || !name.trim()} className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Plus className="h-4 w-4" />Create client</button>
       </form>
 
       <div className="divide-y divide-neutral-200 border-y border-neutral-200">
@@ -109,9 +111,9 @@ export function ApiClientsPanel() {
           <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-neutral-900">{client.name}</h4><p className="mt-1 font-mono text-xs text-neutral-500">locations:read</p></div><span className={`rounded px-2 py-1 text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : client.status === 'Disabled' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800'}`}>{client.status}</span></div>
           <dl className="grid gap-1 text-xs text-neutral-600 sm:grid-cols-2"><div><dt className="inline font-semibold text-neutral-800">Last used: </dt><dd className="inline">{client.lastUsedAt ? new Date(client.lastUsedAt).toLocaleString() : 'Never'}</dd></div><div><dt className="inline font-semibold text-neutral-800">Token versions: </dt><dd className="inline">{client.tokenVersions.length}</dd></div></dl>
           {client.status !== 'Revoked' && <div className="flex flex-wrap gap-2">
-            {client.status === 'Active' ? <button type="button" disabled={busy} onClick={() => setPending({ kind: 'disable', client })} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-2.5 py-1.5 text-xs font-semibold text-amber-900"><ShieldOff className="h-3.5 w-3.5" />Disable</button> : <button type="button" disabled={busy} onClick={() => void enable(client)} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 px-2.5 py-1.5 text-xs font-semibold text-emerald-800"><ShieldCheck className="h-3.5 w-3.5" />Re-enable</button>}
-            {client.status === 'Active' && <><button type="button" disabled={busy} onClick={() => setPending({ kind: 'rotate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold text-neutral-700"><KeyRound className="h-3.5 w-3.5" />Rotate, 24h overlap</button><button type="button" disabled={busy} onClick={() => setPending({ kind: 'rotate-immediate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700"><KeyRound className="h-3.5 w-3.5" />Rotate immediately</button></>}
-            <button type="button" disabled={busy} onClick={() => { setConfirmationValue(''); setPending({ kind: 'revoke', client }); }} className="inline-flex items-center gap-1.5 rounded-md bg-red-700 px-2.5 py-1.5 text-xs font-semibold text-white">Revoke</button>
+            {client.status === 'Active' ? <button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'disable', client })} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-2.5 py-1.5 text-xs font-semibold text-amber-900"><ShieldOff className="h-3.5 w-3.5" />Disable</button> : <button type="button" disabled={controlsLocked} onClick={() => void enable(client)} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 px-2.5 py-1.5 text-xs font-semibold text-emerald-800"><ShieldCheck className="h-3.5 w-3.5" />Re-enable</button>}
+            {client.status === 'Active' && <><button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'rotate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold text-neutral-700"><KeyRound className="h-3.5 w-3.5" />Rotate, 24h overlap</button><button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'rotate-immediate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700"><KeyRound className="h-3.5 w-3.5" />Rotate immediately</button></>}
+            <button type="button" disabled={controlsLocked} onClick={() => { setConfirmationValue(''); setPending({ kind: 'revoke', client }); }} className="inline-flex items-center gap-1.5 rounded-md bg-red-700 px-2.5 py-1.5 text-xs font-semibold text-white">Revoke</button>
           </div>}
         </article>)}
       </div>

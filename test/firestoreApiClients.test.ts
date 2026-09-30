@@ -61,7 +61,9 @@ function memoryFirestore() {
   return { firestore: firestore as unknown as Firestore, collections, writes };
 }
 
-test("managed credentials persist only SHA-256 lookup keys and enforce lifecycle, overlap, redacted audits, and throttled last use", async () => {
+test("managed credentials persist isolated server secrets and enforce lifecycle, overlap, redaction, and throttled last use", async (testContext) => {
+  const logs: string[] = [];
+  testContext.mock.method(console, "info", (...values: unknown[]) => { logs.push(values.map(String).join(" ")); });
   const memory = memoryFirestore();
   let clock = new Date("2026-09-30T12:00:00.000Z");
   const store = new FirestoreApiClientStore(memory.firestore, () => clock);
@@ -74,9 +76,14 @@ test("managed credentials persist only SHA-256 lookup keys and enforce lifecycle
   assert.equal(tokens.has(hashApiToken(created.token)), true);
   assert.equal(JSON.stringify([...clients.values(), ...tokens.values()]).includes(created.token), false);
   assert.equal(JSON.stringify([...tokens.values()]).includes(hashApiToken(created.token)), false);
+  const storedToken = tokens.get(hashApiToken(created.token))!;
+  assert.match(String(storedToken.cursorSigningKey), /^[A-Za-z0-9_-]{43}$/);
+  assert.notEqual(storedToken.cursorSigningKey, storedToken.tokenVersionId);
 
   const context = { requestId: "request-1", method: "GET", path: "/locations" };
-  assert.equal((await store.authenticate(created.token, context))?.clientId, created.client.id);
+  const authenticated = await store.authenticate(created.token, context);
+  assert.equal(authenticated?.clientId, created.client.id);
+  assert.equal(authenticated?.cursorSigningKey, storedToken.cursorSigningKey);
   const firstLastUsed = clients.get(created.client.id)!.lastUsedAt;
   clock = new Date(clock.getTime() + 10 * 60_000);
   await store.authenticate(created.token, context);
@@ -115,9 +122,30 @@ test("managed credentials persist only SHA-256 lookup keys and enforce lifecycle
     "API Client Disabled", "API Client Re-enabled", "API Client Revoked",
   ]);
   const serializedAudits = JSON.stringify(audits);
-  for (const secret of [created.token, firstRotation.token, secondRotation.token, immediate.token, hashApiToken(created.token)]) {
+  const listed = JSON.stringify(await store.list());
+  const serializedLogs = JSON.stringify(logs);
+  for (const secret of [created.token, firstRotation.token, secondRotation.token, immediate.token, hashApiToken(created.token), String(storedToken.cursorSigningKey)]) {
     assert.equal(serializedAudits.includes(secret), false);
+    assert.equal(listed.includes(secret), false);
+    assert.equal(serializedLogs.includes(secret), false);
   }
   assert.equal(serializedAudits.includes("admin@example.test"), false);
   assert.equal(serializedAudits.includes("request-1"), false);
+});
+
+test("authentication fails closed when cursor signing material is missing or malformed", async () => {
+  for (const cursorSigningKey of [undefined, "too-short", "!".repeat(43)]) {
+    const memory = memoryFirestore();
+    const token = "dir_v1_missing_cursor_signing_material";
+    memory.collections.set("api_clients", new Map([["api-client", {
+      id: "api-client", name: "Client", status: "Active", scopes: ["locations:read"],
+      createdAt: "2026-09-30T12:00:00.000Z", updatedAt: "2026-09-30T12:00:00.000Z",
+    }]]));
+    memory.collections.set("api_client_tokens", new Map([[hashApiToken(token), {
+      clientId: "api-client", tokenVersionId: "tok-version", status: "Active",
+      createdAt: "2026-09-30T12:00:00.000Z", ...(cursorSigningKey === undefined ? {} : { cursorSigningKey }),
+    }]]));
+    const store = new FirestoreApiClientStore(memory.firestore);
+    assert.equal(await store.authenticate(token, { requestId: "request", method: "GET", path: "/locations" }), null);
+  }
 });

@@ -35,6 +35,7 @@ interface ApiClientDocument {
 interface ApiTokenDocument {
   clientId: string;
   tokenVersionId: string;
+  cursorSigningKey: string;
   status: ApiTokenStatus;
   createdAt: string;
   expiresAt?: string;
@@ -58,7 +59,7 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
       const credential = await this.firestore.runTransaction(async transaction => {
         const tokenSnapshot = await transaction.get(tokenReference);
         const tokenData = tokenSnapshot.data() as ApiTokenDocument | undefined;
-        if (!tokenSnapshot.exists || !tokenData) return null;
+        if (!tokenSnapshot.exists || !tokenData || !validCursorSigningKey(tokenData.cursorSigningKey)) return null;
         const clientReference = this.firestore.collection(CLIENT_COLLECTION).doc(tokenData.clientId);
         const clientSnapshot = await transaction.get(clientReference);
         const clientData = clientSnapshot.data() as ApiClientDocument | undefined;
@@ -71,7 +72,7 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
         return {
           clientId: clientData.id,
           tokenVersionId: tokenData.tokenVersionId,
-          cursorSigningKey: createHash("sha256").update("directory-api-cursor\0").update(tokenData.tokenVersionId).digest("hex"),
+          cursorSigningKey: tokenData.cursorSigningKey,
           scopes: [API_CLIENT_SCOPE],
         } satisfies ManagedApiCredential;
       });
@@ -117,6 +118,7 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
     const tokenDocument: ApiTokenDocument = {
       clientId,
       tokenVersionId,
+      cursorSigningKey: generateCursorSigningKey(),
       status: "Active",
       createdAt: timestamp,
     };
@@ -145,7 +147,7 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
     const current = this.now();
     const timestamp = current.toISOString();
     const overlapExpiresAt = new Date(current.getTime() + API_TOKEN_OVERLAP_MS).toISOString();
-    const newToken: ApiTokenDocument = { clientId: id, tokenVersionId, status: "Active", createdAt: timestamp };
+    const newToken: ApiTokenDocument = { clientId: id, tokenVersionId, cursorSigningKey: generateCursorSigningKey(), status: "Active", createdAt: timestamp };
     let result!: ApiClientSummary;
     await this.firestore.runTransaction(async transaction => {
       const clientReference = this.firestore.collection(CLIENT_COLLECTION).doc(id);
@@ -250,6 +252,14 @@ export function createFirestoreApiClientStore(): FirestoreApiClientStore {
 function tokenIsActive(token: ApiTokenDocument, now: Date): boolean {
   if (token.status !== "Active" && token.status !== "Retiring") return false;
   return !token.expiresAt || Date.parse(token.expiresAt) > now.getTime();
+}
+
+function generateCursorSigningKey(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+function validCursorSigningKey(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value);
 }
 
 function shouldUpdateLastUsed(lastUsedAt: string | undefined, now: Date): boolean {

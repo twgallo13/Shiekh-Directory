@@ -471,6 +471,12 @@ describe("Directory API route handling", () => {
     const forgedResponse = await apiFetch(baseUrl, `/api/v1/locations?cursor=${forged}`, READ_TOKEN);
     assert.equal(forgedResponse.status, 400);
     assert.equal((await forgedResponse.json()).error.code, "invalid_cursor");
+
+    const loggedTokenVersionKey = createHash("sha256").update("directory-api-cursor\0").update("reader-token").digest("hex");
+    const loggedVersionForgery = `${encoded}.${createHmac("sha256", loggedTokenVersionKey).update(`directory-cursor-v2:${encoded}`).digest("base64url")}`;
+    const loggedVersionResponse = await apiFetch(baseUrl, `/api/v1/locations?cursor=${loggedVersionForgery}`, READ_TOKEN);
+    assert.equal(loggedVersionResponse.status, 400);
+    assert.equal((await loggedVersionResponse.json()).error.code, "invalid_cursor");
   });
 
   it("rejects expired snapshots without reading repository data", async () => {

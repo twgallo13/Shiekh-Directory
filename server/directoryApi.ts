@@ -75,6 +75,7 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
   const now = options.now ?? (() => new Date());
 
   router.use(requestIdMiddleware);
+  router.use(accessLogMiddleware);
 
   if (options.rateLimit !== false) {
     const rateLimitOptions = options.rateLimit ?? {
@@ -94,7 +95,6 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
   }
 
   router.use(createAuthenticationMiddleware(options.authenticator));
-  router.use(accessLogMiddleware);
   router.use(requireScope(LOCATION_READ_SCOPE));
   router.use(async (_request, response, next) => {
     const definitions = sortedCustomFields(await options.locations.readCustomFieldDefinitions?.() || []);

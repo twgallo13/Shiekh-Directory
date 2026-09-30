@@ -467,7 +467,7 @@ describe("Directory API route handling", () => {
     payload.id = "location-99";
     const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
     const callerKnownKey = createHash("sha256").update("directory-api-cursor\0").update(READ_TOKEN).digest("hex");
-    const forged = `${encoded}.${createHmac("sha256", callerKnownKey).update(encoded).digest("base64url")}`;
+    const forged = `${encoded}.${createHmac("sha256", callerKnownKey).update(`directory-cursor-v2:${encoded}`).digest("base64url")}`;
     const forgedResponse = await apiFetch(baseUrl, `/api/v1/locations?cursor=${forged}`, READ_TOKEN);
     assert.equal(forgedResponse.status, 400);
     assert.equal((await forgedResponse.json()).error.code, "invalid_cursor");
@@ -542,6 +542,34 @@ describe("Directory API route handling", () => {
       assert.equal(second.status, 429);
       assert.equal(body.error.code, "rate_limit_exceeded");
     } finally {
+      await closeServer(limited.server);
+    }
+  });
+
+  it("records access logs for authentication failures, provider outages, and rate limits", async (context) => {
+    const logs: string[] = [];
+    context.mock.method(console, "info", (...values: unknown[]) => { logs.push(values.map(String).join(" ")); });
+    const unavailable = await startTestServer({
+      authenticator: { async authenticate() { throw new Error("private provider failure"); } },
+      locations: repository,
+      rateLimit: false,
+    });
+    const limited = await startTestServer({
+      authenticator,
+      locations: repository,
+      now: () => NOW,
+      rateLimit: { limit: 1, windowMs: 60_000 },
+    });
+    try {
+      assert.equal((await fetch(`${unavailable.baseUrl}/api/v1/locations`)).status, 401);
+      assert.equal((await apiFetch(unavailable.baseUrl, "/api/v1/locations", READ_TOKEN)).status, 503);
+      assert.equal((await apiFetch(limited.baseUrl, "/api/v1/locations", READ_TOKEN)).status, 200);
+      assert.equal((await apiFetch(limited.baseUrl, "/api/v1/locations", READ_TOKEN)).status, 429);
+      for (const status of [401, 503, 429]) {
+        assert.ok(logs.some(log => log.includes("[Directory API Access]") && log.includes(`\"status\":${status}`)), `missing ${status} access log`);
+      }
+    } finally {
+      await closeServer(unavailable.server);
       await closeServer(limited.server);
     }
   });

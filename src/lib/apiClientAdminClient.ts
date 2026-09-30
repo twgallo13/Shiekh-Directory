@@ -64,6 +64,23 @@ async function apiClientRequest<T>(path: string, method: "GET" | "POST", body?: 
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error?.message || "API client management is temporarily unavailable.");
+  if (!response.ok) throw new Error(apiClientErrorMessage(payload));
   return payload as T;
+}
+
+export function apiClientErrorMessage(payload: unknown): string {
+  const code = payload && typeof payload === "object"
+    && "error" in payload && payload.error && typeof payload.error === "object"
+    && "code" in payload.error && typeof payload.error.code === "string"
+    ? payload.error.code
+    : "";
+  switch (code) {
+    case "invalid_token": return "Your sign-in session is no longer valid. Sign in again.";
+    case "access_denied": return "Only System Administrators can manage API clients.";
+    case "api_client_not_found": return "This API client no longer exists. Refresh the client list.";
+    case "api_client_conflict": return "This API client changed and the requested action is no longer allowed. Refresh the client list.";
+    case "invalid_request": return "The API client request was invalid.";
+    case "api_client_management_unavailable": return "API client management is temporarily unavailable.";
+    default: return "API client management request failed.";
+  }
 }

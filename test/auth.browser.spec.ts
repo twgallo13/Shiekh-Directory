@@ -83,6 +83,40 @@ async function prepareExportBrowser(page: Page, options: { bootstrapCount?: numb
   return { calls: () => ({ prepareCalls, downloadCalls }) };
 }
 
+function hierarchyBrowserSeed() {
+  const seed = seedDirectory(0) as any;
+  const standardHours = seedDirectory(1).locations[0].standardHours;
+  const location = (overrides: Record<string, unknown>) => ({
+    id: '', storeNumber: '', name: '', type: 'Street / Standalone Location',
+    address: '1 Test Way', city: 'Los Angeles', state: 'CA', zipCode: '90001', phone: '555-0100',
+    timeZone: 'America/Los_Angeles', operationalStatus: 'Open — Normal Operations', recordStatus: 'Active',
+    standardHours, version: 0, ...overrides,
+  });
+  seed.locations = [
+    location({ id: 'loc-retail', storeNumber: '101', name: 'Retail Store', type: 'Enclosed Mall', hierarchyApplicability: 'Applicable', regionId: 'reg-west', districtId: '01', district: 'Legacy Location District', districtManagerId: 'person-dm', districtManagerName: 'District Manager' }),
+    location({ id: 'loc-center', storeNumber: '201', name: 'Operations Center', type: 'Warehouse / Distribution Center', hierarchyApplicability: 'Not Applicable' }),
+    location({ id: 'loc-unassigned', storeNumber: '102', name: 'Unassigned Retail', type: 'Street / Standalone Location', hierarchyApplicability: 'Applicable' }),
+    location({ id: 'loc-unclassified', storeNumber: '301', name: 'Unclassified Store', type: 'Unsupported Type', hierarchyApplicability: 'Applicable', regionId: 'reg-west', districtId: '01' }),
+  ];
+  seed.people = [{ id: 'person-dm', fullName: 'District Manager', role: 'District Manager', status: 'Active', activeStatus: true, district: 'Legacy Manager Territory' }];
+  seed.regions = [{ id: 'reg-west', name: 'West', status: 'Active' }, { id: 'reg-east', name: 'East', status: 'Active' }];
+  seed.districts = [{ id: '01', name: 'Renamed North', regionId: 'reg-west', status: 'Active' }, { id: '02', name: 'East District', regionId: 'reg-east', status: 'Active' }];
+  return seed;
+}
+
+async function prepareHierarchyBrowser(page: Page) {
+  await prepare(page, 'System Administrator');
+  const seed = hierarchyBrowserSeed();
+  const commits: any[] = [];
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON();
+    commits.push(body);
+    await route.fulfill({ json: commitResponseFor(body) });
+  });
+  return { seed, commits };
+}
+
 async function prepareLocationImportConfirmationBrowser(page: Page, options: { holdConfirmation?: boolean; staleConfirmation?: boolean } = {}) {
   await prepare(page, 'System Administrator');
   let previewCalls = 0;
@@ -539,6 +573,119 @@ test('Location CSV stale confirmation closes the dialog and requires a fresh pre
   await expect(page.getByRole('button', { name: 'Import 3 ready rows' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Choose File Again' })).toBeEnabled();
   expect(fixture.calls().confirmationCalls).toBe(1);
+});
+
+test('Location Edit and Fleet Quick Add enforce canonical retail hierarchy transitions without writing', async ({ page }) => {
+  const fixture = await prepareHierarchyBrowser(page);
+  await page.goto(`${origin}/locations/loc-retail/edit`); await restore(page, true);
+  const editRegion = page.getByText('Region Name', { exact: true }).locator('..').locator('select');
+  const editDistrict = page.getByText('District Name', { exact: true }).locator('..').locator('select');
+  await expect(editRegion).toHaveValue('reg-west');
+  await expect(editDistrict).toHaveValue('01');
+  await page.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select').selectOption('Unknown');
+  await editRegion.selectOption('reg-east');
+  await expect(editDistrict).toHaveValue('');
+  await expect(editDistrict.locator('option[value="01"]')).toHaveCount(0);
+  await expect(editDistrict.locator('option[value="02"]')).toHaveCount(1);
+  await editDistrict.selectOption('02');
+  await expect(editDistrict).toHaveValue('02');
+  await expect(page.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select').locator('option[value="Not Applicable"]')).toHaveCount(0);
+
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Fleet CSV' }).click();
+  await page.getByRole('button', { name: 'Add Store' }).click();
+  const quickAdd = page.getByRole('dialog', { name: 'Add new store location' });
+  const quickType = quickAdd.getByText('Location Type', { exact: true }).locator('..').locator('select');
+  const quickRegion = quickAdd.getByText('Region', { exact: true }).locator('..').locator('select');
+  const quickDistrict = quickAdd.getByText('District', { exact: true }).locator('..').locator('select');
+  await expect(quickType.locator('option[value="Enclosed Regional Mall"]')).toHaveCount(0);
+  await expect(quickType.locator('option[value="Urban Streetfront"]')).toHaveCount(0);
+  await expect(quickType.locator('option[value="Outlet Center"]')).toHaveCount(0);
+  await quickType.selectOption('Enclosed Mall');
+  await quickRegion.selectOption('reg-west');
+  await quickDistrict.selectOption('01');
+  await quickRegion.selectOption('reg-east');
+  await expect(quickDistrict).toHaveValue('');
+  await expect(quickDistrict.locator('option[value="01"]')).toHaveCount(0);
+  await expect(quickDistrict.locator('option[value="02"]')).toHaveCount(1);
+  await expect(quickAdd.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select').locator('option[value="Not Applicable"]')).toHaveCount(0);
+  await quickRegion.selectOption('');
+  await quickType.selectOption('Warehouse / Distribution Center');
+  const quickApplicability = quickAdd.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select');
+  const notApplicableOption = quickApplicability.locator('option[value="Not Applicable"]');
+  await expect(notApplicableOption).toBeEnabled();
+  await quickApplicability.selectOption('Not Applicable');
+  await quickRegion.selectOption('reg-west');
+  await expect(quickApplicability).toHaveValue('Applicable');
+  await expect(notApplicableOption).toBeDisabled();
+  await quickAdd.getByRole('button', { name: 'Cancel' }).click();
+  expect(fixture.commits).toHaveLength(0);
+});
+
+test('PrintSheetView groups canonical and exceptional hierarchies by stable IDs with correct type counts and warnings', async ({ page }) => {
+  await prepareHierarchyBrowser(page);
+  await page.goto(`${origin}/print`); await restore(page, true);
+  await expect(page.getByText(/4 of 4 Locations displayed: 2 retail, 1 non-retail, 1 unclassified/)).toBeVisible();
+  const sheet = page.locator('#print-directory-sheet');
+  await expect(sheet.getByText(/Renamed North \(01\) \(1 Stores\)/)).toBeVisible();
+  await expect(sheet.getByText(/Operational Centers \/ Non-retail Locations \(1 Locations\)/)).toBeVisible();
+  await expect(sheet.getByText(/Unassigned Retail Locations \(1 Locations\)/)).toBeVisible();
+  await expect(sheet.getByText(/Needs Review \(1 Locations\)/)).toBeVisible();
+  await expect(sheet.getByText("Location type is 'Unsupported Type', not a recognized business type.")).toBeVisible();
+  const groupFilter = page.getByRole('combobox');
+  await expect(groupFilter.locator('option[value="district:01"]')).toContainText('Renamed North (01)');
+  await groupFilter.selectOption('district:01');
+  await expect(sheet.getByText('Total Locations: 1 (1 retail, 0 non-retail, 0 unclassified)')).toBeVisible();
+  await expect(sheet.getByText('Retail Store', { exact: true })).toBeVisible();
+  await expect(sheet.getByText('Operations Center', { exact: true })).toHaveCount(0);
+  await expect(sheet.getByText('Unclassified Store', { exact: true })).toHaveCount(0);
+
+  await page.goto(`${origin}/`); await restore(page, true);
+  await expect(page.getByRole('heading', { name: 'Quick Reference Store List / District Roster' })).toBeVisible();
+  const dashboardFilter = page.getByLabel('Filter Quick Reference stores by District');
+  await expect(dashboardFilter.locator('option[value="district:01"]')).toContainText('Renamed North (01)');
+  await dashboardFilter.selectOption('district:01');
+  await expect(page.getByText('Retail Store', { exact: true })).toBeVisible();
+  await expect(page.getByText('Unclassified Store', { exact: true })).toHaveCount(0);
+  await dashboardFilter.selectOption('needs-review');
+  await expect(page.getByText('Unclassified Store', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Location type is 'Unsupported Type', not a recognized business type/)).toBeVisible();
+});
+
+test('Person territory edit does not rewrite the linked Location legacy District', async ({ page }) => {
+  const fixture = await prepareHierarchyBrowser(page);
+  await page.goto(`${origin}/people`); await restore(page, true);
+  await page.getByRole('button', { name: /District Manager/ }).click();
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  const territory = page.getByRole('dialog').getByRole('textbox').nth(6);
+  await territory.fill('Updated Manager Territory');
+  await expect(territory).toHaveValue('Updated Manager Territory');
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect(page.getByText('Updated Manager Territory', { exact: true })).toHaveCount(2);
+  expect(fixture.commits).toHaveLength(1);
+  expect(fixture.commits[0].writes.map((write: { collection: string }) => write.collection)).toEqual(['people', 'locations']);
+  const linkedLocationWrite = fixture.commits[0].writes[1];
+  expect(linkedLocationWrite.data.district).toBe('Legacy Location District');
+  expect(linkedLocationWrite.data.regionId).toBe('reg-west');
+  expect(linkedLocationWrite.data.districtId).toBe('01');
+  expect(fixture.seed.locations[0].district).toBe('Legacy Location District');
+});
+
+test('Location Edit hierarchy draft remains visible after a stale-version conflict', async ({ page }) => {
+  await prepareHierarchyBrowser(page);
+  let submitted: any;
+  await page.route('**/api/directory/commit', async route => {
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ status: 409, json: { error: { code: 'directory_conflict', message: 'Record changed concurrently. Reload the directory before saving.' } } });
+  });
+  await page.goto(`${origin}/locations/loc-retail/edit`); await restore(page, true);
+  await page.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select').selectOption('Unknown');
+  await page.getByRole('button', { name: /Save.*Record/ }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('alert')).toContainText('Record changed concurrently');
+  await expect(dialog.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select')).toHaveValue('Unknown');
+  expect(submitted.writes[0].expectedVersion).toBe(0);
+  expect(submitted.writes[0].data.hierarchyApplicability).toBe('Unknown');
 });
 
 test("diagnostic mail uses the account session without separate sign-in controls", async ({ page }) => {

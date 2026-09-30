@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { 
   FileSpreadsheet, 
@@ -45,6 +45,8 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PageHeader } from '../common/PageHeader';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
+import { LOCATION_TYPES } from '../../lib/locationImportSchema';
+import { applyQuickAddDistrictSelection, applyQuickAddRegionSelection, canSelectNotApplicableHierarchy } from '../../lib/hierarchyResolution';
 import { normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
 import { SopRunbooksPanel } from './SopRunbooksPanel';
@@ -105,7 +107,9 @@ export const AdminIntegrationsView: React.FC = () => {
     updateCorporateHoliday,
     deleteCorporateHoliday,
     broadcastHolidaysToFleet,
-    rollbackAuditChange
+    rollbackAuditChange,
+    regions,
+    districts
   } = useDirectory();
 
   const requestedAdminTab = new URLSearchParams(window.location.search).get('tab');
@@ -163,10 +167,15 @@ export const AdminIntegrationsView: React.FC = () => {
     state: 'CA',
     zipCode: '',
     phone: '',
-    district: 'District 1 — Northern CA',
+    regionId: '',
+    districtId: '',
+    hierarchyApplicability: '' as '' | 'Applicable' | 'Not Applicable' | 'Unknown',
     googleReviewUrl: '',
     storePageUrl: ''
   });
+  const quickAddActiveRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort((left, right) => left.name.localeCompare(right.name)), [regions]);
+  const quickAddActiveDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === newStoreForm.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, newStoreForm.regionId]);
+  const quickAddRetailType = !canSelectNotApplicableHierarchy(newStoreForm.type);
 
   // GBP Tab State
   const [isSyncingGbp, setIsSyncingGbp] = useState(false);
@@ -282,10 +291,12 @@ export const AdminIntegrationsView: React.FC = () => {
       ...(phone.extension ? { phoneExtension: phone.extension } : {}),
       phonePrivacy: 'Public',
       timeZone: 'America/Los_Angeles',
-      district: newStoreForm.district,
       operationalStatus: 'Open — Normal Operations',
       standardHours: DEFAULT_WEEKLY_HOURS,
       recordStatus: 'Active',
+      ...(newStoreForm.regionId ? { regionId: newStoreForm.regionId } : {}),
+      ...(newStoreForm.districtId ? { districtId: newStoreForm.districtId } : {}),
+      ...(newStoreForm.hierarchyApplicability ? { hierarchyApplicability: newStoreForm.hierarchyApplicability } : {}),
       googleReviewUrl,
       storePageUrl
     });
@@ -299,7 +310,9 @@ export const AdminIntegrationsView: React.FC = () => {
       state: 'CA',
       zipCode: '',
       phone: '',
-      district: 'District 1 — Northern CA',
+      regionId: '',
+      districtId: '',
+      hierarchyApplicability: '',
       googleReviewUrl: '',
       storePageUrl: ''
     });
@@ -1817,10 +1830,7 @@ export const AdminIntegrationsView: React.FC = () => {
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, type: e.target.value as any })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
                   >
-                    <option value="Enclosed Regional Mall">Enclosed Regional Mall</option>
-                    <option value="Strip Center / Shopping Center">Strip Center / Shopping Center</option>
-                    <option value="Urban Streetfront">Urban Streetfront</option>
-                    <option value="Outlet Center">Outlet Center</option>
+                    {LOCATION_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1834,6 +1844,48 @@ export const AdminIntegrationsView: React.FC = () => {
                     onBlur={(event) => { const phone = normalizeUsPhone(event.target.value); if (phone) setNewStoreForm({ ...newStoreForm, phone: phone.display }); }}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono focus:outline-none focus:border-red-500"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-neutral-700 font-semibold mb-1">Region</label>
+                  <select
+                    value={newStoreForm.regionId}
+                    onChange={(e) => setNewStoreForm(applyQuickAddRegionSelection(newStoreForm, e.target.value))}
+                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
+                  >
+                    <option value="">No controlled Region selected</option>
+                    {quickAddActiveRegions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-neutral-700 font-semibold mb-1">District</label>
+                  <select
+                    value={newStoreForm.districtId}
+                    disabled={!newStoreForm.regionId}
+                    onChange={(e) => setNewStoreForm(applyQuickAddDistrictSelection(newStoreForm, e.target.value))}
+                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:bg-neutral-100"
+                  >
+                    <option value="">{newStoreForm.regionId ? 'No controlled District selected' : 'Select a Region first'}</option>
+                    {quickAddActiveDistricts.map(district => <option key={district.id} value={district.id}>{district.name} ({district.id})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-neutral-700 font-semibold mb-1">Retail hierarchy</label>
+                  <select
+                    value={newStoreForm.hierarchyApplicability}
+                    onChange={(e) => setNewStoreForm({ ...newStoreForm, hierarchyApplicability: e.target.value as typeof newStoreForm.hierarchyApplicability })}
+                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
+                  >
+                    <option value="">Use existing applicability</option>
+                    <option value="Applicable">Retail hierarchy applies</option>
+                    {!quickAddRetailType && <option value="Not Applicable" disabled={Boolean(newStoreForm.regionId || newStoreForm.districtId)}>No retail hierarchy</option>}
+                    <option value="Unknown">Needs review</option>
+                  </select>
+                  {!quickAddRetailType && (newStoreForm.regionId || newStoreForm.districtId) && (
+                    <p className="mt-1 text-[11px] text-amber-700">Clear the selected Region/District first to mark this record No retail hierarchy.</p>
+                  )}
                 </div>
               </div>
 

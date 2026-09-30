@@ -80,3 +80,41 @@ export function getPersonDeletionBlockers(
     users: users.filter(user => user.personId === person.id),
   };
 }
+
+export const PERSON_LEADERSHIP_NAME_FIELDS = ['fullName', 'name', 'phone', 'workPhone', 'phonePrivacy'] as const;
+
+/**
+ * Copies only display name/phone leadership fields onto an affected Location. Never touches
+ * regionId, districtId, or the legacy district text; those remain exclusively canonical-assignment fields.
+ */
+export function reconcileLocationLeadershipCopy(
+  location: LocationRecord,
+  personId: string,
+  updatedPerson: PersonRecord,
+  resolvedStoreManagerPhone: string,
+  resolvePersonName: (id: string) => string | undefined,
+  updatedFields: readonly string[],
+): LocationRecord {
+  const affected = location.storeManagerId === personId || location.districtManagerId === personId
+    || location.assistantStoreManagerIds?.includes(personId) || location.keyHolderIds?.includes(personId);
+  const copiesNameOrContact = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
+  if (!affected || !copiesNameOrContact) return location;
+
+  return {
+    ...location,
+    ...(location.storeManagerId === personId ? {
+      storeManagerName: updatedPerson.fullName,
+      storeManagerPhone: resolvedStoreManagerPhone,
+      storeManagerPhonePrivacy: updatedPerson.phonePrivacy,
+    } : {}),
+    ...(location.districtManagerId === personId ? {
+      districtManagerName: updatedPerson.fullName,
+    } : {}),
+    assistantStoreManagerNames: (location.assistantStoreManagerIds || [])
+      .map(resolvePersonName)
+      .filter((name): name is string => Boolean(name)),
+    keyHolderNames: (location.keyHolderIds || [])
+      .map(resolvePersonName)
+      .filter((name): name is string => Boolean(name)),
+  };
+}

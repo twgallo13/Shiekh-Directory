@@ -262,6 +262,77 @@ describe("hierarchy assignment contract", () => {
     assert.equal(preserved[0].data?.regionId, "reg-west");
   });
 
+  it("keeps registry IDs immutable and allows name-only edits despite unrelated legacy hierarchy defects", () => {
+    const actor = {
+      uid: "actor-1",
+      email: "admin@example.com",
+      emailVerified: true,
+      name: "Admin",
+      role: "System Administrator",
+      status: "Active",
+      accessScope: "Company",
+      personId: null,
+      authenticationMethod: "password",
+    } as const;
+    const registry: HierarchyRegistry = {
+      regions: [{ id: "reg-west", name: "West Region", status: "Active" }],
+      districts: [{ id: "01", name: "District One", regionId: "reg-west", status: "Active" }],
+    };
+
+    assert.throws(() => validateMetadataWrites(
+      [{ collection: "districts", id: "01", operation: "set", expectedVersion: 3, data: { id: "02", name: "District One", regionId: "reg-west", status: "Active" } }],
+      [{ id: "01", version: 3, name: "District One", regionId: "reg-west", status: "Active" }],
+      [],
+      actor,
+      [],
+      [],
+      [],
+      registry,
+    ), DirectoryValidationError);
+
+    const [renamed] = validateMetadataWrites(
+      [{ collection: "districts", id: "01", operation: "set", expectedVersion: 3, data: { id: "01", name: "District 01", regionId: "reg-west", status: "Active" } }],
+      [{ id: "01", version: 3, name: "District One", regionId: "reg-west", status: "Active" }],
+      [],
+      actor,
+      [],
+      [{ id: "loc-legacy", storeNumber: "0007", name: "Legacy Store", type: "Enclosed Mall", regionId: "reg-other", districtId: "01" }],
+      [],
+      registry,
+    );
+
+    assert.equal(renamed.id, "01");
+    assert.equal(renamed.data?.id, "01");
+    assert.equal(renamed.data?.name, "District 01");
+    assert.equal(renamed.data?.regionId, "reg-west");
+
+    const [legacyRename] = validateMetadataWrites(
+      [{ collection: "districts", id: "legacy", operation: "set", expectedVersion: 1, data: { id: "legacy", name: "Renamed Legacy District", regionId: "missing-region", status: "Active" } }],
+      [{ id: "legacy", version: 1, name: "Legacy District", regionId: "missing-region", status: "Active" }],
+      [], actor, [], [], [],
+      { regions: [], districts: [{ id: "legacy", name: "Renamed Legacy District", regionId: "missing-region", status: "Active" }] },
+    );
+    assert.equal(legacyRename.data?.name, "Renamed Legacy District");
+
+    assert.throws(() => validateMetadataWrites(
+      [{ collection: "districts", id: "02", operation: "set", expectedVersion: null, data: { id: "02", name: "District Two", regionId: "reg-retired", status: "Active" } }],
+      [undefined], [], actor, [], [], [],
+      { regions: [{ id: "reg-retired", name: "Retired Region", status: "Retired" }], districts: [{ id: "02", name: "District Two", regionId: "reg-retired", status: "Active" }] },
+    ), /active parent Region/);
+
+    assert.doesNotThrow(() => validateMetadataWrites(
+      [{ collection: "regions", id: "01", operation: "set", expectedVersion: 1, data: { id: "01", name: "Numeric Region", status: "Retired" } }],
+      [{ id: "01", version: 1, name: "Numeric Region", status: "Active" }],
+      [], actor, [],
+      [{ id: "loc-collision", storeNumber: "0099", name: "Legacy Mismatch", type: "Enclosed Mall", hierarchyApplicability: "Applicable", regionId: "reg-east", districtId: "01" }],
+      [],
+      {
+        regions: [{ id: "01", name: "Numeric Region", status: "Retired" }, { id: "reg-east", name: "East", status: "Active" }, { id: "reg-west", name: "West", status: "Active" }],
+        districts: [{ id: "01", name: "District One", regionId: "reg-west", status: "Active" }],
+      },
+    ));
+  });
+
   it("serializes removed Store and District Manager assignments as explicit clears", () => {
     const previous = {
       id: 'loc-1', storeNumber: '01', name: 'Store', type: 'Enclosed Mall', address: '', city: '', state: 'CA', zipCode: '', phone: '', timeZone: 'America/Los_Angeles', operationalStatus: 'Open — Normal Operations', standardHours: {}, recordStatus: 'Active', storeManagerId: 'per-sm', districtManagerId: 'per-dm',

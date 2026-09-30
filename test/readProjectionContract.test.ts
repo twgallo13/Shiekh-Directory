@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildDistrictManagerGroupLabel, buildLocationReadProjection, resolveActivePerson, resolveActivePersonList } from "../src/lib/readProjectionContract";
+import { buildDistrictManagerGroupLabel, buildLocationReadProjection, resolveActiveLocationManagers, resolveActivePerson, resolveActivePersonList } from "../src/lib/readProjectionContract";
 
 describe("read projection contract", () => {
   it("prefers canonical person IDs over stale copied names when the reference is valid", () => {
@@ -117,5 +117,31 @@ describe("resolveActivePerson / resolveActivePersonList", () => {
     assert.equal(buildDistrictManagerGroupLabel([]), "No canonical District Manager");
     assert.equal(buildDistrictManagerGroupLabel(["District Manager A", undefined, "District Manager A"]), "District Manager A");
     assert.equal(buildDistrictManagerGroupLabel(["District Manager A", "District Manager B"]), "Multiple District Managers: District Manager A, District Manager B");
+  });
+});
+
+describe("Dashboard Quick Reference manager projection", () => {
+  const people = [
+    { id: "active-sm", fullName: "Duplicate Name", status: "Active" },
+    { id: "active-dm", fullName: "District Lead", status: "Active" },
+    { id: "duplicate-name", fullName: "Duplicate Name", status: "Active" },
+    { id: "inactive-dm", fullName: "Inactive Lead", status: "Inactive" },
+  ];
+
+  it("resolves valid active assignments by exact canonical ID", () => {
+    const result = resolveActiveLocationManagers({ storeManagerId: "active-sm", districtManagerId: "active-dm" }, people);
+    assert.equal(result.storeManager?.id, "active-sm");
+    assert.equal(result.districtManager?.id, "active-dm");
+  });
+
+  it("does not substitute duplicate copied names for missing IDs", () => {
+    const result = resolveActiveLocationManagers({ storeManagerId: "missing", districtManagerId: "also-missing" }, people);
+    assert.equal(result.storeManager, undefined);
+    assert.equal(result.districtManager, undefined);
+  });
+
+  it("treats inactive canonical assignments as vacant", () => {
+    const result = resolveActiveLocationManagers({ districtManagerId: "inactive-dm" }, people);
+    assert.equal(result.districtManager, undefined);
   });
 });

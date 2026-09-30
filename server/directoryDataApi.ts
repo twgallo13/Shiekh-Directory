@@ -46,7 +46,7 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
       const result = await store.commit(writes, audit, account);
       response.status(200).json(result);
     } catch (error) {
-      if (error instanceof DirectoryValidationError) return response.status(400).json({ error: { code: "invalid_metadata", message: error.message } });
+      if (error instanceof DirectoryValidationError) return response.status(400).json({ error: { code: "invalid_metadata", message: error.message, ...(error.details ? { details: error.details } : {}) } });
       if (error instanceof DirectoryWriteDenied) return response.status(403).json({ error: { code: "write_not_allowed", message: error.message } });
       if (error instanceof DirectoryConflict) return response.status(409).json({ error: { code: "directory_conflict", message: error.message } });
       response.status(503).json({ error: { code: "directory_unavailable" } });

@@ -39,7 +39,18 @@ export interface DirectoryAudit { action: string; entityType: string; entityId: 
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
 export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
 export class DirectoryConflict extends Error {}
-export class DirectoryValidationError extends Error {}
+export interface DirectoryDependency {
+  type: 'Location' | 'District';
+  id: string;
+  name: string;
+  storeNumber?: string;
+  href?: string;
+}
+export class DirectoryValidationError extends Error {
+  constructor(message: string, public readonly details?: { dependencies?: DirectoryDependency[]; correction?: string }) {
+    super(message);
+  }
+}
 export class DirectoryWriteDenied extends Error {}
 export class LocationImportIdempotencyConflict extends Error {}
 export class LocationImportPayloadTooLarge extends Error {}
@@ -394,11 +405,20 @@ export function validateMetadataWrites(
       if (actor.role !== 'System Administrator') throw new DirectoryWriteDenied('Only system administrators can manage hierarchy registry records.');
       if (write.operation !== 'set') throw new DirectoryValidationError('Retire hierarchy registry records instead of deleting them.');
       const data: Record<string, unknown> = { ...write.data, version: ((current?.version as number) || 0) + 1, updatedAt: new Date().toISOString() };
+      if (Object.hasOwn(data, 'id') && data.id !== write.id) throw new DirectoryValidationError('Hierarchy registry IDs cannot be changed.');
+      data.id = write.id;
       if (typeof data.name !== 'string' || !data.name.trim()) throw new DirectoryValidationError('Hierarchy registry records require a name.');
       if (data.status !== 'Active' && data.status !== 'Retired') throw new DirectoryValidationError('Hierarchy registry status must be Active or Retired.');
       if (write.collection === 'districts') {
         if (typeof data.regionId !== 'string' || !data.regionId.trim()) throw new DirectoryValidationError('Districts require a Region.');
-        if (!hierarchyRegistry?.regions.some(region => region.id === data.regionId)) throw new DirectoryValidationError('District references a missing Region.');
+        const parentMustBeValidated = !current
+          || data.regionId !== current.regionId
+          || (current.status === 'Retired' && data.status === 'Active');
+        if (parentMustBeValidated) {
+          const parent = hierarchyRegistry?.regions.find(region => region.id === data.regionId);
+          if (!parent) throw new DirectoryValidationError('District references a missing Region.');
+          if (data.status === 'Active' && parent.status === 'Retired') throw new DirectoryValidationError('Active Districts require an active parent Region.');
+        }
       }
       return { ...write, data };
     }
@@ -572,8 +592,8 @@ export function validateMetadataWrites(
 
   validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
   validateEmploymentRelationshipState(validatedWrites, people, locations);
-  validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry);
-  validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry);
+  validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry, previous);
+  validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry, previous);
   return validatedWrites;
 }
 
@@ -663,11 +683,15 @@ function validateFinalHierarchyState(
   writes: DirectoryWrite[],
   currentLocations: Array<Record<string, unknown>>,
   registry: HierarchyRegistry | undefined,
+  previous: (Record<string, unknown> | undefined)[],
 ): void {
   if (!registry) return;
   const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
   const affectedLocationIds = new Set<string>();
-  const affectedRegistryIds = new Set<string>();
+  const affectedRegionIds = new Set<string>();
+  const affectedDistrictIds = new Set<string>();
+  const dependencies: DirectoryDependency[] = [];
+  const issueMessages = new Set<string>();
 
   for (const write of writes) {
     if (write.collection === 'locations') {
@@ -679,13 +703,22 @@ function validateFinalHierarchyState(
       if (write.operation === 'delete') finalLocations.delete(write.id);
       else if (write.data) finalLocations.set(write.id, { ...write.data, id: write.id });
     }
-    if (write.collection === 'regions' || write.collection === 'districts') affectedRegistryIds.add(write.id);
+    if (write.collection === 'regions') {
+      const current = previous[writes.indexOf(write)];
+      if (!isDeepStrictEqual(write.data?.status, current?.status)) affectedRegionIds.add(write.id);
+    }
+    if (write.collection === 'districts') {
+      const current = previous[writes.indexOf(write)];
+      if (!isDeepStrictEqual(write.data?.status, current?.status) || !isDeepStrictEqual(write.data?.regionId, current?.regionId)) {
+        affectedDistrictIds.add(write.id);
+      }
+    }
   }
 
   for (const location of finalLocations.values()) {
     const affected = affectedLocationIds.has(String(location.id))
-      || affectedRegistryIds.has(String(location.regionId || ''))
-      || affectedRegistryIds.has(String(location.districtId || ''));
+      || affectedRegionIds.has(String(location.regionId || ''))
+      || affectedDistrictIds.has(String(location.districtId || ''));
     if (!affected) continue;
     const issues = validateLocationHierarchyFields({
       type: String(location.type || 'Street / Standalone Location'),
@@ -693,7 +726,21 @@ function validateFinalHierarchyState(
       regionId: typeof location.regionId === 'string' ? location.regionId : undefined,
       districtId: typeof location.districtId === 'string' ? location.districtId : undefined,
     }, registry);
-    if (issues.length > 0) throw new DirectoryValidationError(issues.join('; '));
+    if (issues.length > 0) {
+      const id = String(location.id);
+      const storeNumber = String(location.storeNumber || '');
+      issues.forEach(issue => issueMessages.add(issue));
+      dependencies.push({ type: 'Location', id, name: String(location.name || id), storeNumber, href: `/locations/${encodeURIComponent(id)}` });
+    }
+  }
+  if (dependencies.length > 0) {
+    throw new DirectoryValidationError(
+      `${Array.from(issueMessages).join('; ')} Affected Locations: ${dependencies.map(item => `${item.name} (${item.storeNumber ? `Store ${item.storeNumber}, ` : ''}${item.id})`).join(', ')}.`,
+      {
+        dependencies,
+        correction: 'Reassign every affected Location or clear its District assignment before changing the District parent, then explicitly reassign each Location as appropriate.',
+      },
+    );
   }
 }
 
@@ -701,6 +748,7 @@ function validateRegistryRetirement(
   writes: DirectoryWrite[],
   currentLocations: Array<Record<string, unknown>>,
   registry: HierarchyRegistry | undefined,
+  previous: (Record<string, unknown> | undefined)[],
 ): void {
   if (!registry) return;
   const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
@@ -711,12 +759,25 @@ function validateRegistryRetirement(
   }
   for (const write of writes) {
     if ((write.collection !== 'regions' && write.collection !== 'districts') || write.operation !== 'set' || write.data?.status !== 'Retired') continue;
+    const current = previous[writes.indexOf(write)];
+    if (current?.status === 'Retired') continue;
     const referenceField = write.collection === 'regions' ? 'regionId' : 'districtId';
-    const locationReferenced = Array.from(finalLocations.values()).some(location => location[referenceField] === write.id);
-    const districtReferenced = write.collection === 'regions'
-      && registry.districts.some(district => district.regionId === write.id && district.status !== 'Retired');
-    if (locationReferenced || districtReferenced) {
-      throw new DirectoryValidationError(`Cannot retire this ${write.collection.slice(0, -1)} while Locations still reference it.`);
+    const referencedLocations = Array.from(finalLocations.values()).filter(location => location[referenceField] === write.id);
+    const referencedDistricts = write.collection === 'regions'
+      ? registry.districts.filter(district => district.regionId === write.id && district.status !== 'Retired')
+      : [];
+    if (referencedLocations.length > 0 || referencedDistricts.length > 0) {
+      const dependencies: DirectoryDependency[] = [
+        ...referencedLocations.map(location => {
+          const id = String(location.id);
+          return { type: 'Location' as const, id, name: String(location.name || id), storeNumber: String(location.storeNumber || ''), href: `/locations/${encodeURIComponent(id)}` };
+        }),
+        ...referencedDistricts.map(district => ({ type: 'District' as const, id: district.id, name: district.name })),
+      ];
+      throw new DirectoryValidationError(
+        `Cannot retire this ${write.collection.slice(0, -1)} while ${dependencies.map(item => `${item.type} ${item.name} (${item.id})`).join(', ')} still depend on it.`,
+        { dependencies, correction: 'Reassign or clear every dependency, then retry retirement.' },
+      );
     }
   }
 }

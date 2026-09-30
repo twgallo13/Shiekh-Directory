@@ -697,6 +697,22 @@ test('registry Add rejects an existing ID without mutation and Update remains ve
   assert.equal(records.get('regions/region-west')?.version, 2);
 });
 
+test('registry writes preserve a leading-zero District ID through commit and audit evidence', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('regions/reg-west', { id: 'reg-west', name: 'West', status: 'Active', version: 0 });
+
+  const result = await store.commit([
+    { collection: 'districts', id: '01', operation: 'set', expectedVersion: null, data: { id: '01', name: 'District One', regionId: 'reg-west', status: 'Active' } },
+  ], { action: 'District Created', entityType: 'Setting', entityId: '01', entityName: 'District One', details: 'Created District 01.' }, actor);
+
+  assert.equal(result.records[0].id, '01');
+  assert.equal(result.records[0].data?.id, '01');
+  assert.equal(records.get('districts/01')?.id, '01');
+  const audit = [...records.entries()].find(([key]) => key.startsWith('audit_logs/'))?.[1];
+  assert.equal((audit?.newState as Record<string, unknown>)?.id, '01');
+});
+
 test('District parent changes validate affected Location final state and allow same-transaction resolution', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
@@ -705,7 +721,13 @@ test('District parent changes validate affected Location final state and allow s
   records.set('districts/district-shared', { id: 'district-shared', name: 'Shared District', regionId: 'region-west', status: 'Active', version: 0 });
   records.set('locations/loc-parent', { id: 'loc-parent', storeNumber: '94', name: 'Parent Store', type: 'Street / Standalone Location', regionId: 'region-west', districtId: 'district-shared', hierarchyApplicability: 'Applicable', version: 0 });
 
-  await assert.rejects(store.commit([{ collection: 'districts', id: 'district-shared', operation: 'set', expectedVersion: 0, data: { name: 'Shared District', regionId: 'region-east', status: 'Active' } }], { action: 'District Updated', entityType: 'Setting', entityId: 'district-shared', entityName: 'Shared District', details: 'Change parent only.' }, actor), DirectoryValidationError);
+  await assert.rejects(store.commit([{ collection: 'districts', id: 'district-shared', operation: 'set', expectedVersion: 0, data: { name: 'Shared District', regionId: 'region-east', status: 'Active' } }], { action: 'District Updated', entityType: 'Setting', entityId: 'district-shared', entityName: 'Shared District', details: 'Change parent only.' }, actor), (error: unknown) => {
+    assert.ok(error instanceof DirectoryValidationError);
+    assert.equal(error.details?.dependencies?.[0]?.id, 'loc-parent');
+    assert.equal(error.details?.dependencies?.[0]?.href, '/locations/loc-parent');
+    assert.match(error.details?.correction || '', /Reassign/);
+    return true;
+  });
   assert.equal(records.get('districts/district-shared')?.regionId, 'region-west');
 
   await store.commit([

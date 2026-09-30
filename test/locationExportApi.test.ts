@@ -12,7 +12,7 @@ const now = new Date("2026-09-09T12:00:00.000Z");
 const companyAccount: Account = { uid: "uid-company", email: "company@example.test", emailVerified: true, name: "Company User", role: "Viewer", status: "Active", accessScope: "Company-wide", personId: null, authenticationMethod: "password" };
 const otherCompanyAccount: Account = { ...companyAccount, uid: "uid-company-2", email: "company2@example.test" };
 const exactStoreAccount: Account = { ...companyAccount, uid: "uid-store", accessScope: "Store 007" };
-interface CsvRow { StoreNumber: string; ZipCode: string; StoreName: string; Phone: string; StoreManager: string; StoreManagerPhone: string; DistrictManager: string; AssistantStoreManagers: string; OperationalStatus: string; [LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER]: string }
+interface CsvRow { StoreNumber: string; ZipCode: string; StoreName: string; Phone: string; RegionId: string; RegionName: string; DistrictId: string; DistrictName: string; District: string; StoreManager: string; StoreManagerPhone: string; DistrictManager: string; AssistantStoreManagers: string; OperationalStatus: string; [LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER]: string }
 interface PreparedBody { token: string; metadata: { recordCount: number; authorizationScope: { label: string; type: string; storeNumber?: string }; storeNumberSetDigest: string; missingCanonicalPersonReferences: number } }
 
 test("Export All prepares and downloads every active authorized location from the authoritative snapshot", async () => {
@@ -93,6 +93,59 @@ test("canonical person relationships override stale copied names and missing ref
     assert.equal(row.StoreManagerPhone, "555-1111");
     assert.equal(row.DistrictManager, "Fresh District Manager");
     assert.equal(row.AssistantStoreManagers, "Assistant One");
+  } finally { await app.close(); }
+});
+
+test("reporting export separates canonical hierarchy IDs and names while retaining legacy District", async () => {
+  const app = await harness({
+    account: companyAccount,
+    people: [],
+    regions: [{ id: 'reg-west', name: 'West Region', status: 'Active' }],
+    districts: [{ id: '01', name: 'District One', regionId: 'reg-west', status: 'Active' }],
+    locations: [
+      location('07', { regionId: 'reg-west', districtId: '01', district: 'Legacy District Label' }),
+      location('08', { regionId: 'missing-region', districtId: '02', district: 'Legacy Missing Label' }),
+    ],
+  });
+  try {
+    const prepared = await prepare(app.baseUrl, 'token');
+    const rows = parse(await download(app.baseUrl, prepared.token, 'token'), { columns: true }) as CsvRow[];
+    assert.deepEqual(rows[0], {
+      ...rows[0],
+      RegionId: 'reg-west',
+      RegionName: 'West Region',
+      DistrictId: '01',
+      DistrictName: 'District One',
+      District: 'Legacy District Label',
+    });
+    assert.equal(rows[1].RegionId, 'missing-region');
+    assert.equal(rows[1].RegionName, '');
+    assert.equal(rows[1].DistrictId, '02');
+    assert.equal(rows[1].DistrictName, '');
+    assert.equal(rows[1].District, 'Legacy Missing Label');
+  } finally { await app.close(); }
+});
+
+test("HierarchyApplicability is appended after every pre-existing reporting column", async () => {
+  const app = await harness({
+    account: companyAccount,
+    people: [],
+    locations: [location('07', { type: 'Enclosed Mall' })],
+  });
+  try {
+    const prepared = await prepare(app.baseUrl, 'token');
+    const csv = await download(app.baseUrl, prepared.token, 'token');
+    const headerLine = csv.split('\n')[0].trim();
+    const headers = parse(Buffer.from(headerLine), { columns: false })[0] as string[];
+    const preexisting = [
+      LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, "StoreNumber", "StoreName", "Type", "Address", "City", "State", "ZipCode", "Phone",
+      "RegionId", "RegionName", "DistrictId", "DistrictName", "District", "StoreManager", "StoreManagerPhone", "DistrictManager",
+      "AssistantStoreManagers", "OperationalStatus", "RecordStatus", "GoogleReviewUrl", "StorePageUrl",
+    ];
+    assert.deepEqual(headers.slice(0, preexisting.length), preexisting);
+    assert.equal(headers.at(-1), "HierarchyApplicability");
+    const rows = parse(csv, { columns: true }) as (CsvRow & { HierarchyApplicability: string })[];
+    assert.equal(rows[0].HierarchyApplicability, "Applicable");
   } finally { await app.close(); }
 });
 
@@ -219,9 +272,9 @@ function person(id: string, fullName: string, overrides: Partial<LocationExportR
   return { id, fullName, ...overrides };
 }
 
-async function harness(options: { locations: LocationExportRecord[]; people: LocationExportRecord[]; account: Account; failRead?: boolean; authFailure?: Error; tokenAccounts?: Record<string, Account> }) {
+async function harness(options: { locations: LocationExportRecord[]; people: LocationExportRecord[]; regions?: LocationExportRecord[]; districts?: LocationExportRecord[]; account: Account; failRead?: boolean; authFailure?: Error; tokenAccounts?: Record<string, Account> }) {
   const app = express();
-  const snapshot = { locations: options.locations, people: options.people };
+  const snapshot = { locations: options.locations, people: options.people, regions: options.regions || [], districts: options.districts || [] };
   const store: LocationExportStore = { async readLocationExportSnapshot() {
     if (options.failRead) throw new Error("read failed");
     return snapshot;

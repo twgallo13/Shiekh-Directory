@@ -30,6 +30,16 @@ export function resolveActivePersonList<T extends ReadProjectionPerson>(
     .filter((person): person is T => Boolean(person));
 }
 
+export function resolveActiveLocationManagers<T extends ReadProjectionPerson>(
+  location: { storeManagerId?: string; districtManagerId?: string },
+  people: T[],
+): { storeManager?: T; districtManager?: T } {
+  return {
+    storeManager: resolveActivePerson(location.storeManagerId, people),
+    districtManager: resolveActivePerson(location.districtManagerId, people),
+  };
+}
+
 export function buildDistrictManagerGroupLabel(names: Array<string | undefined>): string {
   const distinctNames = Array.from(new Set(names.filter((name): name is string => Boolean(name))));
   if (distinctNames.length === 0) return "No canonical District Manager";

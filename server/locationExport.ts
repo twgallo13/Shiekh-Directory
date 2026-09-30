@@ -7,6 +7,8 @@ import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticat
 import { formatUsPhone } from "../src/lib/contactNormalization";
 import { LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, spreadsheetSafeCsvValue } from "../src/lib/locationImportSchema";
 import { buildLocationReadProjection, type ReadProjectionPerson } from "../src/lib/readProjectionContract";
+import { resolveLocationHierarchy } from "../src/lib/hierarchyResolution";
+import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 export type LocationExportMode = "all-stores";
@@ -19,6 +21,8 @@ export interface LocationExportRecord {
 export interface LocationExportSnapshot {
   locations: LocationExportRecord[];
   people: LocationExportRecord[];
+  regions?: LocationExportRecord[];
+  districts?: LocationExportRecord[];
 }
 
 export interface LocationExportStore {
@@ -61,6 +65,10 @@ const LOCATION_EXPORT_COLUMNS = [
   "State",
   "ZipCode",
   "Phone",
+  "RegionId",
+  "RegionName",
+  "DistrictId",
+  "DistrictName",
   "District",
   "StoreManager",
   "StoreManagerPhone",
@@ -70,6 +78,7 @@ const LOCATION_EXPORT_COLUMNS = [
   "RecordStatus",
   "GoogleReviewUrl",
   "StorePageUrl",
+  "HierarchyApplicability",
 ] as const;
 
 const EXPORT_TOKEN_TTL_MS = 2 * 60_000;
@@ -141,13 +150,21 @@ export async function prepareLocationExport(account: Account, store: LocationExp
       status: typeof person.status === 'string' ? person.status : 'Active',
       activeStatus: typeof person.activeStatus === 'boolean' ? person.activeStatus : undefined,
     }));
+  const hierarchy: HierarchyRegistry = {
+    regions: (snapshot.regions || []).map(region => ({
+      id: String(region.id), name: String(region.name || ''), status: region.status === 'Retired' ? 'Retired' : 'Active',
+    })),
+    districts: (snapshot.districts || []).map(district => ({
+      id: String(district.id), name: String(district.name || ''), regionId: String(district.regionId || ''), status: district.status === 'Retired' ? 'Retired' : 'Active',
+    })),
+  };
   const authorizedLocations = scope.type === "company-wide"
     ? activeLocations
     : activeLocations.filter(location => normalizeStoreNumber(location.storeNumber) === scope.normalizedStoreNumber);
   const sortedLocations = [...authorizedLocations].sort(compareLocations);
   const storeNumbers = sortedLocations.map(location => stringField(location.storeNumber));
   const missingReferences = new Set<string>();
-  const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences, people));
+  const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences, people, hierarchy));
   const safeRows = rows.map(row => Object.fromEntries(Object.entries(row).map(([column, value]) => [column, spreadsheetSafeCsvValue(value)])));
   const csv = stringify(safeRows, { header: true, columns: [...LOCATION_EXPORT_COLUMNS], record_delimiter: "\r\n", bom: true });
   const generatedIso = generatedAt.toISOString();
@@ -173,13 +190,17 @@ export class FirestoreLocationExportStore implements LocationExportStore {
 
   async readLocationExportSnapshot(): Promise<LocationExportSnapshot> {
     return this.firestore.runTransaction(async transaction => {
-      const [locations, people] = await Promise.all([
+      const [locations, people, regions, districts] = await Promise.all([
         transaction.get(this.firestore.collection("locations")),
         transaction.get(this.firestore.collection("people")),
+        transaction.get(this.firestore.collection("regions")),
+        transaction.get(this.firestore.collection("districts")),
       ]);
       return {
         locations: locations.docs.map(toRecord),
         people: people.docs.map(toRecord),
+        regions: regions.docs.map(toRecord),
+        districts: districts.docs.map(toRecord),
       };
     }, { readOnly: true });
   }
@@ -233,7 +254,12 @@ function toCsvRow(
   peopleById: Map<string, LocationExportRecord>,
   missingReferences: Set<string>,
   people: ReadProjectionPerson[] = [],
+  hierarchyRegistry: HierarchyRegistry = { regions: [], districts: [] },
 ): Record<typeof LOCATION_EXPORT_COLUMNS[number], string> {
+  const hierarchy = resolveLocationHierarchy(
+    { regionId: location.regionId, districtId: location.districtId, type: location.type, hierarchyApplicability: location.hierarchyApplicability },
+    hierarchyRegistry,
+  );
   const projection = buildLocationReadProjection(
     {
       id: String(location.id ?? ''),
@@ -284,6 +310,10 @@ function toCsvRow(
     State: stringField(location.state),
     ZipCode: stringField(location.zipCode),
     Phone: formatUsPhone(location.phone, location.phoneExtension),
+    RegionId: hierarchy.regionId || '',
+    RegionName: hierarchy.regionName || '',
+    DistrictId: hierarchy.districtId || '',
+    DistrictName: hierarchy.districtName || '',
     District: projection.district,
     StoreManager: projection.storeManager,
     StoreManagerPhone: storeManagerPhone,
@@ -293,6 +323,7 @@ function toCsvRow(
     RecordStatus: stringField(location.recordStatus),
     GoogleReviewUrl: stringField(location.googleReviewUrl),
     StorePageUrl: stringField(location.storePageUrl),
+    HierarchyApplicability: hierarchy.hierarchyApplicability,
   };
 }
 

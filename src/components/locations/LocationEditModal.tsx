@@ -9,6 +9,7 @@ import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
+import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { 
   X, 
   Save, 
@@ -115,6 +116,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   }, [people]);
   const activeRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort((left, right) => left.name.localeCompare(right.name)), [regions]);
   const activeDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === formData?.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, formData?.regionId]);
+  const currentRegion = regions.find(region => region.id === formData?.regionId);
+  const currentDistrict = districts.find(district => district.id === formData?.districtId);
+  const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
 
   if (!location || !formData) return null;
 
@@ -144,7 +148,6 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       ...(normalizedStorePageUrl ? { storePageUrl: normalizedStorePageUrl } : {}),
       ...(normalizedGoogleReviewUrl ? { googleReviewUrl: normalizedGoogleReviewUrl } : {}),
       districtManagerName: districtManager?.fullName || '',
-      district: districtManager?.district || formData.district,
       regionalManagerName: regionalManager?.fullName || '',
       storeManagerName: storeManager?.fullName || '',
       storeManagerPhone: resolvePersonPhone(storeManager).value,
@@ -798,8 +801,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                           setFormData(prev => prev ? ({
                             ...prev,
                             districtManagerId: dm?.id,
-                            districtManagerName: dm?.fullName || '',
-                            district: dm?.district ? dm.district : prev.district
+                            districtManagerName: dm?.fullName || ''
                           }) : null);
                         }
                       }}
@@ -821,34 +823,71 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                      Region
+                      Region Name
                     </label>
                     <select
                       value={formData.regionId || ''}
-                      onChange={(e) => setFormData({ ...formData, regionId: e.target.value || undefined, districtId: undefined, hierarchyApplicability: e.target.value ? 'Applicable' : formData.hierarchyApplicability })}
+                      onChange={(e) => setFormData(applyLocationRegionSelection(formData, e.target.value))}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                     >
                       <option value="">No controlled Region selected</option>
-                      {activeRegions.map(region => <option key={region.id} value={region.id}>{region.name}</option>)}
+                      {formData.regionId && !activeRegions.some(region => region.id === formData.regionId) && (
+                        <option value={formData.regionId}>{currentRegion ? `${currentRegion.name} (${currentRegion.id}) - Retired` : `Unresolved Region (${formData.regionId})`}</option>
+                      )}
+                      {activeRegions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id})</option>)}
                     </select>
+                    <p className="mt-1 text-[11px] text-neutral-500">The selected value is the permanent Region ID.</p>
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                      District
+                      District Name
                     </label>
                     <select
                       value={formData.districtId || ''}
                       disabled={!formData.regionId}
                       onChange={(e) => {
-                        const district = districts.find(item => item.id === e.target.value);
-                        setFormData({ ...formData, districtId: e.target.value || undefined, district: district?.name || formData.district, hierarchyApplicability: e.target.value ? 'Applicable' : formData.hierarchyApplicability });
+                        setFormData(applyLocationDistrictSelection(formData, e.target.value));
                       }}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 disabled:cursor-not-allowed disabled:bg-neutral-100"
                     >
                       <option value="">{formData.regionId ? 'No controlled District selected' : 'Select a Region first'}</option>
-                      {activeDistricts.map(district => <option key={district.id} value={district.id}>{district.name}</option>)}
+                      {formData.districtId && !activeDistricts.some(district => district.id === formData.districtId) && (
+                        <option value={formData.districtId}>{currentDistrict ? `${currentDistrict.name} (${currentDistrict.id})${currentDistrict.status === 'Retired' ? ' - Retired' : ' - Parent mismatch'}` : `Unresolved District (${formData.districtId})`}</option>
+                      )}
+                      {activeDistricts.map(district => <option key={district.id} value={district.id}>{district.name} ({district.id})</option>)}
                     </select>
+                    <p className="mt-1 text-[11px] text-neutral-500">The selected value is the permanent District ID. Names are resolved from the registry.</p>
+                    {hierarchy && hierarchy.hierarchyStatus !== 'resolved' && hierarchy.hierarchyStatus !== 'unassigned' && (
+                      <p className="mt-1 text-[11px] font-medium text-amber-700">{hierarchy.hierarchyIssues.join(' ')}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1.5">
+                      Retail hierarchy
+                    </label>
+                    <select
+                      value={formData.hierarchyApplicability || ''}
+                      onChange={(e) => setFormData({ ...formData, hierarchyApplicability: (e.target.value || undefined) as typeof formData.hierarchyApplicability })}
+                      className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
+                    >
+                      <option value="">Use existing applicability</option>
+                      <option value="Applicable">Retail hierarchy applies</option>
+                      {canSelectNotApplicableHierarchy(formData.type) && (
+                        <option value="Not Applicable">No retail hierarchy</option>
+                      )}
+                      <option value="Unknown">Needs review</option>
+                    </select>
+                    {!canSelectNotApplicableHierarchy(formData.type) && (
+                      <p className="mt-1 text-[11px] text-neutral-500">Retail locations cannot be marked No retail hierarchy.</p>
+                    )}
+                    {canSelectNotApplicableHierarchy(formData.type) && (formData.regionId || formData.districtId) && (
+                      <p className="mt-1 text-[11px] text-amber-700">Clear the existing Region/District above before choosing No retail hierarchy; selecting it here does not remove current assignments.</p>
+                    )}
+                    {hierarchy && hierarchy.applicabilityIssues.length > 0 && (
+                      <p className="mt-1 text-[11px] font-medium text-amber-700">{hierarchy.applicabilityIssues.join(' ')}</p>
+                    )}
                   </div>
 
                   <div>

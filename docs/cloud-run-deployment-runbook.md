@@ -11,13 +11,18 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision
+## Current live revision (verified 2026-09-30)
 
-- `latestReadyRevisionName`: `shiekh-location-company-directory-pr7-94301a6-v2` (deployed from application commit `94301a6512d88db4df3d22ebaaef12f5cc5a6705`, PR #7 Dispatch 9 Location import confirmation, 2026-09-13)
-- Traffic: 100%, confirmed via `gcloud run services describe` after promotion
-- Autoscaling: `minScale=0`, `maxScale=20`, `cpu-throttling=true`, `startup-cpu-boost=true`
+- `latestReadyRevisionName`: `shiekh-location-company-directory-dispatch12c-a5e3a7b`, deployed from merged `main` commit `a5e3a7b4d685d3a37ce2888ad0294f2ed844e172` after PRs #11, #9, and #10 merged.
+- Traffic: the candidate is the sole percentage-bearing revision at 100%; all other revisions are at 0% or have tag-only routes.
+- Cloud Build: `6b1b69a1-0b1f-4a2b-8761-39e180c35872` (`SUCCESS`). Image digest: `sha256:0204f13899b9db7e1b7cb79652eae8b91dbd10c728b7e83ccb47b2f64ffe318a`.
+- Service identity remains `1063064400866-compute@developer.gserviceaccount.com`; existing secret bindings remain `SMTP_PASSWORD -> Shiekh_Location:latest` and `LOCATION_IMPORT_TOKEN_SECRET -> LOCATION_IMPORT_TOKEN_SECRET:latest`.
+- Autoscaling: `minScale=0`, `maxScale=20`, `cpu-throttling=true`, `startup-cpu-boost=true`.
+- Branded mapping `shiekh-dir.ai.studio` remains `Ready` and `DomainRoutable` to this service.
 
-Known-working revision `shiekh-location-company-directory-pr6-800ffc12` (commit `800ffc12aa9c3f0695255ff360bcbae3b54ef4d3`) is retained as the rollback target. The PR #7 tag `p7-94301v2`, PR #6 tag `pr6-800ffc12`, Dispatch 8 tags `d8-002ac13` and `d8-d2e64bd`, and earlier tagged revisions remain available for direct revision checks at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+Immediately previous 100% serving revision and rollback target: `shiekh-location-company-directory-dispatch12c-99f2b17` (application commit `99f2b179094210c612458b64e30cdcd6728592f3`). The candidate and previous revision runtime specs matched exactly after excluding the image; configuration fingerprint: `60dff80c422640d0b012c083a9e060c6b9ce06f62906a6435599ec79af495740`.
+
+Historical tags, including `d12c-a5e3a7b`, `d12c-99f2b`, PR #7 `p7-94301v2`, PR #6 `pr6-800ffc12`, Dispatch 8 `d8-002ac13` and `d8-d2e64bd`, and earlier tagged revisions remain available for direct revision checks at `https://<tag>---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
 
 ## Runtime environment (names only; no secret values other than public Firebase config)
 
@@ -276,4 +281,24 @@ gcloud run services update-traffic shiekh-location-company-directory \
   --project gen-lang-client-0801664258 \
   --region us-west1 \
   --to-revisions=shiekh-location-company-directory-dispatch11-e4e332c=100
+```
+
+## 2026-09-30 Post-merge PR #10 deployment
+
+1. Verified a clean local `main` at merged application commit `a5e3a7b4d685d3a37ce2888ad0294f2ed844e172`. PR #11 merged at `65d8b6ae0cc80a41b88d48e933e6df77248c1c07`, PR #9 at `445527b1e6d85deaa6e96d31fc72edef25e97913`, and PR #10 at `a5e3a7b4d685d3a37ce2888ad0294f2ed844e172`.
+2. Before deploy, the sole percentage-bearing revision was `shiekh-location-company-directory-dispatch12c-99f2b17` at 100%. The service was Ready, the branded domain was Ready/DomainRoutable, and the service account and both existing secret references were recorded. No secret values were read.
+3. Deployed the exact `main` source with `--revision-suffix=dispatch12c-a5e3a7b --tag=d12c-a5e3a7b --no-traffic`. Cloud Build `6b1b69a1-0b1f-4a2b-8761-39e180c35872` completed `SUCCESS` and created Ready revision `shiekh-location-company-directory-dispatch12c-a5e3a7b` at 0%, image `sha256:0204f13899b9db7e1b7cb79652eae8b91dbd10c728b7e83ccb47b2f64ffe318a`, tagged URL `https://d12c-a5e3a7b---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`.
+4. Candidate and previous revision runtime specs matched exactly after excluding the image. Configuration fingerprint: `60dff80c422640d0b012c083a9e060c6b9ce06f62906a6435599ec79af495740`. Service account remained `1063064400866-compute@developer.gserviceaccount.com`; secret bindings remained `SMTP_PASSWORD -> Shiekh_Location:latest` and `LOCATION_IMPORT_TOKEN_SECRET -> LOCATION_IMPORT_TOKEN_SECRET:latest`. No secret, IAM, OAuth, or service configuration changes were made.
+5. At zero traffic, the candidate root returned 200, unauthenticated `/api/auth/me` returned 401 `invalid_token`, and `/api/does-not-exist` returned 404 `api_route_not_found`. A fresh unauthenticated browser on the candidate remained at `/` and rendered the Sign in view and Google sign-in button; no sign-in was initiated and external browser hosts were blocked.
+6. Promoted with the documented `gcloud run services update-traffic` command to `shiekh-location-company-directory-dispatch12c-a5e3a7b=100`. The candidate is now the sole percentage-bearing 100% revision; other historical revisions/tags remain at 0% or tag-only.
+7. Final default and branded URLs both returned 200 at `/`, 401 `invalid_token` at unauthenticated `/api/auth/me`, and 404 `api_route_not_found` for an unknown API route. The service and revision Ready conditions are True; `shiekh-dir.ai.studio` remains Ready and DomainRoutable. A fresh unauthenticated browser on the branded hostname also rendered the Sign in view without initiating OAuth.
+8. No production data read/write, import, migration, repair, registry mutation, email send, secret change, IAM change, OAuth-client change, traffic split, or Dynamic-Qr action occurred. The only percentage traffic change was the normal replacement to the healthy revision. Manual authenticated workflow/PDF acceptance remains with the owner.
+
+**Rollback command for the 2026-09-30 deployment:**
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-dispatch12c-99f2b17=100
 ```

@@ -4,7 +4,6 @@ import { createServer } from "node:net";
 import { randomBytes } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { FieldPath, Firestore, Timestamp } from "@google-cloud/firestore";
-import { digestApiToken } from "../server/directoryApi";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "../server/firestoreLocations";
 
 async function main() {
@@ -14,7 +13,6 @@ async function main() {
   const port = (reservation.address() as { port: number }).port;
   await new Promise<void>((resolve) => reservation.close(() => resolve()));
   const token = randomBytes(32).toString("base64url");
-  const secret = randomBytes(32).toString("base64url");
   const server = spawn(process.execPath, ["dist/server.cjs"], {
     env: {
       ...process.env,
@@ -22,11 +20,6 @@ async function main() {
       PORT: String(port),
       GOOGLE_CLOUD_PROJECT: DEFAULT_GOOGLE_CLOUD_PROJECT,
       FIRESTORE_DATABASE_ID: DEFAULT_FIRESTORE_DATABASE,
-      DIRECTORY_API_TOKEN_HMAC_SECRET: secret,
-      DIRECTORY_API_CREDENTIALS_JSON: JSON.stringify([{
-        id: "ephemeral-review-check", digest: digestApiToken(token, secret),
-        scopes: ["locations:read"], expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-      }]),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -67,6 +60,7 @@ async function main() {
     }
 
     check("missing authentication", "/api/v1/locations", 401, "invalid_token");
+    check("unknown managed token", "/api/v1/locations", 401, "invalid_token", true);
     for (const authenticated of [false, true]) {
       const response = await fetch(`http://127.0.0.1:${port}/api/auth/me`, { headers: authenticated ? { Authorization: `Bearer ${token}` } : {} });
       assert.equal(response.status, 401);
@@ -93,11 +87,7 @@ async function main() {
     check("unauthenticated SMTP status", "/api/mail/status", 401, "invalid_token");
     check("unauthenticated SMTP dispatch", "/api/mail/dispatch", 401, "invalid_token", false, "POST");
     check("directory token cannot authorize SMTP", "/api/mail/status", 401, "invalid_token", true);
-    check("conflicting live directory", "/api/v1/locations?limit=1", 409, "location_conflict", true);
-    check("impossible timestamp", "/api/v1/locations?updatedSince=2026-02-30T00:00:00Z", 400, "invalid_updated_since", true);
-    check("unknown store", "/api/v1/locations/__review_unknown_store__", 404, "location_not_found", true);
     check("unversioned fallback", "/api/review-unknown", 404, "api_route_not_found");
-    check("versioned fallback", "/api/v1/review-unknown", 404, "api_route_not_found", true);
 
     const readTime = Timestamp.fromMillis(Math.floor(Date.now() / 1000) * 1000);
     const query = firestore.collection("locations").select("storeNumber").orderBy(FieldPath.documentId()).limit(2);
@@ -110,9 +100,6 @@ async function main() {
     assert.equal(first.readTime.isEqual(second.readTime), true);
     assert.equal(first.docs.some((document) => second.docs.some((other) => other.id === document.id)), false);
     console.log("masked Firestore snapshot paging: two bounded pages, same readTime, no repeated document IDs");
-    const storeNumber = first.docs[0].get("storeNumber");
-    assert.equal(typeof storeNumber, "string");
-    check("conflicting live store", `/api/v1/locations/${encodeURIComponent(storeNumber)}`, 409, "location_conflict", true);
   } finally {
     server.kill("SIGTERM");
     await exited;

@@ -1,6 +1,6 @@
 # Store Directory API v1
 
-The first API milestone is a read-only, server-authenticated view of active location records in the named Firestore database. It does not write or migrate Firestore data.
+The Directory API is a read-only, server-authenticated view of active location records in the named Firestore database. Reads never mutate location or personnel data; successful authentication may update redacted client/token last-used metadata at most once per 15 minutes.
 
 ## Endpoints
 
@@ -124,34 +124,22 @@ Unknown `/api/*` routes return JSON rather than the Vite single-page application
 
 Both `/api/mail/status` and `/api/mail/dispatch` require Firebase ID-token authentication in every environment, including when `NODE_ENV` is absent. They do not accept Directory API synchronization tokens. See Secure SMTP Mail below. Mail is functional for authorized users when server-owned configuration is complete; there is no production shutdown guard.
 
-## Authentication Configuration
+## Managed API Clients
 
-Authentication configuration belongs in the server runtime environment. Do not place tokens, digests, or the HMAC secret in frontend code or browser storage.
+System Administrators manage API clients in Admin > Directory API. Management requests use the current Firebase ID token and are reauthorized by the server on every request. Directory Data Stewards and other roles cannot list or change credentials. The only supported scope is `locations:read`.
 
-- `DIRECTORY_API_TOKEN_HMAC_SECRET`: high-entropy secret used to compute HMAC-SHA256 token digests.
-- `DIRECTORY_API_CREDENTIALS_JSON`: JSON array of credential metadata and lowercase hexadecimal digests.
+Creating or rotating a client generates 32 random bytes on the server. The plaintext bearer token is returned once, held only in ephemeral component state, and removed from the DOM when dismissed. It is never placed in bootstrap data, application context, browser storage, URLs, logs, audit records, or later list responses. Firestore stores only its SHA-256 digest as the server-only token document ID.
+
+Clients can be disabled and safely re-enabled. Revocation is terminal and invalidates every token version. Rotation creates a new token and, by default, retires previous active versions after exactly 24 hours. A System Administrator may instead retire every previous version immediately. Repeated rotations cannot extend an already-running overlap window.
+
+Client metadata and server-only token versions are stored in the named Firestore database in `api_clients` and `api_client_tokens`. No migration, composite index, pepper, or additional server secret is required. Unknown, expired, retired, revoked, and disabled credentials receive the same `401 invalid_token` response. Firestore credential-provider failures return sanitized `503 api_unavailable` without reading location data.
+
+Lifecycle changes append redacted records to the existing `audit_logs` collection and inherit its retention behavior. Successful authentication updates client and token `lastUsedAt` metadata at most once per 15 minutes. Runtime authentication and access logs contain request ID, method, route, outcome/status, and server-generated client/token-version IDs only. They exclude bearer tokens, hashes, request bodies, IP addresses, location/personnel data, and responses.
+
+Runtime rate settings remain optional:
+
 - `DIRECTORY_API_RATE_LIMIT`: requests allowed per window; defaults to 100.
 - `DIRECTORY_API_RATE_WINDOW_MS`: rate-limit window; defaults to 60000 ms.
-
-Credential records have this shape:
-
-```json
-[
-  {
-    "id": "store-manager-sync",
-    "digest": "64-lowercase-hex-characters",
-    "scopes": ["locations:read"],
-    "expiresAt": "2027-01-01T00:00:00Z",
-    "revoked": false
-  }
-]
-```
-
-Generate at least 32 random bytes for each token and for the HMAC secret. Compute the stored digest as `HMAC-SHA256(secret, plaintextToken)`. Deliver the plaintext token once through an approved secret channel, then store the token and HMAC secret in separate Secret Manager secrets. Rotation is performed by adding a new digest, updating the client secret, and revoking the old credential.
-
-The API fails closed with `503 api_not_configured` if either the HMAC secret or credential list is absent. Revoked, expired, malformed, and unknown tokens all receive the same `401 invalid_token` response.
-
-Duplicate credential IDs and duplicate token digests are rejected at startup, including active/revoked duplicates in either order. Non-boolean revocation flags are rejected as well. Credential values are not included in configuration errors.
 
 ## Application Authentication
 
@@ -279,7 +267,7 @@ Retirements/deletions after the snapshot are deliberately deferred to the next f
 
 ## Deployment Follow-up
 
-Before production deployment, provision credentials in Secret Manager, create a least-privilege runtime service account with read-only named-database access, configure a shared rate-limit store if multiple instances are used, choose the production request limit, and route logs using request IDs without authorization headers or response bodies. Cloud Run's single proxy hop is trusted only when its `K_SERVICE` marker is present. Resolve location conflicts first.
+Before production deployment, verify the existing runtime identity can read and write the named Firestore database, configure a shared rate-limit store if coordinated multi-instance limits are required, choose the production request limit, and route structured logs without authorization headers or response bodies. No new secret or IAM change is required by managed API clients. Cloud Run's single proxy hop is trusted only when its `K_SERVICE` marker is present. Resolve location conflicts first. Create a production client only after the reviewed revision is deployed and authenticated SysAdmin acceptance is approved.
 
 ## Canonical Generation Decision
 

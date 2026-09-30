@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash, createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
@@ -8,17 +9,15 @@ import {
   assertUniqueStoreNumbers,
   apiNotFoundHandler,
   createDirectoryApiRouter,
-  digestApiToken,
-  type ApiCredential,
   type DirectoryApiOptions,
   type LocationDocument,
   type LocationRepository,
   type LocationPageOptions,
 } from "../server/directoryApi";
+import type { ApiClientAuthenticator, ManagedApiCredential } from "../server/apiClientApi";
 import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
 
 const NOW = new Date("2026-09-08T12:00:00.000Z");
-const TOKEN_SECRET = "test-only-hmac-secret-with-high-entropy";
 const READ_TOKEN = "test_read_4bf91d479b73601ac97c5a46";
 const NO_SCOPE_TOKEN = "test_no_scope_b68967b47438475fb2df7d0e";
 const REVOKED_TOKEN = "test_revoked_4650082cf18547c9a33c1f05";
@@ -91,20 +90,20 @@ const repository: LocationRepository = {
   async readHierarchy() { return structuredClone(hierarchy); },
 };
 
-const credentials: ApiCredential[] = [
-  credential("reader", READ_TOKEN, ["locations:read"], "2027-01-01T00:00:00Z"),
-  credential("no-scope", NO_SCOPE_TOKEN, [], "2027-01-01T00:00:00Z"),
-  { ...credential("revoked", REVOKED_TOKEN, ["locations:read"], "2027-01-01T00:00:00Z"), revoked: true },
-  credential("expired", EXPIRED_TOKEN, ["locations:read"], "2026-01-01T00:00:00Z"),
-];
+const authenticator: ApiClientAuthenticator = {
+  async authenticate(token) {
+    if (token === READ_TOKEN) return managedCredential("reader");
+    if (token === NO_SCOPE_TOKEN) return { ...managedCredential("no-scope"), scopes: [] } as unknown as ManagedApiCredential;
+    return null;
+  },
+};
 
 let server: Server;
 let baseUrl: string;
 
 before(async () => {
   ({ server, baseUrl } = await startTestServer({
-    credentials,
-    tokenHmacSecret: TOKEN_SECRET,
+    authenticator,
     locations: repository,
     now: () => NOW,
     rateLimit: false,
@@ -182,7 +181,7 @@ describe("Directory API location responses", () => {
     const changed = { ...records[0], updatedAt: new Date(NOW.getTime() + 1000), data: { ...records[0].data, name: "Updated after page one" } };
     const observedSnapshots: string[] = [];
     const concurrent = await startTestServer({
-      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => clock,
+      authenticator, rateLimit: false, now: () => clock,
       locations: {
         ...repository,
         async readPage(options) {
@@ -213,7 +212,7 @@ describe("Directory API location responses", () => {
   it("fails closed on duplicate identities even outside the page or delta", async () => {
     const duplicates = [...records, { ...records[0], id: "another-generation", data: { ...records[0].data, recordStatus: "Retired" } }];
     const conflictServer = await startTestServer({
-      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false,
+      authenticator, rateLimit: false,
       locations: {
         async readPage(options) { return fixturePage(duplicates, options); },
         async findActiveByStoreNumber(storeNumber) {
@@ -273,7 +272,7 @@ describe("Directory API location responses", () => {
 
   it("distinguishes malformed saved applicability, empty strings, and absent values without broadening valid enum values", async () => {
     const scoped = await startTestServer({
-      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => NOW,
+      authenticator, rateLimit: false, now: () => NOW,
       locations: {
         ...repository,
         async readPage(options) {
@@ -355,7 +354,7 @@ describe("Directory API location responses", () => {
     const snapshotHierarchy = structuredClone(hierarchy);
     let testNow = NOW;
     const changing = await startTestServer({
-      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => testNow,
+      authenticator, rateLimit: false, now: () => testNow,
       locations: {
         ...repository,
         async readHierarchy(snapshotAt) {
@@ -408,7 +407,7 @@ describe("Directory API location responses", () => {
       { id: "loc-mismatch", updatedAt: NOW, data: { storeNumber: "104", recordStatus: "Active", regionId: "reg-west", districtId: "03" } },
     ];
     const states = await startTestServer({
-      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => NOW,
+      authenticator, rateLimit: false, now: () => NOW,
       locations: {
         async readPage(options) { return fixturePage(cases, options); },
         async findActiveByStoreNumber(storeNumber) { return cases.find(record => record.data.storeNumber === storeNumber) || null; },
@@ -463,13 +462,28 @@ describe("Directory API route handling", () => {
     const mismatch = await apiFetch(baseUrl, `/api/v1/locations?cursor=${cursor}&updatedSince=2026-09-01T00:00:00Z`, READ_TOKEN);
     assert.equal(mismatch.status, 400);
     assert.equal((await mismatch.json()).error.code, "cursor_filter_mismatch");
+
+    const payload = JSON.parse(Buffer.from(cursor.split(".")[0], "base64url").toString("utf8"));
+    payload.id = "location-99";
+    const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+    const callerKnownKey = createHash("sha256").update("directory-api-cursor\0").update(READ_TOKEN).digest("hex");
+    const forged = `${encoded}.${createHmac("sha256", callerKnownKey).update(`directory-cursor-v2:${encoded}`).digest("base64url")}`;
+    const forgedResponse = await apiFetch(baseUrl, `/api/v1/locations?cursor=${forged}`, READ_TOKEN);
+    assert.equal(forgedResponse.status, 400);
+    assert.equal((await forgedResponse.json()).error.code, "invalid_cursor");
+
+    const loggedTokenVersionKey = createHash("sha256").update("directory-api-cursor\0").update("reader-token").digest("hex");
+    const loggedVersionForgery = `${encoded}.${createHmac("sha256", loggedTokenVersionKey).update(`directory-cursor-v2:${encoded}`).digest("base64url")}`;
+    const loggedVersionResponse = await apiFetch(baseUrl, `/api/v1/locations?cursor=${loggedVersionForgery}`, READ_TOKEN);
+    assert.equal(loggedVersionResponse.status, 400);
+    assert.equal((await loggedVersionResponse.json()).error.code, "invalid_cursor");
   });
 
   it("rejects expired snapshots without reading repository data", async () => {
     let clock = NOW;
     let reads = 0;
     const expiring = await startTestServer({
-      credentials, tokenHmacSecret: TOKEN_SECRET, rateLimit: false, now: () => clock,
+      authenticator, rateLimit: false, now: () => clock,
       locations: { ...repository, async readPage(options) { reads++; return fixturePage(records, options); } },
     });
     try {
@@ -486,8 +500,8 @@ describe("Directory API route handling", () => {
     for (const configured of [false, true]) {
       let repositoryReads = 0;
       const failing = await startTestServer({
-        credentials: configured ? credentials : [],
-        tokenHmacSecret: configured ? TOKEN_SECRET : "", rateLimit: false,
+        authenticator: configured ? authenticator : { async authenticate() { throw new Error("private-provider-detail"); } },
+        rateLimit: false,
         locations: {
           ...repository,
           async readPage() { repositoryReads++; throw new Error("private-repository-detail"); },
@@ -497,7 +511,7 @@ describe("Directory API route handling", () => {
         const response = await apiFetch(failing.baseUrl, "/api/v1/locations", READ_TOKEN);
         const body = await response.json();
         assert.equal(response.status, configured ? 500 : 503);
-        assert.equal(body.error.code, configured ? "internal_error" : "api_not_configured");
+        assert.equal(body.error.code, configured ? "internal_error" : "api_unavailable");
         assert.equal(body.error.requestId, response.headers.get("x-request-id"));
         assert.equal(JSON.stringify(body).includes("private-repository-detail"), false);
         assert.equal(repositoryReads, configured ? 1 : 0);
@@ -520,8 +534,7 @@ describe("Directory API route handling", () => {
 
   it("rate limits repeated requests with a structured error", async () => {
     const limited = await startTestServer({
-      credentials,
-      tokenHmacSecret: TOKEN_SECRET,
+      authenticator,
       locations: repository,
       now: () => NOW,
       rateLimit: { limit: 1, windowMs: 60_000 },
@@ -538,15 +551,38 @@ describe("Directory API route handling", () => {
       await closeServer(limited.server);
     }
   });
+
+  it("records access logs for authentication failures, provider outages, and rate limits", async (context) => {
+    const logs: string[] = [];
+    context.mock.method(console, "info", (...values: unknown[]) => { logs.push(values.map(String).join(" ")); });
+    const unavailable = await startTestServer({
+      authenticator: { async authenticate() { throw new Error("private provider failure"); } },
+      locations: repository,
+      rateLimit: false,
+    });
+    const limited = await startTestServer({
+      authenticator,
+      locations: repository,
+      now: () => NOW,
+      rateLimit: { limit: 1, windowMs: 60_000 },
+    });
+    try {
+      assert.equal((await fetch(`${unavailable.baseUrl}/api/v1/locations`)).status, 401);
+      assert.equal((await apiFetch(unavailable.baseUrl, "/api/v1/locations", READ_TOKEN)).status, 503);
+      assert.equal((await apiFetch(limited.baseUrl, "/api/v1/locations", READ_TOKEN)).status, 200);
+      assert.equal((await apiFetch(limited.baseUrl, "/api/v1/locations", READ_TOKEN)).status, 429);
+      for (const status of [401, 503, 429]) {
+        assert.ok(logs.some(log => log.includes("[Directory API Access]") && log.includes(`\"status\":${status}`)), `missing ${status} access log`);
+      }
+    } finally {
+      await closeServer(unavailable.server);
+      await closeServer(limited.server);
+    }
+  });
 });
 
-function credential(id: string, token: string, scopes: string[], expiresAt: string): ApiCredential {
-  return {
-    id,
-    digest: digestApiToken(token, TOKEN_SECRET),
-    scopes,
-    expiresAt,
-  };
+function managedCredential(id: string): ManagedApiCredential {
+  return { clientId: id, tokenVersionId: `${id}-token`, cursorSigningKey: `${id}-cursor-signing-key`, scopes: ["locations:read"] };
 }
 
 function fixturePage(source: LocationDocument[], { limit, afterId }: LocationPageOptions) {

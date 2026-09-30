@@ -5,7 +5,6 @@ import {
   apiErrorHandler,
   apiNotFoundHandler,
   createDirectoryApiRouter,
-  loadApiCredentials,
 } from "./server/directoryApi";
 import { createFirestoreLocationRepository } from "./server/firestoreLocations";
 import { createMailRouter, createMailSender, loadMailConfiguration } from "./server/mailApi";
@@ -16,6 +15,8 @@ import { createDirectoryDataRouter } from "./server/directoryDataApi";
 import { createFirestoreLocationExportStore, createLocationExportRouter } from "./server/locationExport";
 import { createFirestoreLocationImportPreviewStore, createLocationImportPreviewRouter } from "./server/locationImportPreview";
 import { loadLocationImportTokenSecret } from "./server/locationImportConfirmation";
+import { createApiClientRouter } from "./server/apiClientApi";
+import { createFirestoreApiClientStore } from "./server/firestoreApiClients";
 
 // Attempt to load .env file if present in Node 20.6+
 try {
@@ -36,6 +37,7 @@ async function startServer() {
   const directory = createFirestoreDirectoryStore();
   const locationExports = createFirestoreLocationExportStore();
   const locationImportPreviews = createFirestoreLocationImportPreviewStore();
+  const apiClients = createFirestoreApiClientStore();
   app.use("/api/auth", createAuthRouter(authenticate, () => directory.read()));
   app.use("/api/exports", createLocationExportRouter(authenticate, locationExports));
   // JSON escaping can expand a valid 2 MB CSV; the route enforces the exact decoded CSV byte limit.
@@ -55,10 +57,10 @@ async function startServer() {
   }));
   app.use(express.json());
   app.use("/api/directory", createDirectoryDataRouter(authenticate, directory));
+  app.use("/api/api-clients", createApiClientRouter(authenticate, apiClients));
 
   app.use("/api/v1", createDirectoryApiRouter({
-    credentials: loadApiCredentials(),
-    tokenHmacSecret: process.env.DIRECTORY_API_TOKEN_HMAC_SECRET || "",
+    authenticator: apiClients,
     locations: createFirestoreLocationRepository(),
   }));
 

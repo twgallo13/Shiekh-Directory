@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { test } from 'node:test';
 import express from 'express';
-import { apiErrorHandler, createDirectoryApiRouter, digestApiToken } from '../server/directoryApi';
+import { apiErrorHandler, createDirectoryApiRouter } from '../server/directoryApi';
 import type { CustomFieldDefinition } from '../src/lib/customFields';
 
 test('both API routes publish approved metadata and enforce schema reconciliation on visibility changes', async () => {
@@ -10,7 +10,7 @@ test('both API routes publish approved metadata and enforce schema reconciliatio
   const now = new Date('2026-09-08T12:00:00Z');
   const record = { id: 'loc-07', updatedAt: new Date('2026-09-01T00:00:00Z'), data: { storeNumber: '07', recordStatus: 'Active', googleReviewUrl: 'https://example.test/review', storePageUrl: 'https://example.test/store', customMetadata: { yelpUrl: 'https://example.test/yelp', secret: 'private' } } };
   const app = express();
-  app.use('/api/v1', createDirectoryApiRouter({ tokenHmacSecret: 'test-secret', credentials: [{ id: 'test', digest: digestApiToken('test-token', 'test-secret'), scopes: ['locations:read'] }], now: () => now, rateLimit: false,
+  app.use('/api/v1', createDirectoryApiRouter({ authenticator: { async authenticate(token) { return token === 'test-token' ? { clientId: 'test', tokenVersionId: 'test-token-version', cursorSigningKey: 'test-cursor-signing-key', scopes: ['locations:read'] } : null; } }, now: () => now, rateLimit: false,
     locations: { readCustomFieldDefinitions: async () => definitions, readPage: async () => ({ records: [record], nextId: 'loc-07' }), findActiveByStoreNumber: async () => record } }));
   app.use(apiErrorHandler);
   const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');

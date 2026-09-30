@@ -1880,7 +1880,7 @@ export const AdminIntegrationsView: React.FC = () => {
                   >
                     <option value="">Use existing applicability</option>
                     <option value="Applicable">Retail hierarchy applies</option>
-                    {!quickAddRetailType && <option value="Not Applicable">No retail hierarchy</option>}
+                    {!quickAddRetailType && <option value="Not Applicable" disabled={Boolean(newStoreForm.regionId || newStoreForm.districtId)}>No retail hierarchy</option>}
                     <option value="Unknown">Needs review</option>
                   </select>
                   {!quickAddRetailType && (newStoreForm.regionId || newStoreForm.districtId) && (

@@ -51,6 +51,7 @@ export function resolveHierarchyApplicability(location: HierarchyResolutionInput
   const saved = location.hierarchyApplicability;
   if (saved === 'Applicable' || saved === 'Not Applicable' || saved === 'Unknown') {
     const issues: string[] = [];
+    if (saved === 'Unknown') issues.push('Hierarchy applicability is Unknown.');
     if (retailTypes.has(String(location.type || '')) && saved === 'Not Applicable') issues.push('Retail location is marked Not Applicable.');
     if (saved === 'Not Applicable' && (referenceId(location.regionId) || referenceId(location.districtId))) issues.push('Not Applicable location retains canonical hierarchy references.');
     return { value: saved, issues };
@@ -164,6 +165,7 @@ function resolveHierarchyGroupKeyForClass(hierarchy: ResolvedLocationHierarchy |
   // Checked before the District-ID branch: an unclassified type must never be certified via ordinary
   // District grouping just because a District happens to be assigned.
   if (typeClass === 'unclassified') return { kind: 'needs-review' };
+  if (hierarchy?.hierarchyApplicability === 'Unknown') return { kind: 'needs-review' };
   if (hierarchy?.districtId) return { kind: 'district', districtId: hierarchy.districtId };
   const applicability = hierarchy?.hierarchyApplicability;
   const hasIssues = (hierarchy?.applicabilityIssues.length ?? 0) > 0 || (hierarchy?.hierarchyIssues.length ?? 0) > 0;

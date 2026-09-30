@@ -609,6 +609,15 @@ test('Location Edit and Fleet Quick Add enforce canonical retail hierarchy trans
   await expect(quickDistrict.locator('option[value="01"]')).toHaveCount(0);
   await expect(quickDistrict.locator('option[value="02"]')).toHaveCount(1);
   await expect(quickAdd.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select').locator('option[value="Not Applicable"]')).toHaveCount(0);
+  await quickRegion.selectOption('');
+  await quickType.selectOption('Warehouse / Distribution Center');
+  const quickApplicability = quickAdd.getByText('Retail hierarchy', { exact: true }).locator('..').locator('select');
+  const notApplicableOption = quickApplicability.locator('option[value="Not Applicable"]');
+  await expect(notApplicableOption).toBeEnabled();
+  await quickApplicability.selectOption('Not Applicable');
+  await quickRegion.selectOption('reg-west');
+  await expect(quickApplicability).toHaveValue('Applicable');
+  await expect(notApplicableOption).toBeDisabled();
   await quickAdd.getByRole('button', { name: 'Cancel' }).click();
   expect(fixture.commits).toHaveLength(0);
 });

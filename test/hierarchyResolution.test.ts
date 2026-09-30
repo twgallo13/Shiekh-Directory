@@ -57,7 +57,7 @@ describe('hierarchy display resolution', () => {
     assert.deepEqual(resolveHierarchyApplicability({ type: 'Enclosed Mall' }), { value: 'Applicable', issues: [] });
     assert.deepEqual(resolveHierarchyApplicability({ type: 'Warehouse / Distribution Center' }), { value: 'Not Applicable', issues: [] });
     assert.deepEqual(resolveHierarchyApplicability({ type: 'Warehouse / Distribution Center', districtId: '01' }), { value: 'Applicable', issues: [] });
-    assert.deepEqual(resolveHierarchyApplicability({ type: 'Enclosed Mall', hierarchyApplicability: 'Unknown' }), { value: 'Unknown', issues: [] });
+    assert.deepEqual(resolveHierarchyApplicability({ type: 'Enclosed Mall', hierarchyApplicability: 'Unknown' }), { value: 'Unknown', issues: ['Hierarchy applicability is Unknown.'] });
     assert.match(resolveHierarchyApplicability({ type: 'Enclosed Mall', hierarchyApplicability: 'Not Applicable' }).issues.join(' '), /Retail/);
     assert.match(resolveHierarchyApplicability({ hierarchyApplicability: 'invalid' }).issues.join(' '), /Unsupported/);
   });
@@ -88,6 +88,13 @@ describe('hierarchy display resolution', () => {
     assert.deepEqual(mallKey, { kind: 'needs-review' });
     assert.equal(isRetailHierarchyType('Enclosed Mall'), true);
     assert.match(hierarchyDistrictLabel(mallUnknown, 'Enclosed Mall'), /^Needs Review - Hierarchy applicability is Unknown\./);
+
+    const assignedUnknown = resolveLocationHierarchy(
+      { type: 'Enclosed Mall', regionId: 'reg-west', districtId: '01', hierarchyApplicability: 'Unknown' },
+      { regions: activeRegistry.regions, districts: [activeDistrict] },
+    );
+    assert.deepEqual(resolveHierarchyGroupKey(assignedUnknown, 'Enclosed Mall'), { kind: 'needs-review' });
+    assert.match(hierarchyDistrictLabel(assignedUnknown, 'Enclosed Mall'), /District One \(01\).*Hierarchy applicability is Unknown\./);
 
     // Warehouse / Distribution Center explicit Not Applicable with no references: healthy center, "No retail district".
     const dcCenter = resolveLocationHierarchy({ type: 'Warehouse / Distribution Center', hierarchyApplicability: 'Not Applicable' }, activeRegistry);

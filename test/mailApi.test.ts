@@ -50,6 +50,7 @@ test("mail remains functional for an authorized identity with server-owned trans
     assert.equal(app.sent[0].to, configuration.recipients[0]);
     assert.equal(app.sent[0].subject, "Shiekh Directory SMTP Relay Verification");
     assert.equal(app.sent[0].disableFileAccess, true);
+    assert.equal(app.sent[0].disableUrlAccess, true);
   } finally { await app.close(); }
 });
 
@@ -106,6 +107,7 @@ test("restricts exact recipients and server-defined templates", async () => {
     ["approved@example.test.evil.test", DIAGNOSTIC_TEMPLATE, 403],
     ["approved@example.test,other@example.test", DIAGNOSTIC_TEMPLATE, 400],
     ["Display <approved@example.test>", DIAGNOSTIC_TEMPLATE, 400],
+    ['"quoted"@example.test', DIAGNOSTIC_TEMPLATE, 400],
     ["approved@example.test\r\nBcc:outside@example.test", DIAGNOSTIC_TEMPLATE, 400],
     ["approved@example.test", "browser-edited-template", 400],
   ] as const) {
@@ -115,6 +117,11 @@ test("restricts exact recipients and server-defined templates", async () => {
       assert.equal(app.sent.length, 0);
     } finally { await app.close(); }
   }
+  const nestedRecipients = await harness();
+  try {
+    assert.equal((await nestedRecipients.request("dispatch", { recipient: [["approved@example.test"]], templateId: DIAGNOSTIC_TEMPLATE })).status, 400);
+    assert.equal(nestedRecipients.sent.length, 0);
+  } finally { await nestedRecipients.close(); }
 });
 
 test("missing auth or mail configuration and auth outages fail safely", async () => {
@@ -183,6 +190,8 @@ test("configuration requires server-owned sender, exact allowlist and secure SMT
     assert.equal(transport.requireTLS, true);
     assert.equal(transport.tls.rejectUnauthorized, true);
     assert.equal(transport.tls.minVersion, "TLSv1.2");
+    assert.equal(transport.disableFileAccess, true);
+    assert.equal(transport.disableUrlAccess, true);
   }
 });
 

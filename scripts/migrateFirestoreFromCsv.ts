@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Firestore } from "@google-cloud/firestore";
-import { parse } from "csv-parse/sync";
+import { parseMigrationCsv, type CsvRow } from "./migrateFirestoreCsv";
 import {
   INITIAL_CORPORATE_HOLIDAYS,
   INITIAL_EMAIL_TEMPLATES,
@@ -19,29 +19,8 @@ const DATABASE_ID = "ai-studio-shiekhlocationco-00e1a479-af25-4ab6-9565-5c8b804c
 const CSV_PATH = new URL("../reference-data/store-directory-2025-09-26.csv", import.meta.url);
 const APPLY = process.argv.includes("--apply");
 
-type CsvRow = {
-  "District Manager": string;
-  "Store #": string;
-  "Store Phone #": string;
-  "Location Name": string;
-  "Address": string;
-  City: string;
-  State: string;
-  "Zip Code": string;
-  Manager: string;
-  "Manager #": string;
-  "Assistant Manager": string;
-  "AM 2/3rd Key": string;
-  "Store Email": string;
-};
-
 const csv = await readFile(CSV_PATH, "utf8");
-const rows = parse(csv, {
-  bom: true,
-  columns: (headers: string[]) => headers.map(header => header.trim()),
-  skip_empty_lines: true,
-  trim: true,
-}) as CsvRow[];
+const rows = parseMigrationCsv(csv);
 
 const storeNumber = (value: string) => String(Number(value)).padStart(2, "0");
 const normalizedName = (value: string) => value.trim().toLocaleLowerCase();

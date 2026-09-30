@@ -87,4 +87,15 @@ Status: **Ready for final owner review; PR #10 remains open and unmerged.** No m
 3. Merge the resulting PR #9 base into PR #10 normally, retarget PR #10 to `main` only after PR #9 is merged, and verify the PR #10 diff contains only Dispatch 12 work.
 4. Complete owner review and merge PR #10. Only after both PRs are merged should Phase A begin from a clean updated `main` branch.
 
-The PR #10 branch is intended for final owner review, not merge readiness until PR #11 and PR #9 have followed the dependency order above. No new deployment is requested or authorized by this handoff.
+## Current owner-approved merge and deployment handoff — 2026-09-30
+
+This section supersedes earlier status, merge-order, and deployment-authorization statements in this report.
+
+- PR #11 is merged to `main` at merge commit `65d8b6ae0cc80a41b88d48e933e6df77248c1c07`; its source head remains `c9c16a939c7947b5b7c19b45a36b32be6355ecdd`.
+- PR #9 is merged to `main` at merge commit `445527b1e6d85deaa6e96d31fc72edef25e97913`; its integrated head is `da1ea6bbda383c2d98bbba9328ffec75c372bb52`.
+- PR #10 normally integrated that updated `main` in merge commit `290fc9007b69e5b21bec29d28812e9a7c9baa00b`, is retargeted to `main`, and includes scoped review corrections at `6e8e108ea90c8bdbb78b1c4cab37f17253c64f6a`.
+- The exact PR #10 tree delta against `main` contains Dispatch 12 hierarchy work only; PR #9 CSV changes and PR #11 dependency/parser changes are not duplicated.
+- Review corrections: explicit `Unknown` applicability now has a row warning and routes assigned Locations to `Needs Review`; Quick Add disables `Not Applicable` while canonical Region/District references are selected.
+- Validation on the integrated source: full API suite **280 passed, 0 failed**; lint/typecheck and production build passed (existing Vite chunk-size advisory); hierarchy unit/grouping tests **18 passed**; targeted Quick Add/PrintSheet browser checks **2 passed**; `git diff --check` passed. All browser/API calls used local synthetic fixtures or mocks.
+- PR #10 review findings are addressed and the two threads resolved. Final remote review/check status must be refreshed on the exact head before merge.
+- Deployment is **NOT STARTED**. Owner authorization is conditional on all three PRs merging and clean, green `main`. Before deployment, reconcile the runbook against a read-only live service description, preserve its actual 100% serving revision for rollback, and compare service identity/configuration. Do not alter secrets, IAM, OAuth, traffic tags/splits, production data, migrations/imports/repairs, or Dynamic-Qr.

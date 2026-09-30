@@ -217,7 +217,14 @@ export const PrintSheetView: React.FC = () => {
                   {stores.map((loc, idx) => {
                     const hasNotice = loc.operationalStatus !== 'Open — Normal Operations' || Boolean(loc.activeNotice);
                     const hierarchy = hierarchyByLocationId.get(loc.id);
-                    const hierarchyWarnings = [...(hierarchy?.hierarchyIssues || []), ...(hierarchy?.applicabilityIssues || [])];
+                    const unclassifiedTypeWarning = classifyHierarchyLocationType(loc.type) === 'unclassified'
+                      ? `Location type is ${loc.type ? `'${loc.type}'` : 'missing'}, not a recognized business type.`
+                      : null;
+                    const hierarchyWarnings = [...new Set([
+                      ...(hierarchy?.hierarchyIssues || []),
+                      ...(hierarchy?.applicabilityIssues || []),
+                      ...(unclassifiedTypeWarning ? [unclassifiedTypeWarning] : []),
+                    ])];
                     return (
                       <tr 
                         key={loc.id} 

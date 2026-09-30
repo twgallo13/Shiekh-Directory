@@ -45,6 +45,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { PageHeader } from '../common/PageHeader';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { DEFAULT_WEEKLY_HOURS } from '../../lib/defaultHours';
+import { LOCATION_TYPES } from '../../lib/locationImportSchema';
 import { applyQuickAddDistrictSelection, applyQuickAddRegionSelection, canSelectNotApplicableHierarchy } from '../../lib/hierarchyResolution';
 import { normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { SmtpCommunicationsPanel } from './SmtpCommunicationsPanel';
@@ -1829,10 +1830,7 @@ export const AdminIntegrationsView: React.FC = () => {
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, type: e.target.value as any })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
                   >
-                    <option value="Enclosed Regional Mall">Enclosed Regional Mall</option>
-                    <option value="Strip Center / Shopping Center">Strip Center / Shopping Center</option>
-                    <option value="Urban Streetfront">Urban Streetfront</option>
-                    <option value="Outlet Center">Outlet Center</option>
+                    {LOCATION_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </div>
                 <div>

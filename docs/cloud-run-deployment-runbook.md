@@ -35,7 +35,17 @@ Historical tags, including `d12c-a5e3a7b`, `d12c-99f2b`, PR #7 `p7-94301v2`, PR 
 - `SMTP_PASSWORD` — sourced from Secret Manager secret `Shiekh_Location`, version `latest` (value not read)
 - `LOCATION_IMPORT_TOKEN_SECRET` — required before deploying Dispatch 9; server-only random value of at least 32 bytes, securely provisioned with the same value on every service instance. Never log or commit the value. Prefer a dedicated Secret Manager binding rather than a plaintext environment value.
 
+Directory API clients are managed in the named Firestore database. They do not require `DIRECTORY_API_CREDENTIALS_JSON`, `DIRECTORY_API_TOKEN_HMAC_SECRET`, a new Secret Manager binding, a migration, a composite index, or an IAM change. Optional `DIRECTORY_API_RATE_LIMIT` and `DIRECTORY_API_RATE_WINDOW_MS` values override the in-process defaults.
+
 Rotating `LOCATION_IMPORT_TOKEN_SECRET` invalidates every outstanding signed confirmation token, including the browser's ability to replay an already-committed operation with its old token. Allow the 10-minute confirmation window to drain before planned rotation when practical. Durable import receipts and correlated audits remain in Firestore for operator investigation, but the user must create a new preview for any uncommitted operation after rotation.
+
+## Managed Directory API deployment and rollback
+
+Deploy an exact reviewed commit as a tagged no-traffic revision using the recovered source-deploy pattern. Before promotion, verify `/`, unauthenticated `/api/auth/me`, unknown `/api/*`, and unauthenticated `/api/v1/locations` on the tagged URL. The last check must return `401 invalid_token`, not the former `503 api_not_configured`; do not create a credential merely for a deployment probe.
+
+After explicit traffic promotion, an approved System Administrator may create the first client in Admin > Directory API and deliver the one-time token directly into the consuming server's secret store. Do not place it in a browser application, command history, ticket, deployment log, or this runbook. Verify one authenticated location request, lifecycle audit presence, and last-used metadata without recording the token.
+
+Rollback is an explicit traffic restoration to the previously recorded 100% revision. New `api_clients`, `api_client_tokens`, and redacted lifecycle audit documents are inert under the previous application revision and require no schema rollback. If any token was distributed, revoke that client before application rollback when operationally possible. No Firestore deletion is required; retain records under the existing audit/data-retention behavior.
 
 ## Deployment command (recovered pattern)
 

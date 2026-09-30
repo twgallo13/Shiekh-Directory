@@ -5,16 +5,9 @@ import { rateLimit } from "express-rate-limit";
 import { publicCustomMetadata, sortedCustomFields, type CustomFieldDefinition } from "../src/lib/customFields";
 import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
 import { canonicalHierarchyState, resolveLocationHierarchy } from "../src/lib/hierarchyResolution";
+import type { ApiClientAuthenticator, ManagedApiCredential } from "./apiClientApi";
 
-export const LOCATION_READ_SCOPE = "locations:read";
-
-export interface ApiCredential {
-  id: string;
-  digest: string;
-  scopes: string[];
-  expiresAt?: string;
-  revoked?: boolean;
-}
+export const LOCATION_READ_SCOPE = "locations:read" as const;
 
 export interface LocationDocument {
   id: string;
@@ -54,8 +47,7 @@ export function assertUniqueStoreNumbers(records: { data: Record<string, unknown
 }
 
 export interface DirectoryApiOptions {
-  credentials: ApiCredential[];
-  tokenHmacSecret: string;
+  authenticator: ApiClientAuthenticator;
   locations: LocationRepository;
   now?: () => Date;
   rateLimit?: false | {
@@ -77,63 +69,6 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const SNAPSHOT_TTL_MS = 15 * 60_000;
-
-export function digestApiToken(token: string, secret: string): string {
-  return createHmac("sha256", secret).update(token, "utf8").digest("hex");
-}
-
-export function loadApiCredentials(value = process.env.DIRECTORY_API_CREDENTIALS_JSON): ApiCredential[] {
-  if (!value) return [];
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new Error("DIRECTORY_API_CREDENTIALS_JSON must be valid JSON.");
-  }
-
-  if (!Array.isArray(parsed)) {
-    throw new Error("DIRECTORY_API_CREDENTIALS_JSON must contain an array.");
-  }
-
-  const ids = new Set<string>();
-  const digests = new Set<string>();
-  return parsed.map((credential, index) => {
-    if (!credential || typeof credential !== "object") {
-      throw new Error(`Credential at index ${index} must be an object.`);
-    }
-
-    const candidate = credential as Record<string, unknown>;
-    if (
-      typeof candidate.id !== "string" || !candidate.id.trim() ||
-      typeof candidate.digest !== "string" ||
-      !/^[a-f0-9]{64}$/.test(candidate.digest) ||
-      !Array.isArray(candidate.scopes) ||
-      !candidate.scopes.every((scope) => typeof scope === "string")
-    ) {
-      throw new Error(`Credential at index ${index} is invalid.`);
-    }
-
-    if (candidate.expiresAt !== undefined && parseIsoTimestamp(candidate.expiresAt) === null) {
-      throw new Error(`Credential at index ${index} has an invalid expiresAt timestamp.`);
-    }
-    if (candidate.revoked !== undefined && typeof candidate.revoked !== "boolean") {
-      throw new Error(`Credential at index ${index} has an invalid revoked flag.`);
-    }
-    if (ids.has(candidate.id)) throw new Error("Duplicate credential IDs are not allowed.");
-    if (digests.has(candidate.digest)) throw new Error("Duplicate token digests are not allowed.");
-    ids.add(candidate.id);
-    digests.add(candidate.digest);
-
-    return {
-      id: candidate.id,
-      digest: candidate.digest,
-      scopes: candidate.scopes,
-      expiresAt: candidate.expiresAt as string | undefined,
-      revoked: candidate.revoked === true,
-    };
-  });
-}
 
 export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
   const router = Router();
@@ -158,7 +93,8 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
     }));
   }
 
-  router.use(createAuthenticationMiddleware(options.credentials, options.tokenHmacSecret, now));
+  router.use(createAuthenticationMiddleware(options.authenticator));
+  router.use(accessLogMiddleware);
   router.use(requireScope(LOCATION_READ_SCOPE));
   router.use(async (_request, response, next) => {
     const definitions = sortedCustomFields(await options.locations.readCustomFieldDefinitions?.() || []);
@@ -185,7 +121,8 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
     }
 
     const canonicalUpdatedSince = updatedSince?.toISOString() ?? null;
-    const cursor = parseCursor(request.query.cursor, options.tokenHmacSecret);
+    const cursorKey = response.locals.cursorKey as string;
+    const cursor = parseCursor(request.query.cursor, cursorKey);
     if (cursor === undefined) {
       return sendError(response, 400, "invalid_cursor", "cursor is invalid or malformed.");
     }
@@ -233,7 +170,7 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
           snapshotAt: snapshotAt.toISOString(),
           customFieldsVersion,
           hierarchyVersion,
-        }, options.tokenHmacSecret)
+        }, cursorKey)
       : null;
 
     return sendCacheableJson(request, response, {
@@ -313,51 +250,70 @@ function ensureRequestId(response: Response): string {
 }
 
 function createAuthenticationMiddleware(
-  credentials: ApiCredential[],
-  tokenHmacSecret: string,
-  now: () => Date,
+  authenticator: ApiClientAuthenticator,
 ): RequestHandler {
-  return (request, response, next) => {
-    if (!tokenHmacSecret || credentials.length === 0) {
-      return sendError(response, 503, "api_not_configured", "API authentication is not configured.");
-    }
-
+  return async (request, response, next) => {
     const authorization = request.get("authorization");
     const match = authorization?.match(/^Bearer ([^\s]+)$/);
     if (!match || match[1].length > 4096) {
+      logAuthentication(request, response, "denied");
       return sendError(response, 401, "invalid_token", "A valid Bearer token is required.");
     }
-
-    const presentedDigest = Buffer.from(digestApiToken(match[1], tokenHmacSecret), "hex");
-    const credential = credentials.find((candidate) => {
-      const storedDigest = Buffer.from(candidate.digest, "hex");
-      return storedDigest.length === presentedDigest.length && timingSafeEqual(storedDigest, presentedDigest);
-    });
-
-    if (!credential || credential.revoked) {
-      return sendError(response, 401, "invalid_token", "A valid Bearer token is required.");
+    try {
+      const credential = await authenticator.authenticate(match[1], {
+        requestId: ensureRequestId(response),
+        method: request.method,
+        path: logRoute(request),
+      });
+      if (!credential) return sendError(response, 401, "invalid_token", "A valid Bearer token is required.");
+      response.locals.apiCredential = credential;
+      response.locals.cursorKey = credential.cursorSigningKey;
+      next();
+    } catch {
+      return sendError(response, 503, "api_unavailable", "API authentication is temporarily unavailable.");
     }
-
-    if (credential.expiresAt) {
-      const expiresAt = parseIsoTimestamp(credential.expiresAt);
-      if (!expiresAt || expiresAt.getTime() <= now().getTime()) {
-        return sendError(response, 401, "invalid_token", "A valid Bearer token is required.");
-      }
-    }
-
-    response.locals.apiCredential = credential;
-    next();
   };
 }
 
-function requireScope(scope: string): RequestHandler {
+function requireScope(scope: typeof LOCATION_READ_SCOPE): RequestHandler {
   return (_request, response, next) => {
-    const credential = response.locals.apiCredential as ApiCredential | undefined;
+    const credential = response.locals.apiCredential as ManagedApiCredential | undefined;
     if (!credential?.scopes.includes(scope)) {
       return sendError(response, 403, "insufficient_scope", `The ${scope} scope is required.`);
     }
     next();
   };
+}
+
+const accessLogMiddleware: RequestHandler = (request, response, next) => {
+  response.once("finish", () => {
+    const credential = response.locals.apiCredential as ManagedApiCredential | undefined;
+    console.info("[Directory API Access]", JSON.stringify({
+      requestId: ensureRequestId(response),
+      method: request.method,
+      path: logRoute(request),
+      status: response.statusCode,
+      outcome: response.statusCode < 400 ? "success" : "rejected",
+      ...(credential ? { clientId: credential.clientId, tokenVersionId: credential.tokenVersionId } : {}),
+    }));
+  });
+  next();
+};
+
+function logAuthentication(request: Request, response: Response, outcome: "denied"): void {
+  console.info("[Directory API Authentication]", JSON.stringify({
+    requestId: ensureRequestId(response),
+    method: request.method,
+    path: logRoute(request),
+    outcome,
+  }));
+}
+
+function logRoute(request: Request): string {
+  if (request.path === "/locations") return "/locations";
+  if (request.path === "/location-fields") return "/location-fields";
+  if (/^\/locations\/[^/]+$/.test(request.path)) return "/locations/:storeNumber";
+  return "/unmatched";
 }
 
 function sendError(response: Response, status: number, code: string, message: string): Response {

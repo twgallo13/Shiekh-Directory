@@ -55,6 +55,7 @@ import { HierarchyRegistryPanel } from './HierarchyRegistryPanel';
 import { useAuth } from '../../context/AuthContext';
 import { downloadPreparedLocationExport, prepareLocationExport, type LocationExportMetadata } from '../../lib/locationExportClient';
 import { LocationImportPreviewPanel } from './LocationImportPreviewPanel';
+import { ApiClientsPanel } from './ApiClientsPanel';
 
 type AdminTab = 
   | 'custom-fields'
@@ -1125,6 +1126,8 @@ export const AdminIntegrationsView: React.FC = () => {
                 <div className="font-mono font-semibold text-neutral-900 mt-1">locations:read</div>
               </div>
             </div>
+
+            {currentUser.role === 'System Administrator' && <ApiClientsPanel />}
 
             {/* Webhook Endpoint Configuration */}
             <div className="pt-4 border-t border-neutral-200 space-y-3">

@@ -7,6 +7,7 @@ import type { LocationImportPreview, LocationImportReceipt } from '../../lib/loc
 import { LOCATION_IMPORT_FIELDS, LOCATION_IMPORT_WRITABLE_COLUMNS, type LocationImportHeaderMapping, type LocationImportMode } from '../../lib/locationImportSchema';
 import { locationPath } from '../../lib/navigation';
 import { confirmLocationImport, downloadLocationEditingExportPart, downloadLocationImportCorrections, downloadLocationImportResource, downloadLocationImportResults, inspectLocationImportFile, LocationImportRequestError, prepareLocationEditingExport, previewLocationImport, type LocationImportConfirmationOutcome, type LocationImportDownload } from '../../lib/locationImportPreviewClient';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 interface LocationImportPreviewPanelProps {
   user: SessionUser | null;
@@ -32,6 +33,8 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   const [busy, setBusy] = useState<LocationImportDownload | 'editing-export' | `editing-part-${number}` | 'preview' | 'confirm' | null>(null);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
+  const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
+  const confirmingRef = useRef(false);
 
   const downloadResource = async (resource: LocationImportDownload) => {
     if (!user || busy) return;
@@ -175,7 +178,8 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   };
 
   const confirmImport = async () => {
-    if (!user || !preview?.confirmationToken || !preview.operationId || !csv || busy) return;
+    if (!user || !preview?.confirmationToken || !preview.operationId || !csv || busy || confirmingRef.current) return;
+    confirmingRef.current = true;
     setBusy('confirm');
     setError('');
     setErrorCode('');
@@ -193,6 +197,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
       setReceipt(result);
       setCompletedImport({ preview: { ...preview, selectedRowNumbers: [...selectedRowNumbers] }, receipt: result, filename });
       setConfirmationOutcome('pending');
+      setConfirmationDialogOpen(false);
     } catch (cause) {
       const code = cause instanceof LocationImportRequestError ? cause.code : 'confirmation_failed';
       setConfirmationOutcome(code === 'confirmation_uncertain' ? 'uncertain' : 'rejected');
@@ -200,12 +205,19 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
       setError(code === 'confirmation_uncertain'
         ? 'The import outcome is uncertain. Retry the same import operation to retrieve its authoritative result without duplicating writes.'
         : cause instanceof Error ? cause.message : 'The Location import could not be confirmed.');
+      setConfirmationDialogOpen(false);
     } finally {
+      confirmingRef.current = false;
       setBusy(null);
     }
   };
 
   const changedRows = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber) && (row.action === 'add' || row.action === 'update')).length || 0;
+  const selectedReadyRows = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber) && (row.action === 'add' || row.action === 'update')) || [];
+  const isRetirement = (row: typeof selectedReadyRows[number]) => row.action === 'update' && row.changes.some(change => change.field === 'recordStatus' && change.after === 'Retired');
+  const selectedAdditions = selectedReadyRows.filter(row => row.action === 'add').length;
+  const selectedUpdates = selectedReadyRows.filter(row => row.action === 'update' && !isRetirement(row)).length;
+  const selectedRetirements = selectedReadyRows.filter(isRetirement).length;
   const selectedWarnings = preview?.rows.filter(row => selectedRowNumbers.includes(row.rowNumber)).flatMap(row => row.issues).filter(issue => issue.severity === 'warning').length || 0;
   const mappedTargets = mappings.flatMap(mapping => mapping.target ? [mapping.target] : []);
   const duplicateMappings = [...new Set(mappedTargets.filter((target, index) => mappedTargets.indexOf(target) !== index))];
@@ -500,7 +512,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
               )}
               <div className="flex flex-wrap items-center gap-3">
                 {selectionDirty && <button type="button" disabled={selectedRowNumbers.length === 0 || selectedRowNumbers.length > 40 || Boolean(busy)} onClick={() => void validatePreview(selectedRowNumbers)} className="flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-3.5 py-2 text-xs font-semibold text-blue-800 disabled:opacity-50"><CheckCircle2 className="h-4 w-4" />Revalidate selection</button>}
-                <button type="button" disabled={!eligibleForConfirmation || Boolean(busy)} title={confirmDisabledReason || undefined} onClick={() => void confirmImport()} className="flex items-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                <button type="button" disabled={!eligibleForConfirmation || Boolean(busy)} title={confirmDisabledReason || undefined} onClick={() => setConfirmationDialogOpen(true)} className="flex items-center gap-2 rounded-lg bg-red-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
                   <CheckCircle2 className="h-4 w-4" />
                   <span>{busy === 'confirm' ? 'Importing...' : `Import ${changedRows} ready row${changedRows === 1 ? '' : 's'}`}</span>
                 </button>
@@ -514,6 +526,27 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
           )}
         </div>
       )}
+      <ConfirmDialog
+        isOpen={confirmationDialogOpen}
+        title="Confirm production import"
+        description={`This writes production directory data and creates audit and import-receipt records. Additions: ${selectedAdditions}. Updates: ${selectedUpdates}. Retirements: ${selectedRetirements}. Total selected ready rows: ${selectedReadyRows.length}. Cancel makes no changes.`}
+        confirmLabel={busy === 'confirm' ? 'Saving...' : `Confirm and write ${selectedReadyRows.length} rows`}
+        confirmDisabled={!eligibleForConfirmation || Boolean(busy)}
+        cancelDisabled={busy === 'confirm'}
+        onConfirm={() => void confirmImport()}
+        onCancel={() => { if (busy !== 'confirm') setConfirmationDialogOpen(false); }}
+      >
+        <div className="mt-3 space-y-1">
+          <p className="text-xs font-semibold text-neutral-800">Selected locations</p>
+          <ul aria-label="Selected locations to be written" className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-neutral-200 bg-neutral-50 p-2 text-xs text-neutral-700">
+            {selectedReadyRows.map(row => {
+              const retirement = isRetirement(row);
+              const action = row.action === 'add' ? 'Addition' : retirement ? 'Retirement' : 'Update';
+              return <li key={row.rowNumber}>{action} · Store {row.storeNumber || 'not provided'} · {row.displayName} · {row.locationId || 'new Location'}</li>;
+            })}
+          </ul>
+        </div>
+      </ConfirmDialog>
       {completedImport && (
         <section role="status" aria-live="polite" className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-950">
           <div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" />Completed import · {completedImport.filename}</div>

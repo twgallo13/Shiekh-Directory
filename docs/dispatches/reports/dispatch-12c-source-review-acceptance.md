@@ -44,3 +44,47 @@ Use authorized test records for save/rename checks and record before/after evide
 PR #10 remains draft on its existing base. No merge, deployment, traffic promotion, live writes, imports, repairs, migrations, registry changes, or browser automation was performed during this review. The application SHA above is distinct from the documentation commit carrying this acceptance.
 
 Dispatch 12B live assignments remain a separate operation requiring its fresh-version/checksum checks, reviewed recovery evidence, external-consumer assessment, and applicable approval. This review neither applies the 14/12/22 mapping nor changes Store 150 or centers 001/86.
+
+## Final PR #10 Owner-Review Handoff — 2026-09-30
+
+Status: **Ready for final owner review; PR #10 remains open and unmerged.** No merge or deployment was performed in this handoff.
+
+### PR stack and source identity
+
+- PR #9 is complete at `94b5633fbfe550a5f5eee1f573aed26bd791a865` on `dispatch-11-flexible-location-csv`; it remains open/draft pending security PR #11 and owner review.
+- PR #10's local branch now includes PR #9 through normal merge commit `79b49d9a72508794b1a9dc9455f8fe22c089d088` (parents: prior PR #10 head `965a56abcc3c952ab773dd46a4db3364b1dd5268` and PR #9 head `94b5633fbfe550a5f5eee1f573aed26bd791a865`). No history rewriting or force-push was used.
+- Final PR #10 application/source commit: `0e6d853712391cb9d4294b297682f540ea67d28c`.
+- PR #10 continues to target `dispatch-11-flexible-location-csv` until the PR #9/PR #11 merge sequence is settled. Do not retarget early.
+- The original workspace's pre-existing `docs/cloud-run-deployment-runbook.md` edit was stashed only for the base merge, then restored exactly and excluded from PR #10. It changes the runbook's “Current live revision” to Dispatch 11, which conflicts with the already-recorded Dispatch 12C deployment; it must not be included as a current-state correction without fresh live evidence.
+
+### Final verification
+
+- `npm run test:api`: **278 passed, 0 failed**.
+- `npm run lint` and `npx tsc --noEmit`: **passed**.
+- `npm run build`: **passed**; the existing Vite chunk-size advisory remains.
+- `git diff --check`: **passed**.
+- `npx playwright test test/auth.browser.spec.ts --reporter=line`: **29 passed, 0 failed** using synthetic local Firebase configuration and mocked API routes; no production endpoint or data was used.
+- Focused hierarchy browser acceptance: **4 passed** — Location Edit/Fleet Quick Add transitions, PrintSheetView and Dashboard grouping/counts/warnings, Person legacy-District preservation, and stale Location conflict draft retention.
+- No live Firestore read/write, CSV import, Region/District mutation, email send, migration, production build deployment, traffic change, or Google Cloud/OAuth/Dynamic-Qr action occurred.
+
+### Review findings completed
+
+- Fleet Quick Add previously offered values (`Enclosed Regional Mall`, `Urban Streetfront`, `Outlet Center`) outside the canonical `LocationType` union. It now renders the shared `LOCATION_TYPES`, so retail classification/applicability restrictions use supported values.
+- PrintSheetView previously displayed hierarchy/applicability issues but omitted the explicit unclassified-type diagnostic. It now includes a deduplicated per-row warning; the group heading remains generic and does not borrow a single member's warning.
+- Browser coverage now verifies Region changes clear Districts and expose only Districts under the selected Region; retail controls do not offer `Not Applicable`; Quick Add cancel performs no commit; stable namespaced group filtering survives a renamed District; group counts/warnings distinguish centers, unassigned retail, needs-review, and unclassified types; Person territory edits preserve legacy Location `district` and canonical Region/District IDs; stale saves retain the draft.
+
+### Remaining manual-only acceptance
+
+- Theo should visually inspect the Location Edit and Quick Add controls, particularly the correct behavior when selecting No retail hierarchy while references remain.
+- Generated 1-Sheet PDF pagination/landscape layout and browser print output remain visual/manual checks; automated tests validate the rendered rows, grouping, totals, and warning content, not printed-page pagination fidelity.
+- No data update was made from the approved Dispatch 12B manifest. Its live assignment/import execution remains a separate authorization and is not part of PR #10 completion.
+- External scorecards, jobs, integrations, and PDF consumers remain **NOT VERIFIED**.
+
+### Next merge sequence
+
+1. Review and merge dependency-security PR #11 into `main`; it must precede PR #9 because it upgrades the CSV parser dependency.
+2. Bring the updated `main` into PR #9 without rewriting its history, rerun its checks, and merge PR #9 using a merge commit.
+3. Merge the resulting PR #9 base into PR #10 normally, retarget PR #10 to `main` only after PR #9 is merged, and verify the PR #10 diff contains only Dispatch 12 work.
+4. Complete owner review and merge PR #10. Only after both PRs are merged should Phase A begin from a clean updated `main` branch.
+
+The PR #10 branch is intended for final owner review, not merge readiness until PR #11 and PR #9 have followed the dependency order above. No new deployment is requested or authorized by this handoff.

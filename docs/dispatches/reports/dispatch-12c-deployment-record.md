@@ -49,7 +49,7 @@ gcloud run services update-traffic shiekh-location-company-directory \
 
 ## Previous release — Dispatch 12C `99f2b17` (2026-09-21)
 
-## Application and provenance
+### Application and provenance
 
 - Approved application SHA: `99f2b179094210c612458b64e30cdcd6728592f3`
 - Deployment source: clean detached worktree at the exact approved SHA; dirty PR checkout and unrelated runbook edit were excluded.
@@ -61,7 +61,7 @@ gcloud run services update-traffic shiekh-location-company-directory \
 - Candidate/live revision: `shiekh-location-company-directory-dispatch12c-99f2b17`
 - Documentation commit containing this record: recorded in the PR evidence after commit
 
-## Rollback evidence
+### Rollback evidence
 
 Immediately before deployment, live Cloud Run state identified the known serving revision as:
 
@@ -81,7 +81,7 @@ gcloud run services update-traffic shiekh-location-company-directory \
 
 The command was not executed because post-promotion checks passed.
 
-## Runtime preservation
+### Runtime preservation
 
 Candidate comparison against the pre-deployment service baseline passed:
 
@@ -91,7 +91,7 @@ Candidate comparison against the pre-deployment service baseline passed:
 - Container count, ports, resources, volumes, concurrency (`80`), and runtime configuration matched. Image/revision/build metadata were the expected changes.
 - Branded domain mapping `shiekh-dir.ai.studio` remained `Ready` and `DomainRoutable`.
 
-## Candidate checks at zero traffic
+### Candidate checks at zero traffic
 
 Candidate URL: `https://d12c-99f2b---shiekh-location-company-directory-vwqb4tnhoq-uw.a.run.app`
 
@@ -101,7 +101,7 @@ Candidate URL: `https://d12c-99f2b---shiekh-location-company-directory-vwqb4tnho
 - PASS: `/api/does-not-exist` returned HTTP 404 JSON with `api_route_not_found`.
 - PASS: served application assets were nonempty and included the hierarchy implementation markers.
 
-## Final live checks
+### Final live checks
 
 Live revision: `shiekh-location-company-directory-dispatch12c-99f2b17`
 
@@ -112,7 +112,7 @@ Live revision: `shiekh-location-company-directory-dispatch12c-99f2b17`
 - PASS: branded application bundle returned HTTP 200 and was nonempty.
 - NOT RUN: browser automation, authenticated UI/PDF workflow acceptance, and business-data verification. Theo owns those manual checks.
 
-## Boundaries
+### Boundaries
 
 PR #10 remains open/draft and unmerged. No Dispatch 12B execution occurred. No live assignment, import, migration, seed, repair, registry update, secret/IAM/configuration change, or browser automation occurred. The approved manifest remains unchanged. The unrelated local `docs/cloud-run-deployment-runbook.md` modification remains outside this commit.
 

@@ -70,6 +70,16 @@ describe('Location CSV import preview', () => {
     assert.deepEqual(snapshot, before);
   });
 
+  it('keeps untrusted public-import headers in array mode without prototype mutation', () => {
+    const csv = 'LocationId,__proto__,constructor\r\nloc-007,submitted,constructor-value\r\n';
+    const mappings = suggestLocationImportHeaderMappings(['LocationId', '__proto__', 'constructor']);
+    const result = buildLocationImportPlan(csv, snapshot, '2026-09-30T12:00:00.000Z', () => '', { mappings });
+
+    assert.equal(result.preview.rows[0].action, 'unchanged');
+    assert.deepEqual(result.preview.rows[0].sourceValues, ['loc-007', 'submitted', 'constructor-value']);
+    assert.equal(Object.hasOwn(Object.prototype, 'submitted'), false);
+  });
+
   it('accepts identity plus one changed field without SchemaVersion and preserves other attributes', () => {
     const result = previewLocationImport('LocationId,StoreName\r\nloc-007,Renamed Store\r\n', snapshot);
 

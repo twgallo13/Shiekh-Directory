@@ -82,6 +82,67 @@ async function prepareExportBrowser(page: Page, options: { bootstrapCount?: numb
   });
   return { calls: () => ({ prepareCalls, downloadCalls }) };
 }
+
+async function prepareLocationImportConfirmationBrowser(page: Page, options: { holdConfirmation?: boolean; staleConfirmation?: boolean } = {}) {
+  await prepare(page, 'System Administrator');
+  let previewCalls = 0;
+  let confirmationCalls = 0;
+  let releaseConfirmation: () => void = () => {};
+  const confirmationGate = new Promise<void>(resolve => { releaseConfirmation = resolve; });
+  const preview = {
+    schemaVersion: 'locations-v1',
+    snapshotReadAt: '2026-09-30T12:00:00.000Z',
+    mode: 'add-and-update',
+    mappings: [
+      { sourceIndex: 0, sourceHeader: 'StoreNumber', target: 'StoreNumber', kind: 'exact' },
+      { sourceIndex: 1, sourceHeader: 'StoreName', target: 'StoreName', kind: 'exact' },
+    ],
+    selectedRowNumbers: [2, 3, 4],
+    confirmationToken: 'synthetic-signed-token',
+    operationId: 'synthetic-operation-1',
+    batchId: 'synthetic-batch-1',
+    expiresAt: '2026-09-30T12:10:00.000Z',
+    summary: { totalRows: 3, additions: 1, updates: 2, unchanged: 0, blocked: 0, warnings: 0 },
+    rows: [
+      { rowNumber: 2, action: 'add', locationId: 'loc-synthetic-new', currentVersion: null, matchedBy: null, storeNumber: '9001', displayName: 'SYNTHETIC ADD', changes: [{ field: 'name', before: null, after: 'SYNTHETIC ADD' }], issues: [], sourceValues: ['9001', 'SYNTHETIC ADD'] },
+      { rowNumber: 3, action: 'update', locationId: 'loc-synthetic-update', currentVersion: 1, matchedBy: 'StoreNumber', storeNumber: '9002', displayName: 'SYNTHETIC UPDATE', changes: [{ field: 'name', before: 'Before', after: 'SYNTHETIC UPDATE' }], issues: [], sourceValues: ['9002', 'SYNTHETIC UPDATE'] },
+      { rowNumber: 4, action: 'update', locationId: 'loc-synthetic-retire', currentVersion: 1, matchedBy: 'StoreNumber', storeNumber: '9003', displayName: 'SYNTHETIC RETIRE', changes: [{ field: 'recordStatus', before: 'Active', after: 'Retired' }], issues: [], sourceValues: ['9003', 'SYNTHETIC RETIRE'] },
+    ],
+  };
+  await page.route('**/api/imports/locations/preview', async route => {
+    previewCalls++;
+    expect(route.request().headers().authorization).toBe('Bearer synthetic-token');
+    return route.fulfill({ json: preview });
+  });
+  await page.route('**/api/imports/locations/confirm', async route => {
+    confirmationCalls++;
+    expect(route.request().headers().authorization).toBe('Bearer synthetic-token');
+    if (options.holdConfirmation) await confirmationGate;
+    if (options.staleConfirmation) return route.fulfill({ status: 409, json: { error: { code: 'confirmation_expired', message: 'The confirmation token has expired. Preview the CSV again.' } } });
+    return route.fulfill({ json: {
+      operationId: 'synthetic-operation-1', batchId: 'synthetic-batch-1', committedAt: '2026-09-30T12:01:00.000Z',
+      additions: 1, updates: 2, unchanged: 0, replayed: false,
+      locations: preview.rows.map(row => ({ id: row.locationId, name: row.displayName, storeNumber: row.storeNumber, record: { id: row.locationId, name: row.displayName, storeNumber: row.storeNumber, recordStatus: row.rowNumber === 4 ? 'Retired' : 'Draft' } })),
+    } });
+  });
+  return {
+    calls: () => ({ previewCalls, confirmationCalls }),
+    releaseConfirmation: () => releaseConfirmation(),
+  };
+}
+
+async function openLocationImportPreview(page: Page) {
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Fleet CSV' }).click();
+  await page.getByLabel('Upload Location CSV').setInputFiles({
+    name: 'synthetic-import.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from('StoreNumber,StoreName\r\n9001,SYNTHETIC ADD\r\n9002,SYNTHETIC UPDATE\r\n9003,SYNTHETIC RETIRE\r\n'),
+  });
+  await page.getByLabel('I reviewed every heading, including ignored informational and unsupported columns.').check();
+  await page.getByRole('button', { name: 'Validate and Preview' }).click();
+  await expect(page.getByText('Preview only. No directory records have been saved yet.')).toBeVisible();
+}
 async function restore(page: Page, signedIn: boolean) {
   await page.waitForFunction(() => typeof (window as any).__restore === "function" && (window as any).__persistence);
   await page.evaluate(value => (window as any).__restore(value), signedIn);
@@ -400,6 +461,69 @@ test('Location CSV upload identifies directory exports and retries the same file
   await expect(page.getByText('Preview only. No directory records were saved.')).toBeVisible();
   await expect(page.getByText('The CSV contains no data rows.')).toBeVisible();
   expect(previewCalls).toBe(2);
+});
+
+test('Location CSV write requires final confirmation and Cancel or Enter on the safe default performs no write', async ({ page }) => {
+  const fixture = await prepareLocationImportConfirmationBrowser(page);
+  await openLocationImportPreview(page);
+  expect(fixture.calls()).toEqual({ previewCalls: 1, confirmationCalls: 0 });
+
+  const importButton = page.getByRole('button', { name: 'Import 3 ready rows' });
+  await importButton.click();
+  let dialog = page.getByRole('alertdialog', { name: 'Confirm production import' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/Additions: 1\. Updates, including retirements: 2\. Retirements: 1\. Total selected ready rows: 3\./)).toBeVisible();
+  await expect(dialog.getByRole('list', { name: 'Selected locations to be written' })).toContainText('Store 9001 · SYNTHETIC ADD · loc-synthetic-new');
+  await expect(dialog.getByRole('list', { name: 'Selected locations to be written' })).toContainText('Retirement · Store 9003 · SYNTHETIC RETIRE · loc-synthetic-retire');
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  expect(fixture.calls().confirmationCalls).toBe(0);
+
+  await page.keyboard.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  expect(fixture.calls().confirmationCalls).toBe(0);
+
+  await importButton.click();
+  dialog = page.getByRole('alertdialog', { name: 'Confirm production import' });
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(fixture.calls().confirmationCalls).toBe(0);
+
+  await importButton.click();
+  dialog = page.getByRole('alertdialog', { name: 'Confirm production import' });
+  await dialog.getByRole('button', { name: 'Confirm and write 3 rows' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Completed import · synthetic-import.csv')).toBeVisible();
+  expect(fixture.calls().confirmationCalls).toBe(1);
+});
+
+test('Location CSV confirmation locks dismissal while busy and suppresses double submission', async ({ page }) => {
+  const fixture = await prepareLocationImportConfirmationBrowser(page, { holdConfirmation: true });
+  await openLocationImportPreview(page);
+  await page.getByRole('button', { name: 'Import 3 ready rows' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Confirm production import' });
+  const confirm = dialog.getByRole('button', { name: 'Confirm and write 3 rows' });
+  await confirm.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+  await expect(dialog.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+  expect(fixture.calls().confirmationCalls).toBe(1);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  fixture.releaseConfirmation();
+  await expect(dialog).toHaveCount(0);
+  expect(fixture.calls().confirmationCalls).toBe(1);
+});
+
+test('Location CSV stale confirmation closes the dialog and requires a fresh preview without retrying writes', async ({ page }) => {
+  const fixture = await prepareLocationImportConfirmationBrowser(page, { staleConfirmation: true });
+  await openLocationImportPreview(page);
+  await page.getByRole('button', { name: 'Import 3 ready rows' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'Confirm production import' });
+  await dialog.getByRole('button', { name: 'Confirm and write 3 rows' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('confirmation token has expired');
+  await expect(page.getByRole('button', { name: 'Import 3 ready rows' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Choose File Again' })).toBeEnabled();
+  expect(fixture.calls().confirmationCalls).toBe(1);
 });
 
 test("diagnostic mail uses the account session without separate sign-in controls", async ({ page }) => {

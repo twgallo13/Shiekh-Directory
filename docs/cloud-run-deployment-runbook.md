@@ -259,9 +259,9 @@ gcloud run services update-traffic shiekh-location-company-directory \
 - `shiekh-casting-v6-1-firebase` (us-west1) — mapped to `shiekh.ai.studio`, unrelated app.
 - All `us-central1` services in this project belong to an unrelated loyalty/cards application, not this directory app.
 
-## Known access gap
+## Historical command coverage
 
-The exact historical `gcloud run deploy` invocations (precise flags, revision-suffix/tag conventions actually used per release) are not stored anywhere in this repository — there is no Dockerfile, `cloudbuild.yaml`, or GitHub Actions workflow. They exist only in the operator's prior shell history or Cloud Console/Cloud Audit Logs, which were not queried here. This runbook's deployment command is reconstructed from the live service's build metadata (Artifact Registry path, revision-suffix pattern, `package.json` scripts), not read directly from a stored command.
+Exact commands for deployments before 2026-09-30 are not fully recorded in this repository; some older flags and revision/tag conventions may only exist in operator shell history or Cloud Audit Logs. The actual source-deploy, candidate tag, no-traffic, and explicit promotion commands for the 2026-09-30 merged-main release are recorded in the deployment log below. Future releases must confirm the project, service, region, current serving revision, and runtime configuration before reusing that pattern.
 
 ## 2026-09-21 Dispatch 12 manual acceptance deployment
 

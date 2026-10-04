@@ -270,6 +270,8 @@ function toCsvRow(
       district: typeof location.district === 'string' ? location.district : undefined,
       districtManagerId: typeof location.districtManagerId === 'string' ? location.districtManagerId : undefined,
       districtManagerName: typeof location.districtManagerName === 'string' ? location.districtManagerName : undefined,
+      regionalManagerId: typeof location.regionalManagerId === 'string' ? location.regionalManagerId : undefined,
+      regionalManagerName: typeof location.regionalManagerName === 'string' ? location.regionalManagerName : undefined,
       storeManagerId: typeof location.storeManagerId === 'string' ? location.storeManagerId : undefined,
       storeManagerName: typeof location.storeManagerName === 'string' ? location.storeManagerName : undefined,
       assistantStoreManagerIds: Array.isArray(location.assistantStoreManagerIds)

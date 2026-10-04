@@ -17,6 +17,9 @@
     "uiBootstrap": "src/lib/canonicalDirectoryBootstrap.ts"
   },
   "excluded": ["personnel contacts", "accounts", "login linkage", "customMetadata", "copied-name values", "name-derived IDs", "legacy reverse assignments", "requests", "audits", "mail"],
+  "derivedReadOnly": ["staffing.storeManager", "staffing.districtManager", "staffing.regionalManager", "staffing.assistantStoreManagers", "staffing.keyHolders", "hierarchy"],
+  "locationLifecycle": ["Active", "Retired", "Draft"],
+  "identityJoins": "canonical document ID only; storeNumber is not assumed unique",
   "forbiddenNewAuthorities": ["assignment collection", "Region-owned staffing", "District-owned staffing"],
   "sync": "Pinned full snapshot across persisted collections. No Location timestamp delta feed."
 }

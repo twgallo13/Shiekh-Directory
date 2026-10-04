@@ -15,9 +15,9 @@ test("API client controls are SysAdmin-gated and credentials stay outside browse
   assert.match(panelSource, /setIssuedToken\(null\)/);
   assert.match(panelSource, /Dismiss one-time token/);
   assert.match(panelSource, /const controlsLocked = busy \|\| Boolean\(issuedToken\)/);
-  assert.match(panelSource, /if \(controlsLocked \|\| !name\.trim\(\)\) return/);
+  assert.match(panelSource, /if \(controlsLocked \|\| !name\.trim\(\) \|\| newScopes\.length === 0\) return/);
   assert.match(panelSource, /if \(!pending \|\| controlsLocked\) return/);
-  assert.match(panelSource, /disabled=\{controlsLocked \|\| !name\.trim\(\)\}/);
+  assert.match(panelSource, /disabled=\{controlsLocked \|\| !name\.trim\(\) \|\| newScopes\.length === 0\}/);
   assert.equal((panelSource.match(/disabled=\{controlsLocked\}/g) || []).length >= 6, true);
   const createHandler = panelSource.slice(panelSource.indexOf("const create ="), panelSource.indexOf("const enable ="));
   const lifecycleHandler = panelSource.slice(panelSource.indexOf("const confirmAction ="), panelSource.indexOf("const copyToken ="));
@@ -28,7 +28,8 @@ test("browser requests use Firebase bearer authentication and fixed server manag
   assert.match(clientSource, /getIdToken\(\)/);
   assert.match(clientSource, /Authorization: `Bearer \$\{/);
   assert.match(clientSource, /cache: "no-store"/);
-  assert.doesNotMatch(clientSource, /scope\s*:/);
+  assert.match(clientSource, /expectedScopes: client\.scopes/);
+  assert.match(clientSource, /\/scopes/);
   assert.doesNotMatch(clientSource, /digest|fragment|personnel|request body/i);
 });
 

@@ -48,7 +48,7 @@
     "/api/v2/location-staffing": {
       "get": {
         "operationId": "listLocationStaffing",
-        "description": "Requires staffing:read. All persisted Locations, including retired/unknown lifecycle. Referenced Person names/states are included; no contacts. Store numbers remain exact strings.",
+        "description": "Requires staffing:read. All persisted Locations, including Draft/retired/unknown lifecycle. Canonical *Id/*Ids remain strings; read-only resolved people live under staffing. No contacts. Store numbers are exact non-unique attributes; lookup and joins are ID-only. At most 1000 distinct dependency documents per response; exceeded bound yields 503, never truncated success.",
         "parameters": [{ "$ref": "#/components/parameters/Snapshot" }, { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }],
         "responses": {
           "200": { "description": "Full-snapshot page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StaffingPage" } } } },
@@ -81,7 +81,7 @@
       "Error": { "description": "Request/authentication/source error. Do not reconcile partial data. 409 snapshot_expired requires restarting the whole run.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
     },
     "schemas": {
-      "Error": { "type": "object", "additionalProperties": false, "required": ["error"], "properties": { "error": { "type": "object", "additionalProperties": false, "required": ["code", "message", "requestId"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "requestId": { "type": "string" } } } } },
+      "Error": { "type": "object", "additionalProperties": false, "required": ["error"], "properties": { "error": { "type": "object", "additionalProperties": false, "required": ["code", "message", "requestId"], "properties": { "code": { "type": "string", "enum": ["invalid_query", "invalid_id", "invalid_limit", "invalid_snapshot", "invalid_cursor", "invalid_token", "insufficient_scope", "record_not_found", "snapshot_expired", "rate_limit_exceeded", "api_unavailable", "snapshot_unavailable"] }, "message": { "type": "string" }, "requestId": { "type": "string" } } } } },
       "Issue": { "type": "object", "additionalProperties": false, "required": ["code", "field"], "properties": { "code": { "type": "string", "enum": ["invalid_name", "conflicting_name_alias", "ambiguous_lifecycle", "invalid_reference", "duplicate_assignment", "overlapping_workplace", "missing_location", "retired_location", "unknown_location_state", "missing_person", "inactive_person", "unknown_person_state", "legacy_only", "missing_hierarchy", "retired_hierarchy", "unknown_hierarchy_state", "hierarchy_parent_mismatch", "invalid_store_number"] }, "field": { "type": "string" } } },
       "Lifecycle": { "type": "string", "enum": ["active", "inactive", "unknown"], "description": "Exact Active/Inactive or boolean activeStatus. Conflicting/invalid aliases or both absent => unknown; never rewritten." },
       "NullableString": { "type": ["string", "null"] },
@@ -106,17 +106,30 @@
       },
       "NullableReference": { "oneOf": [{ "$ref": "#/components/schemas/PersonReference" }, { "type": "null" }] },
       "ReferenceList": { "type": "array", "items": { "$ref": "#/components/schemas/PersonReference" } },
+      "IdList": { "type": "array", "items": { "type": "string" } },
       "Staffing": {
         "type": "object", "additionalProperties": false,
-        "required": ["locationId", "storeNumber", "recordStatus", "regionId", "districtId", "hierarchy", "storeManagerId", "districtManagerId", "regionalManagerId", "assistantStoreManagerIds", "keyHolderIds", "issues"],
+        "required": ["locationId", "storeNumber", "recordStatus", "regionId", "districtId", "hierarchy", "storeManagerId", "districtManagerId", "regionalManagerId", "assistantStoreManagerIds", "keyHolderIds", "staffing", "issues"],
         "properties": {
           "locationId": { "type": "string", "example": "loc-example-1" }, "storeNumber": { "type": ["string", "null"], "example": "07" },
-          "recordStatus": { "type": "string", "enum": ["active", "retired", "unknown"] },
+          "recordStatus": { "type": "string", "enum": ["active", "retired", "draft", "unknown"] },
           "regionId": { "$ref": "#/components/schemas/NullableString" }, "districtId": { "$ref": "#/components/schemas/NullableString" },
           "hierarchy": { "type": "object", "additionalProperties": false, "required": ["regionName", "districtName"], "properties": { "regionName": { "$ref": "#/components/schemas/NullableString" }, "districtName": { "$ref": "#/components/schemas/NullableString" } } },
-          "storeManagerId": { "$ref": "#/components/schemas/NullableReference" }, "districtManagerId": { "$ref": "#/components/schemas/NullableReference" },
-          "regionalManagerId": { "$ref": "#/components/schemas/NullableReference" }, "assistantStoreManagerIds": { "$ref": "#/components/schemas/ReferenceList" },
-          "keyHolderIds": { "$ref": "#/components/schemas/ReferenceList" }, "issues": { "$ref": "#/components/schemas/Issues" }
+          "storeManagerId": { "$ref": "#/components/schemas/NullableString" }, "districtManagerId": { "$ref": "#/components/schemas/NullableString" },
+          "regionalManagerId": { "$ref": "#/components/schemas/NullableString" }, "assistantStoreManagerIds": { "$ref": "#/components/schemas/IdList" },
+          "keyHolderIds": { "$ref": "#/components/schemas/IdList" },
+          "staffing": {
+            "type": "object", "additionalProperties": false, "readOnly": true,
+            "required": ["storeManager", "districtManager", "regionalManager", "assistantStoreManagers", "keyHolders"],
+            "properties": {
+              "storeManager": { "$ref": "#/components/schemas/NullableReference" },
+              "districtManager": { "$ref": "#/components/schemas/NullableReference" },
+              "regionalManager": { "$ref": "#/components/schemas/NullableReference" },
+              "assistantStoreManagers": { "$ref": "#/components/schemas/ReferenceList" },
+              "keyHolders": { "$ref": "#/components/schemas/ReferenceList" }
+            }
+          },
+          "issues": { "$ref": "#/components/schemas/Issues" }
         }
       },
       "Snapshot": {

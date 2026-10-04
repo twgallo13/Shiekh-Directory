@@ -365,7 +365,9 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       ? updatedPerson
       : people.find(person => person.id === personId);
 
-    const updatedFields = Object.keys(updates);
+    const updatedFields = Object.keys(updates).filter(field =>
+      JSON.stringify(currentPerson[field as keyof Person]) !== JSON.stringify(updatedPerson[field as keyof Person]),
+    );
     const updatesLeadershipCopies = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
     const affectsLocation = (location: LocationRecord) => updatesLeadershipCopies && (location.storeManagerId === id || location.districtManagerId === id || location.regionalManagerId === id
       || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id));

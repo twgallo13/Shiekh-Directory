@@ -13,6 +13,7 @@ export const STAFFING_LISTS = ['assistantStoreManagerIds', 'keyHolderIds'] as co
 
 export function canonicalId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 1500
+    && Buffer.byteLength(value, 'utf8') <= 1500 && value !== '.' && value !== '..' && !/^__.*__$/.test(value)
     && value === value.trim() && !/[/\u0000-\u001f\u007f]/.test(value);
 }
 
@@ -38,7 +39,7 @@ export function projectPerson(record: SourceRecord, locations: SourceRecord[]) {
       const location = locationMap.get(id);
       if (!location) issue(issues, 'missing_location', field);
       else if (location.recordStatus === 'Retired') issue(issues, 'retired_location', field);
-      else if (location.recordStatus !== 'Active') issue(issues, 'unknown_location_state', field);
+      else if (location.recordStatus !== 'Active' && location.recordStatus !== 'Draft') issue(issues, 'unknown_location_state', field);
     }
   }
   if (primaryLocationId && supportedLocationIds.includes(primaryLocationId)) issue(issues, 'overlapping_workplace', 'supportedLocationIds');
@@ -84,13 +85,13 @@ export function projectStaffing(record: SourceRecord, people: SourceRecord[], re
   const single = (field: typeof STAFFING_SCALARS[number], legacyField: string) => {
     const id = singleId(data[field], field, issues);
     if (!id && typeof data[legacyField] === 'string' && data[legacyField].trim()) issue(issues, 'legacy_only', field);
-    return id ? referencePerson(id, peopleMap, field) : null;
+    return id;
   };
   const list = (field: typeof STAFFING_LISTS[number], legacyField: string) => {
     const ids = listIds(data[field], field, issues);
     const legacy = data[legacyField];
     if (Array.isArray(legacy) && legacy.length > ids.length && legacy.slice(ids.length).some(value => typeof value === 'string' && value.trim())) issue(issues, 'legacy_only', field);
-    return ids.map(id => referencePerson(id, peopleMap, field));
+    return ids;
   };
   const regionId = singleId(data.regionId, 'regionId', issues);
   const districtId = singleId(data.districtId, 'districtId', issues);
@@ -102,18 +103,27 @@ export function projectStaffing(record: SourceRecord, people: SourceRecord[], re
     if (source && !canonicalName(source.data.name)) issue(issues, 'invalid_name', field);
   }
   if (district && district.data.regionId !== regionId) issue(issues, 'hierarchy_parent_mismatch', 'districtId');
-  const recordStatus = data.recordStatus === 'Active' ? 'active' : data.recordStatus === 'Retired' ? 'retired' : 'unknown';
+  const recordStatus = data.recordStatus === 'Active' ? 'active' : data.recordStatus === 'Retired' ? 'retired' : data.recordStatus === 'Draft' ? 'draft' : 'unknown';
   if (recordStatus === 'unknown') issue(issues, 'unknown_location_state', 'recordStatus');
   const storeNumber = canonicalId(data.storeNumber) ? data.storeNumber : null;
   if (!storeNumber) issue(issues, 'invalid_store_number', 'storeNumber');
+  const storeManagerId = single('storeManagerId', 'storeManagerName');
+  const districtManagerId = single('districtManagerId', 'districtManagerName');
+  const regionalManagerId = single('regionalManagerId', 'regionalManagerName');
+  const assistantStoreManagerIds = list('assistantStoreManagerIds', 'assistantStoreManagerNames');
+  const keyHolderIds = list('keyHolderIds', 'keyHolderNames');
+  const resolved = (id: string | null, field: string) => id ? referencePerson(id, peopleMap, field) : null;
   return {
     locationId: record.id, storeNumber, recordStatus, regionId, districtId,
     hierarchy: { regionName: region ? canonicalName(region.data.name) : null, districtName: district ? canonicalName(district.data.name) : null },
-    storeManagerId: single('storeManagerId', 'storeManagerName'),
-    districtManagerId: single('districtManagerId', 'districtManagerName'),
-    regionalManagerId: single('regionalManagerId', 'regionalManagerName'),
-    assistantStoreManagerIds: list('assistantStoreManagerIds', 'assistantStoreManagerNames'),
-    keyHolderIds: list('keyHolderIds', 'keyHolderNames'),
+    storeManagerId, districtManagerId, regionalManagerId, assistantStoreManagerIds, keyHolderIds,
+    staffing: {
+      storeManager: resolved(storeManagerId, 'storeManagerId'),
+      districtManager: resolved(districtManagerId, 'districtManagerId'),
+      regionalManager: resolved(regionalManagerId, 'regionalManagerId'),
+      assistantStoreManagers: assistantStoreManagerIds.map(id => referencePerson(id, peopleMap, 'assistantStoreManagerIds')),
+      keyHolders: keyHolderIds.map(id => referencePerson(id, peopleMap, 'keyHolderIds')),
+    },
     issues,
   };
 }

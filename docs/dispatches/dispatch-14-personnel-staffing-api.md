@@ -21,8 +21,55 @@ are included without automatic historical-data repair.
 
 ## Review checkpoint status
 
-WIP source saved for independent review. Verification is in progress; do not
-treat this checkpoint as passed tests or release approval.
+WIP `6c5cf4eefcb024ea6a6ff77476ac944a75732120` was saved and published through
+the existing VS Code control for independent review. Review corrections keep
+canonical `*Id`/`*Ids` strings separate from the read-only derived `staffing`
+object, include valid Draft lifecycle, and use bounded reference-only field
+masks instead of roster scans/full-document reads. Store numbers are descriptive
+attributes, never a unique lookup authority; joins and lookups use canonical
+document IDs only. Reporting CSV columns remain unchanged.
+
+Failures are not hidden: the first full API run had 317/320 passing (a brittle
+source-regex guard and two reporting regressions). The retained guard was
+updated for explicit scopes; legacy reporting lifecycle behavior was restored
+without weakening manager-phone expectations. Subsequent API run: 321/321.
+The first browser run was aborted after fixture project/domain configuration
+failed the unchanged Firebase guard. The next run passed 8/13 and exposed
+incorrect test locators plus a real absent-list/default-empty unrelated-save
+bug. Unchanged list roles now retain their original presence and copied history.
+A later focused run passed 16/18 and exposed that an untouched Person
+phone-privacy default was triggering Location copy propagation. The form now
+preserves untouched privacy/lifecycle/name aliases; propagation checks actual
+changes, not merely supplied keys. The unrelated-save assertions were kept.
+
+Final acceptance:
+
+| Check | Result |
+|---|---|
+| `npm run lint` | Passed |
+| `npm run test:api` | 322/322 passed; 0 failures/skips |
+| `npm run build` | Passed, including public documentation packaging |
+| Synthetic browser suite | 18/18 passed; 320/390/1280px parity and related regressions |
+| Packaged public docs | Isolated production-mode HTTP: schema/guide 200, no-store, exact source match; unlisted ownership manifest 404 |
+| Strict OpenAPI validation | Actual list/detail/null/snapshot and 400/401/403/404/409/503 payloads validated; extra fields and object-valued canonical IDs rejected |
+| Git whitespace check | Passed |
+
+Browser acceptance command:
+
+```sh
+npx playwright test test/auth.browser.spec.ts --grep 'Staffing parity|Personnel scopes UI|Location inbox|Person territory|PrintSheetView|Location Edit and Fleet|Location Edit hierarchy' --workers=1
+```
+
+Tests run against localhost Vite with a synthetic SDK, synthetic key/app ID,
+the existing required **public** Firebase project/domain identifiers, and blocked
+external HTTPS. APIs are mocked for browser writes; server tests use in-memory
+synthetic fixtures. No live saves, sends, scope grants or new authentication.
+The build retains the existing large-chunk warning; no unrelated dependency
+upgrades or forced audit fixes were performed.
+
+Production build packaging now includes only the synthetic guide/schema in
+`dist/api-docs`. A future source-upload ignore must retain those two source
+documents and the build script. No runtime configuration changes are needed.
 
 ## Acceptance and rollback
 
@@ -36,6 +83,9 @@ Rollback must deny new v2 grants/endpoints before using an old build: old scope
 authentication hard-coded `locations:read` regardless of stored grants.
 Reverting blindly could grant v1 access to a newly personnel-only client.
 No staffing data migration was performed. Keep existing canonical fields.
+Release remains blocked on root review. Shell Git/CLI authentication was not
+available for the WIP push; root used the existing VS Code publish control.
+No credentials or authentication configuration were created or changed.
 
 ## Deferred decisions
 

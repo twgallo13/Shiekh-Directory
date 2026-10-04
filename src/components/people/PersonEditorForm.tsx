@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import type { ContactPrivacyLevel, LocationRecord, PersonRecord, PersonUpdate } from '../../types';
 import { formatUsPhone, normalizeUsPhone } from '../../lib/contactNormalization';
 import { resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } from '../../lib/personContacts';
@@ -18,6 +18,7 @@ interface PersonEditorFormProps {
 }
 
 export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onCancel, children }: PersonEditorFormProps) {
+  const fieldId = useId();
   const currentPhone = resolvePersonPhone(person);
   const currentEmail = resolvePersonEmail(person);
   const [expectedVersion] = useState(person?.version ?? 0);
@@ -33,6 +34,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
   const [status, setStatus] = useState(person ? personLifecycle(person) === 'active' ? 'Active' : personLifecycle(person) === 'inactive' ? 'Inactive' : 'Unknown' : 'Active');
   const [statusTouched, setStatusTouched] = useState(false);
   const [phonePrivacy, setPhonePrivacy] = useState<ContactPrivacyLevel>(person?.phonePrivacy || 'Internal');
+  const [phonePrivacyTouched, setPhonePrivacyTouched] = useState(false);
   const [primaryLocationId, setPrimaryLocationId] = useState(person?.primaryLocationId);
   const [supportedLocationIds, setSupportedLocationIds] = useState(person?.supportedLocationIds || []);
   const [phoneError, setPhoneError] = useState('');
@@ -59,13 +61,13 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     try {
       await onSubmit({
         fullName: fullName.trim(),
-        name: fullName.trim(),
+        ...(!person || fullName.trim() !== person.fullName ? { name: fullName.trim() } : {}),
         jobTitle: jobTitle.trim(),
         role: jobTitle.trim(),
         department: department.trim(),
         district: district.trim(),
         ...(!person || statusTouched ? { status, activeStatus: status === 'Active' } : {}),
-        phonePrivacy,
+        ...(!person || phonePrivacyTouched ? { phonePrivacy } : {}),
         primaryLocationId: primaryLocationId || null,
         supportedLocationIds,
         ...serializePersonContactEdits(person, normalizedPhone, email.trim(), phoneTouched, emailTouched),
@@ -80,8 +82,8 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
   return (
     <form onSubmit={save} className="space-y-3 text-xs">
       <div>
-        <FormLabel required>Full Name</FormLabel>
-        <input required value={fullName} onChange={event => setFullName(event.target.value)} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+        <FormLabel required htmlFor={`${fieldId}-name`}>Full Name</FormLabel>
+        <input id={`${fieldId}-name`} required value={fullName} onChange={event => setFullName(event.target.value)} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -90,8 +92,8 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
           <input value={jobTitle} onChange={event => setJobTitle(event.target.value)} placeholder="e.g. Accountant" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
         </div>
         <div>
-          <FormLabel>Department</FormLabel>
-          <input value={department} onChange={event => setDepartment(event.target.value)} placeholder="e.g. Finance" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+          <FormLabel htmlFor={`${fieldId}-department`}>Department</FormLabel>
+          <input id={`${fieldId}-department`} value={department} onChange={event => setDepartment(event.target.value)} placeholder="e.g. Finance" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
         </div>
       </div>
 
@@ -117,8 +119,8 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <FormLabel>Active Status</FormLabel>
-          <select value={status} onChange={event => { setStatus(event.target.value); setStatusTouched(true); }} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:outline-none">
+          <FormLabel htmlFor={`${fieldId}-status`}>Active Status</FormLabel>
+          <select id={`${fieldId}-status`} value={status} onChange={event => { setStatus(event.target.value); setStatusTouched(true); }} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:outline-none">
             {status === 'Unknown' && <option value="Unknown" disabled>Needs lifecycle review (preserved)</option>}
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
@@ -126,7 +128,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
         </div>
         <div>
           <FormLabel>Contact Privacy</FormLabel>
-          <select value={phonePrivacy} onChange={event => setPhonePrivacy(event.target.value as ContactPrivacyLevel)} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:outline-none">
+          <select value={phonePrivacy} onChange={event => { setPhonePrivacy(event.target.value as ContactPrivacyLevel); setPhonePrivacyTouched(true); }} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:outline-none">
             <option value="Public">Public</option>
             <option value="Internal">Internal</option>
             <option value="Restricted">Restricted</option>

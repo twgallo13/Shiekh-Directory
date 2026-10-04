@@ -143,15 +143,27 @@ test('all five staffing roles preserve raw identity, report invalid/missing/inac
   source.data.regionId = 'missing';
   const result = projectStaffing(source, people, regions, districts);
   assert.equal(result.storeNumber, '07');
-  assert.equal(result.storeManagerId?.fullName, 'Synthetic Manager');
-  assert.equal(result.districtManagerId?.personId, 'missing');
-  assert.equal(result.districtManagerId?.fullName, null);
-  assert.equal(result.regionalManagerId?.lifecycle, 'inactive');
+  assert.equal(result.storeManagerId, 'p-1');
+  assert.equal(result.districtManagerId, 'missing');
+  assert.equal(result.regionalManagerId, 'p-2');
+  assert.equal(result.staffing.storeManager?.fullName, 'Synthetic Manager');
+  assert.equal(result.staffing.districtManager?.personId, 'missing');
+  assert.equal(result.staffing.districtManager?.fullName, null);
+  assert.equal(result.staffing.regionalManager?.lifecycle, 'inactive');
   assert.equal(result.assistantStoreManagerIds.length, 3);
   assert.deepEqual(result.keyHolderIds, []);
   for (const code of ['duplicate_assignment', 'invalid_reference', 'legacy_only', 'missing_hierarchy', 'hierarchy_parent_mismatch']) assert.ok(result.issues.some(issue => issue.code === code), code);
   assert.equal(projectStaffing(locations[1], people, [], []).storeManagerId, null);
   assert.ok(projectStaffing(locations[1], people, [], []).issues.some(issue => issue.code === 'legacy_only'));
+});
+
+test('Draft is valid, exact duplicate store numbers remain ID-distinct and never select a roster member', () => {
+  const first = projectStaffing({ id: 'loc-a', data: { recordStatus: 'Draft', storeNumber: '07' } }, [], [], []);
+  const second = projectStaffing({ id: 'loc-b', data: { recordStatus: 'Active', storeNumber: '07' } }, [], [], []);
+  assert.equal(first.recordStatus, 'draft');
+  assert.equal(first.storeNumber, second.storeNumber);
+  assert.notEqual(first.locationId, second.locationId);
+  assert.ok(!first.issues.some(issue => issue.code === 'unknown_location_state'));
 });
 
 test('strict lifecycle and aliases preserve history as explicit unknown; workplace/support not management', () => {
@@ -188,5 +200,77 @@ test('public documentation serves only the synthetic contract and all OpenAPI lo
     check(schema);
     const guide = await app.get('/api/personnel-guide', 'invalid'); assert.equal(guide.status, 200);
     assert.equal(await guide.text(), await readFile('docs/personnel-staffing-api.md', 'utf8'));
+  } finally { await app.close(); }
+});
+
+interface Schema {
+  $ref?: string; type?: string | string[]; enum?: unknown[]; const?: unknown; format?: string;
+  oneOf?: Schema[]; properties?: Record<string, Schema>; required?: string[];
+  additionalProperties?: boolean; items?: Schema; minimum?: number; maximum?: number;
+}
+
+test('actual snapshot/list/detail/null/error payloads validate against the published strict OpenAPI schemas', async () => {
+  const document: { components: { schemas: Record<string, Schema> } } = JSON.parse(await readFile('docs/personnel-staffing-openapi.json', 'utf8'));
+  const validate = (schema: Schema, value: unknown): void => {
+    if (schema.$ref) return validate(document.components.schemas[schema.$ref.split('/').at(-1)!], value);
+    if (schema.oneOf) {
+      let matches = 0;
+      for (const candidate of schema.oneOf) {
+        try { validate(candidate, value); matches++; }
+        catch (error) { if (!(error instanceof assert.AssertionError)) throw error; }
+      }
+      assert.equal(matches, 1);
+      return;
+    }
+    const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value;
+    if (schema.type) assert.ok((Array.isArray(schema.type) ? schema.type : [schema.type]).includes(type), `Expected ${schema.type}; got ${type}`);
+    if (schema.enum) assert.ok(schema.enum.includes(value));
+    if (Object.hasOwn(schema, 'const')) assert.equal(value, schema.const);
+    if (schema.format === 'date-time') assert.ok(typeof value === 'string' && Number.isFinite(Date.parse(value)));
+    if (typeof value === 'number') {
+      if (schema.minimum !== undefined) assert.ok(value >= schema.minimum);
+      if (schema.maximum !== undefined) assert.ok(value <= schema.maximum);
+    }
+    if (Array.isArray(value) && schema.items) value.forEach(item => validate(schema.items!, item));
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      for (const field of schema.required || []) assert.ok(Object.hasOwn(value, field), `Missing ${field}`);
+      for (const [key, entry] of Object.entries(value)) {
+        if (schema.additionalProperties === false) assert.ok(Object.hasOwn(schema.properties || {}, key), `Undocumented ${key}`);
+        if (schema.properties?.[key]) validate(schema.properties[key], entry);
+      }
+    }
+  };
+  const app = await harness();
+  try {
+    const session = await (await app.get('/api/v2/snapshot')).json();
+    validate(document.components.schemas.Snapshot, session);
+    for (const [dataset, listSchema, detailSchema, id] of [
+      ['personnel', 'PersonnelPage', 'Person', 'p-2'],
+      ['location-staffing', 'StaffingPage', 'Staffing', 'loc-2'],
+    ]) {
+      const page = await (await app.get(`/api/v2/${dataset}?snapshot=${session.snapshot}`)).json();
+      validate(document.components.schemas[listSchema], page);
+      const detail = await (await app.get(`/api/v2/${dataset}/${id}?snapshot=${session.snapshot}`)).json();
+      assert.deepEqual(Object.keys(detail).sort(), ['data', 'sync']);
+      validate(document.components.schemas[detailSchema], detail.data);
+      validate(document.components.schemas.Sync, detail.sync);
+    }
+    for (const [path, token, status] of [
+      ['/api/v2/personnel', 'test-token', 400],
+      ['/api/v2/snapshot', 'invalid', 401],
+      ['/api/v2/snapshot', 'location-only', 403],
+      [`/api/v2/personnel/missing?snapshot=${session.snapshot}`, 'test-token', 404],
+    ] as const) {
+      const response = await app.get(path, token);
+      assert.equal(response.status, status); validate(document.components.schemas.Error, await response.json());
+    }
+    app.clock(new Date('2026-10-04T11:15:00.000Z'));
+    const expired = await app.get(`/api/v2/personnel?snapshot=${session.snapshot}`);
+    assert.equal(expired.status, 409); validate(document.components.schemas.Error, await expired.json());
+    app.clock(new Date('2026-10-04T11:00:00.000Z')); app.fail();
+    const unavailable = await app.get(`/api/v2/personnel?snapshot=${session.snapshot}`);
+    assert.equal(unavailable.status, 503); validate(document.components.schemas.Error, await unavailable.json());
+    assert.throws(() => validate(document.components.schemas.Person, { ...projectPerson(people[0], locations), email: 'must-not-publish@example.test' }));
+    assert.throws(() => validate(document.components.schemas.Staffing, { ...projectStaffing(locations[0], people, regions, districts), storeManagerId: { personId: 'p-1' } }));
   } finally { await app.close(); }
 });

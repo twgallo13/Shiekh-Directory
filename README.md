@@ -34,4 +34,6 @@ npm run build
 
 Browser fixtures are in `test/auth.browser.spec.ts`. Run the inbox cases against a configured local development server with `npx playwright test test/auth.browser.spec.ts --grep "Location inbox" --workers=1`. The tests mock authentication and data APIs and block external HTTPS requests; they do not save production records or send email. `AUTH_BROWSER_TEST_ORIGIN` defaults to `http://127.0.0.1:3001`.
 
+For personnel/staffing UI verification, use `--grep "Staffing parity|Personnel scopes UI"` against the same synthetic local harness. The expanded acceptance command and actual results are recorded in [dispatch 14](docs/dispatches/dispatch-14-personnel-staffing-api.md). Preserve the existing public Firebase project/domain expected by the configuration guard while using synthetic key/app ID and mocked SDK; do not change authentication policy to make fixtures pass.
+
 ROPI's consumer application is maintained outside this repository. Its synchronization and notification implementation still belongs in that application.

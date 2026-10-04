@@ -8,9 +8,8 @@ export interface ReadProjectionPerson {
 }
 
 /**
- * Resolves a leadership reference to its canonical Person, applying the same
- * missing/inactive rule as the CSV export and hierarchy validation: a stale ID
- * or an inactive Person must never fall back to a copied display name.
+ * Resolves only unambiguously active canonical People; copied names are never
+ * assignment authority. Historical lifecycle ambiguity requires review.
  */
 export function resolveActivePerson<T extends ReadProjectionPerson>(
   id: string | undefined,

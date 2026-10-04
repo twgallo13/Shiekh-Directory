@@ -11,6 +11,7 @@ import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts'
 import { buildPersonLocationRelationships, getPersonDeletionBlockers } from '../../lib/personLocationRelationships';
 import { PersonEditorForm } from './PersonEditorForm';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
+import { personLifecycle } from '../../lib/personLifecycle';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -145,7 +146,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                 <Mail className="w-3 h-3 text-neutral-400" /> Email Address
               </div>
               <div className="text-neutral-900 font-medium truncate">{resolvePersonEmail(person).value || 'N/A'}</div>
-              <div className="text-neutral-400 text-[10px] pt-1">{person.status === 'Inactive' || person.activeStatus === false ? 'Inactive' : 'Active'}{person.department ? ` · ${person.department}` : ''}</div>
+              <div className="text-neutral-400 text-[10px] pt-1">{personLifecycle(person) === 'unknown' ? 'Needs lifecycle review' : personLifecycle(person) === 'active' ? 'Active' : 'Inactive'}{person.department ? ` · ${person.department}` : ''}</div>
               {Object.hasOwn(person, 'workEmail') && person.email && (person.workEmail || '').trim().toLowerCase() !== person.email.trim().toLowerCase() && (
                 <div className="break-all pt-1 text-[10px] text-neutral-500">Historical email alias (not used as the active contact): {person.email}</div>
               )}

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node scripts/copyApiDocs.mjs",
     "lint": "tsc --noEmit",
     "test:api": "node --import tsx --test test/*.test.ts",
     "migrate:firestore": "node --import tsx scripts/migrateFirestoreFromCsv.ts",

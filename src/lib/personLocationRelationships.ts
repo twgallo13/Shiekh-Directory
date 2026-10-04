@@ -81,7 +81,7 @@ export function getPersonDeletionBlockers(
   };
 }
 
-export const PERSON_LEADERSHIP_NAME_FIELDS = ['fullName', 'name', 'phone', 'workPhone', 'phonePrivacy'] as const;
+export const PERSON_LEADERSHIP_NAME_FIELDS = ['fullName', 'phone', 'workPhone', 'phonePrivacy'] as const;
 
 /**
  * Copies only display name/phone leadership fields onto an affected Location. Never touches

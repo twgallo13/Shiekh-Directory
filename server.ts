@@ -17,6 +17,7 @@ import { createFirestoreLocationImportPreviewStore, createLocationImportPreviewR
 import { loadLocationImportTokenSecret } from "./server/locationImportConfirmation";
 import { createApiClientRouter } from "./server/apiClientApi";
 import { createFirestoreApiClientStore } from "./server/firestoreApiClients";
+import { createBrowserApp } from "./server/browserApp";
 
 // Attempt to load .env file if present in Node 20.6+
 try {
@@ -86,10 +87,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use('/assets', express.static(path.join(distPath, 'assets')));
-    app.get("*all", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    app.use(createBrowserApp(distPath));
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {

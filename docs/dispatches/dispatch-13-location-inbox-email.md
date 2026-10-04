@@ -28,13 +28,15 @@ Verified locally with synthetic fixtures only:
 | `npm run lint` (`tsc --noEmit`) | Passed |
 | `npm run test:api` | 302 passed, 0 failed |
 | `npm run build` | Passed; Vite reported a large-bundle advisory (>500 kB) |
-| Playwright inbox editor/detail/clear, stale-save, historical-value and duplicate-review cases | 5 passed, including 320px and 390px, using a local app and synthetic Firebase/browser fixtures |
+| Playwright inbox editor/detail/clear, stale-save, historical-value, duplicate-review, correction and CSV selection cases | 7 passed, including 320px and 390px, using a local app and synthetic Firebase/browser fixtures |
 
 Coverage includes write preservation/clear, email normalization, server-side duplicate acknowledgment and stale versions, correction-request snapshots/set/clear, signed CSV acknowledgment and confirmation, the CSV action matrix and `locations-v1` input compatibility, list/detail API projection and invalid historical values, and narrow-screen editor/detail behavior. The API test fixtures do not represent production records or a successful live authenticated response.
 
 Independent review additionally bound editor and correction approval checkboxes to the exact displayed conflict digest. CSV acknowledgments now carry the reviewed digest; revalidation cannot silently accept changed membership or versions. New import IDs remain stable across previews of the same actor/file so additions can be reviewed consistently. Regression tests cover stale versions, added conflict members, row-only acknowledgment rejection, signed digest tampering and new-row revalidation. An incorrectly nested API test was moved to its own awaited test case. Browser email fields allow unchanged historical text while validating new contact values explicitly.
 
 Pre-release `locations-v1` signed previews must be recreated after rollout. Version 1 CSV files remain supported; the new acknowledgment contract is part of the version 2 signed preview.
+
+Final workflow review also prevents unchanged inbox correction requests, including clearing an already empty inbox. Deselecting a CSV row removes its acknowledgment and reviewed digest; unselected rows cannot acquire a new acknowledgment. Synthetic browser regressions verify both rejection and successful submission of an actual correction, and the exact acknowledgment payload after CSV deselection.
 
 ## Release and rollback
 

@@ -198,6 +198,14 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   };
 
   const toggleSelectedRow = (rowNumber: number, selected: boolean) => {
+    if (!selected) {
+      setInboxAcknowledgedRowNumbers(current => current.filter(candidate => candidate !== rowNumber));
+      setInboxAcknowledgmentDigests(current => {
+        const next = { ...current };
+        delete next[rowNumber];
+        return next;
+      });
+    }
     setSelectedRowNumbers(current => selected
       ? [...current, rowNumber].sort((left, right) => left - right)
       : current.filter(candidate => candidate !== rowNumber));
@@ -528,7 +536,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
                                 <input
                                   type="checkbox"
                                   checked={inboxAcknowledgedRowNumbers.includes(row.rowNumber) && inboxAcknowledgmentDigests[row.rowNumber] === issue.inboxConflictDigest}
-                                  disabled={Boolean(busy) || outcomeUnknown}
+                                  disabled={Boolean(busy) || outcomeUnknown || !selectedRowNumbers.includes(row.rowNumber)}
                                   onChange={event => toggleInboxAcknowledgment(row.rowNumber, event.target.checked)}
                                   className="mt-0.5"
                                 />

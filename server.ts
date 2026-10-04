@@ -18,6 +18,9 @@ import { loadLocationImportTokenSecret } from "./server/locationImportConfirmati
 import { createApiClientRouter } from "./server/apiClientApi";
 import { createFirestoreApiClientStore } from "./server/firestoreApiClients";
 import { createBrowserApp } from "./server/browserApp";
+import { createPersonnelApiRouter } from "./server/personnelApi";
+import { createFirestorePersonnelRepository } from "./server/firestorePersonnel";
+import { createApiDocumentationRouter } from "./server/apiDocumentation";
 
 // Attempt to load .env file if present in Node 20.6+
 try {
@@ -39,6 +42,7 @@ async function startServer() {
   const locationExports = createFirestoreLocationExportStore();
   const locationImportPreviews = createFirestoreLocationImportPreviewStore();
   const apiClients = createFirestoreApiClientStore();
+  app.use('/api', createApiDocumentationRouter());
   app.use("/api/auth", createAuthRouter(authenticate, () => directory.read()));
   app.use("/api/exports", createLocationExportRouter(authenticate, locationExports));
   // JSON escaping can expand a valid 2 MB CSV; the route enforces the exact decoded CSV byte limit.
@@ -64,6 +68,7 @@ async function startServer() {
     authenticator: apiClients,
     locations: createFirestoreLocationRepository(),
   }));
+  app.use("/api/v2", createPersonnelApiRouter({ authenticator: apiClients, repository: createFirestorePersonnelRepository() }));
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {

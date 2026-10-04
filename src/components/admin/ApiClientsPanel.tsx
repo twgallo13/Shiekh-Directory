@@ -8,17 +8,22 @@ import {
   listApiClients,
   revokeApiClient,
   rotateApiClient,
+  updateApiClientScopes,
   type ApiClientSummary,
 } from '../../lib/apiClientAdminClient';
+import { API_SCOPES, type ApiScope } from '../../lib/apiScopes';
 
 type PendingAction = {
-  kind: 'disable' | 'rotate' | 'rotate-immediate' | 'revoke';
+  kind: 'disable' | 'rotate' | 'rotate-immediate' | 'revoke' | 'scopes';
   client: ApiClientSummary;
+  scopes?: ApiScope[];
 };
 
 export function ApiClientsPanel() {
   const [clients, setClients] = useState<ApiClientSummary[]>([]);
   const [name, setName] = useState('');
+  const [newScopes, setNewScopes] = useState<ApiScope[]>(['locations:read']);
+  const [scopeDraft, setScopeDraft] = useState<{ client: ApiClientSummary; scopes: ApiScope[] } | null>(null);
   const [issuedToken, setIssuedToken] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [confirmationValue, setConfirmationValue] = useState('');
@@ -43,10 +48,10 @@ export function ApiClientsPanel() {
 
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (controlsLocked || !name.trim()) return;
+    if (controlsLocked || !name.trim() || newScopes.length === 0) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const issued = await createApiClient(name.trim());
+      const issued = await createApiClient(name.trim(), newScopes);
       replaceClient(issued.client); setIssuedToken(issued.token); setName('');
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'The API client could not be created.'); }
     finally { setBusy(false); }
@@ -65,7 +70,10 @@ export function ApiClientsPanel() {
     const action = pending;
     setBusy(true); setError(''); setNotice('');
     try {
-      if (action.kind === 'disable') {
+      if (action.kind === 'scopes' && action.scopes) {
+        replaceClient(await updateApiClientScopes(action.client, action.scopes));
+        setScopeDraft(null); setNotice(`${action.client.name} grants updated for all active tokens.`);
+      } else if (action.kind === 'disable') {
         replaceClient(await disableApiClient(action.client.id)); setNotice(`${action.client.name} disabled.`);
       } else if (action.kind === 'revoke') {
         replaceClient(await revokeApiClient(action.client.id)); setNotice(`${action.client.name} permanently revoked.`);
@@ -90,6 +98,7 @@ export function ApiClientsPanel() {
         <div><h3 id="api-clients-title" className="text-sm font-bold text-neutral-900">API Clients</h3><p className="text-xs text-neutral-500">System Administrator managed server credentials</p></div>
         <button type="button" title="Refresh clients" aria-label="Refresh API clients" disabled={loading || controlsLocked} onClick={() => void load()} className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-300 text-neutral-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" /></button>
       </div>
+      <p className="text-xs text-neutral-600">Personnel contacts are not published. Grant access only after consumer approval. <a className="underline" href="/api/personnel-guide" target="_blank" rel="noreferrer">API guide</a> · <a className="underline" href="/api/openapi.json" target="_blank" rel="noreferrer">Shareable OpenAPI</a></p>
 
       {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
       {notice && <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
@@ -99,24 +108,32 @@ export function ApiClientsPanel() {
         <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void copyToken()} className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-3 py-2 text-xs font-semibold text-white"><Clipboard className="h-4 w-4" />Copy token</button><button type="button" onClick={() => setIssuedToken(null)} className="inline-flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700"><Check className="h-4 w-4" />I stored it</button></div>
       </div>}
 
-      <form onSubmit={create} className="flex flex-col gap-2 sm:flex-row">
+      <form onSubmit={create} className="flex flex-col gap-2">
         <label className="min-w-0 flex-1 text-xs font-semibold text-neutral-700">Client name<input required disabled={controlsLocked} maxLength={100} autoComplete="off" value={name} onChange={event => setName(event.target.value)} placeholder="Store Manager sync" className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm" /></label>
-        <button type="submit" disabled={controlsLocked || !name.trim()} className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Plus className="h-4 w-4" />Create client</button>
+        <ScopeChoices label="New client grants" scopes={newScopes} disabled={controlsLocked} onChange={setNewScopes} />
+        <button type="submit" disabled={controlsLocked || !name.trim() || newScopes.length === 0} className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Plus className="h-4 w-4" />Create client with selected grants</button>
       </form>
 
       <div className="divide-y divide-neutral-200 border-y border-neutral-200">
         {loading && <p className="py-5 text-sm text-neutral-500">Loading API clients...</p>}
         {!loading && clients.length === 0 && <p className="py-5 text-sm text-neutral-500">No API clients have been created.</p>}
         {clients.map(client => <article key={client.id} className="space-y-3 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-neutral-900">{client.name}</h4><p className="mt-1 font-mono text-xs text-neutral-500">locations:read</p></div><span className={`rounded px-2 py-1 text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : client.status === 'Disabled' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800'}`}>{client.status}</span></div>
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-neutral-900">{client.name}</h4><p className="mt-1 break-all font-mono text-xs text-neutral-500">{client.scopes.join(', ')}</p></div><span className={`rounded px-2 py-1 text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : client.status === 'Disabled' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800'}`}>{client.status}</span></div>
           <dl className="grid gap-1 text-xs text-neutral-600 sm:grid-cols-2"><div><dt className="inline font-semibold text-neutral-800">Last used: </dt><dd className="inline">{client.lastUsedAt ? new Date(client.lastUsedAt).toLocaleString() : 'Never'}</dd></div><div><dt className="inline font-semibold text-neutral-800">Token versions: </dt><dd className="inline">{client.tokenVersions.length}</dd></div></dl>
           {client.status !== 'Revoked' && <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={controlsLocked} onClick={() => setScopeDraft({ client, scopes: [...client.scopes] })} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">Edit grants</button>
             {client.status === 'Active' ? <button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'disable', client })} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-2.5 py-1.5 text-xs font-semibold text-amber-900"><ShieldOff className="h-3.5 w-3.5" />Disable</button> : <button type="button" disabled={controlsLocked} onClick={() => void enable(client)} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 px-2.5 py-1.5 text-xs font-semibold text-emerald-800"><ShieldCheck className="h-3.5 w-3.5" />Re-enable</button>}
             {client.status === 'Active' && <><button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'rotate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold text-neutral-700"><KeyRound className="h-3.5 w-3.5" />Rotate, 24h overlap</button><button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'rotate-immediate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700"><KeyRound className="h-3.5 w-3.5" />Rotate immediately</button></>}
             <button type="button" disabled={controlsLocked} onClick={() => { setConfirmationValue(''); setPending({ kind: 'revoke', client }); }} className="inline-flex items-center gap-1.5 rounded-md bg-red-700 px-2.5 py-1.5 text-xs font-semibold text-white">Revoke</button>
           </div>}
         </article>)}
       </div>
+      {scopeDraft && <div className="space-y-3 rounded-md border border-amber-300 p-3">
+        <ScopeChoices label={`Grants for ${scopeDraft.client.name}`} scopes={scopeDraft.scopes} disabled={busy} onChange={scopes => setScopeDraft({ ...scopeDraft, scopes })} />
+        <p className="text-xs">All active tokens change immediately. Existing snapshots become invalid when grants change.</p>
+        <button type="button" disabled={busy || scopeDraft.scopes.length === 0} onClick={() => setPending({ kind: 'scopes', client: scopeDraft.client, scopes: [...scopeDraft.scopes] })} className="rounded border px-3 py-2 text-xs">Review grant change</button>
+        <button type="button" disabled={busy} onClick={() => setScopeDraft(null)} className="ml-2 text-xs underline">Cancel grant edit</button>
+      </div>}
 
       <ConfirmDialog isOpen={Boolean(pending)} title={confirmationTitle(pending)} description={confirmationDescription(pending)} confirmLabel={confirmationLabel(pending)} confirmationText={pending?.kind === 'revoke' ? pending.client.name : undefined} confirmationValue={confirmationValue} onConfirmationValueChange={setConfirmationValue} tone={pending?.kind === 'revoke' || pending?.kind === 'rotate-immediate' ? 'danger' : 'primary'} confirmDisabled={busy} cancelDisabled={busy} onConfirm={() => void confirmAction()} onCancel={() => { if (!busy) { setPending(null); setConfirmationValue(''); } }} />
     </section>
@@ -124,6 +141,7 @@ export function ApiClientsPanel() {
 }
 
 function confirmationTitle(pending: PendingAction | null): string {
+  if (pending?.kind === 'scopes') return `Change ${pending.client.name} grants?`;
   if (pending?.kind === 'disable') return `Disable ${pending.client.name}?`;
   if (pending?.kind === 'rotate') return `Rotate ${pending.client.name}?`;
   if (pending?.kind === 'rotate-immediate') return `Retire old token immediately?`;
@@ -131,6 +149,7 @@ function confirmationTitle(pending: PendingAction | null): string {
 }
 
 function confirmationDescription(pending: PendingAction | null): string {
+  if (pending?.kind === 'scopes') return `Current: ${pending.client.scopes.join(', ')}. Proposed: ${pending.scopes?.join(', ')}. This immediately changes every active token's access.`;
   if (pending?.kind === 'disable') return 'Requests from every token for this client will be denied until the client is re-enabled.';
   if (pending?.kind === 'rotate') return 'A new token will be shown once. Existing active tokens will remain valid for at most 24 hours.';
   if (pending?.kind === 'rotate-immediate') return 'A new token will be shown once and every previous token will stop working immediately.';
@@ -138,8 +157,15 @@ function confirmationDescription(pending: PendingAction | null): string {
 }
 
 function confirmationLabel(pending: PendingAction | null): string {
+  if (pending?.kind === 'scopes') return 'Confirm explicit grants';
   if (pending?.kind === 'disable') return 'Disable client';
   if (pending?.kind === 'rotate') return 'Rotate with overlap';
   if (pending?.kind === 'rotate-immediate') return 'Rotate and retire now';
   return 'Permanently revoke';
+}
+
+function ScopeChoices({ label, scopes, disabled, onChange }: { label: string; scopes: ApiScope[]; disabled: boolean; onChange: (scopes: ApiScope[]) => void }) {
+  return <fieldset disabled={disabled} className="flex flex-wrap gap-3 text-xs"><legend className="mb-1 font-semibold">{label}</legend>{API_SCOPES.map(scope =>
+    <label key={scope} className="inline-flex items-center gap-1"><input type="checkbox" checked={scopes.includes(scope)} onChange={event => onChange(API_SCOPES.filter(candidate => candidate === scope ? event.target.checked : scopes.includes(candidate)))} />{scope}</label>,
+  )}</fieldset>;
 }

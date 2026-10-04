@@ -3,6 +3,9 @@ import { test } from "node:test";
 import type { Firestore } from "@google-cloud/firestore";
 import { FirestoreApiClientStore, hashApiToken } from "../server/firestoreApiClients";
 import type { Account } from "../server/authAuthority";
+import { once } from 'node:events';
+import express from 'express';
+import { createPersonnelApiRouter } from '../server/personnelApi';
 
 const actor: Account = {
   uid: "admin-uid", email: "admin@example.test", emailVerified: true, name: "Test Administrator",
@@ -148,4 +151,73 @@ test("authentication fails closed when cursor signing material is missing or mal
     const store = new FirestoreApiClientStore(memory.firestore);
     assert.equal(await store.authenticate(token, { requestId: "request", method: "GET", path: "/locations" }), null);
   }
+});
+
+test("grants are reread per request, legacy missing is location-only, malformed fails closed, rotation preserves", async () => {
+  const memory = memoryFirestore();
+  const store = new FirestoreApiClientStore(memory.firestore);
+  const created = await store.create('Synthetic Personnel', actor, ['personnel:read', 'staffing:read']);
+  const context = { requestId: 'scope-test', method: 'GET', path: '/personnel' };
+  const clients = memory.collections.get('api_clients')!;
+  const stored = clients.get(created.client.id)!;
+  assert.deepEqual((await store.authenticate(created.token, context))?.scopes, ['personnel:read', 'staffing:read']);
+  const rotated = await store.rotate(created.client.id, false, actor);
+  assert.deepEqual(rotated.client.scopes, ['personnel:read', 'staffing:read']);
+  const updated = await store.updateScopes(created.client.id, ['staffing:read'], ['personnel:read', 'staffing:read'], actor);
+  assert.deepEqual(updated.scopes, ['staffing:read']);
+  for (const token of [created.token, rotated.token]) {
+    const credential = await store.authenticate(token, context);
+    assert.deepEqual(credential?.scopes, ['staffing:read']);
+    assert.equal(credential?.grantsVersion, 2);
+  }
+  await assert.rejects(store.updateScopes(created.client.id, ['personnel:read'], ['personnel:read', 'staffing:read'], actor));
+  const last = clients.get(created.client.id)!;
+  for (const scopes of [undefined, null, [], {}, 'staffing:read', ['admin'], ['personnel:read', 'personnel:read'], ['staffing:read', null]]) {
+    clients.set(created.client.id, { ...last, scopes });
+    assert.equal(await store.authenticate(created.token, context), null);
+    await assert.rejects(store.rotate(created.client.id, false, actor));
+  }
+  const legacy = { ...stored }; delete legacy.scopes; delete legacy.grantsVersion;
+  clients.set(created.client.id, legacy);
+  assert.deepEqual((await store.authenticate(created.token, context))?.scopes, ['locations:read']);
+  assert.deepEqual((await store.list())[0].scopes, ['locations:read']);
+  await store.disable(created.client.id, actor);
+  assert.equal(await store.authenticate(created.token, context), null);
+  await store.enable(created.client.id, actor);
+  await store.revoke(created.client.id, actor);
+  assert.equal(await store.authenticate(rotated.token, context), null);
+  await assert.rejects(store.updateScopes(created.client.id, ['personnel:read'], ['locations:read'], actor));
+});
+
+test('persisted grant changes invalidate real v2 snapshots/cursors immediately across token lifecycle', async () => {
+  const memory = memoryFirestore();
+  const clock = new Date('2026-10-04T11:00:00.000Z');
+  const store = new FirestoreApiClientStore(memory.firestore, () => clock);
+  const issued = await store.create('Synthetic Consumer', actor, ['personnel:read', 'staffing:read']);
+  const app = express();
+  app.use('/api/v2', createPersonnelApiRouter({
+    authenticator: store, now: () => clock, rateLimit: false,
+    repository: { async read() { return { records: [{ id: 'loc-1', data: { storeNumber: '07', recordStatus: 'Draft' } }], people: [], locations: [], regions: [], districts: [], nextId: 'loc-1' }; } },
+  }));
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/v2`;
+  const get = (path: string, token = issued.token) => fetch(`${base}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  try {
+    const session = await (await get('/snapshot')).json();
+    const page = await (await get(`/location-staffing?snapshot=${session.snapshot}&limit=1`)).json();
+    await store.updateScopes(issued.client.id, ['staffing:read'], ['personnel:read', 'staffing:read'], actor);
+    assert.equal((await get(`/location-staffing?snapshot=${session.snapshot}&limit=1&cursor=${page.pagination.nextCursor}`)).status, 400);
+    assert.equal((await get(`/personnel?snapshot=${session.snapshot}`)).status, 403);
+    await store.updateScopes(issued.client.id, ['personnel:read', 'staffing:read'], ['staffing:read'], actor);
+    assert.equal((await get(`/location-staffing?snapshot=${session.snapshot}`)).status, 400, 'restoring same grant names does not restore old generation');
+    const fresh = await (await get('/snapshot')).json();
+    const rotated = await store.rotate(issued.client.id, false, actor);
+    assert.equal((await get(`/location-staffing?snapshot=${fresh.snapshot}`, rotated.token)).status, 400);
+    assert.equal((await get(`/location-staffing?snapshot=${fresh.snapshot}`)).status, 200, 'old token remains active during overlap');
+    await store.disable(issued.client.id, actor);
+    assert.equal((await get(`/location-staffing?snapshot=${fresh.snapshot}`)).status, 401);
+    await store.enable(issued.client.id, actor);
+    await store.revoke(issued.client.id, actor);
+    assert.equal((await get('/snapshot', rotated.token)).status, 401);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });

@@ -1,4 +1,5 @@
 import { getSharedAuth } from "./authClient";
+import type { ApiScope } from "./apiScopes";
 
 export type ApiClientStatus = "Active" | "Disabled" | "Revoked";
 export type ApiTokenStatus = "Active" | "Retiring" | "Retired" | "Revoked";
@@ -14,7 +15,7 @@ export interface ApiClientSummary {
   id: string;
   name: string;
   status: ApiClientStatus;
-  scopes: ["locations:read"];
+  scopes: ApiScope[];
   createdAt: string;
   updatedAt: string;
   lastUsedAt?: string;
@@ -30,8 +31,12 @@ export async function listApiClients(): Promise<ApiClientSummary[]> {
   return (await apiClientRequest<{ clients: ApiClientSummary[] }>("", "GET")).clients;
 }
 
-export function createApiClient(name: string): Promise<IssuedApiClient> {
-  return apiClientRequest("", "POST", { name });
+export function createApiClient(name: string, scopes: ApiScope[] = ['locations:read']): Promise<IssuedApiClient> {
+  return apiClientRequest("", "POST", { name, scopes });
+}
+
+export function updateApiClientScopes(client: ApiClientSummary, scopes: ApiScope[]): Promise<ApiClientSummary> {
+  return apiClientRequest(`/${encodeURIComponent(client.id)}/scopes`, "POST", { scopes, expectedScopes: client.scopes });
 }
 
 export function disableApiClient(id: string): Promise<ApiClientSummary> {

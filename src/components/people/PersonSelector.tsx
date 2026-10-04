@@ -3,6 +3,7 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
 import { Search, User, X } from 'lucide-react';
 import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
+import { personLifecycle } from '../../lib/personLifecycle';
 
 export interface PersonSelectorProps {
   label?: string;
@@ -27,6 +28,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
 
   const filteredPeople = useMemo(() => {
     return people.filter(p => {
+      if (personLifecycle(p) !== 'active') return false;
       if (roleFilter && p.jobTitle !== roleFilter && p.role !== roleFilter) {
         return false;
       }
@@ -45,7 +47,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
 
   const selectedPerson = useMemo(() => {
     if (!value) return null;
-    return people.find(p => p.id === value || p.fullName === value || p.name === value) || null;
+    return people.find(p => p.id === value) || null;
   }, [people, value]);
 
   return (

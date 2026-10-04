@@ -7,6 +7,7 @@ import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
 import { canonicalHierarchyState, resolveLocationHierarchy } from "../src/lib/hierarchyResolution";
 import type { ApiClientAuthenticator, ManagedApiCredential } from "./apiClientApi";
 import { normalizeLocationInboxEmail } from "../src/lib/locationInboxEmail";
+import type { ApiScope } from "../src/lib/apiScopes";
 
 export const LOCATION_READ_SCOPE = "locations:read" as const;
 
@@ -250,7 +251,7 @@ function ensureRequestId(response: Response): string {
   return requestId;
 }
 
-function createAuthenticationMiddleware(
+export function createAuthenticationMiddleware(
   authenticator: ApiClientAuthenticator,
 ): RequestHandler {
   return async (request, response, next) => {
@@ -276,7 +277,7 @@ function createAuthenticationMiddleware(
   };
 }
 
-function requireScope(scope: typeof LOCATION_READ_SCOPE): RequestHandler {
+export function requireScope(scope: ApiScope): RequestHandler {
   return (_request, response, next) => {
     const credential = response.locals.apiCredential as ManagedApiCredential | undefined;
     if (!credential?.scopes.includes(scope)) {
@@ -286,7 +287,7 @@ function requireScope(scope: typeof LOCATION_READ_SCOPE): RequestHandler {
   };
 }
 
-const accessLogMiddleware: RequestHandler = (request, response, next) => {
+export const accessLogMiddleware: RequestHandler = (request, response, next) => {
   response.once("finish", () => {
     const credential = response.locals.apiCredential as ManagedApiCredential | undefined;
     console.info("[Directory API Access]", JSON.stringify({
@@ -317,7 +318,7 @@ function logRoute(request: Request): string {
   return "/unmatched";
 }
 
-function sendError(response: Response, status: number, code: string, message: string): Response {
+export function sendError(response: Response, status: number, code: string, message: string): Response {
   response.setHeader("Cache-Control", "no-store");
   return response.status(status).json({
     error: {

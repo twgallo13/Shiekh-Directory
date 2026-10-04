@@ -22,6 +22,7 @@ async function harness(authenticate: Authenticate | null, overrides: Partial<Api
     async create(name) { calls.push(`create:${name}`); return { client, token: "one-time-secret-token" }; },
     async disable() { calls.push("disable"); return { ...client, status: "Disabled" }; },
     async enable() { calls.push("enable"); return client; },
+    async updateScopes(_id, scopes) { calls.push("scopes"); return { ...client, scopes }; },
     async rotate(_id, immediate) { calls.push(`rotate:${immediate}`); return { client, token: "rotated-one-time-token" }; },
     async revoke() { calls.push("revoke"); return { ...client, status: "Revoked" }; },
     ...overrides,
@@ -58,6 +59,24 @@ test("API client management requires Firebase authentication and System Administ
       assert.equal(app.calls.length, expected === 200 ? 1 : 0);
     } finally { await app.close(); }
   }
+});
+
+test("scope management is explicit, strict and administrator-only", async () => {
+  const app = await harness(async () => account, {
+    async create(_name, _actor, scopes) { assert.deepEqual(scopes, ['personnel:read', 'staffing:read']); return { client: { ...client, scopes }, token: 'synthetic' }; },
+  });
+  try {
+    assert.equal((await app.request('', 'POST', { name: 'Personnel', scopes: ['staffing:read', 'personnel:read'] })).status, 200);
+    for (const scopes of [[], null, 'personnel:read', ['people:read'], ['personnel:read', 'personnel:read'], [' staffing:read']]) {
+      assert.equal((await app.request('', 'POST', { name: 'Invalid', scopes })).status, 400);
+      assert.equal((await app.request('/api-client/scopes', 'POST', { scopes, expectedScopes: ['locations:read'] })).status, 400);
+    }
+    assert.equal((await app.request('/api-client/scopes', 'POST', { scopes: ['staffing:read'], expectedScopes: ['locations:read'] })).status, 200);
+    assert.equal((await app.request('/api-client/scopes', 'POST', { scopes: ['staffing:read'] })).status, 400);
+  } finally { await app.close(); }
+  const viewer = await harness(async () => ({ ...account, role: 'Viewer' }));
+  try { assert.equal((await viewer.request('/api-client/scopes', 'POST', { scopes: ['personnel:read'], expectedScopes: ['locations:read'] })).status, 403); }
+  finally { await viewer.close(); }
 });
 
 test("creation returns plaintext once while list and lifecycle responses remain secret-free", async () => {

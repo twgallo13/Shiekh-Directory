@@ -801,12 +801,137 @@ test('Person territory edit does not rewrite the linked Location legacy District
   await page.getByRole('button', { name: 'Save Person' }).click();
   await expect(page.getByText('Updated Manager Territory', { exact: true })).toHaveCount(2);
   expect(fixture.commits).toHaveLength(1);
-  expect(fixture.commits[0].writes.map((write: { collection: string }) => write.collection)).toEqual(['people', 'locations']);
-  const linkedLocationWrite = fixture.commits[0].writes[1];
-  expect(linkedLocationWrite.data.district).toBe('Legacy Location District');
-  expect(linkedLocationWrite.data.regionId).toBe('reg-west');
-  expect(linkedLocationWrite.data.districtId).toBe('01');
+  expect(fixture.commits[0].writes.map((write: { collection: string }) => write.collection)).toEqual(['people']);
   expect(fixture.seed.locations[0].district).toBe('Legacy Location District');
+});
+
+async function prepareStaffingParity(page: Page) {
+  await prepare(page, 'System Administrator');
+  const seed = {
+    ...seedDirectory(1),
+    locations: [{
+      ...seedDirectory(1).locations[0], phone: '+12135550107', version: 1,
+      storeManagerId: 'missing-person', storeManagerName: 'Legacy Manager',
+      districtManagerName: 'Legacy District Manager',
+      regionalManagerId: 'regional-person', regionalManagerName: 'Stale Regional Name',
+      assistantStoreManagerIds: ['missing-assistant'], assistantStoreManagerNames: ['Legacy Assistant'],
+      keyHolderNames: ['Legacy Key Holder'],
+    }],
+    people: [
+      { id: 'regional-person', fullName: 'Canonical Regional Person', status: 'Active', activeStatus: true, version: 1 },
+      { id: 'ambiguous-person', fullName: 'Ambiguous Lifecycle Person', status: 'Active', activeStatus: false, version: 1 },
+    ],
+  };
+  const commits: Array<{ writes: Array<{ collection: string; id: string; operation: string; data?: Record<string, unknown> }> }> = [];
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON();
+    commits.push(body);
+    await route.fulfill({ json: commitResponseFor(body) });
+  });
+  return { seed, commits };
+}
+
+for (const width of [1280, 390, 320]) {
+  test(`Staffing parity preserves persisted IDs on load and unrelated save at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    const fixture = await prepareStaffingParity(page);
+    await page.goto(`${origin}/locations/loc-1`); await restore(page, true);
+    await expect(page.getByText('Canonical Regional Person', { exact: true })).toBeVisible();
+    await page.getByText(/Saved staffing needs review/).click();
+    await expect(page.getByText(/Canonical IDs are preserved/)).toBeVisible();
+    expect(fixture.commits).toHaveLength(0);
+    await page.goto(`${origin}/people`); await restore(page, true);
+    await expect(page.getByRole('button', { name: /Legacy Assistant|Legacy Key Holder/ })).toHaveCount(0);
+    await page.goto(`${origin}/locations/loc-1/edit`); await restore(page, true);
+    const dialog = page.getByRole('dialog');
+    const name = dialog.getByPlaceholder('e.g. Glendale Galleria, Shiekh Shoes', { exact: true });
+    await name.fill('Unrelated Store Rename');
+    await page.getByRole('button', { name: /Save.*Record/ }).click();
+    await expect.poll(() => fixture.commits.length).toBe(1);
+    const saved = fixture.commits[0].writes[0].data!;
+    expect(saved.storeManagerId).toBe('missing-person');
+    expect(saved.storeManagerName).toBe('Legacy Manager');
+    expect(saved.assistantStoreManagerIds).toEqual(['missing-assistant']);
+    expect(saved.keyHolderNames).toEqual(['Legacy Key Holder']);
+    expect(Object.hasOwn(saved, 'keyHolderIds')).toBe(false);
+    expect(saved.regionalManagerName).toBe('Stale Regional Name');
+    expect(saved.name).toBe('Unrelated Store Rename');
+  });
+}
+
+test('Staffing parity regional Person rename updates only saved regional copy and keeps missing-role history', async ({ page }) => {
+  const fixture = await prepareStaffingParity(page);
+  await page.goto(`${origin}/people`); await restore(page, true);
+  await page.getByRole('button', { name: /Canonical Regional Person/ }).click();
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByRole('dialog').getByRole('textbox', { name: 'Full Name', exact: true }).fill('Renamed Regional Person');
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect.poll(() => fixture.commits.length).toBe(1);
+  const saved = fixture.commits[0].writes.find(write => write.collection === 'locations')!.data!;
+  expect(saved.regionalManagerId).toBe('regional-person');
+  expect(saved.regionalManagerName).toBe('Renamed Regional Person');
+  expect(saved.storeManagerId).toBe('missing-person');
+  expect(saved.assistantStoreManagerNames).toEqual(['Legacy Assistant']);
+  expect(saved.keyHolderNames).toEqual(['Legacy Key Holder']);
+});
+
+test('Staffing parity ambiguous lifecycle is visible and unrelated Person save preserves both aliases', async ({ page }) => {
+  const fixture = await prepareStaffingParity(page);
+  await page.goto(`${origin}/people`); await restore(page, true);
+  await page.getByRole('button', { name: /Ambiguous Lifecycle Person/ }).click();
+  await expect(page.getByText('Needs lifecycle review', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('Active Status', { exact: true })).toHaveValue('Unknown');
+  await dialog.getByLabel('Department', { exact: true }).fill('Synthetic Department');
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect.poll(() => fixture.commits.length).toBe(1);
+  const saved = fixture.commits[0].writes[0].data!;
+  expect(saved.status).toBe('Active');
+  expect(saved.activeStatus).toBe(false);
+});
+
+test('Staffing parity unrelated Regional Person save does not refresh stale Location copies', async ({ page }) => {
+  const fixture = await prepareStaffingParity(page);
+  await page.goto(`${origin}/people`); await restore(page, true);
+  await page.getByRole('button', { name: /Canonical Regional Person/ }).click();
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByRole('dialog').getByLabel('Department', { exact: true }).fill('Synthetic Department');
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect.poll(() => fixture.commits.length).toBe(1);
+  expect(fixture.commits[0].writes.map(write => write.collection)).toEqual(['people']);
+  expect(fixture.seed.locations[0].regionalManagerName).toBe('Stale Regional Name');
+});
+
+test('Personnel scopes UI preserves location-only default and requires explicit reviewed grant change', async ({ page }) => {
+  await prepare(page, 'System Administrator');
+  await page.setViewportSize({ width: 390, height: 850 });
+  const client = { id: 'synthetic-client', name: 'Synthetic Consumer', status: 'Active', scopes: ['locations:read'], tokenVersions: [], createdAt: '2026-10-04T11:00:00.000Z', updatedAt: '2026-10-04T11:00:00.000Z' };
+  const requests: Record<string, unknown>[] = [];
+  await page.route('**/api/api-clients**', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { clients: [client] } });
+    const body = route.request().postDataJSON(); requests.push(body);
+    expect(new URL(route.request().url()).pathname).toBe('/api/api-clients/synthetic-client/scopes');
+    return route.fulfill({ json: { ...client, scopes: body.scopes } });
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Directory API', exact: true }).click();
+  const newGrants = page.getByRole('group', { name: 'New client grants' });
+  await expect(newGrants.getByLabel('locations:read')).toBeChecked();
+  await expect(newGrants.getByLabel('personnel:read')).not.toBeChecked();
+  await expect(newGrants.getByLabel('staffing:read')).not.toBeChecked();
+  await expect(page.getByRole('link', { name: 'Shareable OpenAPI' })).toHaveAttribute('href', '/api/openapi.json');
+  expect(requests).toHaveLength(0);
+  await page.getByRole('button', { name: 'Edit grants' }).click();
+  const edits = page.getByRole('group', { name: 'Grants for Synthetic Consumer' });
+  await edits.getByLabel('personnel:read').check();
+  await edits.getByLabel('staffing:read').check();
+  await page.getByRole('button', { name: 'Review grant change' }).click();
+  expect(requests).toHaveLength(0);
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Confirm explicit grants' }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0]).toEqual({ scopes: ['locations:read', 'personnel:read', 'staffing:read'], expectedScopes: ['locations:read'] });
 });
 
 test('Location Edit hierarchy draft remains visible after a stale-version conflict', async ({ page }) => {

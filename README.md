@@ -5,6 +5,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 ## Documentation
 
 - [API reference](API.md): endpoints, authentication, filters, pagination, and responses.
+- [Personnel/staffing v2 guide](docs/personnel-staffing-api.md) and [shareable OpenAPI](docs/personnel-staffing-openapi.json): scoped, contact-free full snapshots of persisted assignments. First-release review status: [dispatch 14](docs/dispatches/dispatch-14-personnel-staffing-api.md).
 - [Response schema](docs/api-response-schema.md): the fields the API returns and what their values mean.
 - [App blueprint for Directory data](docs/app-blueprint-directory-api.md): how a consuming app such as ROPI should store and synchronize store information.
 - [Location inbox implementation and acceptance evidence](docs/dispatches/dispatch-13-location-inbox-email.md).
@@ -32,5 +33,7 @@ npm run build
 ```
 
 Browser fixtures are in `test/auth.browser.spec.ts`. Run the inbox cases against a configured local development server with `npx playwright test test/auth.browser.spec.ts --grep "Location inbox" --workers=1`. The tests mock authentication and data APIs and block external HTTPS requests; they do not save production records or send email. `AUTH_BROWSER_TEST_ORIGIN` defaults to `http://127.0.0.1:3001`.
+
+For personnel/staffing UI verification, use `--grep "Staffing parity|Personnel scopes UI"` against the same synthetic local harness. The expanded acceptance command and actual results are recorded in [dispatch 14](docs/dispatches/dispatch-14-personnel-staffing-api.md). Preserve the existing public Firebase project/domain expected by the configuration guard while using synthetic key/app ID and mocked SDK; do not change authentication policy to make fixtures pass.
 
 ROPI's consumer application is maintained outside this repository. Its synchronization and notification implementation still belongs in that application.

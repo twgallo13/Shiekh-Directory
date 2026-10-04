@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
+import { parseApiScopes, type ApiScope } from "../src/lib/apiScopes";
 import {
   AccessDenied,
   AuthenticationUnavailable,
@@ -18,7 +19,8 @@ export interface ManagedApiCredential {
   clientId: string;
   tokenVersionId: string;
   cursorSigningKey: string;
-  scopes: [typeof API_CLIENT_SCOPE];
+  scopes: ApiScope[];
+  grantsVersion?: number;
 }
 
 export interface ApiAuthenticationContext {
@@ -42,7 +44,7 @@ export interface ApiClientSummary {
   id: string;
   name: string;
   status: ApiClientStatus;
-  scopes: [typeof API_CLIENT_SCOPE];
+  scopes: ApiScope[];
   createdAt: string;
   updatedAt: string;
   lastUsedAt?: string;
@@ -56,7 +58,8 @@ export interface IssuedApiClient {
 
 export interface ApiClientStore {
   list(): Promise<ApiClientSummary[]>;
-  create(name: string, actor: Account): Promise<IssuedApiClient>;
+  create(name: string, actor: Account, scopes?: ApiScope[]): Promise<IssuedApiClient>;
+  updateScopes(id: string, scopes: ApiScope[], expectedScopes: ApiScope[], actor: Account): Promise<ApiClientSummary>;
   disable(id: string, actor: Account): Promise<ApiClientSummary>;
   enable(id: string, actor: Account): Promise<ApiClientSummary>;
   rotate(id: string, retirePreviousImmediately: boolean, actor: Account): Promise<IssuedApiClient>;
@@ -97,12 +100,22 @@ export function createApiClientRouter(authenticate: Authenticate | null, store: 
   });
 
   router.post("/", async (request, response) => {
-    if (!exactObject(request.body, ["name"]) || typeof request.body.name !== "string") {
+    if (!(exactObject(request.body, ["name"]) || exactObject(request.body, ["name", "scopes"])) || typeof request.body.name !== "string") {
       return response.status(400).json({ error: { code: "invalid_request" } });
     }
     const name = request.body.name.trim();
     if (!name || name.length > 100) return response.status(400).json({ error: { code: "invalid_request" } });
-    await lifecycleResponse(response, () => store.create(name, response.locals.account));
+    const scopes = parseApiScopes(request.body.scopes, !Object.hasOwn(request.body, "scopes"));
+    if (!scopes) return response.status(400).json({ error: { code: "invalid_request" } });
+    await lifecycleResponse(response, () => store.create(name, response.locals.account, scopes));
+  });
+
+  router.post("/:id/scopes", async (request, response) => {
+    if (!exactObject(request.body, ["scopes", "expectedScopes"])) return response.status(400).json({ error: { code: "invalid_request" } });
+    const scopes = parseApiScopes(request.body.scopes);
+    const expected = parseApiScopes(request.body.expectedScopes);
+    if (!scopes || !expected) return response.status(400).json({ error: { code: "invalid_request" } });
+    await lifecycleResponse(response, () => store.updateScopes(request.params.id, scopes, expected, response.locals.account));
   });
 
   router.post("/:id/disable", async (request, response) => {

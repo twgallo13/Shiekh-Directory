@@ -20,7 +20,7 @@ import {
 } from '../types';
 import type { DirectorySeed } from '../lib/directorySeed';
 import type { LocationInboxAcknowledgment } from '../lib/locationInboxEmail';
-import { migrateDirectoryRelationships } from '../lib/directoryMigration';
+import { canonicalDirectoryBootstrap } from '../lib/canonicalDirectoryBootstrap';
 import { buildRegistryWrite, commitDirectory, fetchHierarchyRegistry, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult, type HierarchyRegistrySnapshot, type RegistrySaveIntent } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
@@ -99,8 +99,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   if (!account || !user) throw new Error('Authorized directory account required.');
   const currentUser: UserProfile = { id: account.uid, name: account.name, email: account.email || '', role: account.role, status: 'Active', accessScope: account.accessScope, personId: account.personId || undefined };
   const [initialDirectory] = useState(() => {
-    const migrated = migrateDirectoryRelationships(seed.locations, seed.people, seed.hoursTemplates);
-    return { ...migrated, templates: seed.hoursTemplates };
+    const canonical = canonicalDirectoryBootstrap(seed.locations, seed.people, seed.hoursTemplates);
+    return { ...canonical, templates: seed.hoursTemplates };
   });
   const [locations, setLocations] = useState<LocationRecord[]>(initialDirectory.locations);
   const [people, setPeople] = useState<Person[]>(initialDirectory.people);
@@ -365,9 +365,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       ? updatedPerson
       : people.find(person => person.id === personId);
 
-    const updatedFields = Object.keys(updates);
+    const updatedFields = Object.keys(updates).filter(field =>
+      JSON.stringify(currentPerson[field as keyof Person]) !== JSON.stringify(updatedPerson[field as keyof Person]),
+    );
     const updatesLeadershipCopies = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
-    const affectsLocation = (location: LocationRecord) => updatesLeadershipCopies && (location.storeManagerId === id || location.districtManagerId === id
+    const affectsLocation = (location: LocationRecord) => updatesLeadershipCopies && (location.storeManagerId === id || location.districtManagerId === id || location.regionalManagerId === id
       || location.assistantStoreManagerIds?.includes(id) || location.keyHolderIds?.includes(id));
     const updatedLocations = locations.map(location => reconcileLocationLeadershipCopy(
       location,

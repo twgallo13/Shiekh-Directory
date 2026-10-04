@@ -1,4 +1,4 @@
-# Cloud Run Deployment Runbook (Read-Only Recovery)
+# Cloud Run Deployment and Rollback Runbook
 
 Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Default Credentials in this workspace. No deploy, traffic change, or configuration change was made while recovering this information.
 
@@ -11,7 +11,38 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision (verified 2026-09-30)
+## Current live revision (verified 2026-10-04)
+
+- Application commit: `fa08cc18406efc60757605b193b8ccfcdb23c932`; tree: `9e463886fa0664db9ec86f78718308b78482c0dd`. PRs #14–#16 add shared Location inboxes, workflow corrections, and reliable browser HTML refresh across deployments.
+- Revision: `shiekh-location-company-directory-inbox-fa08cc1`, tagged `inbox-fa08cc1`, Ready and the sole 100% revision in both desired and observed Cloud Run v2 traffic. All other revisions have zero percentage traffic; historical tags are preserved.
+- Cloud Build: `945dc274-22b2-40ab-a2a9-59ba401fa280` (`SUCCESS`). Image digest: `sha256:9b4ca1564eeec7d67f950259cfed1918fa055ffd18819028decb8d5e344dfff9`.
+- Field-compatible rollback target: `shiekh-location-company-directory-inbox-c1eb5fa`, from application commit `c1eb5fa9e097df7d4d99cf28f7c2388dd11601b8`. This revision retains inbox-preserving writes but predates the HTML caching correction; prefer a compatible replacement build retaining the cache fix when practical.
+- Runtime settings, secret references, service identity, build authentication settings, IAM/auth settings and existing tags matched the pre-release configuration. Runtime fingerprint: `595ff6c8e28b7f0bc679e7334ff120dfd37db813275125321ff7bdb20f8361d2`; service fingerprint excluding image/deployment provenance: `5d8b45f6491ea40dd41abd241edacc8399e6f4870cc8cf5a295b057b206d1905`.
+- Existing compiled Firebase configuration was reused. The release guard fingerprint remains `1e02d9f8b746f840d053eb881d62b1dd336177b5f3b40dbca5180592a9ddd376`; an independent check of the four public Firebase configuration fields produced the unchanged fingerprint `33f28e8aacbee283d0332ac161d7412da3f2ca687820e399ae7a3c8bb2b1bfa3` under its separate serialization. No values were logged or committed for this release.
+- Both default and branded URLs passed root `200`, unauthenticated `/api/auth/me` and `/api/v1/locations` `401 invalid_token`, and unknown API route `404 api_route_not_found`. Production HTML and 42 discovered application assets matched the final candidate; branded mapping remained Ready and DomainRoutable.
+- Root, `/locations/loc-150/edit` and `/index.html` returned `200` HTML with `Cache-Control: no-store`, no ETag and no Last-Modified, including requests carrying both the previous weak ETag and 1980 If-Modified-Since header. Ordinary Chrome navigation loaded the inbox editor with the existing session and no cache-bypass URL. Production HTML SHA-256: `0ccdb310bb272cf5c1804ded22f1b6f705a7f9eb715e07cb94d8fcdb0dcee9c9`.
+- Verification: lint, 303 API/unit tests, production build and seven synthetic inbox browser cases passed. Live verification was read-only; no migration, backfill, business-record write, email send, new API client/token, IAM or auth change was performed. Existing Codespace ADC was used, and transient token files were removed. A live authorized consumer API response remains an integration check for the consumer owner.
+
+Release documentation commits after `fa08cc1` do not require an application rebuild. The deployed application SHA above identifies the exact source in the image.
+
+### HTML cache safeguard
+
+Buildpacks normalize file timestamps. Equal-sized `index.html` files from different releases can therefore receive the same weak stat-based ETag despite referencing different JavaScript assets. Revalidation can return an incorrect `304` and leave a blank page. Preserve `server/browserApp.ts`'s HTML-only cache policy in future builds. The browser subapplication disables HTML ETags because Express `sendFile` overrides per-call ETag options with the application setting; hashed asset validators and API policies remain intact.
+
+Before promotion, send the previous HTML validators to the candidate's root and a deep link and require `200` with current HTML, `no-store`, and no ETag/Last-Modified. Compare compiled browser Firebase settings as well as runtime configuration; root `200` alone does not prove sign-in is configured.
+
+### Current field-compatible rollback
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-inbox-c1eb5fa=100
+```
+
+An application rollback does not require deleting or backfilling inbox data. A pre-inbox writer may erase the new field on full-document writes; restrict Location writes if an older incompatible revision must be restored. The pre-release baseline was `shiekh-location-company-directory-pr13-0a21488` at 100%, verified immediately before this release, superseding the older September record below.
+
+## Historical live revision (verified 2026-09-30)
 
 - `latestReadyRevisionName`: `shiekh-location-company-directory-dispatch12c-a5e3a7b`, deployed from merged `main` commit `a5e3a7b4d685d3a37ce2888ad0294f2ed844e172` after PRs #11, #9, and #10 merged.
 - Traffic: the candidate is the sole percentage-bearing revision at 100%; all other revisions are at 0% or have tag-only routes.

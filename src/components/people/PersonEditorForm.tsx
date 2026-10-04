@@ -5,6 +5,7 @@ import { resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } f
 import { Button } from '../common/Button';
 import { FormLabel } from '../common/FormLabel';
 import { PersonLocationRelationshipFields } from './PersonLocationRelationshipFields';
+import { normalizePersonEmail } from '../../lib/locationInboxEmail';
 
 interface PersonEditorFormProps {
   person?: PersonRecord;
@@ -44,6 +45,10 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     const normalizedPhone = shouldValidatePhone && phoneInput ? normalizeUsPhone(phoneInput) : null;
     if (shouldValidatePhone && phoneInput && !normalizedPhone) {
       setPhoneError('Enter a valid US phone number and numeric extension.');
+      return;
+    }
+    if (emailTouched && email.trim() !== currentEmail.value && email.trim() && !normalizePersonEmail(email.trim())) {
+      setSaveError('Enter one valid work email address, or leave it blank.');
       return;
     }
 
@@ -103,7 +108,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
 
       <div>
         <FormLabel>Work Email</FormLabel>
-        <input type="email" value={email} onChange={event => { setEmail(event.target.value); setEmailTouched(true); }} placeholder="name@shiekhshoes.com" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+        <input type="text" inputMode="email" value={email} onChange={event => { setEmail(event.target.value); setEmailTouched(true); }} placeholder="name@example.com" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
         {person?.email && Object.hasOwn(person, 'workEmail') && person.email.trim().toLowerCase() !== (person.workEmail || '').trim().toLowerCase() && (
           <p className="mt-1 break-all text-[10px] text-neutral-500">Historical email alias retained for review: {person.email}</p>
         )}

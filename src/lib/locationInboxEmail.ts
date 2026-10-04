@@ -57,8 +57,3 @@ export function suggestedLocationInboxEmail(storeNumber: string): string | null 
   if (!normalizedStoreNumber) return null;
   return `store${normalizedStoreNumber}@shiekhshoes.com`;
 }
-
-export function resolvePersonEmailValue(person: { workEmail?: string; email?: string } | undefined): string {
-  if (person && Object.hasOwn(person, 'workEmail')) return person.workEmail || '';
-  return person?.email || '';
-}

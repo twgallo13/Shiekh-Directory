@@ -222,8 +222,16 @@ test('shared inbox import acknowledgments are required, signed, and checked at c
     assert.equal(blocked.confirmationToken, undefined);
     assert.match(blocked.confirmationDisabledReason, /acknowledge/);
 
+    const inboxAcknowledgmentDigests = { 2: blocked.rows[0].issues.find((item: any) => item.code === 'duplicate_location_inbox').inboxConflictDigest };
+    const rowOnly = await (await post(app.baseUrl, 'preview', { csv, selectedRowNumbers: [2], inboxAcknowledgedRowNumbers: [2] })).json();
+    assert.equal(rowOnly.confirmationToken, undefined);
+    snapshot.locations[1].version = 1;
+    const stale = await (await post(app.baseUrl, 'preview', { csv, selectedRowNumbers: [2], inboxAcknowledgedRowNumbers: [2], inboxAcknowledgmentDigests })).json();
+    assert.equal(stale.confirmationToken, undefined);
+    assert.notEqual(stale.rows[0].issues.find((item: any) => item.code === 'duplicate_location_inbox').inboxConflictDigest, inboxAcknowledgmentDigests[2]);
+    inboxAcknowledgmentDigests[2] = stale.rows[0].issues.find((item: any) => item.code === 'duplicate_location_inbox').inboxConflictDigest;
     const previewResponse = await post(app.baseUrl, 'preview', {
-      csv, selectedRowNumbers: [2], inboxAcknowledgedRowNumbers: [2],
+      csv, selectedRowNumbers: [2], inboxAcknowledgedRowNumbers: [2], inboxAcknowledgmentDigests,
     });
     assert.equal(previewResponse.status, 200);
     const preview = await previewResponse.json();
@@ -235,10 +243,30 @@ test('shared inbox import acknowledgments are required, signed, and checked at c
     assert.equal(tampered.status, 409);
     assert.equal((await tampered.json()).error.code, 'confirmation_mismatch');
 
-    const confirmedResponse = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { inboxAcknowledgedRowNumbers: [2] }));
+    const confirmedResponse = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { inboxAcknowledgedRowNumbers: [2], inboxAcknowledgmentDigests }));
     assert.equal(confirmedResponse.status, 200);
     assert.deepEqual(confirmed?.inboxAcknowledgedRowNumbers, [2]);
     assert.equal(confirmed?.writes[0].locationInboxAcknowledgment?.normalizedEmail, 'shared@example.test');
+
+    const changedDigest = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, {
+      inboxAcknowledgedRowNumbers: [2], inboxAcknowledgmentDigests: { 2: 'different reviewed state' },
+    }));
+    assert.equal(changedDigest.status, 409);
+    assert.equal((await changedDigest.json()).error.code, 'confirmation_mismatch');
+
+    const newCsv = row({ ...additionValues('009'), LocationInboxEmail: 'shared@example.test' });
+    const newPreview = await (await post(app.baseUrl, 'preview', { csv: newCsv, selectedRowNumbers: [2] })).json();
+    const newDigest = newPreview.rows[0].issues.find((item: any) => item.code === 'duplicate_location_inbox').inboxConflictDigest;
+    const newAcknowledged = await (await post(app.baseUrl, 'preview', {
+      csv: newCsv, selectedRowNumbers: [2], inboxAcknowledgedRowNumbers: [2], inboxAcknowledgmentDigests: { 2: newDigest },
+    })).json();
+    assert.equal(newAcknowledged.rows[0].locationId, newPreview.rows[0].locationId);
+    assert.equal(typeof newAcknowledged.confirmationToken, 'string');
+    snapshot.locations.push({ ...snapshot.locations[1], id: 'loc-third', storeNumber: '010' });
+    const addedConflict = await (await post(app.baseUrl, 'preview', {
+      csv: newCsv, selectedRowNumbers: [2], inboxAcknowledgedRowNumbers: [2], inboxAcknowledgmentDigests: { 2: newDigest },
+    })).json();
+    assert.equal(addedConflict.confirmationToken, undefined);
   } finally { await app.close(); }
 });
 

@@ -10,6 +10,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
 import { buildPersonLocationRelationships, getPersonDeletionBlockers } from '../../lib/personLocationRelationships';
 import { PersonEditorForm } from './PersonEditorForm';
+import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -175,10 +176,10 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                     {hasLeadershipRole && canEdit && row.location && onEditLocation && <Button size="sm" variant="ghost" onClick={() => onEditLocation(row.location!)}><Pencil className="h-3 w-3" />Edit Assignment</Button>}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">{row.labels.map(label => <span key={label} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-neutral-700">{label}</span>)}</div>
-                  {row.location && row.labels.some(label => ['Primary workplace', 'Supports'].includes(label)) && row.location.locationInboxEmail && (
+                  {row.location && row.labels.some(label => ['Primary workplace', 'Supports'].includes(label)) && normalizeLocationInboxEmail(row.location.locationInboxEmail) && (
                     <div className="mt-2 rounded-md border border-neutral-200 bg-white px-2 py-1.5">
                       <div className="text-[10px] font-semibold uppercase text-neutral-500">Shared inbox for this Location</div>
-                      <a href={`mailto:${row.location.locationInboxEmail}`} className="mt-0.5 block break-all text-xs text-red-700 hover:underline">
+                      <a href={`mailto:${encodeURIComponent(normalizeLocationInboxEmail(row.location.locationInboxEmail)!.value)}`} className="mt-0.5 block break-all text-xs text-red-700 hover:underline">
                         {row.location.locationInboxEmail}
                       </a>
                     </div>

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { Firestore, type QueryDocumentSnapshot } from '@google-cloud/firestore';
@@ -115,12 +115,17 @@ export function createLocationImportPreviewRouter(
       const mode = parseImportMode(request.body?.mode);
       const mappings = parseImportMappings(request.body?.mappings);
       const inboxAcknowledgedRowNumbers = parseInboxAcknowledgedRows(request.body?.inboxAcknowledgedRowNumbers);
+      const inboxAcknowledgmentDigests = parseInboxAcknowledgmentDigests(request.body?.inboxAcknowledgmentDigests);
       let nextGeneratedId = 0;
       const generatedLocationIds = new Map<number, string>();
       const createLocationId = () => {
         nextGeneratedId += 1;
         const key = nextGeneratedId;
-        if (!generatedLocationIds.has(key)) generatedLocationIds.set(key, `loc-${randomUUID()}`);
+        if (!generatedLocationIds.has(key)) {
+          const identity = createHash('sha256').update(JSON.stringify([digestLocationImportActor(account), csv, key])).digest('hex').slice(0, 32);
+          // Stable UUID-shaped IDs keep new-row acknowledgments bound across revalidation.
+          generatedLocationIds.set(key, `loc-${identity.slice(0, 8)}-${identity.slice(8, 12)}-8${identity.slice(13, 16)}-a${identity.slice(17, 20)}-${identity.slice(20)}`);
+        }
         return generatedLocationIds.get(key)!;
       };
       let plan = buildLocationImportPlan(csv, snapshot, issuedAt.toISOString(), createLocationId, { mode, mappings });
@@ -129,7 +134,7 @@ export function createLocationImportPreviewRouter(
       const selectedRowNumbers = defaultSelectionExceedsLimit ? [] : parseSelectedRows(request.body?.selectedRowNumbers, plan);
       nextGeneratedId = 0;
       plan = buildLocationImportPlan(csv, snapshot, issuedAt.toISOString(), createLocationId, {
-        mode, mappings, inboxAcknowledgedRowNumbers, selectedRowNumbers,
+        mode, mappings, inboxAcknowledgedRowNumbers, inboxAcknowledgmentDigests, selectedRowNumbers,
       });
       if (inboxAcknowledgedRowNumbers.some(rowNumber => !plan.preview.rows.some(row => row.rowNumber === rowNumber
         && row.issues.some(item => item.code === 'duplicate_location_inbox')))) {
@@ -177,11 +182,12 @@ export function createLocationImportPreviewRouter(
         schema: plan.preview.schemaVersion,
         actorDigest: digestLocationImportActor(account),
         sourceDigest: digestLocationImportSource(csv),
-        requestDigest: digestLocationImportRequest({ csv, mappings: plan.preview.mappings || [], mode, selectedRowNumbers, inboxAcknowledgedRowNumbers }),
+        requestDigest: digestLocationImportRequest({ csv, mappings: plan.preview.mappings || [], mode, selectedRowNumbers, inboxAcknowledgedRowNumbers, inboxAcknowledgmentDigests }),
         mode,
         mappings: plan.preview.mappings,
         selectedRowNumbers,
         inboxAcknowledgedRowNumbers,
+        inboxAcknowledgmentDigests,
         operationId,
         batchId,
         issuedAt: issuedAt.toISOString(),
@@ -220,7 +226,8 @@ export function createLocationImportPreviewRouter(
       const mappings = parseImportMappings(request.body?.mappings);
       const selectedRowNumbers = parseConfirmationSelectedRows(request.body?.selectedRowNumbers);
       const inboxAcknowledgedRowNumbers = parseInboxAcknowledgedRows(request.body?.inboxAcknowledgedRowNumbers);
-      if (manifest.requestDigest !== digestLocationImportRequest({ csv, mappings, mode, selectedRowNumbers, inboxAcknowledgedRowNumbers })) {
+      const inboxAcknowledgmentDigests = parseInboxAcknowledgmentDigests(request.body?.inboxAcknowledgmentDigests);
+      if (manifest.requestDigest !== digestLocationImportRequest({ csv, mappings, mode, selectedRowNumbers, inboxAcknowledgedRowNumbers, inboxAcknowledgmentDigests })) {
         throw new LocationImportConfirmationError('confirmation_mismatch', 'The file, mappings, mode, or selected rows changed after review. Preview again.');
       }
       if (manifest.actorDigest !== digestLocationImportActor(account)) throw new LocationImportConfirmationError('confirmation_mismatch', 'Your current authority does not match this confirmation.');
@@ -362,4 +369,15 @@ function sendPreviewError(response: { status(code: number): { json(body: unknown
   if (error instanceof LocationEditingExportError) return response.status(400).json({ error: { code: error.code, message: error.message, locationId: error.locationId, fields: error.fields } });
   if (error instanceof LocationImportPreviewError) return response.status(400).json({ error: { code: error.code, message: error.message } });
   return response.status(503).json({ error: { code: 'preview_unavailable', message: 'The authoritative directory snapshot could not be previewed.' } });
+}
+
+function parseInboxAcknowledgmentDigests(value: unknown): Record<string, string> {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).length > LOCATION_IMPORT_MAX_ROWS
+    || Object.entries(value).some(([rowNumber, digest]) => !/^[0-9]+$/.test(rowNumber)
+      || Number(rowNumber) < 2 || typeof digest !== 'string' || digest.length > 20_000)) {
+    throw new PreviewHttpError(400, 'invalid_inbox_acknowledgment', 'Shared inbox acknowledgment details are malformed.');
+  }
+  return Object.fromEntries(Object.entries(value).sort(([left], [right]) => Number(left) - Number(right))) as Record<string, string>;
 }

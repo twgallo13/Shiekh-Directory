@@ -122,7 +122,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
   const { requests, locations, currentUser, approveRequest, rejectRequest } = useDirectory();
   const [filter, setFilter] = useState<'All' | 'Pending' | 'Approved' | 'Rejected'>('All');
   const [reviewerNotes, setReviewerNotes] = useState<{ [id: string]: string }>({});
-  const [inboxConflictAcknowledged, setInboxConflictAcknowledged] = useState<Record<string, boolean>>({});
+  const [inboxConflictAcknowledged, setInboxConflictAcknowledged] = useState<Record<string, string>>({});
 
   const canReview = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
@@ -177,8 +177,10 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
               ...inboxConflicts.map(location => ({ id: location.id, storeNumber: location.storeNumber, version: location.version ?? 0 })),
             ]
             : [];
-          const inboxAcknowledgment = normalizedInbox && inboxConflictMembers.length > 1 && inboxConflictAcknowledged[req.id]
-            ? { normalizedEmail: normalizedInbox.comparisonKey, conflictDigest: locationInboxConflictDigest(normalizedInbox.value, inboxConflictMembers) }
+          const currentInboxDigest = normalizedInbox && inboxConflictMembers.length > 1
+            ? locationInboxConflictDigest(normalizedInbox.value, inboxConflictMembers) : '';
+          const inboxAcknowledgment = normalizedInbox && currentInboxDigest && inboxConflictAcknowledged[req.id] === currentInboxDigest
+            ? { normalizedEmail: normalizedInbox.comparisonKey, conflictDigest: currentInboxDigest }
             : undefined;
           return (
             <div
@@ -287,7 +289,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-3">
                   {inboxConflicts.length > 0 && (
                     <label className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-950">
-                      <input type="checkbox" checked={Boolean(inboxConflictAcknowledged[req.id])} onChange={event => setInboxConflictAcknowledged(previous => ({ ...previous, [req.id]: event.target.checked }))} className="mt-0.5" />
+                      <input type="checkbox" checked={Boolean(currentInboxDigest) && inboxConflictAcknowledged[req.id] === currentInboxDigest} onChange={event => setInboxConflictAcknowledged(previous => ({ ...previous, [req.id]: event.target.checked ? currentInboxDigest : '' }))} className="mt-0.5" />
                       <span>This inbox is also assigned to {inboxConflicts.map(location => `Store #${location.storeNumber}`).join(', ')}. I reviewed and acknowledge the shared inbox locations.</span>
                     </label>
                   )}

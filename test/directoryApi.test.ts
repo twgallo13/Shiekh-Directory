@@ -261,16 +261,6 @@ describe("Directory API location responses", () => {
       close: "20:00",
     });
 
-    it("publishes the same normalized location inbox in list and detail, using null for unusable stored values", async () => {
-      const detail = await apiFetch(baseUrl, "/api/v1/locations/07", READ_TOKEN);
-      assert.equal(detail.status, 200);
-      const detailBody = await detail.json();
-      assert.equal(detailBody.data.locationInboxEmail, "Store@example.test");
-
-      const list = await apiFetch(baseUrl, "/api/v1/locations", READ_TOKEN);
-      const listBody = await list.json();
-      assert.equal(listBody.data.find((location: { storeNumber: string }) => location.storeNumber === "08").locationInboxEmail, null);
-    });
     for (const privateField of [
       "storeManagerName",
       "storeManagerPhone",
@@ -285,6 +275,16 @@ describe("Directory API location responses", () => {
     }
   });
 
+  it("publishes the same normalized location inbox in list and detail, using null for unusable stored values", async () => {
+    const detail = await apiFetch(baseUrl, "/api/v1/locations/07", READ_TOKEN);
+    assert.equal(detail.status, 200);
+    const detailBody = await detail.json();
+    assert.equal(detailBody.data.locationInboxEmail, "Store@example.test");
+
+    const list = await apiFetch(baseUrl, "/api/v1/locations", READ_TOKEN);
+    const listBody = await list.json();
+    assert.equal(listBody.data.find((location: { storeNumber: string }) => location.storeNumber === "08").locationInboxEmail, null);
+  });
   it("distinguishes malformed saved applicability, empty strings, and absent values without broadening valid enum values", async () => {
     const scoped = await startTestServer({
       authenticator, rateLimit: false, now: () => NOW,

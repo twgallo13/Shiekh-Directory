@@ -61,6 +61,7 @@ export interface LocationImportIssue {
   reason: string;
   correction: string;
   candidates?: string[];
+  inboxConflictDigest?: string;
 }
 
 export interface LocationImportChange {
@@ -147,6 +148,7 @@ export interface LocationImportPlanOptions {
   mappings?: LocationImportHeaderMapping[];
   mode?: LocationImportMode;
   inboxAcknowledgedRowNumbers?: number[];
+  inboxAcknowledgmentDigests?: Record<string, string>;
   selectedRowNumbers?: number[];
 }
 
@@ -484,7 +486,7 @@ export function buildLocationImportPlan(
     inboxConflictMembers.set(row.rowNumber, members);
     return {
       ...row,
-      issues: [...row.issues, issue(
+      issues: [...row.issues, { ...issue(
         'warning',
         'duplicate_location_inbox',
         'LocationInboxEmail',
@@ -494,7 +496,7 @@ export function buildLocationImportPlan(
         `Review and explicitly acknowledge these Locations: ${members.map(member => `Store #${member.storeNumber}`).join(', ')}.`,
         members.map(member => `${member.id} — Store ${member.storeNumber}`),
         proposed?.locationInboxEmail,
-      )],
+      ), inboxConflictDigest: locationInboxConflictDigest(email.value, members) }],
     };
   });
 
@@ -523,7 +525,10 @@ export function buildLocationImportPlan(
         action: row.action,
         expectedVersion: row.action === 'add' ? null : row.currentVersion,
         data: proposedWrites.get(row.rowNumber) || {},
-        ...(inboxConflictMembers.has(row.rowNumber) && acknowledgedRows.has(row.rowNumber) ? {
+        ...(inboxConflictMembers.has(row.rowNumber) && acknowledgedRows.has(row.rowNumber)
+          && options.inboxAcknowledgmentDigests?.[row.rowNumber] === locationInboxConflictDigest(
+            String(proposedWrites.get(row.rowNumber)?.locationInboxEmail || ''), inboxConflictMembers.get(row.rowNumber) || [],
+          ) ? {
           locationInboxAcknowledgment: {
             normalizedEmail: normalizeLocationInboxEmail(proposedWrites.get(row.rowNumber)?.locationInboxEmail)?.comparisonKey || '',
             conflictDigest: locationInboxConflictDigest(

@@ -79,7 +79,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const baselineRef = useRef<LocationRecord | null>(location ? structuredClone(location) : null);
   const expectedVersionRef = useRef(location?.version ?? 0);
   const [createId] = useState(() => `loc-${crypto.randomUUID()}`);
-  const [inboxConflictAcknowledged, setInboxConflictAcknowledged] = useState(false);
+  const [acknowledgedInboxDigest, setAcknowledgedInboxDigest] = useState('');
   const [activeTab, setActiveTab] = useState<EditModalTab>('details');
   const [confirmation, setConfirmation] = useState<'discard' | 'retire' | 'reactivate' | null>(null);
   const [saving, setSaving] = useState(false);
@@ -136,6 +136,12 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const retailSuggestion = formData && ['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location'].includes(formData.type)
     ? suggestedLocationInboxEmail(formData.storeNumber)
     : null;
+  const currentInboxDigest = normalizedInbox && formData && inboxConflicts.length > 0
+    ? locationInboxConflictDigest(normalizedInbox.value, [
+      { id: isCreating ? createId : formData.id, storeNumber: formData.storeNumber, version: isCreating ? 0 : expectedVersionRef.current + 1 },
+      ...inboxConflicts.map(item => ({ id: item.id, storeNumber: item.storeNumber, version: item.version ?? 0 })),
+    ]) : '';
+  const inboxConflictAcknowledged = Boolean(currentInboxDigest) && acknowledgedInboxDigest === currentInboxDigest;
 
   if (!location || !formData) return null;
 
@@ -781,7 +787,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                         {retailSuggestion && !formData.locationInboxEmail && (
                           <button
                             type="button"
-                            onClick={() => { setFormData({ ...formData, locationInboxEmail: retailSuggestion }); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); setInboxConflictAcknowledged(false); }}
+                            onClick={() => { setFormData({ ...formData, locationInboxEmail: retailSuggestion }); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); setAcknowledgedInboxDigest(''); }}
                             className="text-[11px] font-semibold text-red-700 hover:underline"
                           >
                             Use suggestion: {retailSuggestion}
@@ -790,7 +796,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                         {formData.locationInboxEmail && (
                           <button
                             type="button"
-                            onClick={() => { setFormData({ ...formData, locationInboxEmail: null }); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); setInboxConflictAcknowledged(false); }}
+                            onClick={() => { setFormData({ ...formData, locationInboxEmail: null }); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); setAcknowledgedInboxDigest(''); }}
                             className="text-[11px] font-semibold text-neutral-600 hover:text-red-700 hover:underline"
                           >
                             Clear inbox
@@ -800,12 +806,13 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </div>
                     <input
                       id="location-inbox-email"
-                      type="email"
+                      type="text"
+                      inputMode="email"
                       value={formData.locationInboxEmail || ''}
                       onChange={event => {
                         setFormData({ ...formData, locationInboxEmail: event.target.value });
                         setContactErrors(errors => ({ ...errors, locationInboxEmail: '' }));
-                        setInboxConflictAcknowledged(false);
+                        setAcknowledgedInboxDigest('');
                       }}
                       placeholder="store@example.com"
                       aria-describedby="location-inbox-help"
@@ -825,7 +832,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                           <input
                             type="checkbox"
                             checked={inboxConflictAcknowledged}
-                            onChange={event => { setInboxConflictAcknowledged(event.target.checked); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); }}
+                            onChange={event => { setAcknowledgedInboxDigest(event.target.checked ? currentInboxDigest : ''); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); }}
                             className="mt-0.5 accent-red-700"
                           />
                           <span>I reviewed these locations and confirm this inbox may be shared.</span>

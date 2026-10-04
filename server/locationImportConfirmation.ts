@@ -19,6 +19,7 @@ export interface LocationImportManifest {
   mappings?: LocationImportHeaderMapping[];
   selectedRowNumbers?: number[];
   inboxAcknowledgedRowNumbers?: number[];
+  inboxAcknowledgmentDigests?: Record<string, string>;
   operationId: string;
   batchId: string;
   issuedAt: string;
@@ -67,8 +68,11 @@ export function digestLocationImportRequest(value: {
   mode: LocationImportMode;
   selectedRowNumbers: number[];
   inboxAcknowledgedRowNumbers?: number[];
+  inboxAcknowledgmentDigests?: Record<string, string>;
 }): string {
-  return sha256(JSON.stringify({ ...value, inboxAcknowledgedRowNumbers: value.inboxAcknowledgedRowNumbers || [] }));
+  const inboxAcknowledgmentDigests = Object.fromEntries(Object.entries(value.inboxAcknowledgmentDigests || {})
+    .sort(([left], [right]) => Number(left) - Number(right)));
+  return sha256(JSON.stringify({ ...value, inboxAcknowledgedRowNumbers: value.inboxAcknowledgedRowNumbers || [], inboxAcknowledgmentDigests }));
 }
 
 export function digestLocationImportManifest(manifest: LocationImportManifest): string {

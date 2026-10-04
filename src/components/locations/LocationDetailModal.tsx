@@ -7,6 +7,7 @@ import { AuditLogView } from '../common/AuditLogView';
 import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { formatUsPhone } from '../../lib/contactNormalization';
+import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { Mail } from 'lucide-react';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
@@ -73,6 +74,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   if (!location) return null;
 
   const todayStatus = getTodayHoursForLocation(location);
+  const normalizedLocationInbox = normalizeLocationInboxEmail(location.locationInboxEmail);
   const canEditDirectly = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const storeManager = resolveActivePerson(location.storeManagerId, people);
   const districtManager = resolveActivePerson(location.districtManagerId, people);
@@ -115,9 +117,9 @@ Operating Status: ${location.operationalStatus}`;
   };
 
   const handleCopyLocationInbox = async () => {
-    if (!location.locationInboxEmail) return;
+    if (!normalizedLocationInbox) return;
     try {
-      await navigator.clipboard.writeText(location.locationInboxEmail);
+      await navigator.clipboard.writeText(normalizedLocationInbox.value);
       setCopied(true);
       setCopyError('');
       setTimeout(() => setCopied(false), 2000);
@@ -339,10 +341,10 @@ Operating Status: ${location.operationalStatus}`;
                       <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
                         Location inbox · shared contact
                       </div>
-                      {location.locationInboxEmail ? (
+                      {normalizedLocationInbox ? (
                         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-                          <a href={`mailto:${location.locationInboxEmail}`} className="min-w-0 break-all text-xs font-medium text-red-700 hover:underline">
-                            {location.locationInboxEmail}
+                          <a href={`mailto:${encodeURIComponent(normalizedLocationInbox.value)}`} className="min-w-0 break-all text-xs font-medium text-red-700 hover:underline">
+                            {normalizedLocationInbox.value}
                           </a>
                           <button
                             type="button"
@@ -354,7 +356,7 @@ Operating Status: ${location.operationalStatus}`;
                             <Copy className="h-3 w-3" aria-hidden="true" /> Copy
                           </button>
                           <a
-                            href={`mailto:${location.locationInboxEmail}`}
+                            href={`mailto:${encodeURIComponent(normalizedLocationInbox.value)}`}
                             aria-label="Email location inbox"
                             className="inline-flex shrink-0 items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-semibold text-red-700 hover:bg-red-100"
                           >
@@ -362,7 +364,7 @@ Operating Status: ${location.operationalStatus}`;
                           </a>
                         </div>
                       ) : (
-                        <p className="mt-1 text-xs text-neutral-500">No location inbox recorded</p>
+                        <p className="mt-1 break-all text-xs text-neutral-500">{location.locationInboxEmail ? `Historical inbox needs review: ${location.locationInboxEmail}` : 'No location inbox recorded'}</p>
                       )}
                       <p className="mt-1 text-[10px] text-neutral-500">Separate from the phone privacy setting; not automatically verified or synced with Google. Email opens a draft only.</p>
                       {copyError && <p role="alert" className="mt-1 text-[10px] text-red-700">{copyError}</p>}

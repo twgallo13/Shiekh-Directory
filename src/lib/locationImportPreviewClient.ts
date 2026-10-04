@@ -92,6 +92,7 @@ export interface InspectedLocationImportFile {
 export interface LocationImportPreviewOptions extends InspectedLocationImportFile {
   selectedRowNumbers?: number[];
   inboxAcknowledgedRowNumbers?: number[];
+  inboxAcknowledgmentDigests?: Record<string, string>;
 }
 
 export type LocationImportConfirmationOutcome = 'pending' | 'rejected' | 'uncertain';
@@ -117,13 +118,14 @@ export async function previewLocationImport(
   const { csv, mappings, mode } = inspected;
   const selectedRowNumbers = 'selectedRowNumbers' in inspected ? inspected.selectedRowNumbers : undefined;
   const inboxAcknowledgedRowNumbers = 'inboxAcknowledgedRowNumbers' in inspected ? inspected.inboxAcknowledgedRowNumbers : undefined;
+  const inboxAcknowledgmentDigests = 'inboxAcknowledgmentDigests' in inspected ? inspected.inboxAcknowledgmentDigests : undefined;
   const response = await fetch('/api/imports/locations/preview', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${await user.getIdToken()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ csv, mappings, mode, ...(selectedRowNumbers === undefined ? {} : { selectedRowNumbers }), ...(inboxAcknowledgedRowNumbers === undefined ? {} : { inboxAcknowledgedRowNumbers }) }),
+    body: JSON.stringify({ csv, mappings, mode, ...(selectedRowNumbers === undefined ? {} : { selectedRowNumbers }), ...(inboxAcknowledgedRowNumbers === undefined ? {} : { inboxAcknowledgedRowNumbers }), ...(inboxAcknowledgmentDigests === undefined ? {} : { inboxAcknowledgmentDigests }) }),
     cache: 'no-store',
     redirect: 'error',
   });
@@ -146,6 +148,7 @@ export async function confirmLocationImport(
     mode: LocationImportMode;
     selectedRowNumbers: number[];
     inboxAcknowledgedRowNumbers?: number[];
+    inboxAcknowledgmentDigests?: Record<string, string>;
   },
 ): Promise<LocationImportReceipt> {
   const token = await user.getIdToken();

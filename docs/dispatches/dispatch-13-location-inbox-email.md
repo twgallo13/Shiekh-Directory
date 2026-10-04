@@ -6,7 +6,7 @@ Implementation adds one optional `locationInboxEmail` field owned by a Location.
 
 The API emits `locationInboxEmail` as a normalized string or `null` on both list and detail responses. `null` means no usable published inbox. Personnel email remains outside the Location projection. Custom-field publication/type validation does not scan arbitrary text for personal information. The field is built-in and does not change `customFieldsVersion`.
 
-**Status:** implementation and local verification complete; awaiting independent review. No production deployment, migration, live business-record write, mailbox population, email send, credential, IAM, or auth change was performed. The deployed API could not be verified with an authorized token; the existing documentation records the observed unauthenticated `401 invalid_token` result.
+**Status:** implementation and local verification complete; independently reviewed; release pending. No production deployment, migration, live business-record write, mailbox population, email send, credential, IAM, or auth change was performed. The deployed API could not be verified with an authorized token; the existing documentation records the observed unauthenticated `401 invalid_token` result.
 
 Consumer-side ROPI work is not included: this repository does not contain that app. Its owner must implement server-side token storage, initial full reads, all-page delta processing, `null` clearing, idempotent retries, periodic full reconciliation, subscriptions, approvals, and notifications.
 
@@ -26,11 +26,15 @@ Verified locally with synthetic fixtures only:
 | Check | Result |
 | --- | --- |
 | `npm run lint` (`tsc --noEmit`) | Passed |
-| `npm run test:api` | 301 passed, 0 failed |
+| `npm run test:api` | 302 passed, 0 failed |
 | `npm run build` | Passed; Vite reported a large-bundle advisory (>500 kB) |
-| Playwright inbox editor/detail/clear and stale-save cases | 3 passed at 320px and 390px using a local app and synthetic Firebase/browser fixtures |
+| Playwright inbox editor/detail/clear, stale-save, historical-value and duplicate-review cases | 5 passed, including 320px and 390px, using a local app and synthetic Firebase/browser fixtures |
 
 Coverage includes write preservation/clear, email normalization, server-side duplicate acknowledgment and stale versions, correction-request snapshots/set/clear, signed CSV acknowledgment and confirmation, the CSV action matrix and `locations-v1` input compatibility, list/detail API projection and invalid historical values, and narrow-screen editor/detail behavior. The API test fixtures do not represent production records or a successful live authenticated response.
+
+Independent review additionally bound editor and correction approval checkboxes to the exact displayed conflict digest. CSV acknowledgments now carry the reviewed digest; revalidation cannot silently accept changed membership or versions. New import IDs remain stable across previews of the same actor/file so additions can be reviewed consistently. Regression tests cover stale versions, added conflict members, row-only acknowledgment rejection, signed digest tampering and new-row revalidation. An incorrectly nested API test was moved to its own awaited test case. Browser email fields allow unchanged historical text while validating new contact values explicitly.
+
+Pre-release `locations-v1` signed previews must be recreated after rollout. Version 1 CSV files remain supported; the new acknowledgment contract is part of the version 2 signed preview.
 
 ## Release and rollback
 

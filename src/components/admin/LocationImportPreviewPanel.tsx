@@ -27,6 +27,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   const [mappingReviewed, setMappingReviewed] = useState(false);
   const [selectedRowNumbers, setSelectedRowNumbers] = useState<number[]>([]);
   const [inboxAcknowledgedRowNumbers, setInboxAcknowledgedRowNumbers] = useState<number[]>([]);
+  const [inboxAcknowledgmentDigests, setInboxAcknowledgmentDigests] = useState<Record<string, string>>({});
   const [selectionDirty, setSelectionDirty] = useState(false);
   const [confirmationOutcome, setConfirmationOutcome] = useState<LocationImportConfirmationOutcome>('pending');
   const [completedImport, setCompletedImport] = useState<{ preview: LocationImportPreview; receipt: LocationImportReceipt; filename: string } | null>(null);
@@ -53,6 +54,15 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   };
 
   const toggleInboxAcknowledgment = (rowNumber: number, acknowledged: boolean) => {
+    const digest = preview?.rows.find(row => row.rowNumber === rowNumber)?.issues
+      .find(issue => issue.code === 'duplicate_location_inbox')?.inboxConflictDigest;
+    if (acknowledged && !digest) return;
+    setInboxAcknowledgmentDigests(current => {
+      const next = { ...current };
+      if (acknowledged && digest) next[rowNumber] = digest;
+      else delete next[rowNumber];
+      return next;
+    });
     setInboxAcknowledgedRowNumbers(current => acknowledged
       ? [...new Set([...current, rowNumber])].sort((left, right) => left - right)
       : current.filter(candidate => candidate !== rowNumber));
@@ -104,6 +114,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     setMappingReviewed(false);
     setSelectedRowNumbers([]);
     setInboxAcknowledgedRowNumbers([]);
+    setInboxAcknowledgmentDigests({});
     setSelectionDirty(false);
     setConfirmationOutcome('pending');
     if (!user) {
@@ -145,8 +156,12 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
         mode,
         ...(selection === undefined ? {} : { selectedRowNumbers: selection }),
         inboxAcknowledgedRowNumbers,
+        inboxAcknowledgmentDigests,
       });
       setPreview(result.preview);
+      setInboxAcknowledgedRowNumbers(current => current.filter(rowNumber =>
+        result.preview.rows.find(row => row.rowNumber === rowNumber)?.issues
+          .some(issue => issue.code === 'duplicate_location_inbox' && issue.inboxConflictDigest === inboxAcknowledgmentDigests[rowNumber])));
       setMappings(result.preview.mappings || mappings);
       setSelectedRowNumbers(result.preview.selectedRowNumbers || []);
       setSelectionDirty(false);
@@ -163,6 +178,8 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     setReceipt(null);
     setWarningsReviewed(false);
     setSelectedRowNumbers([]);
+    setInboxAcknowledgedRowNumbers([]);
+    setInboxAcknowledgmentDigests({});
     setSelectionDirty(false);
     setConfirmationOutcome('pending');
   };
@@ -206,6 +223,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
         mode,
         selectedRowNumbers,
         inboxAcknowledgedRowNumbers,
+        inboxAcknowledgmentDigests,
       });
       onLocationsConfirmed(result.locations.map(location => location.record));
       setReceipt(result);
@@ -509,12 +527,12 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
                               <label className="mt-2 flex items-start gap-2 text-neutral-800">
                                 <input
                                   type="checkbox"
-                                  checked={inboxAcknowledgedRowNumbers.includes(row.rowNumber)}
+                                  checked={inboxAcknowledgedRowNumbers.includes(row.rowNumber) && inboxAcknowledgmentDigests[row.rowNumber] === issue.inboxConflictDigest}
                                   disabled={Boolean(busy) || outcomeUnknown}
                                   onChange={event => toggleInboxAcknowledgment(row.rowNumber, event.target.checked)}
                                   className="mt-0.5"
                                 />
-                                <span>I reviewed the shared inbox conflict for this row. Revalidate to bind my acknowledgment to the current Location IDs and versions.</span>
+                                <span>I reviewed the shared inbox conflict for this row. Revalidate to check that these reviewed Location IDs and versions are still current.</span>
                               </label>
                             )}
                           </div>

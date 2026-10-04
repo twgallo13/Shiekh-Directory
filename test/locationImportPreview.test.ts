@@ -82,6 +82,7 @@ describe('Location CSV import preview', () => {
     const acknowledged = buildLocationImportPlan(csv, existingSnapshot, undefined, () => 'loc-new', {
       selectedRowNumbers: [2],
       inboxAcknowledgedRowNumbers: [2],
+      inboxAcknowledgmentDigests: { 2: buildLocationImportPlan(csv, existingSnapshot, undefined, () => 'loc-new').preview.rows[0].issues.find(item => item.code === 'duplicate_location_inbox')!.inboxConflictDigest! },
     });
     assert.deepEqual(acknowledged.writes[0].locationInboxAcknowledgment, {
       normalizedEmail: 'shared@example.test',
@@ -115,6 +116,7 @@ describe('Location CSV import preview', () => {
     const acknowledged = buildLocationImportPlan(csv, existingSnapshot, undefined, () => 'loc-new', {
       selectedRowNumbers: [2],
       inboxAcknowledgedRowNumbers: [2],
+      inboxAcknowledgmentDigests: { 2: buildLocationImportPlan(csv, existingSnapshot, undefined, () => 'loc-new').preview.rows[0].issues.find(item => item.code === 'duplicate_location_inbox')!.inboxConflictDigest! },
     });
     assert.deepEqual(acknowledged.writes[0].locationInboxAcknowledgment, {
       normalizedEmail: 'shared@example.test',

@@ -296,6 +296,36 @@ function importManifest(writes: LocationImportManifest['writes'], unchanged: Loc
   return { version: 1, schema: 'locations-v1', actorDigest: 'actor', sourceDigest: 'source', operationId: 'op-test', batchId: 'batch-test', issuedAt: '2026-09-13T12:00:00.000Z', expiresAt: '2026-09-13T12:10:00.000Z', summary: { totalRows: writes.length + unchanged.length, additions, updates, unchanged: unchanged.length, blocked: 0, warnings: 0 }, warningCount: 0, writes, unchanged };
 }
 
+test('CSV inbox confirmation rejects changed conflict versions atomically and audits the explicit reviewed acknowledgment', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const target = { id: 'loc-target', storeNumber: '01', name: 'Target', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 0, locationInboxEmail: 'old@example.test' };
+  records.set('locations/loc-target', target);
+  records.set('locations/loc-other', { ...target, id: 'loc-other', storeNumber: '02', version: 1, locationInboxEmail: 'shared@example.test' });
+  const acknowledgment = {
+    normalizedEmail: 'shared@example.test',
+    conflictDigest: locationInboxConflictDigest('shared@example.test', [
+      { id: 'loc-target', storeNumber: '01', version: 1 },
+      { id: 'loc-other', storeNumber: '02', version: 1 },
+    ]),
+  };
+  const manifest = importManifest([{ id: 'loc-target', action: 'update', expectedVersion: 0, data: { ...target, locationInboxEmail: 'shared@example.test' }, locationInboxAcknowledgment: acknowledgment }]);
+  records.set('locations/loc-other', { ...records.get('locations/loc-other'), version: 2 });
+  await assert.rejects(store.confirmLocationImport(manifest, actor), DirectoryConflict);
+  assert.deepEqual(records.get('locations/loc-target'), target);
+  assert.equal([...records.keys()].filter(key => key.startsWith('audit_logs/')).length, 0);
+  acknowledgment.conflictDigest = locationInboxConflictDigest('shared@example.test', [
+    { id: 'loc-target', storeNumber: '01', version: 1 },
+    { id: 'loc-other', storeNumber: '02', version: 2 },
+  ]);
+  const saved = await store.confirmLocationImport(manifest, actor);
+  assert.equal(saved.replayed, false);
+  const audit = [...records.entries()].find(([key]) => key.startsWith('audit_logs/'))?.[1];
+  assert.deepEqual(audit?.locationInboxAcknowledgment, acknowledgment);
+  assert.match(String(audit?.details), /Explicit shared inbox duplicate acknowledgment/);
+  assert.equal((await store.confirmLocationImport(manifest, actor)).replayed, true);
+});
+
 test('custom definitions and values round-trip through transactional storage, bootstrap and audit history', async () => {
   const { store, records } = databaseFixture();
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };

@@ -9,6 +9,7 @@ import { type HierarchyFieldContract, type HierarchyRegistry, validateLocationHi
 import { normalizeLocationWriteValues } from "../src/lib/locationWriteContract";
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, normalizePersonEmail, type LocationInboxAcknowledgment, type LocationInboxConflictMember } from "../src/lib/locationInboxEmail";
 import { isDeepStrictEqual } from "node:util";
+import { applyCorrection } from '../src/lib/correctionRequest';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -439,6 +440,24 @@ export function validateMetadataWrites(
     }
 
     if (write.collection === 'requests') {
+      if (data.status === 'Approved' || data.status === 'Rejected') {
+        if (!['System Administrator', 'Directory Data Steward'].includes(actor.role)) {
+          throw new DirectoryWriteDenied('Only a steward or administrator can review correction requests.');
+        }
+        if (!current || current.status !== 'Pending') throw new DirectoryConflict('Only pending requests can be reviewed. Reload the directory.');
+      }
+      if (!current && data.changeType === 'Standard Hours Adjustment') {
+        if (data.status !== 'Pending' || data.targetType !== 'Location') throw new DirectoryValidationError('Hours corrections must be submitted as pending Location requests.');
+        const target = locations.find(location => location.id === data.targetId);
+        if (!target) throw new DirectoryConflict('The selected Location no longer exists. Reload before submitting.');
+        const changes = isPlainRecord(data.requestedChanges) ? data.requestedChanges : {};
+        const baseline = isPlainRecord(data.currentSnapshot) ? data.currentSnapshot : {};
+        if (!Object.hasOwn(changes, 'standardHours')) throw new DirectoryValidationError('Hours correction requests require proposed standard hours.');
+        assertHoursBaseline(baseline, target);
+        if (isDeepStrictEqual(changes.standardHours, target.standardHours)) {
+          throw new DirectoryValidationError('Choose different hours. This request would not change the Location.');
+        }
+      }
       if (data.status === 'Approved' && current?.status === 'Approved') {
         throw new DirectoryConflict('Request has already been approved.');
       }
@@ -471,6 +490,12 @@ export function validateMetadataWrites(
         throw new DirectoryValidationError(normalizedLocation.issues.map(issue => issue.message).join('; '));
       }
       data = normalizedLocation.values;
+      const approvalIndex = writes.findIndex((candidate, index) => candidate.collection === 'requests' && candidate.data?.status === 'Approved'
+        && previous[index]?.targetType === 'Location' && previous[index]?.targetId === write.id);
+      const approvalChanges = approvalIndex >= 0 ? previous[approvalIndex]?.requestedChanges : undefined;
+      if (isPlainRecord(approvalChanges) && Object.hasOwn(approvalChanges, 'standardHours')) {
+        data = applyCorrection(data, { standardHours: data.standardHours });
+      }
       const originalData = write.data || {};
       const isFieldChanged = (field: string) => Object.hasOwn(originalData, field) && !isDeepStrictEqual(originalData[field], current?.[field]);
       const hierarchyTouched = ['type', 'hierarchyApplicability', 'regionId', 'districtId'].some(isFieldChanged);
@@ -858,6 +883,16 @@ function assertApprovalTargetAppliesPersistedChanges(
   }
   // Every persisted requested field must land in the final target state, not just the ones that moved.
   let appliesAtLeastOneChange = false;
+  if (Object.hasOwn(requestedChanges, 'standardHours')) {
+    if (persistedRequest.targetType !== 'Location') throw new DirectoryValidationError('Standard hours corrections require a Location target.');
+    if (Object.hasOwn(requestedChanges, 'hoursTemplateId') || (Object.hasOwn(requestedChanges, 'hoursMode') && requestedChanges.hoursMode !== 'custom')) {
+      throw new DirectoryValidationError('Hours corrections apply a custom schedule, not a template assignment.');
+    }
+    assertHoursBaseline(isPlainRecord(persistedRequest.currentSnapshot) ? persistedRequest.currentSnapshot : {}, targetPrevious);
+    if (isDeepStrictEqual(requestedChanges.standardHours, targetPrevious.standardHours)) {
+      throw new DirectoryValidationError('Approved correction request does not change the target record.');
+    }
+  }
   for (const [key, value] of requestedEntries) {
     if (key === 'locationInboxEmail') {
       const currentSnapshot = isPlainRecord(persistedRequest.currentSnapshot) ? persistedRequest.currentSnapshot : {};
@@ -866,6 +901,12 @@ function assertApprovalTargetAppliesPersistedChanges(
       if (!isDeepStrictEqual(requestedCurrentValue, actualCurrentValue)) {
         throw new DirectoryConflict('The Location inbox changed after the correction request was submitted. Review the request again.');
       }
+
+    }
+    const baseline = isPlainRecord(persistedRequest.currentSnapshot) ? persistedRequest.currentSnapshot : {};
+    if (key !== 'locationInboxEmail' && Object.hasOwn(baseline, key)
+      && !isDeepStrictEqual(baseline[key] ?? null, targetPrevious[key] ?? null)) {
+      throw new DirectoryConflict(`${key} changed since submission. Reject this stale request and submit a replacement after reviewing the current record.`);
     }
     if (!Object.hasOwn(targetData, key) || !isDeepStrictEqual(targetData[key], value)) {
       throw new DirectoryValidationError('Approved correction request target update does not match the persisted requested changes.');
@@ -874,6 +915,17 @@ function assertApprovalTargetAppliesPersistedChanges(
   }
   if (!appliesAtLeastOneChange) {
     throw new DirectoryValidationError('Approved correction request does not change the target record.');
+  }
+}
+
+function assertHoursBaseline(baseline: Record<string, unknown>, target: Record<string, unknown>): void {
+  if (!Object.hasOwn(baseline, 'standardHours')) {
+    throw new DirectoryConflict('The submission hours baseline is missing. Reject this request and submit a replacement after reviewing current hours.');
+  }
+  for (const field of ['standardHours', 'hoursMode', 'hoursTemplateId']) {
+    if (Object.hasOwn(baseline, field) && !isDeepStrictEqual(baseline[field] ?? null, target[field] ?? null)) {
+      throw new DirectoryConflict('Hours or their template selection changed since submission. Reject this stale request and submit a replacement after reviewing current hours.');
+    }
   }
 }
 

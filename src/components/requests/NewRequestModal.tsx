@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LocationRecord, RequestChangeType, Person } from '../../types';
+import { LocationRecord, RequestChangeType, Person, OperationalStatus } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { PersonSelector } from '../people/PersonSelector';
 import { WeeklyHoursEditor } from '../common/WeeklyHoursEditor';
@@ -11,6 +11,7 @@ import { FormLabel } from '../common/FormLabel';
 import { Modal } from '../common/Modal';
 import { resolvePersonPhone } from '../../lib/personContacts';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
+import { hoursDraft, structurallyEqual } from '../../lib/correctionRequest';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -27,13 +28,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   // Form field states for requested changes
   const [newPhone, setNewPhone] = useState('');
   const [newManager, setNewManager] = useState<Person | null>(null);
-  const [newStatus, setNewStatus] = useState('Open — Normal Operations');
+  const [newStatus, setNewStatus] = useState<OperationalStatus>('Open — Normal Operations');
   const [noticeText, setNoticeText] = useState('');
-  const [newHours, setNewHours] = useState(location?.standardHours || DEFAULT_WEEKLY_HOURS);
+  const [newHours, setNewHours] = useState(() => hoursDraft(locations.find(item => item.id === (location?.id || locations[0]?.id)), DEFAULT_WEEKLY_HOURS));
+  const [hoursBaseline, setHoursBaseline] = useState(() => structuredClone(locations.find(item => item.id === (location?.id || locations[0]?.id))));
   const [newLocationInboxEmail, setNewLocationInboxEmail] = useState('');
   const [clearLocationInboxEmail, setClearLocationInboxEmail] = useState(false);
   const [formError, setFormError] = useState('');
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const targetLoc = locations.find(l => l.id === selectedLocId);
   const initialLocationId = location?.id || locations[0]?.id || '';
@@ -57,12 +60,15 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     onClose();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetLoc) return;
+    if (!targetLoc) {
+      setFormError('Choose an existing location before submitting a request.');
+      return;
+    }
 
-    let requestedChanges: any = {};
-    let currentSnapshot: any = {};
+    const requestedChanges: import('../../types').UpdateRequest['requestedChanges'] = {};
+    const currentSnapshot: import('../../types').UpdateRequest['currentSnapshot'] = {};
 
     if (changeType === 'Phone Number Correction') {
       requestedChanges.phone = newPhone;
@@ -83,8 +89,17 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       }
       currentSnapshot.operationalStatus = targetLoc.operationalStatus;
     } else if (changeType === 'Standard Hours Adjustment') {
+      if (!hoursBaseline || hoursBaseline.id !== targetLoc.id
+        || !structurallyEqual(hoursBaseline.standardHours, targetLoc.standardHours)) {
+        setFormError('The selected location hours changed while drafting. Select the location again to reset the draft, then review current hours.');
+        return;
+      }
+      if (structurallyEqual(newHours, targetLoc.standardHours)) {
+        setFormError('Choose different hours. This request would not change the location.');
+        return;
+      }
       requestedChanges.standardHours = newHours;
-      currentSnapshot.standardHours = targetLoc.standardHours;
+      Object.assign(currentSnapshot, { standardHours: targetLoc.standardHours ?? null });
     } else if (changeType === 'Other Store Info Update') {
       const proposedInbox = clearLocationInboxEmail ? null : normalizeLocationInboxEmail(newLocationInboxEmail)?.value;
       if (proposedInbox === undefined) {
@@ -101,24 +116,31 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       currentSnapshot.locationInboxEmail = targetLoc.locationInboxEmail ?? null;
     }
 
-    submitRequest({
-      targetId: targetLoc.id,
-      targetType: 'Location',
-      targetStoreNumber: targetLoc.storeNumber,
-      targetName: targetLoc.name,
-      changeType,
-      requestedBy: {
-        id: currentUser.id,
-        name: currentUser.name,
-        email: currentUser.email,
-        role: currentUser.role
-      },
-      requestedChanges,
-      currentSnapshot,
-      reason
-    });
+    setSubmitting(true);
+    try {
+      await submitRequest({
+        targetId: targetLoc.id,
+        targetType: 'Location',
+        targetStoreNumber: targetLoc.storeNumber,
+        targetName: targetLoc.name,
+        changeType,
+        requestedBy: {
+          id: currentUser.id,
+          name: currentUser.name,
+          email: currentUser.email,
+          role: currentUser.role
+        },
+        requestedChanges,
+        currentSnapshot,
+        reason
+      });
 
-    onClose();
+      onClose();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'The correction request could not be saved.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -137,13 +159,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
             <FormLabel>Target Location</FormLabel>
             <select
               value={selectedLocId}
+              aria-label="Target Location"
               onChange={(e) => {
                 const newId = e.target.value;
                 setSelectedLocId(newId);
                 const loc = locations.find(l => l.id === newId);
-                if (loc?.standardHours) {
-                  setNewHours(loc.standardHours);
-                }
+                setNewHours(hoursDraft(loc, DEFAULT_WEEKLY_HOURS));
+                setHoursBaseline(structuredClone(loc));
+                setFormError('');
               }}
               className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500 cursor-pointer"
             >
@@ -159,6 +182,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
             <FormLabel>Change Category</FormLabel>
             <select
               value={changeType}
+              aria-label="Change Category"
               onChange={(e) => setChangeType(e.target.value as RequestChangeType)}
               className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500 cursor-pointer"
             >
@@ -202,7 +226,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
                 <FormLabel>New Status</FormLabel>
                 <select
                   value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value)}
+                  onChange={(e) => setNewStatus(e.target.value as OperationalStatus)}
                   className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500 cursor-pointer"
                 >
                   <option value="Open — Normal Operations">Open — Normal Operations</option>
@@ -229,8 +253,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
               <FormLabel>Proposed Weekly Operating Hours</FormLabel>
               <WeeklyHoursEditor
                 schedule={newHours}
-                onChange={setNewHours}
+                onChange={hours => { setNewHours(hours); setFormError(''); }}
               />
+              <p className="mt-2 text-neutral-600">Approval applies a custom schedule and clears the template link. Reject or replace requests that no longer change the current hours.</p>
             </div>
           )}
 
@@ -277,6 +302,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
               type="submit"
               size="sm"
               variant="primary"
+              disabled={submitting}
             >
               <Send className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Submit for Approval</span>

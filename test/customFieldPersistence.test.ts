@@ -13,6 +13,11 @@ import { buildLocationEditingExport } from '../server/locationEditingExport';
 import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
 import { stringify } from 'csv-stringify/sync';
 import { locationInboxConflictDigest } from '../src/lib/locationInboxEmail';
+import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
+import { DirectoryWriteDenied } from '../server/firestoreDirectory';
+import { createDirectoryDataRouter } from '../server/directoryDataApi';
+import express from 'express';
+import { once } from 'node:events';
 
 function databaseFixture() {
   const records = new Map<string, Record<string, unknown>>();
@@ -54,6 +59,110 @@ function databaseFixture() {
   };
   return { records, store: new FirestoreDirectoryStore(firestore as unknown as Firestore) };
 }
+
+function hoursCorrectionFixture() {
+  const fixture = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const original = structuredClone(DEFAULT_WEEKLY_HOURS);
+  const proposed = { ...original, monday: { ...original.monday, open: '09:00' } };
+  const target = { id: 'loc-hours', storeNumber: '150', name: 'Synthetic Store', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 3, standardHours: original, hoursTemplateId: 'template-1', hoursMode: 'template', storeManagerId: 'missing-person', regionalManagerId: 'missing-rm', keyHolderIds: ['missing-key'] };
+  const request = { id: 'req-hours', targetType: 'Location', targetId: target.id, changeType: 'Standard Hours Adjustment', status: 'Pending', version: 2, currentSnapshot: { standardHours: original }, requestedChanges: { standardHours: proposed } };
+  fixture.records.set('locations/loc-hours', target);
+  fixture.records.set('requests/req-hours', request);
+  const writes = [
+    { collection: 'requests' as const, id: request.id, operation: 'set' as const, expectedVersion: 2, data: { ...request, status: 'Approved' } },
+    { collection: 'locations' as const, id: target.id, operation: 'set' as const, expectedVersion: 3, data: { ...target, standardHours: proposed } },
+  ];
+  const audit = { action: 'Request Approved', entityType: 'Request', entityId: request.id, entityName: 'Hours change', details: 'Synthetic approval.' };
+  return { ...fixture, actor, target, request, proposed, writes, audit };
+}
+
+test('hours correction HTTP approval applies actual hours atomically, switches to custom and preserves broken staffing', async () => {
+  const f = hoursCorrectionFixture();
+  const app = express(); app.use(express.json()); app.use('/api/directory', createDirectoryDataRouter(async () => f.actor, f.store));
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    const response = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/api/directory/commit`, { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: 'Bearer synthetic' }, body: JSON.stringify({ writes: f.writes, audit: f.audit }) });
+    assert.equal(response.status, 200);
+    const saved = f.records.get('locations/loc-hours')!;
+    assert.deepEqual(saved.standardHours, f.proposed);
+    assert.equal(saved.hoursMode, 'custom'); assert.equal(Object.hasOwn(saved, 'hoursTemplateId'), false);
+    for (const field of ['storeManagerId', 'regionalManagerId', 'keyHolderIds']) assert.deepEqual(saved[field], Reflect.get(f.target, field));
+    assert.equal(f.records.get('requests/req-hours')?.status, 'Approved');
+    assert.equal(saved.version, 4);
+    assert.equal(f.records.get('requests/req-hours')?.version, 3);
+    assert.equal([...f.records.keys()].filter(k => k.startsWith('audit_logs/')).length, 1);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test('historical no-op hours approvals cannot bypass safeguard through key order or custom-mode changes', async () => {
+  const f = hoursCorrectionFixture();
+  const reversed = Object.fromEntries(Object.entries(f.target.standardHours).reverse().map(([day, hours]) => [day, Object.fromEntries(Object.entries(hours).reverse())]));
+  f.records.set('requests/req-hours', { ...f.request, requestedChanges: { standardHours: reversed, hoursMode: 'custom' } });
+  const writes = [f.writes[0], { ...f.writes[1], data: { ...f.target, standardHours: reversed, hoursMode: 'custom' } }];
+  await assert.rejects(f.store.commit(writes, f.audit, f.actor), /does not change the target/);
+  assert.deepEqual(f.records.get('locations/loc-hours'), f.target);
+  assert.equal(f.records.get('requests/req-hours')?.status, 'Pending');
+  assert.equal([...f.records.keys()].filter(k => k.startsWith('audit_logs/')).length, 0);
+});
+
+test('hours approval rejects stale/missing baselines, missing target and stale versions without partial writes', async () => {
+  for (const scenario of ['hours', 'baseline', 'target', 'version', 'request-version', 'requested-field']) {
+    const f = hoursCorrectionFixture();
+    if (scenario === 'hours') f.records.set('locations/loc-hours', { ...f.target, standardHours: { ...f.target.standardHours, monday: { ...f.target.standardHours.monday, close: '19:00' } } });
+    if (scenario === 'baseline') f.records.set('requests/req-hours', { ...f.request, currentSnapshot: {} });
+    if (scenario === 'target') f.records.delete('locations/loc-hours');
+    if (scenario === 'version') f.records.set('locations/loc-hours', { ...f.target, version: 4 });
+    if (scenario === 'request-version') f.records.set('requests/req-hours', { ...f.request, version: 3 });
+    if (scenario === 'requested-field') f.records.set('requests/req-hours', { ...f.request, requestedChanges: { standardHours: f.proposed, name: 'Requested Name' } });
+    const before = structuredClone([...f.records]);
+    await assert.rejects(f.store.commit(f.writes, f.audit, f.actor), scenario === 'requested-field' ? DirectoryValidationError : DirectoryConflict);
+    assert.deepEqual([...f.records], before, scenario);
+  }
+});
+
+test('new hours requests reject no-op, stale baseline and missing selected target but accept real changes', async () => {
+  for (const scenario of ['noop', 'stale', 'missing', 'changed']) {
+    const f = hoursCorrectionFixture(); f.records.delete('requests/req-hours');
+    const request = { ...f.request, version: undefined, requestedChanges: { standardHours: scenario === 'noop' ? f.target.standardHours : f.proposed }, currentSnapshot: { standardHours: scenario === 'stale' ? f.proposed : f.target.standardHours } };
+    if (scenario === 'missing') f.records.delete('locations/loc-hours');
+    const op = f.store.commit([{ collection: 'requests', id: 'req-hours', operation: 'set', data: request }], f.audit, { ...f.actor, role: 'Viewer' });
+    if (scenario === 'changed') { await op; assert.equal(f.records.get('requests/req-hours')?.status, 'Pending'); }
+    else { await assert.rejects(op, scenario === 'noop' ? DirectoryValidationError : DirectoryConflict); assert.equal(f.records.has('requests/req-hours'), false); }
+  }
+});
+
+test('hours approval checks every recorded requested-field baseline but permits unrelated current fields', async () => {
+  const stale = hoursCorrectionFixture();
+  stale.records.set('requests/req-hours', {
+    ...stale.request, requestedChanges: { standardHours: stale.proposed, name: 'Proposed Name' },
+    currentSnapshot: { standardHours: stale.target.standardHours, name: 'Old Submission Name' },
+  });
+  const writes = [stale.writes[0], { ...stale.writes[1], data: { ...stale.writes[1].data, name: 'Proposed Name' } }];
+  await assert.rejects(stale.store.commit(writes, stale.audit, stale.actor), /name changed since submission/);
+  assert.equal(stale.records.get('requests/req-hours')?.status, 'Pending');
+  assert.deepEqual(stale.records.get('locations/loc-hours'), stale.target);
+
+  const safe = hoursCorrectionFixture();
+  const latest = { ...safe.target, city: 'New Current City', version: 4 };
+  safe.records.set('locations/loc-hours', latest);
+  await safe.store.commit([safe.writes[0], { ...safe.writes[1], expectedVersion: 4, data: { ...latest, standardHours: safe.proposed } }], safe.audit, safe.actor);
+  assert.equal(safe.records.get('locations/loc-hours')?.city, 'New Current City');
+  assert.equal(safe.records.get('locations/loc-hours')?.hoursMode, 'custom');
+});
+
+test('only stewards/admins can approve or reject pending hours requests', async () => {
+  for (const role of ['Viewer', 'Editor'] as const) {
+    const f = hoursCorrectionFixture();
+    await assert.rejects(f.store.commit(f.writes, f.audit, { ...f.actor, role }), DirectoryWriteDenied);
+    await assert.rejects(f.store.commit([{ ...f.writes[0], data: { ...f.request, status: 'Rejected' } }], f.audit, { ...f.actor, role }), DirectoryWriteDenied);
+    assert.equal(f.records.get('requests/req-hours')?.status, 'Pending');
+  }
+  const f = hoursCorrectionFixture();
+  await f.store.commit([{ ...f.writes[0], data: { ...f.request, status: 'Rejected' } }], f.audit, { ...f.actor, role: 'Directory Data Steward' });
+  assert.equal(f.records.get('requests/req-hours')?.status, 'Rejected');
+  assert.deepEqual(f.records.get('locations/loc-hours'), f.target);
+});
 
 test('Location import confirmation atomically writes mixed changes, correlated audits, receipt, and idempotent replay', async () => {
   const { store, records } = databaseFixture();

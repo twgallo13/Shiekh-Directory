@@ -95,7 +95,7 @@ export function reconcileLocationLeadershipCopy(
   resolvePersonName: (id: string) => string | undefined,
   updatedFields: readonly string[],
 ): LocationRecord {
-  const affected = location.storeManagerId === personId || location.districtManagerId === personId
+  const affected = location.storeManagerId === personId || location.districtManagerId === personId || location.regionalManagerId === personId
     || location.assistantStoreManagerIds?.includes(personId) || location.keyHolderIds?.includes(personId);
   const copiesNameOrContact = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
   if (!affected || !copiesNameOrContact) return location;
@@ -110,11 +110,12 @@ export function reconcileLocationLeadershipCopy(
     ...(location.districtManagerId === personId ? {
       districtManagerName: updatedPerson.fullName,
     } : {}),
-    assistantStoreManagerNames: (location.assistantStoreManagerIds || [])
+    ...(location.regionalManagerId === personId ? { regionalManagerName: updatedPerson.fullName } : {}),
+    ...(location.assistantStoreManagerIds?.includes(personId) ? { assistantStoreManagerNames: location.assistantStoreManagerIds
       .map(resolvePersonName)
-      .filter((name): name is string => Boolean(name)),
-    keyHolderNames: (location.keyHolderIds || [])
+      .filter((name): name is string => Boolean(name)) } : {}),
+    ...(location.keyHolderIds?.includes(personId) ? { keyHolderNames: location.keyHolderIds
       .map(resolvePersonName)
-      .filter((name): name is string => Boolean(name)),
+      .filter((name): name is string => Boolean(name)) } : {}),
   };
 }

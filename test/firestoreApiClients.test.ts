@@ -149,3 +149,39 @@ test("authentication fails closed when cursor signing material is missing or mal
     assert.equal(await store.authenticate(token, { requestId: "request", method: "GET", path: "/locations" }), null);
   }
 });
+
+test("grants are reread per request, legacy missing is location-only, malformed fails closed, rotation preserves", async () => {
+  const memory = memoryFirestore();
+  const store = new FirestoreApiClientStore(memory.firestore);
+  const created = await store.create('Synthetic Personnel', actor, ['personnel:read', 'staffing:read']);
+  const context = { requestId: 'scope-test', method: 'GET', path: '/personnel' };
+  const clients = memory.collections.get('api_clients')!;
+  const stored = clients.get(created.client.id)!;
+  assert.deepEqual((await store.authenticate(created.token, context))?.scopes, ['personnel:read', 'staffing:read']);
+  const rotated = await store.rotate(created.client.id, false, actor);
+  assert.deepEqual(rotated.client.scopes, ['personnel:read', 'staffing:read']);
+  const updated = await store.updateScopes(created.client.id, ['staffing:read'], ['personnel:read', 'staffing:read'], actor);
+  assert.deepEqual(updated.scopes, ['staffing:read']);
+  for (const token of [created.token, rotated.token]) {
+    const credential = await store.authenticate(token, context);
+    assert.deepEqual(credential?.scopes, ['staffing:read']);
+    assert.equal(credential?.grantsVersion, 2);
+  }
+  await assert.rejects(store.updateScopes(created.client.id, ['personnel:read'], ['personnel:read', 'staffing:read'], actor));
+  const last = clients.get(created.client.id)!;
+  for (const scopes of [null, [], {}, 'staffing:read', ['admin'], ['personnel:read', 'personnel:read'], ['staffing:read', null]]) {
+    clients.set(created.client.id, { ...last, scopes });
+    assert.equal(await store.authenticate(created.token, context), null);
+    await assert.rejects(store.rotate(created.client.id, false, actor));
+  }
+  const legacy = { ...stored }; delete legacy.scopes; delete legacy.grantsVersion;
+  clients.set(created.client.id, legacy);
+  assert.deepEqual((await store.authenticate(created.token, context))?.scopes, ['locations:read']);
+  assert.deepEqual((await store.list())[0].scopes, ['locations:read']);
+  await store.disable(created.client.id, actor);
+  assert.equal(await store.authenticate(created.token, context), null);
+  await store.enable(created.client.id, actor);
+  await store.revoke(created.client.id, actor);
+  assert.equal(await store.authenticate(rotated.token, context), null);
+  await assert.rejects(store.updateScopes(created.client.id, ['personnel:read'], ['locations:read'], actor));
+});

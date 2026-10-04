@@ -1,0 +1,132 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Directory Personnel and Location Staffing",
+    "version": "personnel-staffing-v2.1",
+    "description": "Read-only persisted canonical IDs. No personnel contacts, accounts or custom fields. No Location-timestamp delta feed. v1 remains unchanged. Stage all datasets/pages before publishing a complete replacement snapshot."
+  },
+  "security": [{ "DirectoryToken": [] }],
+  "paths": {
+    "/api/v2/snapshot": {
+      "get": {
+        "operationId": "createReadSnapshot",
+        "description": "Requires personnel:read OR staffing:read. Pins all reads for 15 minutes. Bound to client, token version and effective grant generation. Restart the full run on expiry or authorization changes.",
+        "responses": {
+          "200": { "description": "Read session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Snapshot" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v2/personnel": {
+      "get": {
+        "operationId": "listPersonnel",
+        "description": "Requires personnel:read. Includes active, inactive and unknown states. Exact Person document IDs; no legacy identity synthesis. Full replacement only after all pages succeed.",
+        "parameters": [{ "$ref": "#/components/parameters/Snapshot" }, { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }],
+        "responses": {
+          "200": { "description": "Full-snapshot page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PersonnelPage" } } } },
+          "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" }, "429": { "$ref": "#/components/responses/Error" }, "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v2/personnel/{personId}": {
+      "get": {
+        "operationId": "getPersonnel",
+        "description": "Requires personnel:read. Lookup canonical Person ID at the same snapshot.",
+        "parameters": [{ "$ref": "#/components/parameters/Snapshot" }, { "name": "personId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "person-example-1" }],
+        "responses": {
+          "200": { "description": "Person detail", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["data", "sync"], "properties": { "data": { "$ref": "#/components/schemas/Person" }, "sync": { "$ref": "#/components/schemas/Sync" } } } } } },
+          "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" }, "409": { "$ref": "#/components/responses/Error" }, "429": { "$ref": "#/components/responses/Error" }, "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v2/location-staffing": {
+      "get": {
+        "operationId": "listLocationStaffing",
+        "description": "Requires staffing:read. All persisted Locations, including retired/unknown lifecycle. Referenced Person names/states are included; no contacts. Store numbers remain exact strings.",
+        "parameters": [{ "$ref": "#/components/parameters/Snapshot" }, { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }],
+        "responses": {
+          "200": { "description": "Full-snapshot page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StaffingPage" } } } },
+          "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" }, "429": { "$ref": "#/components/responses/Error" }, "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/api/v2/location-staffing/{locationId}": {
+      "get": {
+        "operationId": "getLocationStaffing",
+        "description": "Requires staffing:read. Canonical Location document ID, not store number.",
+        "parameters": [{ "$ref": "#/components/parameters/Snapshot" }, { "name": "locationId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "loc-example-1" }],
+        "responses": {
+          "200": { "description": "Location staffing detail", "content": { "application/json": { "schema": { "type": "object", "additionalProperties": false, "required": ["data", "sync"], "properties": { "data": { "$ref": "#/components/schemas/Staffing" }, "sync": { "$ref": "#/components/schemas/Sync" } } } } } },
+          "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" }, "409": { "$ref": "#/components/responses/Error" }, "429": { "$ref": "#/components/responses/Error" }, "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "DirectoryToken": { "type": "http", "scheme": "bearer", "description": "Administrator-issued Directory server token. Scopes: personnel:read and/or staffing:read. Existing locations:read alone does not authorize v2." } },
+    "parameters": {
+      "Snapshot": { "name": "snapshot", "in": "query", "required": true, "schema": { "type": "string", "maxLength": 8192 }, "description": "Opaque session token from /api/v2/snapshot; reuse across datasets." },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 } },
+      "Cursor": { "name": "cursor", "in": "query", "schema": { "type": "string", "maxLength": 8192 }, "description": "Follow until nextCursor is null, including empty pages. Same snapshot, dataset and page size required." }
+    },
+    "responses": {
+      "Error": { "description": "Request/authentication/source error. Do not reconcile partial data. 409 snapshot_expired requires restarting the whole run.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Error": { "type": "object", "additionalProperties": false, "required": ["error"], "properties": { "error": { "type": "object", "additionalProperties": false, "required": ["code", "message", "requestId"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "requestId": { "type": "string" } } } } },
+      "Issue": { "type": "object", "additionalProperties": false, "required": ["code", "field"], "properties": { "code": { "type": "string", "enum": ["invalid_name", "conflicting_name_alias", "ambiguous_lifecycle", "invalid_reference", "duplicate_assignment", "overlapping_workplace", "missing_location", "retired_location", "unknown_location_state", "missing_person", "inactive_person", "unknown_person_state", "legacy_only", "missing_hierarchy", "retired_hierarchy", "unknown_hierarchy_state", "hierarchy_parent_mismatch", "invalid_store_number"] }, "field": { "type": "string" } } },
+      "Lifecycle": { "type": "string", "enum": ["active", "inactive", "unknown"], "description": "Exact Active/Inactive or boolean activeStatus. Conflicting/invalid aliases or both absent => unknown; never rewritten." },
+      "NullableString": { "type": ["string", "null"] },
+      "Issues": { "type": "array", "items": { "$ref": "#/components/schemas/Issue" } },
+      "Person": {
+        "type": "object", "additionalProperties": false, "required": ["id", "fullName", "lifecycle", "primaryLocationId", "supportedLocationIds", "issues"],
+        "properties": {
+          "id": { "type": "string", "example": "person-example-1" },
+          "fullName": { "type": ["string", "null"], "example": "Example Manager" },
+          "lifecycle": { "$ref": "#/components/schemas/Lifecycle" },
+          "primaryLocationId": { "$ref": "#/components/schemas/NullableString" },
+          "supportedLocationIds": { "type": "array", "items": { "type": "string" } },
+          "issues": { "$ref": "#/components/schemas/Issues" }
+        }
+      },
+      "PersonReference": {
+        "type": "object", "additionalProperties": false, "required": ["personId", "fullName", "lifecycle", "issues"],
+        "properties": {
+          "personId": { "type": "string" }, "fullName": { "$ref": "#/components/schemas/NullableString" },
+          "lifecycle": { "$ref": "#/components/schemas/Lifecycle" }, "issues": { "$ref": "#/components/schemas/Issues" }
+        }
+      },
+      "NullableReference": { "oneOf": [{ "$ref": "#/components/schemas/PersonReference" }, { "type": "null" }] },
+      "ReferenceList": { "type": "array", "items": { "$ref": "#/components/schemas/PersonReference" } },
+      "Staffing": {
+        "type": "object", "additionalProperties": false,
+        "required": ["locationId", "storeNumber", "recordStatus", "regionId", "districtId", "hierarchy", "storeManagerId", "districtManagerId", "regionalManagerId", "assistantStoreManagerIds", "keyHolderIds", "issues"],
+        "properties": {
+          "locationId": { "type": "string", "example": "loc-example-1" }, "storeNumber": { "type": ["string", "null"], "example": "07" },
+          "recordStatus": { "type": "string", "enum": ["active", "retired", "unknown"] },
+          "regionId": { "$ref": "#/components/schemas/NullableString" }, "districtId": { "$ref": "#/components/schemas/NullableString" },
+          "hierarchy": { "type": "object", "additionalProperties": false, "required": ["regionName", "districtName"], "properties": { "regionName": { "$ref": "#/components/schemas/NullableString" }, "districtName": { "$ref": "#/components/schemas/NullableString" } } },
+          "storeManagerId": { "$ref": "#/components/schemas/NullableReference" }, "districtManagerId": { "$ref": "#/components/schemas/NullableReference" },
+          "regionalManagerId": { "$ref": "#/components/schemas/NullableReference" }, "assistantStoreManagerIds": { "$ref": "#/components/schemas/ReferenceList" },
+          "keyHolderIds": { "$ref": "#/components/schemas/ReferenceList" }, "issues": { "$ref": "#/components/schemas/Issues" }
+        }
+      },
+      "Snapshot": {
+        "type": "object", "additionalProperties": false, "required": ["snapshot", "snapshotAt", "expiresAt", "contractVersion"],
+        "properties": { "snapshot": { "type": "string" }, "snapshotAt": { "type": "string", "format": "date-time" }, "expiresAt": { "type": "string", "format": "date-time" }, "contractVersion": { "const": "personnel-staffing-v2.1" } }
+      },
+      "Sync": { "type": "object", "additionalProperties": false, "required": ["mode", "snapshotAt", "contractVersion"], "properties": { "mode": { "const": "full" }, "snapshotAt": { "type": "string", "format": "date-time" }, "contractVersion": { "const": "personnel-staffing-v2.1" } } },
+      "Pagination": { "type": "object", "additionalProperties": false, "required": ["limit", "nextCursor"], "properties": { "limit": { "type": "integer", "minimum": 1, "maximum": 100 }, "nextCursor": { "type": ["string", "null"] } } },
+      "PersonnelPage": { "type": "object", "additionalProperties": false, "required": ["data", "pagination", "sync"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Person" } }, "pagination": { "$ref": "#/components/schemas/Pagination" }, "sync": { "$ref": "#/components/schemas/Sync" } } },
+      "StaffingPage": { "type": "object", "additionalProperties": false, "required": ["data", "pagination", "sync"], "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Staffing" } }, "pagination": { "$ref": "#/components/schemas/Pagination" }, "sync": { "$ref": "#/components/schemas/Sync" } } }
+    }
+  }
+}

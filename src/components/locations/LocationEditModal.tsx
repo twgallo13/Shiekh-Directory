@@ -9,6 +9,7 @@ import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
+import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
 import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
 import { 
@@ -166,7 +167,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     const regionalManager = people.find(person => person.id === formData.regionalManagerId);
     const assistantStoreManagerIds = (formData.assistantStoreManagerIds || []).filter(Boolean);
     const keyHolderIds = (formData.keyHolderIds || []).filter(Boolean);
-    const sanitizedData: LocationRecord = {
+    let sanitizedData: LocationRecord = {
       ...formData,
       ...(normalizedPhone ? { phone: normalizedPhone.e164, ...(normalizedPhone.extension ? { phoneExtension: normalizedPhone.extension } : {}) } : {}),
       ...(normalizedStorePageUrl ? { storePageUrl: normalizedStorePageUrl } : {}),
@@ -186,6 +187,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
         .filter((name): name is string => Boolean(name)),
       holidayHours: (formData.holidayHours || []).filter(h => h.holidayName.trim().length > 0 || h.date.trim().length > 0)
     };
+    if (!isCreating) sanitizedData = preserveUnchangedStaffing(formData, baseline, sanitizedData);
     if (isCreating) sanitizedData.id = createId;
     if (sanitizedData.locationInboxEmail !== undefined && sanitizedData.locationInboxEmail !== null
       && sanitizedData.locationInboxEmail !== baseline.locationInboxEmail && !normalizeLocationInboxEmail(sanitizedData.locationInboxEmail)) {

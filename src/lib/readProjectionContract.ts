@@ -1,3 +1,5 @@
+import { personLifecycle } from './personLifecycle';
+
 export interface ReadProjectionPerson {
   id: string;
   fullName: string;
@@ -17,7 +19,7 @@ export function resolveActivePerson<T extends ReadProjectionPerson>(
   if (!id) return undefined;
   const person = people.find(candidate => candidate.id === id);
   if (!person) return undefined;
-  if ((person.status && person.status !== "Active") || person.activeStatus === false) return undefined;
+  if (personLifecycle(person) !== 'active') return undefined;
   return person;
 }
 
@@ -31,12 +33,13 @@ export function resolveActivePersonList<T extends ReadProjectionPerson>(
 }
 
 export function resolveActiveLocationManagers<T extends ReadProjectionPerson>(
-  location: { storeManagerId?: string; districtManagerId?: string },
+  location: { storeManagerId?: string; districtManagerId?: string; regionalManagerId?: string },
   people: T[],
-): { storeManager?: T; districtManager?: T } {
+): { storeManager?: T; districtManager?: T; regionalManager?: T } {
   return {
     storeManager: resolveActivePerson(location.storeManagerId, people),
     districtManager: resolveActivePerson(location.districtManagerId, people),
+    regionalManager: resolveActivePerson(location.regionalManagerId, people),
   };
 }
 
@@ -55,6 +58,8 @@ export interface LocationReadProjectionInput {
   district?: string;
   districtManagerId?: string;
   districtManagerName?: string;
+  regionalManagerId?: string;
+  regionalManagerName?: string;
   storeManagerId?: string;
   storeManagerName?: string;
   assistantStoreManagerIds?: string[];
@@ -66,6 +71,7 @@ export interface LocationReadProjectionInput {
 export interface LocationReadProjection {
   storeManager: string;
   districtManager: string;
+  regionalManager: string;
   assistantStoreManagers: string[];
   keyHolders: string[];
   district: string;
@@ -96,10 +102,10 @@ function resolveCanonicalName(
     };
   }
 
-  if ((person.status && person.status !== "Active") || person.activeStatus === false) {
+  if (personLifecycle(person) !== 'active') {
     return {
       value: "",
-      warning: `${field} references inactive person ${person.fullName} (${id})`,
+      warning: `${field} references inactive or ambiguous person ${person.fullName} (${id})`,
     };
   }
 
@@ -160,6 +166,7 @@ export function buildLocationReadProjection(
     people,
     "districtManager",
   );
+  const regionalManager = resolveCanonicalName(location.regionalManagerId, location.regionalManagerName, people, "regionalManager");
 
   const assistantResult = resolveCanonicalList(
     location.assistantStoreManagerIds,
@@ -176,13 +183,14 @@ export function buildLocationReadProjection(
 
   if (storeManager.warning) warnings.push(storeManager.warning);
   if (districtManager.warning) warnings.push(districtManager.warning);
+  if (regionalManager.warning) warnings.push(regionalManager.warning);
   warnings.push(...assistantResult.warnings);
   warnings.push(...keyHolderResult.warnings);
 
   const district = location.district || "";
-  const canonicalLeadershipRefs = [location.districtManagerId, location.storeManagerId].filter((id): id is string => Boolean(id));
+  const canonicalLeadershipRefs = [location.districtManagerId, location.storeManagerId, location.regionalManagerId].filter((id): id is string => Boolean(id));
   const validCanonicalLeadership = canonicalLeadershipRefs.filter(id =>
-    people.some(person => person.id === id && (!person.status || person.status === "Active")),
+    people.some(person => person.id === id && personLifecycle(person) === 'active'),
   );
 
   if (district && (canonicalLeadershipRefs.length === 0 || validCanonicalLeadership.length !== canonicalLeadershipRefs.length)) {
@@ -192,6 +200,7 @@ export function buildLocationReadProjection(
   return {
     storeManager: storeManager.value,
     districtManager: districtManager.value,
+    regionalManager: regionalManager.value,
     assistantStoreManagers: assistantResult.values,
     keyHolders: keyHolderResult.values,
     district,

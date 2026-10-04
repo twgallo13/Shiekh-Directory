@@ -5,6 +5,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 ## Documentation
 
 - [API reference](API.md): endpoints, authentication, filters, pagination, and responses.
+- [Personnel/staffing v2 guide](docs/personnel-staffing-api.md) and [shareable OpenAPI](docs/personnel-staffing-openapi.json): scoped, contact-free full snapshots of persisted assignments. First-release review status: [dispatch 14](docs/dispatches/dispatch-14-personnel-staffing-api.md).
 - [Response schema](docs/api-response-schema.md): the fields the API returns and what their values mean.
 - [App blueprint for Directory data](docs/app-blueprint-directory-api.md): how a consuming app such as ROPI should store and synchronize store information.
 - [Location inbox implementation and acceptance evidence](docs/dispatches/dispatch-13-location-inbox-email.md).

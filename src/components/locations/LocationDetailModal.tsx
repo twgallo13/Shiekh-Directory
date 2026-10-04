@@ -10,7 +10,7 @@ import { formatUsPhone } from '../../lib/contactNormalization';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { Mail } from 'lucide-react';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
-import { resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
+import { buildLocationReadProjection, resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { 
   X, 
@@ -81,6 +81,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   const regionalManager = resolveActivePerson(location.regionalManagerId, people);
   const assistantManagers = resolveActivePersonList(location.assistantStoreManagerIds, people);
   const keyHolders = resolveActivePersonList(location.keyHolderIds, people);
+  const staffingDiagnostics = buildLocationReadProjection(location, people).warnings;
   const hierarchy = resolveLocationHierarchy(location, { regions, districts });
   const primaryEmployees = people.filter(person => person.primaryLocationId === location.id);
   const supportingEmployees = people.filter(person => person.supportedLocationIds?.includes(location.id));
@@ -547,6 +548,11 @@ Operating Status: ${location.operationalStatus}`;
                   </div>
                   <span className="text-[10px] text-neutral-400">Sourced from People Directory</span>
                 </div>
+                {staffingDiagnostics.length > 0 && <details className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                  <summary className="cursor-pointer font-semibold">Saved staffing needs review ({staffingDiagnostics.length})</summary>
+                  <p className="mt-2">Canonical IDs are preserved. Copied legacy names do not create assignments or People.</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">{staffingDiagnostics.map((warning, index) => <li key={index} className="break-words">{warning}</li>)}</ul>
+                </details>}
 
                 <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
                   <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">

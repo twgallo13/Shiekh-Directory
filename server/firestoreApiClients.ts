@@ -17,6 +17,7 @@ import {
   type ManagedApiCredential,
 } from "./apiClientApi";
 import type { Account } from "./authAuthority";
+import { parseApiScopes, type ApiScope } from "../src/lib/apiScopes";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 const CLIENT_COLLECTION = "api_clients";
@@ -26,7 +27,8 @@ interface ApiClientDocument {
   id: string;
   name: string;
   status: ApiClientStatus;
-  scopes: [typeof API_CLIENT_SCOPE];
+  scopes?: unknown;
+  grantsVersion?: number;
   createdAt: string;
   updatedAt: string;
   lastUsedAt?: string;
@@ -65,6 +67,8 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
         const clientData = clientSnapshot.data() as ApiClientDocument | undefined;
         const current = this.now();
         if (!clientSnapshot.exists || !clientData || clientData.status !== "Active" || !tokenIsActive(tokenData, current)) return null;
+        const scopes = parseApiScopes(clientData.scopes, !Object.hasOwn(clientData, 'scopes'));
+        if (!scopes || (clientData.grantsVersion !== undefined && (!Number.isSafeInteger(clientData.grantsVersion) || clientData.grantsVersion < 0))) return null;
 
         const timestamp = current.toISOString();
         if (shouldUpdateLastUsed(tokenData.lastUsedAt, current)) transaction.set(tokenReference, { lastUsedAt: timestamp }, { merge: true });
@@ -73,7 +77,8 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
           clientId: clientData.id,
           tokenVersionId: tokenData.tokenVersionId,
           cursorSigningKey: tokenData.cursorSigningKey,
-          scopes: [API_CLIENT_SCOPE],
+          scopes,
+          grantsVersion: clientData.grantsVersion ?? 0,
         } satisfies ManagedApiCredential;
       });
       logAuthentication(context, credential ? "authorized" : "denied", credential);
@@ -101,7 +106,9 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
       .sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  async create(name: string, actor: Account): Promise<IssuedApiClient> {
+  async create(name: string, actor: Account, requestedScopes: ApiScope[] = [API_CLIENT_SCOPE]): Promise<IssuedApiClient> {
+    const scopes = parseApiScopes(requestedScopes);
+    if (!scopes) throw new ApiClientConflict();
     const token = generateApiToken();
     const digest = hashApiToken(token);
     const clientId = `api-${randomUUID()}`;
@@ -111,7 +118,8 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
       id: clientId,
       name,
       status: "Active",
-      scopes: [API_CLIENT_SCOPE],
+      scopes,
+      grantsVersion: 1,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -134,6 +142,31 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
 
   async disable(id: string, actor: Account): Promise<ApiClientSummary> {
     return this.changeStatus(id, "Active", "Disabled", "API Client Disabled", actor, "Disabled Directory API access.");
+  }
+
+  async updateScopes(id: string, requested: ApiScope[], expected: ApiScope[], actor: Account): Promise<ApiClientSummary> {
+    const scopes = parseApiScopes(requested);
+    const expectedScopes = parseApiScopes(expected);
+    if (!scopes || !expectedScopes) throw new ApiClientConflict();
+    return this.firestore.runTransaction(async transaction => {
+      const reference = this.firestore.collection(CLIENT_COLLECTION).doc(id);
+      const [snapshot, tokens] = await Promise.all([
+        transaction.get(reference),
+        transaction.get(this.firestore.collection(TOKEN_COLLECTION).where('clientId', '==', id)),
+      ]);
+      if (!snapshot.exists) throw new ApiClientNotFound();
+      const client = snapshot.data() as ApiClientDocument;
+      const currentScopes = parseApiScopes(client.scopes, !Object.hasOwn(client, 'scopes'));
+      if (client.status === 'Revoked' || !currentScopes || JSON.stringify(currentScopes) !== JSON.stringify(expectedScopes)) throw new ApiClientConflict();
+      const timestamp = this.now().toISOString();
+      const grantsVersion = (client.grantsVersion ?? 0) + 1;
+      if (!Number.isSafeInteger(grantsVersion) || grantsVersion < 1) throw new ApiClientConflict();
+      const updated = { ...client, scopes, grantsVersion, updatedAt: timestamp };
+      transaction.set(reference, { scopes, grantsVersion, updatedAt: timestamp }, { merge: true });
+      writeLifecycleAudit(transaction, this.firestore, timestamp, 'API Client Scopes Changed', updated, actor,
+        `Changed grants from ${currentScopes.join(', ')} to ${scopes.join(', ')}. Active tokens immediately use these grants.`);
+      return toClientSummaryData(updated, tokens.docs.map(document => toTokenSummary(document.data() as ApiTokenDocument, this.now())));
+    });
   }
 
   async enable(id: string, actor: Account): Promise<ApiClientSummary> {
@@ -159,7 +192,7 @@ export class FirestoreApiClientStore implements ApiClientStore, ApiClientAuthent
       ]);
       if (!clientSnapshot.exists) throw new ApiClientNotFound();
       const client = clientSnapshot.data() as ApiClientDocument;
-      if (client.status !== "Active" || tokenSnapshot.exists) throw new ApiClientConflict();
+      if (client.status !== "Active" || tokenSnapshot.exists || !parseApiScopes(client.scopes, !Object.hasOwn(client, 'scopes'))) throw new ApiClientConflict();
 
       for (const existingSnapshot of existingTokens.docs) {
         const existing = existingSnapshot.data() as ApiTokenDocument;
@@ -275,11 +308,13 @@ function toClientSummary(snapshot: QueryDocumentSnapshot, tokenVersions: ApiToke
 }
 
 function toClientSummaryData(client: ApiClientDocument, tokenVersions: ApiTokenVersionSummary[]): ApiClientSummary {
+  const scopes = parseApiScopes(client.scopes, !Object.hasOwn(client, 'scopes'));
+  if (!scopes) throw new ApiClientConflict('Invalid stored API client grants.');
   return {
     id: client.id,
     name: client.name,
     status: client.status,
-    scopes: [API_CLIENT_SCOPE],
+    scopes,
     createdAt: client.createdAt,
     updatedAt: client.updatedAt,
     ...(client.lastUsedAt ? { lastUsedAt: client.lastUsedAt } : {}),

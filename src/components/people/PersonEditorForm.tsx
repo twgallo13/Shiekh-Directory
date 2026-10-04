@@ -6,6 +6,7 @@ import { Button } from '../common/Button';
 import { FormLabel } from '../common/FormLabel';
 import { PersonLocationRelationshipFields } from './PersonLocationRelationshipFields';
 import { normalizePersonEmail } from '../../lib/locationInboxEmail';
+import { personLifecycle } from '../../lib/personLifecycle';
 
 interface PersonEditorFormProps {
   person?: PersonRecord;
@@ -29,7 +30,8 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
   const [district, setDistrict] = useState(person?.district || '');
-  const [status, setStatus] = useState(person?.status === 'Inactive' || person?.activeStatus === false ? 'Inactive' : 'Active');
+  const [status, setStatus] = useState(person ? personLifecycle(person) === 'active' ? 'Active' : personLifecycle(person) === 'inactive' ? 'Inactive' : 'Unknown' : 'Active');
+  const [statusTouched, setStatusTouched] = useState(false);
   const [phonePrivacy, setPhonePrivacy] = useState<ContactPrivacyLevel>(person?.phonePrivacy || 'Internal');
   const [primaryLocationId, setPrimaryLocationId] = useState(person?.primaryLocationId);
   const [supportedLocationIds, setSupportedLocationIds] = useState(person?.supportedLocationIds || []);
@@ -62,8 +64,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
         role: jobTitle.trim(),
         department: department.trim(),
         district: district.trim(),
-        status,
-        activeStatus: status === 'Active',
+        ...(!person || statusTouched ? { status, activeStatus: status === 'Active' } : {}),
         phonePrivacy,
         primaryLocationId: primaryLocationId || null,
         supportedLocationIds,
@@ -117,7 +118,8 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <FormLabel>Active Status</FormLabel>
-          <select value={status} onChange={event => setStatus(event.target.value as 'Active' | 'Inactive')} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:outline-none">
+          <select value={status} onChange={event => { setStatus(event.target.value); setStatusTouched(true); }} className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:outline-none">
+            {status === 'Unknown' && <option value="Unknown" disabled>Needs lifecycle review (preserved)</option>}
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
           </select>

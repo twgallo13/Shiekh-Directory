@@ -291,3 +291,11 @@ The data owner must supply or approve:
 - A separately approved backup, reconciliation, rollback, and writer-cutover plan. The browser UI must eventually read/write the same server-owned source of truth under its own approved persistence milestone.
 
 No generation has been selected, hidden, deleted, migrated, or rewritten. The disabled Admin webhook and Firestore controls do not claim connectivity or successful cloud writes; their displayed counts are labeled browser-local.
+# Personnel and staffing v2 (review feature)
+
+The reusable contact-free API contract is in
+[the v2 guide](docs/personnel-staffing-api.md) and
+[shareable OpenAPI](docs/personnel-staffing-openapi.json).
+It adds explicit `personnel:read` and `staffing:read` grants and coherent full
+snapshots. Existing v1 response fields, location-only grants and sync behavior
+are unchanged. This feature requires review/deployment before live use.

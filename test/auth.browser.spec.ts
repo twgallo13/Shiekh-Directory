@@ -1,7 +1,41 @@
 import { test, expect, type Page } from "@playwright/test";
 import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
+import type { LocationRecord, UpdateRequest } from '../src/types';
+import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
+
+async function prepareHoursCorrection(page: Page, options: { role?: string; request?: 'changed' | 'noop' | 'stale' | 'missing'; conflict?: boolean } = {}) {
+  await prepare(page, options.role || 'Directory Data Steward');
+  const locations: LocationRecord[] = seedDirectory(3).locations.map((loc, index) => ({
+    ...loc, type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', operationalStatus: 'Open — Normal Operations',
+    version: 4, standardHours: { ...structuredClone(DEFAULT_WEEKLY_HOURS), monday: { ...DEFAULT_WEEKLY_HOURS.monday, open: index === 0 ? '08:00' : '11:00' } },
+    hoursMode: 'template', hoursTemplateId: 'synthetic-template', storeManagerId: 'missing-person',
+    regionalManagerId: 'missing-rm', keyHolderIds: ['missing-key'],
+  }));
+  delete locations[2].standardHours;
+  const current = locations[0].standardHours!;
+  const proposed = { ...current, monday: { ...current.monday, open: '09:00' } };
+  const requests: UpdateRequest[] = options.request ? [{
+    id: 'req-hours', version: 3, targetType: 'Location', targetId: options.request === 'missing' ? 'missing-location' : locations[0].id,
+    targetName: 'Synthetic Hours Store', targetStoreNumber: '001', changeType: 'Standard Hours Adjustment',
+    requestedBy: { id: 'synthetic-user', name: 'Synthetic Requester', email: 'requester@example.test', role: 'Viewer' },
+    requestedAt: '2026-10-04T12:00:00.000Z', status: 'Pending',
+    currentSnapshot: { standardHours: options.request === 'noop' || options.request === 'stale' ? { ...current, monday: { ...current.monday, open: '07:00' } } : current },
+    requestedChanges: { standardHours: options.request === 'noop' ? Object.fromEntries(Object.entries(current).reverse()) as LocationRecord['standardHours'] : proposed },
+  }] : [];
+  const seed = { ...seedDirectory(0), locations, requests, hoursTemplates: [{ id: 'synthetic-template', name: 'Synthetic template', description: '', schedule: current }] };
+  const commits: { writes: { collection: string; data: Record<string, unknown>; expectedVersion?: number }[] }[] = [];
+  let mailEvents = 0;
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/mail/event', route => { mailEvents++; return route.fulfill({ json: { success: true } }); });
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); commits.push(body);
+    if (options.conflict) return route.fulfill({ status: 409, json: { error: { code: 'directory_conflict', message: 'Hours changed since submission. Reload and submit a replacement.' } } });
+    return route.fulfill({ json: commitResponseFor(body) });
+  });
+  return { commits, locations, requests, mailEvents: () => mailEvents };
+}
 const sdk = `
 export const browserPopupRedirectResolver = {};
 export const browserSessionPersistence = 'session';
@@ -982,6 +1016,126 @@ test("administrators can save non-secret mail settings without a password field"
   expect(Object.hasOwn(submitted || {}, "password")).toBe(false);
   await expect(page.getByLabel(/password/i)).toHaveCount(0);
 });
+
+test('Hours correction selected-store initialization/reset prevents unchanged submission and submits real baseline', async ({ page }) => {
+  const f = await prepareHoursCorrection(page, { role: 'Viewer' });
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Change Category').selectOption('Standard Hours Adjustment');
+  const mondayOpen = dialog.locator('input[type=time]').first();
+  await expect(mondayOpen).toHaveValue('08:00');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('would not change');
+  expect(f.commits).toHaveLength(0);
+  await mondayOpen.fill('09:30');
+  await dialog.getByLabel('Target Location').selectOption('loc-2');
+  await expect(mondayOpen).toHaveValue('11:00');
+  await dialog.getByLabel('Target Location').selectOption('loc-3');
+  await expect(mondayOpen).toHaveValue('10:00');
+  await dialog.getByLabel('Target Location').selectOption('loc-1');
+  await expect(mondayOpen).toHaveValue('08:00');
+  await mondayOpen.fill('09:00');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(f.commits).toHaveLength(1);
+  const data = f.commits[0].writes[0].data;
+  expect(data.targetId).toBe('loc-1');
+  expect(data.currentSnapshot).toEqual({ standardHours: f.locations[0].standardHours });
+  expect(data.requestedChanges).toEqual({ standardHours: { ...f.locations[0].standardHours, monday: { ...f.locations[0].standardHours!.monday, open: '09:00' } } });
+});
+
+test('Hours correction initializes from explicitly selected store instead of the first store', async ({ page }) => {
+  const f = await prepareHoursCorrection(page);
+  await page.goto(`${origin}/requests/new?locationId=loc-2`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Change Category').selectOption('Standard Hours Adjustment');
+  await expect(dialog.getByLabel('Target Location')).toHaveValue('loc-2');
+  await expect(dialog.locator('input[type=time]').first()).toHaveValue('11:00');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('would not change');
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Hours correction historical no-op has distinct live/baseline labels and cannot approve but can reject', async ({ page }) => {
+  const f = await prepareHoursCorrection(page, { request: 'noop' });
+  await page.goto(`${origin}/requests`); await restore(page, true);
+  await expect(page.getByText('SUBMISSION BASELINE (HISTORICAL)', { exact: true })).toBeVisible();
+  await expect(page.getByText('CURRENT AUTHORITATIVE VALUE (LOADED RECORD)', { exact: true })).toBeVisible();
+  await expect(page.getByText(/No change to apply:/)).toBeVisible();
+  await expect(page.getByText('07:00 - 20:00', { exact: true })).toBeVisible();
+  await expect(page.getByText('08:00 - 20:00', { exact: true })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Approve & Apply' })).toBeDisabled();
+  expect(f.commits).toHaveLength(0);
+  await expect(page.getByRole('button', { name: 'Submit New Request' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Reject', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes).toHaveLength(1);
+  expect(f.commits[0].writes[0].data.status).toBe('Rejected');
+});
+
+test('Hours correction changed-hours approval uses custom mode and retains staffing IDs and versions', async ({ page }) => {
+  const f = await prepareHoursCorrection(page, { request: 'changed' });
+  await page.goto(`${origin}/requests`); await restore(page, true);
+  await page.getByRole('button', { name: 'Approve & Apply' }).click();
+  await expect(page.getByRole('button', { name: 'Approve & Apply' })).toHaveCount(0);
+  expect(f.commits).toHaveLength(1);
+  const location = f.commits[0].writes.find(w => w.collection === 'locations')!;
+  expect(location.expectedVersion).toBe(4);
+  expect(f.commits[0].writes.find(w => w.collection === 'requests')!.expectedVersion).toBe(3);
+  expect(location.data.standardHours).toEqual(f.requests[0].requestedChanges.standardHours);
+  expect(location.data.hoursMode).toBe('custom');
+  expect(Object.hasOwn(location.data, 'hoursTemplateId')).toBe(false);
+  for (const field of ['storeManagerId', 'regionalManagerId', 'keyHolderIds']) expect(location.data[field]).toEqual(Reflect.get(f.locations[0], field));
+});
+
+for (const request of ['stale', 'missing'] as const) {
+  test(`Hours correction ${request} request cannot approve and retains reject/replacement`, async ({ page }) => {
+    const f = await prepareHoursCorrection(page, { request });
+    await page.goto(`${origin}/requests`); await restore(page, true);
+    await expect(page.getByRole('button', { name: 'Approve & Apply' })).toBeDisabled();
+    await expect(page.getByText(request === 'stale' ? /changed since submission/ : /target is missing/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reject', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Submit New Request' })).toBeEnabled();
+    expect(f.commits).toHaveLength(0);
+  });
+}
+
+test('Hours correction concurrent server conflict rolls back approval without notification', async ({ page }) => {
+  const f = await prepareHoursCorrection(page, { request: 'changed', conflict: true });
+  await page.goto(`${origin}/requests`); await restore(page, true);
+  await page.getByRole('button', { name: 'Approve & Apply' }).click();
+  await expect(page.getByRole('alert')).toContainText('Hours changed since submission. Reload and submit a replacement.');
+  await expect(page.getByRole('button', { name: 'Approve & Apply' })).toBeVisible();
+  await expect(page.getByText('08:00 - 20:00', { exact: true })).toHaveCount(2);
+  expect(f.commits).toHaveLength(1);
+  expect(f.mailEvents()).toBe(0);
+});
+
+test('Hours correction failed submission stays open with draft/error and no phantom request', async ({ page }) => {
+  const f = await prepareHoursCorrection(page, { role: 'Viewer', conflict: true });
+  await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Change Category').selectOption('Standard Hours Adjustment');
+  await dialog.locator('input[type=time]').first().fill('09:00');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Hours changed since submission');
+  await expect(dialog.locator('input[type=time]').first()).toHaveValue('09:00');
+  expect(f.mailEvents()).toBe(0);
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard request', exact: true }).click();
+  await expect(page.getByText('No matching change requests')).toBeVisible();
+});
+
+for (const role of ['Viewer', 'Editor']) {
+  test(`Hours correction ${role} cannot approve or reject`, async ({ page }) => {
+    const f = await prepareHoursCorrection(page, { role, request: 'changed' });
+    await page.goto(`${origin}/requests`); await restore(page, true);
+    await expect(page.getByText('SUBMISSION BASELINE (HISTORICAL)', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Approve & Apply' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Reject', exact: true })).toHaveCount(0);
+    expect(f.commits).toHaveLength(0);
+  });
+}
 
 test("Add User provisions Firebase identity, sends SMTP signup email, and shows accepted evidence", async ({ page }) => {
   await prepare(page, "System Administrator");

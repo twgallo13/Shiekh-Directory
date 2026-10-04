@@ -6,6 +6,7 @@ import { Button } from '../common/Button';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
+import { correctionReview } from '../../lib/correctionRequest';
 
 interface RequestsViewProps {
   onOpenNewRequest: () => void;
@@ -119,7 +120,7 @@ const renderFormattedValue = (value: unknown): React.ReactNode => {
 };
 
 export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) => {
-  const { requests, locations, currentUser, approveRequest, rejectRequest } = useDirectory();
+  const { requests, locations, people, currentUser, approveRequest, rejectRequest } = useDirectory();
   const [filter, setFilter] = useState<'All' | 'Pending' | 'Approved' | 'Rejected'>('All');
   const [reviewerNotes, setReviewerNotes] = useState<{ [id: string]: string }>({});
   const [inboxConflictAcknowledged, setInboxConflictAcknowledged] = useState<Record<string, string>>({});
@@ -165,6 +166,8 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
         {filtered.map(req => {
           const isPending = req.status === 'Pending';
           const targetLocation = req.targetType === 'Location' ? locations.find(location => location.id === req.targetId) : undefined;
+          const target = req.targetType === 'Location' ? targetLocation : req.targetType === 'Person' ? people.find(person => person.id === req.targetId) : undefined;
+          const review = correctionReview(req, target);
           const proposedInbox = req.changeType === 'Other Store Info Update' ? req.requestedChanges.locationInboxEmail : undefined;
           const normalizedInbox = typeof proposedInbox === 'string' ? normalizeLocationInboxEmail(proposedInbox) : null;
           const inboxConflicts = normalizedInbox
@@ -228,11 +231,12 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
                   PROPOSED CHANGE COMPARISON (DIFF)
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {isPending && review.blockedReason && <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-950">{review.blockedReason}</p>}
+                <div className="grid gap-4 md:grid-cols-3">
                   {/* Left Column (Baseline) */}
                   <div className="p-3 bg-white rounded-lg border border-neutral-200 space-y-2">
                     <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-100 pb-1.5">
-                      CURRENT AUTHORITATIVE VALUE
+                      SUBMISSION BASELINE (HISTORICAL)
                     </div>
                     {Object.entries(req.currentSnapshot || {}).length === 0 ? (
                       <div className="text-neutral-400 italic text-[11px]">No baseline snapshot recorded</div>
@@ -250,6 +254,19 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  <div className="p-3 bg-white rounded-lg border border-neutral-200 space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-100 pb-1.5">
+                      CURRENT AUTHORITATIVE VALUE (LOADED RECORD)
+                    </div>
+                    <p className="text-[10px] text-neutral-500">The server rechecks current values and versions atomically on approval.</p>
+                    {!target ? <p className="text-rose-700">Target record unavailable</p> : Object.entries(review.currentValues).map(([key, value]) => (
+                      <div key={key} className="space-y-0.5">
+                        <span className="text-[10px] font-semibold text-neutral-500 uppercase block">{formatFieldName(key)}</span>
+                        {renderFormattedValue(value)}
+                      </div>
+                    ))}
                   </div>
 
                   {/* Right Column (Requested Changes) */}
@@ -310,7 +327,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
                     </button>
                     <button
                       type="button"
-                      disabled={inboxConflicts.length > 0 && !inboxAcknowledgment}
+                      disabled={Boolean(review.blockedReason) || (inboxConflicts.length > 0 && !inboxAcknowledgment)}
                       onClick={() => approveRequest(req.id, reviewerNotes[req.id], inboxAcknowledgment)}
                       className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors"
                     >

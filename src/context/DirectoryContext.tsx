@@ -21,6 +21,7 @@ import {
 import type { DirectorySeed } from '../lib/directorySeed';
 import type { LocationInboxAcknowledgment } from '../lib/locationInboxEmail';
 import { canonicalDirectoryBootstrap } from '../lib/canonicalDirectoryBootstrap';
+import { applyCorrection, correctionReview } from '../lib/correctionRequest';
 import { buildRegistryWrite, commitDirectory, fetchHierarchyRegistry, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult, type HierarchyRegistrySnapshot, type RegistrySaveIntent } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
 import { useAuth } from './AuthContext';
@@ -65,7 +66,7 @@ interface DirectoryContextType {
   updatePerson: (id: string, updates: PersonUpdate, expectedVersion?: number) => Promise<void>;
   deletePerson: (id: string) => Promise<void>;
   togglePersonPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
-  submitRequest: (request: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => void;
+  submitRequest: (request: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => Promise<void>;
   approveRequest: (requestId: string, reviewerNotes?: string, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => void;
   rejectRequest: (requestId: string, reviewerNotes?: string) => void;
   applyHoursTemplate: (locationId: string, templateId: string) => void;
@@ -417,21 +418,33 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     void updatePerson(id, { phonePrivacy: privacy });
   };
 
-  const submitRequest = (reqData: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => {
+  const submitRequest = async (reqData: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>): Promise<void> => {
     const newReq: UpdateRequest = {
       ...reqData,
       id: `req-${Date.now()}`,
       requestedAt: new Date().toISOString(),
       status: 'Pending'
     };
-    setRequests(prev => [newReq, ...prev]);
+    const operation = persist([{ collection: 'requests', id: newReq.id, operation: 'set', data: newReq as unknown as Record<string, unknown> }], { action: 'Request Submitted', entityType: 'Request', entityId: newReq.id, entityName: newReq.changeType, details: `Submitted change request for ${newReq.targetName}` });
+    await operation;
+    setRequests(prev => prev.some(request => request.id === newReq.id) ? prev : [newReq, ...prev]);
     addAuditLog('Request Submitted', 'Request', newReq.id, newReq.changeType, `Submitted change request for ${newReq.targetName}`);
-    notifyAfterSave(persist([{ collection: 'requests', id: newReq.id, operation: 'set', data: newReq as unknown as Record<string, unknown> }], { action: 'Request Submitted', entityType: 'Request', entityId: newReq.id, entityName: newReq.changeType, details: `Submitted change request for ${newReq.targetName}` }), 'request-submitted', newReq.id);
+    notifyAfterSave(operation, 'request-submitted', newReq.id);
   };
 
   const approveRequest = (requestId: string, reviewerNotes?: string, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => {
     const req = requests.find(r => r.id === requestId);
-    if (!req) return;
+    const target = req?.targetType === 'Location' ? locations.find(item => item.id === req.targetId)
+      : req?.targetType === 'Person' ? people.find(item => item.id === req.targetId) : undefined;
+    if (!req || req.status !== 'Pending' || !['System Administrator', 'Directory Data Steward'].includes(currentUser.role)) {
+      setPersistenceError('Only a steward or administrator can approve a pending request.');
+      return;
+    }
+    const review = correctionReview(req, target);
+    if (review.blockedReason) {
+      setPersistenceError(review.blockedReason);
+      return;
+    }
 
     const updatedRequest: UpdateRequest = {
           ...req,
@@ -444,7 +457,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     if (req.targetType === 'Location') {
       const location = locations.find(item => item.id === req.targetId);
       if (location) {
-        const updatedLocation = { ...location, ...req.requestedChanges, updatedAt: new Date().toISOString() };
+        const updatedLocation = { ...applyCorrection(location, req.requestedChanges), updatedAt: new Date().toISOString() };
         setLocations(previous => previous.map(item => item.id === location.id ? updatedLocation : item));
         writes.push({ collection: 'locations', id: location.id, operation: 'set', data: updatedLocation as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(location), ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}) });
       }
@@ -463,8 +476,10 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     }
     setRequests(previous => previous.map(item => item.id === requestId ? updatedRequest : item));
 
-    addAuditLog('Request Approved', 'Request', req.id, req.changeType, `Approved request by ${currentUser.name}`);
-    const operation = persist(writes, { action: 'Request Approved', entityType: 'Request', entityId: req.id, entityName: req.changeType, details: `Approved request by ${currentUser.name}` });
+    const operation = persist(writes, { action: 'Request Approved', entityType: 'Request', entityId: req.id, entityName: req.changeType, details: `Approved request by ${currentUser.name}` }).then(result => {
+      addAuditLog('Request Approved', 'Request', req.id, req.changeType, `Approved request by ${currentUser.name}`);
+      return result;
+    });
     void operation.catch(() => {
       setRequests(previous => previous.map(item => item.id === requestId ? req : item));
       setLocations(locations);
@@ -486,8 +501,10 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     };
     setRequests(previous => previous.map(item => item.id === requestId ? updatedRequest : item));
 
-    addAuditLog('Request Rejected', 'Request', req.id, req.changeType, `Rejected request by ${currentUser.name}: ${reviewerNotes || 'No notes'}`);
-    const operation = persist([{ collection: 'requests', id: requestId, operation: 'set', data: updatedRequest as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(req) }], { action: 'Request Rejected', entityType: 'Request', entityId: req.id, entityName: req.changeType, details: `Rejected request by ${currentUser.name}: ${reviewerNotes || 'No notes'}` });
+    const operation = persist([{ collection: 'requests', id: requestId, operation: 'set', data: updatedRequest as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(req) }], { action: 'Request Rejected', entityType: 'Request', entityId: req.id, entityName: req.changeType, details: `Rejected request by ${currentUser.name}: ${reviewerNotes || 'No notes'}` }).then(result => {
+      addAuditLog('Request Rejected', 'Request', req.id, req.changeType, `Rejected request by ${currentUser.name}: ${reviewerNotes || 'No notes'}`);
+      return result;
+    });
     void operation.catch(() => setRequests(previous => previous.map(item => item.id === requestId ? req : item)));
     notifyAfterSave(operation, 'request-rejected', req.id);
   };

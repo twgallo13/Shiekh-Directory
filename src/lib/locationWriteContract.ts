@@ -1,7 +1,8 @@
 import { normalizeUsPhone, normalizeWebUrl } from './contactNormalization';
+import { normalizeLocationInboxEmail } from './locationInboxEmail';
 
 export interface LocationWriteNormalizationIssue {
-  field: 'phone' | 'phoneExtension' | 'googleReviewUrl' | 'storePageUrl';
+  field: 'phone' | 'phoneExtension' | 'googleReviewUrl' | 'storePageUrl' | 'locationInboxEmail';
   message: string;
 }
 
@@ -16,6 +17,17 @@ export function normalizeLocationWriteValues(
 ): LocationWriteNormalizationResult {
   const values = { ...input };
   const issues: LocationWriteNormalizationIssue[] = [];
+
+  if (Object.hasOwn(values, 'locationInboxEmail')
+    && values.locationInboxEmail !== current?.locationInboxEmail
+    && values.locationInboxEmail !== null) {
+    const normalized = normalizeLocationInboxEmail(values.locationInboxEmail);
+    if (!normalized) {
+      issues.push({ field: 'locationInboxEmail', message: 'locationInboxEmail must be one valid email address.' });
+    } else {
+      values.locationInboxEmail = normalized.value;
+    }
+  }
 
   if (Object.hasOwn(values, 'phone')
     && (values.phone !== current?.phone || values.phoneExtension !== current?.phoneExtension)) {

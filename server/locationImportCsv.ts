@@ -25,6 +25,10 @@ export function buildLocationImportFieldDictionary(): string {
       ? `Uses ${LOCATION_IMPORT_SCHEMA_VERSION} when omitted or blank`
       : field.column === 'SpreadsheetEncoding'
         ? 'Leave blank for ordinary CSV; application-generated protected files populate this signal'
+        : field.column === 'LocationInboxEmail'
+          ? 'Blank action + blank value preserves. Use action clear with a blank value to remove.'
+          : field.column === 'LocationInboxEmailAction'
+            ? 'Blank value and blank action preserves; see Format for the complete action matrix.'
         : 'Preserves an existing value; explicit clearing is not supported',
     Example: field.example,
   }));
@@ -37,8 +41,9 @@ export function buildLocationImportWorkedExample(): string {
       StoreNumber: '9001', StoreName: 'SYNTHETIC EXAMPLE - New Location', Type: 'Other Company Location',
       Address: '100 Example Avenue', City: 'Los Angeles', State: 'CA', ZipCode: '90001', Phone: '(213) 555-0100',
       TimeZone: 'America/Los_Angeles', HierarchyApplicability: 'Not Applicable', OperationalStatus: 'Opening Soon — New Store', RecordStatus: 'Active',
+      LocationInboxEmail: 'store@example.test', LocationInboxEmailAction: 'set',
     }),
-    exampleRow({ LocationId: 'SYNTHETIC-LOCATION-UPDATE', StoreName: 'SYNTHETIC EXAMPLE - Updated Name', Phone: '(213) 555-0101 ext. 42' }),
+    exampleRow({ LocationId: 'SYNTHETIC-LOCATION-UPDATE', StoreName: 'SYNTHETIC EXAMPLE - Updated Name', Phone: '(213) 555-0101 ext. 42', LocationInboxEmailAction: 'clear' }),
     exampleRow({ LocationId: 'SYNTHETIC-LOCATION-UNCHANGED' }),
     exampleRow({
       StoreNumber: '9002', StoreName: 'SYNTHETIC EXAMPLE - Blocked Relationship', Type: 'Street / Standalone Location',

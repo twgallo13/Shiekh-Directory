@@ -7,6 +7,7 @@ import { isPlainRecord, parseCustomFieldDefinition, validateCustomMetadata, type
 import { normalizeUsPhone } from "../src/lib/contactNormalization";
 import { type HierarchyFieldContract, type HierarchyRegistry, validateLocationHierarchyFields, validateUserPersonLink } from "../src/lib/hierarchyAssignmentContract";
 import { normalizeLocationWriteValues } from "../src/lib/locationWriteContract";
+import { locationInboxConflictDigest, normalizeLocationInboxEmail, normalizePersonEmail, type LocationInboxAcknowledgment, type LocationInboxConflictMember } from "../src/lib/locationInboxEmail";
 import { isDeepStrictEqual } from "node:util";
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
@@ -34,7 +35,7 @@ export const DIRECTORY_COLLECTIONS = {
 } as const;
 
 export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRECTORY_COLLECTIONS];
-export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null }
+export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
 export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
@@ -119,6 +120,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       };
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
+      const acknowledgedInboxConflicts = validateLocationInboxConflicts(validatedWrites, locations);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
       const locationMatches = await Promise.all(locationQueries.map(({ query }) => transaction.get(query)));
@@ -172,7 +174,9 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           entityType: audit.entityType,
           entityId: audit.entityId,
           entityName: audit.entityName,
-          details: audit.details,
+          details: acknowledgedInboxConflicts.length > 0
+            ? `${audit.details} Acknowledged shared location inbox duplicate(s): ${acknowledgedInboxConflicts.join(', ')}.`
+            : audit.details,
           ...(previousState ? { previousState } : {}),
           ...(nextState ? { newState: nextState } : {}),
           previousStates,
@@ -201,6 +205,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         operation: "set",
         expectedVersion: write.expectedVersion,
         data: write.data,
+        ...(write.locationInboxAcknowledgment ? { locationInboxAcknowledgment: write.locationInboxAcknowledgment } : {}),
       }));
       const reviewedIdentities = [
         ...writes.map(write => ({ id: write.id, storeNumber: String(write.data?.storeNumber || "") })),
@@ -253,6 +258,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         districts: districtSnapshot.docs.map(document => ({ id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })),
       };
       const validatedWrites = validateMetadataWrites(writes, targetSnapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, [], hierarchyRegistry);
+      validateLocationInboxConflicts(validatedWrites, locations);
       const committedAt = new Date().toISOString();
       const savedLocations = validatedWrites.map(write => {
         const record = { ...write.data, id: write.id };
@@ -286,7 +292,8 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           entityType: "Location",
           entityId: write.id,
           entityName: String(write.data?.name || write.id),
-          details: `Location import batch ${manifest.batchId}.`,
+          details: `Location import batch ${manifest.batchId}.${write.locationInboxAcknowledgment ? ' Explicit shared inbox duplicate acknowledgment recorded.' : ''}`,
+          ...(write.locationInboxAcknowledgment ? { locationInboxAcknowledgment: write.locationInboxAcknowledgment } : {}),
           operationId: manifest.operationId,
           batchId: manifest.batchId,
           previousState: targetSnapshots[index].exists ? targetSnapshots[index].data() : null,
@@ -456,6 +463,9 @@ export function validateMetadataWrites(
     if (write.collection !== 'locations') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
 
     if (write.collection === 'locations') {
+      if (!Object.hasOwn(data, 'locationInboxEmail') && current && Object.hasOwn(current, 'locationInboxEmail')) {
+        data.locationInboxEmail = current.locationInboxEmail;
+      }
       const normalizedLocation = normalizeLocationWriteValues(data, current);
       if (normalizedLocation.issues.length > 0) {
         throw new DirectoryValidationError(normalizedLocation.issues.map(issue => issue.message).join('; '));
@@ -534,6 +544,12 @@ export function validateMetadataWrites(
       const originalData = write.data || {};
       for (const field of ['phone', 'phoneExtension', 'workPhone', 'workPhoneExtension', 'email', 'workEmail'] as const) {
         if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
+      }
+      for (const field of ['email', 'workEmail'] as const) {
+        if (!Object.hasOwn(originalData, field) || isDeepStrictEqual(originalData[field], current?.[field]) || originalData[field] === '') continue;
+        const normalized = normalizePersonEmail(originalData[field]);
+        if (!normalized) throw new DirectoryValidationError(`${field} must be one valid email address.`);
+        data[field] = normalized;
       }
       for (const field of ['primaryLocationId', 'supportedLocationIds'] as const) {
         if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
@@ -656,6 +672,52 @@ function validateEmploymentRelationshipState(
       throw new DirectoryValidationError(`Location ${write.id} has incoming Works at or Supports relationships that must be reassigned or cleared before retirement/deletion.`);
     }
   }
+}
+
+function validateLocationInboxConflicts(
+  writes: DirectoryWrite[],
+  currentLocations: Array<Record<string, unknown>>,
+): string[] {
+  const finalLocations = new Map(currentLocations.map(location => [String(location.id), { ...location }]));
+  for (const write of writes) {
+    if (write.collection !== 'locations') continue;
+    if (write.operation === 'delete') finalLocations.delete(write.id);
+    else if (write.data) finalLocations.set(write.id, { ...write.data, id: write.id });
+  }
+
+  const acknowledged: string[] = [];
+  for (const write of writes) {
+    if (write.collection !== 'locations' || write.operation !== 'set' || !write.data) continue;
+    const current = currentLocations.find(location => String(location.id) === write.id);
+    const proposedEmail = write.data.locationInboxEmail;
+    const changed = !isDeepStrictEqual(proposedEmail, current?.locationInboxEmail);
+    if (!changed || typeof proposedEmail !== 'string') continue;
+    const normalized = normalizeLocationInboxEmail(proposedEmail);
+    if (!normalized) continue;
+    const members: LocationInboxConflictMember[] = [...finalLocations.values()]
+      .filter(location => normalizeLocationInboxEmail(location.locationInboxEmail)?.comparisonKey === normalized.comparisonKey)
+      .map(location => ({
+        id: String(location.id),
+        storeNumber: String(location.storeNumber || ''),
+        version: typeof location.version === 'number' ? location.version : 0,
+      }));
+    if (members.length < 2) {
+      if (write.locationInboxAcknowledgment) {
+        throw new DirectoryConflict('The location inbox duplicate set changed. Review the current conflicts before saving.');
+      }
+      continue;
+    }
+
+    const acknowledgment = write.locationInboxAcknowledgment;
+    const expectedDigest = locationInboxConflictDigest(proposedEmail, members);
+    if (!acknowledgment
+      || acknowledgment.normalizedEmail !== normalized.comparisonKey
+      || acknowledgment.conflictDigest !== expectedDigest) {
+      throw new DirectoryConflict('This location inbox is already shared. Review and acknowledge the current affected Locations before saving.');
+    }
+    acknowledged.push(members.map(member => `#${member.storeNumber}`).sort().join(', '));
+  }
+  return [...new Set(acknowledged)];
 }
 
 function applyHierarchyRegistryWrites(registry: HierarchyRegistry, writes: DirectoryWrite[]): void {
@@ -797,6 +859,14 @@ function assertApprovalTargetAppliesPersistedChanges(
   // Every persisted requested field must land in the final target state, not just the ones that moved.
   let appliesAtLeastOneChange = false;
   for (const [key, value] of requestedEntries) {
+    if (key === 'locationInboxEmail') {
+      const currentSnapshot = isPlainRecord(persistedRequest.currentSnapshot) ? persistedRequest.currentSnapshot : {};
+      const requestedCurrentValue = Object.hasOwn(currentSnapshot, key) ? currentSnapshot[key] : null;
+      const actualCurrentValue = Object.hasOwn(targetPrevious, key) ? targetPrevious[key] : null;
+      if (!isDeepStrictEqual(requestedCurrentValue, actualCurrentValue)) {
+        throw new DirectoryConflict('The Location inbox changed after the correction request was submitted. Review the request again.');
+      }
+    }
     if (!Object.hasOwn(targetData, key) || !isDeepStrictEqual(targetData[key], value)) {
       throw new DirectoryValidationError('Approved correction request target update does not match the persisted requested changes.');
     }

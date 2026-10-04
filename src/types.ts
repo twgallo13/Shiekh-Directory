@@ -115,6 +115,7 @@ export interface LocationRecord {
   phone: string;
   phoneExtension?: string;
   phonePrivacy?: ContactPrivacyLevel;
+  locationInboxEmail?: string | null;
   timeZone: 'America/Los_Angeles' | 'America/Chicago' | 'America/New_York' | 'America/Denver' | string;
   hierarchyApplicability?: 'Applicable' | 'Not Applicable' | 'Unknown';
   regionId?: string;

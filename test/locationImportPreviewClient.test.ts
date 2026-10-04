@@ -11,20 +11,20 @@ const reviewedRequest = { mappings: [], mode: 'add-and-update' as const, selecte
 afterEach(() => { globalThis.fetch = originalFetch; });
 
 test('editing export client accepts bounded CSV parts with exact UTF-8 byte counts', async () => {
-  const csv = '\ufeffSchemaVersion\r\nlocations-v1\r\n';
+  const csv = '\ufeffSchemaVersion\r\nlocations-v2\r\n';
   globalThis.fetch = async (_input, init) => {
     assert.equal(init?.method, 'POST');
     return Response.json({
-      schemaVersion: 'locations-v1', snapshotReadAt: '2026-09-13T12:00:00.000Z',
+      schemaVersion: 'locations-v2', snapshotReadAt: '2026-09-13T12:00:00.000Z',
       totalRecords: 1, lifecycleCounts: { Active: 1, Draft: 0, Retired: 0, unrecognized: 0 },
       roundTrip: { additions: 0, updates: 0, unchanged: 1, blocked: 0, warnings: 0 },
-      parts: [{ partNumber: 1, filename: 'shiekh_locations_editing_v1_part_001_of_001.csv', recordCount: 1, byteCount: new TextEncoder().encode(csv).byteLength, csv }],
+      parts: [{ partNumber: 1, filename: 'shiekh_locations_editing_v2_part_001_of_001.csv', recordCount: 1, byteCount: new TextEncoder().encode(csv).byteLength, csv }],
       diagnostics: [],
     });
   };
 
   const prepared = await prepareLocationEditingExport(user);
-  assert.equal(prepared.parts[0].filename, 'shiekh_locations_editing_v1_part_001_of_001.csv');
+  assert.equal(prepared.parts[0].filename, 'shiekh_locations_editing_v2_part_001_of_001.csv');
   assert.equal(prepared.roundTrip.unchanged, 1);
 
   globalThis.fetch = async () => Response.json({ ...prepared, roundTrip: { unchanged: 1 } });
@@ -38,12 +38,12 @@ test('editing export client accepts bounded CSV parts with exact UTF-8 byte coun
 });
 
 test('preview retains the exact CSV text and validates confirmation metadata', async () => {
-  const csv = '\ufeffSchemaVersion\r\nlocations-v1\r\n';
+  const csv = '\ufeffSchemaVersion\r\nlocations-v2\r\n';
   let requestBody: unknown;
   globalThis.fetch = async (_input, init) => {
     requestBody = JSON.parse(String(init?.body));
     return Response.json({
-      schemaVersion: 'locations-v1',
+      schemaVersion: 'locations-v2',
       snapshotReadAt: '2026-09-13T12:00:00.000Z',
       confirmationToken: 'signed-token', operationId: 'operation-1', batchId: 'batch-1', expiresAt: '2026-09-13T12:10:00.000Z',
       summary: { totalRows: 1, additions: 1, updates: 0, unchanged: 0, blocked: 0, warnings: 0 },
@@ -57,7 +57,7 @@ test('preview retains the exact CSV text and validates confirmation metadata', a
     mappings: [{ sourceIndex: 0, sourceHeader: 'SchemaVersion', target: 'SchemaVersion', kind: 'exact' }],
     mode: 'add-and-update',
   });
-  assert.equal(result.csv, 'SchemaVersion\r\nlocations-v1\r\n');
+  assert.equal(result.csv, 'SchemaVersion\r\nlocations-v2\r\n');
   assert.equal(result.preview.confirmationToken, 'signed-token');
 });
 
@@ -91,7 +91,7 @@ test('confirm sends only the bound confirmation fields and validates authoritati
 
 test('client rejects invalid preview metadata and preserves uncertain confirmation errors', async () => {
   globalThis.fetch = async () => Response.json({
-    schemaVersion: 'locations-v1', snapshotReadAt: '2026-09-13T12:00:00.000Z', confirmationToken: 123,
+    schemaVersion: 'locations-v2', snapshotReadAt: '2026-09-13T12:00:00.000Z', confirmationToken: 123,
     summary: { totalRows: 0, additions: 0, updates: 0, unchanged: 0, blocked: 0, warnings: 0 }, rows: [],
   });
   await assert.rejects(
@@ -157,7 +157,7 @@ test('lost confirmation response can retry the exact operation and receive its r
 test('file inspection suggests aliases and defaults editing exports to update-only', async () => {
   const inspected = await inspectLocationImportFile(new File([
     '\ufeff Location ID , Store Name ,District,Unknown Notes\r\nloc-1,Name,North,note\r\n',
-  ], 'shiekh_locations_editing_v1_part_001_of_001.csv', { type: 'text/csv' }));
+  ], 'shiekh_locations_editing_v2_part_001_of_001.csv', { type: 'text/csv' }));
 
   assert.equal(inspected.mode, 'update-existing-only');
   assert.deepEqual(inspected.mappings.map(mapping => [mapping.target, mapping.kind]), [
@@ -170,7 +170,7 @@ test('file inspection suggests aliases and defaults editing exports to update-on
 
 test('result and correction downloads distinguish outcomes and protect spreadsheet formulas', () => {
   const preview: LocationImportPreview = {
-    schemaVersion: 'locations-v1', snapshotReadAt: '2026-09-13T12:00:00.000Z', mode: 'add-and-update',
+    schemaVersion: 'locations-v2', snapshotReadAt: '2026-09-13T12:00:00.000Z', mode: 'add-and-update',
     mappings: [
       { sourceIndex: 0, sourceHeader: 'LocationId', target: 'LocationId' },
       { sourceIndex: 1, sourceHeader: 'StoreName', target: 'StoreName' },
@@ -196,7 +196,7 @@ test('result and correction downloads distinguish outcomes and protect spreadshe
 
 test('reports and corrections follow authoritative confirmation outcomes', () => {
   const preview: LocationImportPreview = {
-    schemaVersion: 'locations-v1', snapshotReadAt: '2026-09-13T12:00:00.000Z', selectedRowNumbers: [2, 3],
+    schemaVersion: 'locations-v2', snapshotReadAt: '2026-09-13T12:00:00.000Z', selectedRowNumbers: [2, 3],
     mappings: [{ sourceIndex: 0, sourceHeader: 'LocationId', target: 'LocationId' }, { sourceIndex: 1, sourceHeader: 'StoreName', target: 'StoreName' }],
     summary: { totalRows: 3, additions: 0, updates: 2, unchanged: 0, blocked: 1, warnings: 0 },
     rows: [

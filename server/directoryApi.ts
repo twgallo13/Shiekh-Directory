@@ -6,6 +6,7 @@ import { publicCustomMetadata, sortedCustomFields, type CustomFieldDefinition } 
 import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
 import { canonicalHierarchyState, resolveLocationHierarchy } from "../src/lib/hierarchyResolution";
 import type { ApiClientAuthenticator, ManagedApiCredential } from "./apiClientApi";
+import { normalizeLocationInboxEmail } from "../src/lib/locationInboxEmail";
 
 export const LOCATION_READ_SCOPE = "locations:read" as const;
 
@@ -348,6 +349,7 @@ function mapPublicLocation(record: LocationDocument, definitions: CustomFieldDef
     storeNumber: getStoreNumber(record),
     recordStatus: "Active",
     updatedAt: record.updatedAt.toISOString(),
+    locationInboxEmail: normalizeLocationInboxEmail(source.locationInboxEmail)?.value ?? null,
     customMetadata: publicCustomMetadata(source.customMetadata, definitions),
     ...resolvedHierarchy,
   };

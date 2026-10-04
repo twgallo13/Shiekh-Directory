@@ -2,6 +2,10 @@
 
 The Directory API is a read-only, server-authenticated view of active location records in the named Firestore database. Reads never mutate location or personnel data; successful authentication may update redacted client/token last-used metadata at most once per 15 minutes.
 
+For the exhaustive allowlist of successful response fields, nested shapes, pagination metadata, and intentional exclusions, see [the emitted response schema](docs/api-response-schema.md).
+
+For a plain-language guide intended for a consuming app's blueprint, including examples, per-field availability, retrieval/synchronization steps, and live-verification limits, see [the app blueprint reference](docs/app-blueprint-directory-api.md).
+
 ## Endpoints
 
 All v1 requests require `Authorization: Bearer <token>` and the `locations:read` scope.
@@ -60,6 +64,8 @@ Every location response now includes a `customMetadata` object. Only defined, ac
 }
 ```
 
+The API also always emits `locationInboxEmail` on each Location in both list and detail responses. It is the shared, Location-owned contact mailbox, not a person or login email. Its value is a normalized string or `null`; consumers should replace a previously stored address with `null` when a clear is received. Older deployed revisions may omit the property. Personnel email addresses remain excluded. Custom-field publication/type checks do not scan arbitrary text for personal information, so review API-visible custom fields before migrating or publishing values.
+
 ### Canonical Region and District Fields
 
 Location list and detail responses preserve the legacy `district` field with its existing compatibility meaning and separately expose canonical hierarchy resolution:
@@ -99,6 +105,8 @@ Consumer synchronization rules:
 5. On `409 custom_fields_changed` or `409 hierarchy_changed`, discard the incomplete run and start a full reconciliation without `cursor`, `updatedSince`, `customFieldsVersion`, or `hierarchyVersion`. Do not substitute a latest version into a delta request because unchanged Locations may need schema or resolved-name updates.
 
 The full-reconciliation requirement for retired/deleted stores still applies. Removing a field from this API cannot erase copies already held by a consumer; consumers must follow replacement and reconciliation rules.
+
+`locationInboxEmail` is a built-in field and does not change `customFieldsVersion`. A new consumer should perform a full initial read against a revision that includes it. Tolerate the property being absent on older revisions; if a response includes it as `null`, replace any previously stored inbox with `null`. The Directory does not implement a consuming app's accounts, subscriptions, approvals, notifications, or UI; those workflows and server-side token storage belong to the consuming app.
 
 ### Custom Field Writes (Application Only)
 

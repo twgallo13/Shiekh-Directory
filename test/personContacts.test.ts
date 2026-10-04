@@ -75,4 +75,10 @@ test('new Person contacts populate both compatibility aliases', () => {
     email: 'new@example.test',
     workEmail: 'new@example.test',
   });
+
+  test('email resolution respects an explicitly present blank workEmail instead of falling back to the legacy alias', () => {
+    const cleared = { ...personWithDifferentContacts, workEmail: '' };
+    assert.deepEqual(resolvePersonEmail(cleared), { value: '', source: 'work' });
+    assert.deepEqual(serializePersonContactEdits(personWithDifferentContacts, null, '', false, true), { workEmail: '' });
+  });
 });

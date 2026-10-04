@@ -7,6 +7,7 @@ import {
   LOCATION_IMPORT_COLUMNS,
   LOCATION_IMPORT_FIELDS,
   LOCATION_IMPORT_SCHEMA_VERSION,
+  SUPPORTED_LOCATION_IMPORT_SCHEMA_VERSIONS,
   LOCATION_IMPORT_SPREADSHEET_ENCODING,
   LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER,
   LOCATION_IMPORT_WRITABLE_COLUMNS,
@@ -20,6 +21,7 @@ import {
   type LocationImportMode,
 } from './locationImportSchema';
 import { normalizeLocationWriteValues } from './locationWriteContract';
+import { locationInboxConflictDigest, normalizeLocationInboxEmail, type LocationInboxConflictMember } from './locationInboxEmail';
 
 export {
   LOCATION_IMPORT_COLUMNS,
@@ -46,7 +48,8 @@ export type LocationImportIssueCode =
   | 'leading_zero_match'
   | 'new_id_not_reserved'
   | 'new_location_not_allowed'
-  | 'invalid_row_shape';
+  | 'invalid_row_shape'
+  | 'duplicate_location_inbox';
 
 export interface LocationImportIssue {
   severity: 'error' | 'warning';
@@ -58,6 +61,7 @@ export interface LocationImportIssue {
   reason: string;
   correction: string;
   candidates?: string[];
+  inboxConflictDigest?: string;
 }
 
 export interface LocationImportChange {
@@ -125,6 +129,7 @@ export interface LocationImportPlannedWrite {
   action: 'add' | 'update';
   expectedVersion: number | null;
   data: Record<string, unknown>;
+  locationInboxAcknowledgment?: import('./locationInboxEmail').LocationInboxAcknowledgment;
 }
 
 export interface LocationImportUnchangedAssertion {
@@ -142,6 +147,9 @@ export interface LocationImportPlan {
 export interface LocationImportPlanOptions {
   mappings?: LocationImportHeaderMapping[];
   mode?: LocationImportMode;
+  inboxAcknowledgedRowNumbers?: number[];
+  inboxAcknowledgmentDigests?: Record<string, string>;
+  selectedRowNumbers?: number[];
 }
 
 export class LocationImportPreviewError extends Error {
@@ -290,6 +298,22 @@ export function buildLocationImportPlan(
 
     const proposedInput: Record<string, unknown> = existing ? { ...existing } : {};
     if (row.LocationId && !existing) proposedInput.id = row.LocationId;
+    const inboxAction = (row.LocationInboxEmailAction || '').trim().toLowerCase();
+    const inboxValue = (row.LocationInboxEmail || '').trim();
+    if (!inboxAction && inboxValue) proposedInput.locationInboxEmail = inboxValue;
+    else if (inboxAction === 'keep' && inboxValue) {
+      issues.push(issue('error', 'invalid_attribute', 'LocationInboxEmailAction', inboxAction, null, 'keep cannot be combined with a LocationInboxEmail value.', 'Clear the value cell or choose set.'));
+    } else if (inboxAction === 'set') {
+      if (!inboxValue) issues.push(issue('error', 'invalid_attribute', 'LocationInboxEmail', inboxValue, existing?.locationInboxEmail ?? null, 'set requires a non-empty LocationInboxEmail value.', 'Enter one email address or choose clear.'));
+      else proposedInput.locationInboxEmail = inboxValue;
+    } else if (inboxAction === 'clear') {
+      if (inboxValue) issues.push(issue('error', 'invalid_attribute', 'LocationInboxEmailAction', inboxAction, null, 'clear cannot be combined with a LocationInboxEmail value.', 'Clear the value cell and keep the clear action.'));
+      else proposedInput.locationInboxEmail = null;
+    } else if (inboxAction === 'keep') {
+      // A blank keep action intentionally preserves the existing value.
+    } else if (inboxAction) {
+      issues.push(issue('error', 'invalid_attribute', 'LocationInboxEmailAction', inboxAction, null, 'The inbox action is not supported.', 'Use blank, keep, set, or clear.'));
+    }
     for (const [column, field] of Object.entries(scalarFields)) {
       if (row[column]) proposedInput[field] = row[column];
     }
@@ -428,20 +452,68 @@ export function buildLocationImportPlan(
     };
   });
 
+  const finalLocations = new Map(snapshot.locations.map(location => [location.id, location as unknown as Record<string, unknown>]));
+  const acknowledgedRows = new Set(options.inboxAcknowledgedRowNumbers || []);
+  const selectedRows = new Set(options.selectedRowNumbers || []);
+  evaluatedRows.forEach(row => {
+    if (row.action !== 'add' && row.action !== 'update' || !row.locationId) return;
+    if (options.selectedRowNumbers && !selectedRows.has(row.rowNumber)) return;
+    const proposed = proposedWrites.get(row.rowNumber);
+    if (proposed) finalLocations.set(row.locationId, {
+      ...finalLocations.get(row.locationId),
+      ...proposed,
+      id: row.locationId,
+      version: (row.currentVersion ?? 0) + 1,
+    });
+  });
+  const inboxConflictMembers = new Map<number, LocationInboxConflictMember[]>();
+  const rowsWithInboxWarnings = evaluatedRows.map(row => {
+    if ((row.action !== 'add' && row.action !== 'update') || !row.locationId
+      || !row.changes.some(change => change.field === 'locationInboxEmail')) return row;
+    if (options.selectedRowNumbers && !selectedRows.has(row.rowNumber)) return row;
+    const proposed = proposedWrites.get(row.rowNumber);
+    const email = normalizeLocationInboxEmail(proposed?.locationInboxEmail);
+    if (!email) return row;
+    const members = [...finalLocations.values()]
+      .filter(location => normalizeLocationInboxEmail(location.locationInboxEmail)?.comparisonKey === email.comparisonKey)
+      .map(location => ({
+        id: String(location.id),
+        storeNumber: String(location.storeNumber || ''),
+        version: typeof location.version === 'number' ? location.version : 0,
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (members.length < 2) return row;
+    inboxConflictMembers.set(row.rowNumber, members);
+    return {
+      ...row,
+      issues: [...row.issues, { ...issue(
+        'warning',
+        'duplicate_location_inbox',
+        'LocationInboxEmail',
+        proposed?.locationInboxEmail,
+        null,
+        'This shared location inbox will be used by multiple Locations.',
+        `Review and explicitly acknowledge these Locations: ${members.map(member => `Store #${member.storeNumber}`).join(', ')}.`,
+        members.map(member => `${member.id} — Store ${member.storeNumber}`),
+        proposed?.locationInboxEmail,
+      ), inboxConflictDigest: locationInboxConflictDigest(email.value, members) }],
+    };
+  });
+
   const preview: LocationImportPreview = {
       schemaVersion: LOCATION_IMPORT_SCHEMA_VERSION,
       snapshotReadAt,
       mode,
       mappings: parsed.mappings,
       summary: {
-        totalRows: evaluatedRows.length,
-        additions: evaluatedRows.filter(row => row.action === 'add').length,
-        updates: evaluatedRows.filter(row => row.action === 'update').length,
-        unchanged: evaluatedRows.filter(row => row.action === 'unchanged').length,
-        blocked: evaluatedRows.filter(row => row.action === 'blocked').length,
-        warnings: evaluatedRows.flatMap(row => row.issues).filter(item => item.severity === 'warning').length,
+        totalRows: rowsWithInboxWarnings.length,
+        additions: rowsWithInboxWarnings.filter(row => row.action === 'add').length,
+        updates: rowsWithInboxWarnings.filter(row => row.action === 'update').length,
+        unchanged: rowsWithInboxWarnings.filter(row => row.action === 'unchanged').length,
+        blocked: rowsWithInboxWarnings.filter(row => row.action === 'blocked').length,
+        warnings: rowsWithInboxWarnings.flatMap(row => row.issues).filter(item => item.severity === 'warning').length,
       },
-      rows: evaluatedRows,
+      rows: rowsWithInboxWarnings,
     };
   return {
     preview,
@@ -453,6 +525,18 @@ export function buildLocationImportPlan(
         action: row.action,
         expectedVersion: row.action === 'add' ? null : row.currentVersion,
         data: proposedWrites.get(row.rowNumber) || {},
+        ...(inboxConflictMembers.has(row.rowNumber) && acknowledgedRows.has(row.rowNumber)
+          && options.inboxAcknowledgmentDigests?.[row.rowNumber] === locationInboxConflictDigest(
+            String(proposedWrites.get(row.rowNumber)?.locationInboxEmail || ''), inboxConflictMembers.get(row.rowNumber) || [],
+          ) ? {
+          locationInboxAcknowledgment: {
+            normalizedEmail: normalizeLocationInboxEmail(proposedWrites.get(row.rowNumber)?.locationInboxEmail)?.comparisonKey || '',
+            conflictDigest: locationInboxConflictDigest(
+              String(proposedWrites.get(row.rowNumber)?.locationInboxEmail || ''),
+              inboxConflictMembers.get(row.rowNumber) || [],
+            ),
+          },
+        } : {}),
       } satisfies LocationImportPlannedWrite];
     }),
     unchanged: evaluatedRows.flatMap(row => row.action === 'unchanged' && row.locationId
@@ -514,8 +598,8 @@ function parseImportRows(csv: string, suppliedMappings?: LocationImportHeaderMap
 }
 
 function validateRowIdentitySyntax(row: ImportRow, issues: LocationImportIssue[]): void {
-  if (row.SchemaVersion && row.SchemaVersion !== LOCATION_IMPORT_SCHEMA_VERSION) {
-    issues.push(issue('error', 'invalid_schema_version', 'SchemaVersion', row.SchemaVersion, LOCATION_IMPORT_SCHEMA_VERSION, 'The row uses an unsupported schema version.', `Set SchemaVersion to ${LOCATION_IMPORT_SCHEMA_VERSION}.`));
+  if (row.SchemaVersion && !SUPPORTED_LOCATION_IMPORT_SCHEMA_VERSIONS.includes(row.SchemaVersion as typeof SUPPORTED_LOCATION_IMPORT_SCHEMA_VERSIONS[number])) {
+    issues.push(issue('error', 'invalid_schema_version', 'SchemaVersion', row.SchemaVersion, LOCATION_IMPORT_SCHEMA_VERSION, 'The row uses an unsupported schema version.', `Use ${SUPPORTED_LOCATION_IMPORT_SCHEMA_VERSIONS.join(' or ')}.`));
   }
   if (row.LocationId && !ID_PATTERN.test(row.LocationId)) {
     issues.push(issue('error', 'invalid_attribute', 'LocationId', row.LocationId, null, 'LocationId has an unsupported format.', `Use ${fieldDefinition('LocationId')?.format}.`));
@@ -567,6 +651,7 @@ function importedChanges(row: ImportRow, proposed: Record<string, unknown>, exis
     ...(!existing && proposed.id ? ['id'] : []),
     ...Object.entries(scalarFields).filter(([column]) => row[column]).map(([, field]) => field),
     ...Object.entries(listFields).filter(([column]) => row[column]).map(([, field]) => field),
+    ...(row.LocationInboxEmail || row.LocationInboxEmailAction ? ['locationInboxEmail'] : []),
     ...(row.Phone && proposed.phoneExtension !== existing?.phoneExtension ? ['phoneExtension'] : []),
   ];
   return [...new Set(fields)]

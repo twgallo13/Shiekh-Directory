@@ -19,6 +19,7 @@ import {
   DistrictRecord
 } from '../types';
 import type { DirectorySeed } from '../lib/directorySeed';
+import type { LocationInboxAcknowledgment } from '../lib/locationInboxEmail';
 import { migrateDirectoryRelationships } from '../lib/directoryMigration';
 import { buildRegistryWrite, commitDirectory, fetchHierarchyRegistry, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult, type HierarchyRegistrySnapshot, type RegistrySaveIntent } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
@@ -48,7 +49,7 @@ interface DirectoryContextType {
   saveDistrict: (district: DistrictRecord, intent: RegistrySaveIntent) => Promise<void>;
   refreshHierarchyRegistry: () => Promise<HierarchyRegistrySnapshot>;
   saveCustomFieldDefinition: (definition: CustomFieldDefinition) => Promise<void>;
-  saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => Promise<void>;
+  saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>, expectedVersion?: number, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => Promise<void>;
   persistenceError: string | null;
   clearPersistenceError: () => void;
   reconcileConfirmedLocations: (records: LocationRecord[]) => void;
@@ -61,11 +62,11 @@ interface DirectoryContextType {
   verifyManagerPhone: (id: string) => void;
   toggleLocationPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
   addPerson: (person: Omit<Person, 'id'>) => Promise<Person>;
-  updatePerson: (id: string, updates: PersonUpdate) => Promise<void>;
+  updatePerson: (id: string, updates: PersonUpdate, expectedVersion?: number) => Promise<void>;
   deletePerson: (id: string) => Promise<void>;
   togglePersonPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
   submitRequest: (request: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => void;
-  approveRequest: (requestId: string, reviewerNotes?: string) => void;
+  approveRequest: (requestId: string, reviewerNotes?: string, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => void;
   rejectRequest: (requestId: string, reviewerNotes?: string) => void;
   applyHoursTemplate: (locationId: string, templateId: string) => void;
   createHoursTemplate: (template: Omit<HoursTemplate, 'id'>) => HoursTemplate;
@@ -247,13 +248,13 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     addAuditLog(previous ? 'Custom Field Updated' : 'Custom Field Created', 'Setting', definition.id, definition.label, `Saved custom field ${definition.id}.`, previous, definition);
   };
 
-  const saveLocationRecord = async (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>) => {
+  const saveLocationRecord = async (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>, expectedVersion?: number, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => {
     const timestamp = new Date().toISOString();
-    const saved = { ...location, updatedAt: timestamp, ...(create ? { id: `loc-${crypto.randomUUID()}`, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
+    const saved = { ...location, updatedAt: timestamp, ...(create ? { id: location.id, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
     const previous = locations.find(record => record.id === saved.id);
     const serialized = serializeLocationReferenceClears(saved, previous);
     const action = create ? 'Location Created' : 'Location Updated';
-    await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: serialized, expectedCustomMetadata, ...(!create ? { expectedVersion: expectedVersionOf(previous) } : {}) }], {
+    await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: serialized, expectedCustomMetadata, ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}), ...(!create ? { expectedVersion: expectedVersion ?? expectedVersionOf(previous) } : {}) }], {
       action, entityType: 'Location', entityId: saved.id, entityName: `Store #${saved.storeNumber}`, details: 'Saved location record and custom metadata.',
     });
     addAuditLog(action, 'Location', saved.id, `Store #${saved.storeNumber}`, 'Saved location record and custom metadata.', previous, saved);
@@ -355,7 +356,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     return newPerson;
   };
 
-  const updatePerson = async (id: string, updates: PersonUpdate): Promise<void> => {
+  const updatePerson = async (id: string, updates: PersonUpdate, expectedVersion?: number): Promise<void> => {
     const currentPerson = people.find(person => person.id === id);
     if (!currentPerson) return;
 
@@ -380,7 +381,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     setLocations(updatedLocations);
     try {
       await persist([
-      { collection: 'people', id, operation: 'set', data: serializedPerson, expectedVersion: expectedVersionOf(currentPerson) },
+      { collection: 'people', id, operation: 'set', data: serializedPerson, expectedVersion: expectedVersion ?? expectedVersionOf(currentPerson) },
       ...updatedLocations.filter(affectsLocation).map(location => {
         const currentLocation = locations.find(item => item.id === location.id);
         return { collection: 'locations' as const, id: location.id, operation: 'set' as const, data: location as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(currentLocation) };
@@ -426,7 +427,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     notifyAfterSave(persist([{ collection: 'requests', id: newReq.id, operation: 'set', data: newReq as unknown as Record<string, unknown> }], { action: 'Request Submitted', entityType: 'Request', entityId: newReq.id, entityName: newReq.changeType, details: `Submitted change request for ${newReq.targetName}` }), 'request-submitted', newReq.id);
   };
 
-  const approveRequest = (requestId: string, reviewerNotes?: string) => {
+  const approveRequest = (requestId: string, reviewerNotes?: string, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => {
     const req = requests.find(r => r.id === requestId);
     if (!req) return;
 
@@ -443,7 +444,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       if (location) {
         const updatedLocation = { ...location, ...req.requestedChanges, updatedAt: new Date().toISOString() };
         setLocations(previous => previous.map(item => item.id === location.id ? updatedLocation : item));
-        writes.push({ collection: 'locations', id: location.id, operation: 'set', data: updatedLocation as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(location) });
+        writes.push({ collection: 'locations', id: location.id, operation: 'set', data: updatedLocation as unknown as Record<string, unknown>, expectedVersion: expectedVersionOf(location), ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}) });
       }
     }
     if (req.targetType === 'Person') {
@@ -976,4 +977,3 @@ function removeCredentialValue(value: unknown): unknown {
   const { key: _key, ...safeValue } = value as Record<string, unknown>;
   return safeValue;
 }
-

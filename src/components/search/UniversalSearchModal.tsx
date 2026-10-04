@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord } from '../../types';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
+import { resolvePersonEmail } from '../../lib/personContacts';
 import { Search, Store, User, X, ArrowRight } from 'lucide-react';
 import { useDialogFocus } from '../common/useDialogFocus';
 
@@ -50,6 +51,7 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
   const matchingPeople = cleanQuery
     ? people.filter(p =>
         p.fullName.toLowerCase().includes(cleanQuery) ||
+        resolvePersonEmail(p).value.toLowerCase().includes(cleanQuery) ||
         p.jobTitle?.toLowerCase().includes(cleanQuery) ||
         p.district?.toLowerCase().includes(cleanQuery)
       ).slice(0, 5)

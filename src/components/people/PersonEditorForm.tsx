@@ -5,12 +5,13 @@ import { resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } f
 import { Button } from '../common/Button';
 import { FormLabel } from '../common/FormLabel';
 import { PersonLocationRelationshipFields } from './PersonLocationRelationshipFields';
+import { normalizePersonEmail } from '../../lib/locationInboxEmail';
 
 interface PersonEditorFormProps {
   person?: PersonRecord;
   locations: LocationRecord[];
   submitLabel: string;
-  onSubmit: (updates: PersonUpdate & { fullName: string }) => Promise<void>;
+  onSubmit: (updates: PersonUpdate & { fullName: string }, expectedVersion?: number) => Promise<void>;
   onCancel: () => void;
   children?: React.ReactNode;
 }
@@ -18,6 +19,7 @@ interface PersonEditorFormProps {
 export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onCancel, children }: PersonEditorFormProps) {
   const currentPhone = resolvePersonPhone(person);
   const currentEmail = resolvePersonEmail(person);
+  const [expectedVersion] = useState(person?.version ?? 0);
   const [fullName, setFullName] = useState(person?.fullName || '');
   const [jobTitle, setJobTitle] = useState(person?.jobTitle || person?.role || '');
   const [department, setDepartment] = useState(person?.department || '');
@@ -45,6 +47,10 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
       setPhoneError('Enter a valid US phone number and numeric extension.');
       return;
     }
+    if (emailTouched && email.trim() !== currentEmail.value && email.trim() && !normalizePersonEmail(email.trim())) {
+      setSaveError('Enter one valid work email address, or leave it blank.');
+      return;
+    }
 
     setIsSaving(true);
     setSaveError('');
@@ -62,7 +68,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
         primaryLocationId: primaryLocationId || null,
         supportedLocationIds,
         ...serializePersonContactEdits(person, normalizedPhone, email.trim(), phoneTouched, emailTouched),
-      });
+      }, person ? expectedVersion : undefined);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : 'Person could not be saved.');
     } finally {
@@ -102,7 +108,10 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
 
       <div>
         <FormLabel>Work Email</FormLabel>
-        <input type="email" value={email} onChange={event => { setEmail(event.target.value); setEmailTouched(true); }} placeholder="name@shiekhshoes.com" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+        <input type="text" inputMode="email" value={email} onChange={event => { setEmail(event.target.value); setEmailTouched(true); }} placeholder="name@example.com" className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none" />
+        {person?.email && Object.hasOwn(person, 'workEmail') && person.email.trim().toLowerCase() !== (person.workEmail || '').trim().toLowerCase() && (
+          <p className="mt-1 break-all text-[10px] text-neutral-500">Historical email alias retained for review: {person.email}</p>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

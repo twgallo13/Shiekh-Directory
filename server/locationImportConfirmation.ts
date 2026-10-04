@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import type { Account } from './authAuthority';
 import type { LocationImportPlannedWrite, LocationImportPreview, LocationImportUnchangedAssertion } from '../src/lib/locationImportPreview';
-import { LOCATION_IMPORT_SCHEMA_VERSION, type LocationImportHeaderMapping, type LocationImportMode } from '../src/lib/locationImportSchema';
+import { LOCATION_IMPORT_SCHEMA_VERSION, SUPPORTED_LOCATION_IMPORT_SCHEMA_VERSIONS, type LocationImportHeaderMapping, type LocationImportMode } from '../src/lib/locationImportSchema';
 
 export const LOCATION_IMPORT_MAX_ROWS = 100;
 export const LOCATION_IMPORT_MAX_CHANGED_ROWS = 40;
@@ -11,13 +11,15 @@ export const LOCATION_IMPORT_CONFIRMATION_TTL_MS = 10 * 60_000;
 
 export interface LocationImportManifest {
   version: 1;
-  schema: typeof LOCATION_IMPORT_SCHEMA_VERSION;
+  schema: typeof SUPPORTED_LOCATION_IMPORT_SCHEMA_VERSIONS[number];
   actorDigest: string;
   sourceDigest: string;
   requestDigest?: string;
   mode?: LocationImportMode;
   mappings?: LocationImportHeaderMapping[];
   selectedRowNumbers?: number[];
+  inboxAcknowledgedRowNumbers?: number[];
+  inboxAcknowledgmentDigests?: Record<string, string>;
   operationId: string;
   batchId: string;
   issuedAt: string;
@@ -65,8 +67,12 @@ export function digestLocationImportRequest(value: {
   mappings: LocationImportHeaderMapping[];
   mode: LocationImportMode;
   selectedRowNumbers: number[];
+  inboxAcknowledgedRowNumbers?: number[];
+  inboxAcknowledgmentDigests?: Record<string, string>;
 }): string {
-  return sha256(JSON.stringify(value));
+  const inboxAcknowledgmentDigests = Object.fromEntries(Object.entries(value.inboxAcknowledgmentDigests || {})
+    .sort(([left], [right]) => Number(left) - Number(right)));
+  return sha256(JSON.stringify({ ...value, inboxAcknowledgedRowNumbers: value.inboxAcknowledgedRowNumbers || [], inboxAcknowledgmentDigests }));
 }
 
 export function digestLocationImportManifest(manifest: LocationImportManifest): string {
@@ -103,6 +109,9 @@ export function verifyLocationImportManifest(token: string, secret: string, now:
     || !['add-and-update', 'update-existing-only'].includes(String(manifest.mode))
     || !Array.isArray(manifest.mappings)
     || !Array.isArray(manifest.selectedRowNumbers)
+    || !Array.isArray(manifest.inboxAcknowledgedRowNumbers)
+    || manifest.inboxAcknowledgedRowNumbers.some(rowNumber => !Number.isInteger(rowNumber) || rowNumber < 2)
+    || new Set(manifest.inboxAcknowledgedRowNumbers).size !== manifest.inboxAcknowledgedRowNumbers.length
     || manifest.selectedRowNumbers.some(rowNumber => !Number.isInteger(rowNumber) || rowNumber < 2)
     || new Set(manifest.selectedRowNumbers).size !== manifest.selectedRowNumbers.length
     || !Array.isArray(manifest.writes) || manifest.writes.length > LOCATION_IMPORT_MAX_CHANGED_ROWS

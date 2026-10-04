@@ -20,7 +20,7 @@ export interface LocationEditingExportPart {
 }
 
 export interface LocationEditingExportManifest {
-  schemaVersion: 'locations-v1';
+  schemaVersion: 'locations-v2';
   snapshotReadAt: string;
   totalRecords: number;
   lifecycleCounts: {

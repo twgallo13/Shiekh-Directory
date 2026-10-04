@@ -23,7 +23,7 @@ export function resolvePersonPhone(person: PersonRecord | undefined): ResolvedPe
 }
 
 export function resolvePersonEmail(person: PersonRecord | undefined): { value: string; source: 'work' | 'legacy' } {
-  if (person?.workEmail) return { value: person.workEmail, source: 'work' };
+  if (person && Object.hasOwn(person, 'workEmail')) return { value: person.workEmail || '', source: 'work' };
   return { value: person?.email || '', source: 'legacy' };
 }
 
@@ -62,9 +62,7 @@ export function serializePersonContactEdits(
     }
   }
   if (emailTouched) {
-    const resolved = resolvePersonEmail(person);
-    if (resolved.source === 'work') updates.workEmail = email;
-    else updates.email = email;
+    updates.workEmail = email;
   }
   return updates;
 }

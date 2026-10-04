@@ -98,7 +98,7 @@ export function buildLocationEditingExport(
           severity: issues.some(issue => issue.severity === 'error') ? 'error' : 'warning',
           code: 'round_trip_issue',
           fields: [...new Set(issues.map(issue => issue.field))],
-          message: 'The current record contains legacy values or references that do not conform to locations-v1.',
+          message: 'The current record contains legacy values or references that do not conform to locations-v2.',
           guidance: 'Review the listed legacy values and references. Correct the source record intentionally before relying on this row for editing.',
           issues,
         });
@@ -125,7 +125,7 @@ export function buildLocationEditingExport(
   });
   const partCount = parts.length;
   parts.forEach(part => {
-    part.filename = `shiekh_locations_editing_v1_part_${padPart(part.partNumber)}_of_${padPart(partCount)}.csv`;
+    part.filename = `shiekh_locations_editing_v2_part_${padPart(part.partNumber)}_of_${padPart(partCount)}.csv`;
   });
 
   return {
@@ -226,7 +226,7 @@ function unsupportedFieldDiagnostic(location: ExportLocation): LocationEditingEx
     severity: 'warning',
     code: 'unrepresentable_fields',
     fields: [...fields],
-    message: 'This Location contains fields outside the locations-v1 editing contract.',
+    message: 'This Location contains fields outside the locations-v2 editing contract.',
     guidance: 'These values are not included in the editing CSV and are preserved by Location updates. This export is not a full backup.',
   }];
 }
@@ -249,7 +249,7 @@ function largestFields(row: ExportRow): string[] {
 function oversizedRecord(entry: ExportEntry): LocationEditingExportError {
   return new LocationEditingExportError(
     'editing_export_record_too_large',
-    `Location ${textValue(entry.location.id) || '(missing Location ID)'} cannot fit in a ${LOCATION_IMPORT_MAX_BYTES}-byte locations-v1 CSV part.`,
+    `Location ${textValue(entry.location.id) || '(missing Location ID)'} cannot fit in a ${LOCATION_IMPORT_MAX_BYTES}-byte locations-v2 CSV part.`,
     textValue(entry.location.id) || '(missing Location ID)',
     largestFields(entry.row),
   );
@@ -283,7 +283,7 @@ function normalizeLegacyConformanceIssues(
   return issues.map(issue => issue.code === 'missing_required_field' ? {
     ...issue,
     severity: 'warning' as const,
-    reason: `The existing Location has no ${issue.field} value, which locations-v1 requires for a complete record.`,
+    reason: `The existing Location has no ${issue.field} value, which locations-v2 requires for a complete record.`,
     correction: 'Repair the authoritative Location intentionally before relying on this row for editing.',
   } : issue);
 }

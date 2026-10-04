@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
 import { Search, User, X } from 'lucide-react';
-import { formatPersonPhone } from '../../lib/personContacts';
+import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
 
 export interface PersonSelectorProps {
   label?: string;
@@ -35,8 +35,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
       return (
         p.fullName?.toLowerCase().includes(term) ||
         p.name?.toLowerCase().includes(term) ||
-        p.email?.toLowerCase().includes(term) ||
-        p.workEmail?.toLowerCase().includes(term) ||
+        resolvePersonEmail(p).value.toLowerCase().includes(term) ||
         p.phone?.toLowerCase().includes(term) ||
         p.workPhone?.toLowerCase().includes(term) ||
         p.district?.toLowerCase().includes(term)

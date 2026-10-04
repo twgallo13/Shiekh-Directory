@@ -36,6 +36,7 @@ const records: LocationDocument[] = [
       state: "CA",
       zipCode: "90001",
       phone: "555-0107",
+      locationInboxEmail: " Store@example.test ",
       phonePrivacy: "Public",
       timeZone: "America/Los_Angeles",
       regionId: "reg-west",
@@ -61,6 +62,7 @@ const records: LocationDocument[] = [
       name: "Restricted Phone Store",
       phone: "555-0108",
       phonePrivacy: "Internal",
+      locationInboxEmail: "invalid historic address",
       operationalStatus: "Open — Normal Operations",
     },
   },
@@ -243,6 +245,8 @@ describe("Directory API location responses", () => {
     assert.deepEqual(body.data.map((location: { storeNumber: string }) => location.storeNumber), ["07", "08"]);
     assert.equal(body.data[0].phone, "555-0107");
     assert.equal(body.data[1].phone, undefined);
+    assert.equal(body.data[0].locationInboxEmail, "Store@example.test");
+    assert.equal(body.data[1].locationInboxEmail, null);
     assert.equal(body.data[0].regionId, "reg-west");
     assert.equal(body.data[0].regionName, "West Region");
     assert.equal(body.data[0].districtId, "01");
@@ -256,6 +260,7 @@ describe("Directory API location responses", () => {
       open: "10:00",
       close: "20:00",
     });
+
     for (const privateField of [
       "storeManagerName",
       "storeManagerPhone",
@@ -270,6 +275,16 @@ describe("Directory API location responses", () => {
     }
   });
 
+  it("publishes the same normalized location inbox in list and detail, using null for unusable stored values", async () => {
+    const detail = await apiFetch(baseUrl, "/api/v1/locations/07", READ_TOKEN);
+    assert.equal(detail.status, 200);
+    const detailBody = await detail.json();
+    assert.equal(detailBody.data.locationInboxEmail, "Store@example.test");
+
+    const list = await apiFetch(baseUrl, "/api/v1/locations", READ_TOKEN);
+    const listBody = await list.json();
+    assert.equal(listBody.data.find((location: { storeNumber: string }) => location.storeNumber === "08").locationInboxEmail, null);
+  });
   it("distinguishes malformed saved applicability, empty strings, and absent values without broadening valid enum values", async () => {
     const scoped = await startTestServer({
       authenticator, rateLimit: false, now: () => NOW,
@@ -395,6 +410,7 @@ describe("Directory API location responses", () => {
       const detail = await (await apiFetch(changing.baseUrl, "/api/v1/locations/07", READ_TOKEN)).json();
       assert.equal(detail.data.districtId, "01");
       assert.equal(detail.data.districtName, "District 01");
+      assert.equal(detail.data.locationInboxEmail, "Store@example.test");
       assert.equal(detail.hierarchyVersion, restarted.sync.hierarchyVersion);
     } finally { await closeServer(changing.server); }
   });

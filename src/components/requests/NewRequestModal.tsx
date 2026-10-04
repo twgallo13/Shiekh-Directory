@@ -91,6 +91,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
         setFormError('Enter one valid shared location inbox email, or explicitly choose Clear inbox.');
         return;
       }
+      const currentInbox = targetLoc.locationInboxEmail ?? null;
+      const normalizedCurrentInbox = normalizeLocationInboxEmail(currentInbox)?.value ?? currentInbox;
+      if (proposedInbox === normalizedCurrentInbox) {
+        setFormError('Choose a different inbox email. This request would not change the location.');
+        return;
+      }
       requestedChanges.locationInboxEmail = proposedInbox;
       currentSnapshot.locationInboxEmail = targetLoc.locationInboxEmail ?? null;
     }

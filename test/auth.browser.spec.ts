@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 const sdk = `
@@ -277,6 +278,55 @@ for (const width of [320, 390]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 }
+
+test('Location inbox correction blocks empty clears and normalized unchanged addresses', async ({ page }) => {
+  const fixture = await prepareCustomFields(page);
+  await page.goto(`${origin}/requests/new?locationId=loc-custom`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('combobox').nth(1).selectOption('Other Store Info Update');
+  await dialog.getByRole('button', { name: 'Clear inbox', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('would not change the location');
+  expect(fixture.commits).toHaveLength(0);
+  fixture.seed.locations[0].locationInboxEmail = 'Store@EXAMPLE.test';
+  await page.reload(); await restore(page, true);
+  await dialog.getByRole('combobox').nth(1).selectOption('Other Store Info Update');
+  await dialog.getByPlaceholder('store@example.com').fill('Store@example.test');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('would not change the location');
+  expect(fixture.commits).toHaveLength(0);
+  await dialog.getByPlaceholder('store@example.com').fill('changed@example.test');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(fixture.commits[0].writes.find((write: any) => write.collection === 'requests').data.requestedChanges.locationInboxEmail).toBe('changed@example.test');
+});
+
+test('Location inbox CSV deselection removes the reviewed acknowledgment before revalidation', async ({ page }) => {
+  const fixture = await prepareCustomFields(page);
+  fixture.seed.locations.push({ ...fixture.seed.locations[0], id: 'loc-other', storeNumber: '08', name: 'Other Store', locationInboxEmail: 'shared@example.test' });
+  const requests: any[] = [];
+  await page.route('**/api/imports/locations/preview', async route => {
+    const body = route.request().postDataJSON(); requests.push(body);
+    const snapshot = { ...fixture.seed, regions: [], districts: [] };
+    const plan = buildLocationImportPlan(body.csv, snapshot, '2026-10-04T00:00:00Z', () => 'unused', body);
+    await route.fulfill({ json: { ...plan.preview, mode: body.mode, selectedRowNumbers: body.selectedRowNumbers ?? [2, 3] } });
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: /CSV/ }).first().click();
+  await page.getByLabel('Upload Location CSV').setInputFiles({ name: 'inbox.csv', mimeType: 'text/csv', buffer: Buffer.from('LocationId,StoreName,LocationInboxEmail,LocationInboxEmailAction\nloc-custom,,shared@example.test,set\nloc-other,Renamed Store,,keep\n') });
+  await page.getByRole('checkbox', { name: /I reviewed every heading/ }).check();
+  await page.getByRole('button', { name: 'Validate and Preview' }).click();
+  const acknowledgment = page.getByRole('checkbox', { name: /I reviewed the shared inbox conflict for this row/ }).first();
+  await acknowledgment.check();
+  await page.getByRole('checkbox', { name: 'Select CSV row 2', exact: true }).uncheck();
+  await expect(acknowledgment).not.toBeChecked();
+  await expect(acknowledgment).toBeDisabled();
+  await page.getByRole('button', { name: 'Revalidate selection' }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests[1].selectedRowNumbers).toEqual([3]);
+  expect(requests[1].inboxAcknowledgedRowNumbers).toEqual([]);
+  expect(requests[1].inboxAcknowledgmentDigests).toEqual({});
+});
 
 test('Location inbox draft remains visible after a stale-save conflict', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });

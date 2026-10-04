@@ -6,7 +6,7 @@ Implementation adds one optional `locationInboxEmail` field owned by a Location.
 
 The API emits `locationInboxEmail` as a normalized string or `null` on both list and detail responses. `null` means no usable published inbox. Personnel email remains outside the Location projection. Custom-field publication/type validation does not scan arbitrary text for personal information. The field is built-in and does not change `customFieldsVersion`.
 
-**Status:** implementation and local verification complete; independently reviewed; release pending. No production deployment, migration, live business-record write, mailbox population, email send, credential, IAM, or auth change was performed. The deployed API could not be verified with an authorized token; the existing documentation records the observed unauthenticated `401 invalid_token` result.
+**Status:** implemented, independently reviewed, and deployed on 2026-10-04. Application commit `fa08cc18406efc60757605b193b8ccfcdb23c932` serves 100% of desired and observed traffic as `shiekh-location-company-directory-inbox-fa08cc1`. PRs #14, #15 and #16 contain the feature, final workflow corrections, and deployment-cache correction. See the [release record](../cloud-run-deployment-runbook.md#current-live-revision-verified-2026-10-04) for build, image, configuration and rollback evidence. Verification performed no migrations, business-record writes, mailbox population, email sends, new credentials, IAM or auth changes. A live authorized Directory API consumer response was not tested; the unauthenticated API correctly returns `401 invalid_token`.
 
 Consumer-side ROPI work is not included: this repository does not contain that app. Its owner must implement server-side token storage, initial full reads, all-page delta processing, `null` clearing, idempotent retries, periodic full reconciliation, subscriptions, approvals, and notifications.
 
@@ -26,7 +26,7 @@ Verified locally with synthetic fixtures only:
 | Check | Result |
 | --- | --- |
 | `npm run lint` (`tsc --noEmit`) | Passed |
-| `npm run test:api` | 302 passed, 0 failed |
+| `npm run test:api` | 303 passed, 0 failed |
 | `npm run build` | Passed; Vite reported a large-bundle advisory (>500 kB) |
 | Playwright inbox editor/detail/clear, stale-save, historical-value, duplicate-review, correction and CSV selection cases | 7 passed, including 320px and 390px, using a local app and synthetic Firebase/browser fixtures |
 
@@ -37,6 +37,8 @@ Independent review additionally bound editor and correction approval checkboxes 
 Pre-release `locations-v1` signed previews must be recreated after rollout. Version 1 CSV files remain supported; the new acknowledgment contract is part of the version 2 signed preview.
 
 Final workflow review also prevents unchanged inbox correction requests, including clearing an already empty inbox. Deselecting a CSV row removes its acknowledgment and reviewed digest; unselected rows cannot acquire a new acknowledgment. Synthetic browser regressions verify both rejection and successful submission of an actual correction, and the exact acknowledgment payload after CSV deselection.
+
+Live browser verification exposed a buildpack caching problem: equal-sized HTML received identical weak ETags because modification times were normalized to 1980, even when asset filenames changed. Production HTML now uses `Cache-Control: no-store` with no ETag or Last-Modified validator; hashed asset and API cache behavior is preserved. A real HTTP regression and live root/deep-link/index checks prove that old conditional headers receive fresh `200` HTML. Ordinary Chrome navigation restored the existing signed-in session and displayed the optional inbox editor without a cache-bypass URL; no live save was performed by the verification workflow.
 
 ## Release and rollback
 

@@ -32,8 +32,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
       p.fullName?.toLowerCase().includes(term) ||
       p.phone?.toLowerCase().includes(term) ||
       p.workPhone?.toLowerCase().includes(term) ||
-      p.email?.toLowerCase().includes(term) ||
-      p.workEmail?.toLowerCase().includes(term) ||
+      resolvePersonEmail(p).value.toLowerCase().includes(term) ||
       p.district?.toLowerCase().includes(term)
     );
   });

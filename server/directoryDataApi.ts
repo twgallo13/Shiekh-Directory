@@ -2,6 +2,7 @@ import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, APPLICATION_ROLES, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryAudit, type DirectoryCollection, type DirectoryWrite, type DirectoryWriter } from "./firestoreDirectory";
+import type { LocationInboxAcknowledgment } from "../src/lib/locationInboxEmail";
 
 const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   locations: ["System Administrator", "Directory Data Steward", "Editor"],
@@ -79,13 +80,22 @@ function parseWrites(value: unknown): DirectoryWrite[] | null {
     }
     if (Object.hasOwn(candidate, 'expectedCustomMetadata') && !plainObject(candidate.expectedCustomMetadata)) return null;
     if (Object.hasOwn(candidate, 'expectedDefinition') && candidate.expectedDefinition !== null && !plainObject(candidate.expectedDefinition)) return null;
+    let locationInboxAcknowledgment: LocationInboxAcknowledgment | undefined;
+    if (Object.hasOwn(candidate, 'locationInboxAcknowledgment')) {
+      const acknowledgment = candidate.locationInboxAcknowledgment;
+      if (!plainObject(acknowledgment) || typeof acknowledgment.normalizedEmail !== 'string'
+        || acknowledgment.normalizedEmail.length > 254 || typeof acknowledgment.conflictDigest !== 'string'
+        || acknowledgment.conflictDigest.length > 20_000) return null;
+      locationInboxAcknowledgment = { normalizedEmail: acknowledgment.normalizedEmail, conflictDigest: acknowledgment.conflictDigest };
+    }
     const expectedVersion = candidate.expectedVersion;
     if (Object.hasOwn(candidate, 'expectedVersion') && expectedVersion !== null
       && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
     writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}),
       ...(Object.hasOwn(candidate, 'expectedCustomMetadata') ? { expectedCustomMetadata: candidate.expectedCustomMetadata as Record<string, unknown> } : {}),
       ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}),
-      ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number | null } : {}) });
+      ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number | null } : {}),
+      ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}) });
   }
   const locationNumbers = writes.filter(write => write.collection === "locations" && write.operation === "set").map(write => String(write.data?.storeNumber || ""));
   if (locationNumbers.some(number => !number.trim()) || new Set(locationNumbers).size !== locationNumbers.length) return null;

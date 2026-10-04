@@ -1,6 +1,7 @@
 import type { LocationType, OperationalStatus, RecordStatus } from '../types';
 
-export const LOCATION_IMPORT_SCHEMA_VERSION = 'locations-v1';
+export const LOCATION_IMPORT_SCHEMA_VERSION = 'locations-v2';
+export const SUPPORTED_LOCATION_IMPORT_SCHEMA_VERSIONS = ['locations-v1', LOCATION_IMPORT_SCHEMA_VERSION] as const;
 export const LOCATION_IMPORT_SPREADSHEET_ENCODING = 'shiekh-safe-v1';
 export const LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER = `SpreadsheetEncoding=${LOCATION_IMPORT_SPREADSHEET_ENCODING}`;
 export const LOCATION_IMPORT_MAX_BYTES = 2_000_000;
@@ -52,6 +53,8 @@ export const LOCATION_IMPORT_FIELDS: readonly LocationImportFieldDefinition[] = 
   { column: 'State', field: 'state', purpose: 'US state or territory abbreviation.', additions: 'Required', updates: 'Optional', format: 'Two uppercase letters', example: 'CA' },
   { column: 'ZipCode', field: 'zipCode', aliases: ['ZIP Code', 'Zip Code', 'ZIP'], purpose: 'US ZIP code.', additions: 'Required', updates: 'Optional', format: '5 digits or ZIP+4', example: '90001' },
   { column: 'Phone', field: 'phone', aliases: ['Phone Number', 'Store Phone'], purpose: 'Main Location phone. Preview shows the normalized saved value.', additions: 'Required', updates: 'Optional', format: 'Valid US phone; extension may be included', example: '(213) 555-0100 ext. 42' },
+  { column: 'LocationInboxEmail', field: 'locationInboxEmail', aliases: ['Location Inbox Email', 'Store Inbox Email'], purpose: 'Shared inbox owned by the Location, not a person or login. Blank value with no action preserves the existing inbox.', additions: 'Optional', updates: 'Optional', format: 'One email address; use LocationInboxEmailAction=clear to intentionally remove it', example: 'store@example.com' },
+  { column: 'LocationInboxEmailAction', field: 'locationInboxEmailAction', purpose: 'Explicitly controls whether a blank LocationInboxEmail cell keeps, sets, or clears the inbox.', additions: 'Optional', updates: 'Optional', format: 'Blank action + blank value: keep; blank action + value: set; keep + blank: keep; keep + value: invalid; set + blank: invalid; set + value: validate and set; clear + blank: clear; clear + value or unknown action: invalid.', example: 'set' },
   { column: 'TimeZone', field: 'timeZone', aliases: ['Time Zone'], purpose: 'Location time zone.', additions: 'Required', updates: 'Optional', format: 'One allowed IANA value', allowedValues: LOCATION_TIME_ZONES, example: 'America/Los_Angeles' },
   { column: 'HierarchyApplicability', field: 'hierarchyApplicability', aliases: ['Hierarchy Applicability'], purpose: 'Whether controlled Region/District hierarchy applies.', additions: 'Optional; type-based default applies', updates: 'Optional', format: 'One allowed value', allowedValues: LOCATION_HIERARCHY_APPLICABILITY, example: 'Applicable' },
   { column: 'RegionId', field: 'regionId', aliases: ['Region ID'], purpose: 'Canonical Region reference.', additions: 'Optional', updates: 'Optional', format: 'Existing active Region ID from Reference IDs', example: 'REPLACE_WITH_REGION_ID' },

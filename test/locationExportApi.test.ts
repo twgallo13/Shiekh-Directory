@@ -138,7 +138,7 @@ test("HierarchyApplicability is appended after every pre-existing reporting colu
     const headerLine = csv.split('\n')[0].trim();
     const headers = parse(Buffer.from(headerLine), { columns: false })[0] as string[];
     const preexisting = [
-      LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, "StoreNumber", "StoreName", "Type", "Address", "City", "State", "ZipCode", "Phone",
+      LOCATION_IMPORT_SPREADSHEET_ENCODING_HEADER, "StoreNumber", "StoreName", "Type", "Address", "City", "State", "ZipCode", "Phone", "LocationInboxEmail",
       "RegionId", "RegionName", "DistrictId", "DistrictName", "District", "StoreManager", "StoreManagerPhone", "DistrictManager",
       "AssistantStoreManagers", "OperationalStatus", "RecordStatus", "GoogleReviewUrl", "StorePageUrl",
     ];

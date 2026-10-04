@@ -4,9 +4,25 @@
 
 Administrators may upload identity plus only the supported Location fields they intend to update. `LocationId` is matched first. When it is omitted, a unique digits-only `StoreNumber` may match an existing Location. Leading zeros are ignored for matching, but the supplied text remains the proposed stored Store Number. Nonnumeric Store Numbers are never reinterpreted, and Location, District, or Person names are never used as relationship identities.
 
-Omitted columns and blank cells preserve existing values. Explicit clearing is not supported. New Locations must provide all required fields; existing Locations need only identity plus changed fields. **Add and update** permits both outcomes. **Update existing only** blocks rows that do not resolve to an existing Location and is the default when an `shiekh_locations_editing_v1_...csv` file is selected.
+Omitted columns and blank cells preserve existing values. The Location inbox is the exception only when the dedicated `LocationInboxEmailAction` explicitly requests a clear. New Locations must provide all required fields; existing Locations need only identity plus changed fields. **Add and update** permits both outcomes. **Update existing only** blocks rows that do not resolve to an existing Location and is the default when an `shiekh_locations_editing_v2_...csv` file is selected.
 
-`SchemaVersion` may be omitted or blank and then uses the current `locations-v1` format. A supplied unsupported version is rejected on its row. The field dictionary lists canonical headers, approved aliases, formats, and allowed values. Heading matching ignores case and surrounding whitespace. Every suggested mapping must be reviewed. A source heading may be mapped to one supported target or explicitly ignored; duplicate target mappings and files without a mapped `LocationId` or `StoreNumber` are blocked.
+`SchemaVersion` may be omitted or blank and then uses the current `locations-v2` format. New editing exports use `locations-v2`; `locations-v1` input remains supported. A supplied unsupported version is rejected on its row. The field dictionary lists canonical headers, approved aliases, formats, and allowed values. Heading matching ignores case and surrounding whitespace. Every suggested mapping must be reviewed. A source heading may be mapped to one supported target or explicitly ignored; duplicate target mappings and files without a mapped `LocationId` or `StoreNumber` are blocked.
+
+The optional `LocationInboxEmail` and `LocationInboxEmailAction` columns are Location-owned shared contact information, never person or login email. Their action matrix is:
+
+| Action | Inbox value | Result |
+| --- | --- | --- |
+| blank | blank | Keep the current value |
+| blank | nonblank | Validate and set the value |
+| `keep` | blank | Keep the current value |
+| `keep` | nonblank | Reject the row |
+| `set` | blank | Reject the row |
+| `set` | nonblank | Validate and set the value |
+| `clear` | blank | Clear to `null` |
+| `clear` | nonblank | Reject the row |
+| any other action | any | Reject the row |
+
+An unrecognized or ignored source column never becomes an implicit clear. Duplicate inboxes are allowed only after the preview identifies the affected Locations and the user explicitly acknowledges the current conflict set; confirmation rechecks this against the authoritative snapshot.
 
 Both existing Store exports are recognized. **Export for Editing** maps all supported canonical ID fields. `RegionName` and `DistrictName` are automatically recognized as informational and cannot be mapped as write targets. The reporting **Export All Stores** maps supported Location attributes, while `RegionName`, `DistrictName`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, and `AssistantStoreManagers` are informational and ignored by default. Display names never become Region, District, or Person references; canonical `RegionId`, `DistrictId`, and Person ID columns are required to change relationships.
 
@@ -26,11 +42,11 @@ Application-generated editing, reporting, and correction files explicitly signal
 
 ## Export for Editing
 
-`Export for Editing` is the import-compatible Location workflow. It is separate from the presentation export below and uses the shared `locations-v1` fields, parser, and preview rules. Its protected encoding header is an approved alias of the canonical `SpreadsheetEncoding` field.
+`Export for Editing` is the import-compatible Location workflow. It is separate from the presentation export below and uses the shared `locations-v2` fields, parser, and preview rules. Its protected encoding header is an approved alias of the canonical `SpreadsheetEncoding` field.
 
 The server reads Locations, People, Regions, and Districts in one read-only transaction. System Administrators, Directory Data Stewards, and Editors require `Company` or `Company-wide` scope to prepare the export. The response reports the snapshot timestamp; total, Active, Draft, and Retired counts; part filenames and counts; immediate round-trip totals; and diagnostics by affected Location ID and field.
 
-Every Location type and lifecycle state is included in deterministic Store Number/Location ID order. Parts contain at most 100 rows and 2,000,000 UTF-8 bytes, use a BOM and the established CSV serializer, and are named `shiekh_locations_editing_v1_part_NNN_of_NNN.csv`. A single record that cannot fit fails explicitly rather than being omitted or truncated.
+Every Location type and lifecycle state is included in deterministic Store Number/Location ID order. Parts contain at most 100 rows and 2,000,000 UTF-8 bytes, use a BOM and the established CSV serializer, and are named `shiekh_locations_editing_v2_part_NNN_of_NNN.csv`. The canonical `LocationInboxEmail` is exported with a blank action, so an unchanged exported email remains a no-op on re-import. A single record that cannot fit fails explicitly rather than being omitted or truncated.
 
 Canonical IDs are preserved for Locations, hierarchy, and leadership. `RegionName` and `DistrictName` resolve from the registry at export time and are informational on re-import. An unresolved assignment retains its ID with a blank name and a diagnostic; missing assignments leave both fields blank. Assistant Manager and Key Holder IDs remain in source order and use semicolons. Phone extensions use `ext. <digits>` in the existing `Phone` column. Leading zeros such as District ID `01`, Unicode, quoted values, and line breaks are serialized as text without spreadsheet formulas.
 
@@ -58,7 +74,7 @@ The export rejects duplicate location IDs and duplicate normalized active store 
 
 Column order is stable. The first heading is the explicit protected-file signal:
 
-`SpreadsheetEncoding=shiekh-safe-v1`, `StoreNumber`, `StoreName`, `Type`, `Address`, `City`, `State`, `ZipCode`, `Phone`, `RegionId`, `RegionName`, `DistrictId`, `DistrictName`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, `AssistantStoreManagers`, `OperationalStatus`, `RecordStatus`, `GoogleReviewUrl`, `StorePageUrl`, `HierarchyApplicability`.
+`SpreadsheetEncoding=shiekh-safe-v1`, `StoreNumber`, `StoreName`, `Type`, `Address`, `City`, `State`, `ZipCode`, `Phone`, `LocationInboxEmail`, `RegionId`, `RegionName`, `DistrictId`, `DistrictName`, `District`, `StoreManager`, `StoreManagerPhone`, `DistrictManager`, `AssistantStoreManagers`, `OperationalStatus`, `RecordStatus`, `GoogleReviewUrl`, `StorePageUrl`, `HierarchyApplicability`.
 
 `RegionId` and `DistrictId` are saved Location assignments. `RegionName` and `DistrictName` are current registry resolutions and are informational. The legacy `District` column retains its prior compatibility behavior and is not a canonical identity or rename mechanism. Name-only CSV changes never update registry records or assignments.
 

@@ -118,13 +118,13 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
     >
       {isEditing ? (
         <PersonEditorForm
-          key={`${person.id}:${person.version ?? 0}`}
+          key={person.id}
           person={person}
           locations={locations}
           submitLabel="Save Person"
           onCancel={() => setIsEditing(false)}
-          onSubmit={async updates => {
-            await updatePerson(person.id, updates);
+          onSubmit={async (updates, expectedVersion) => {
+            await updatePerson(person.id, updates, expectedVersion);
             setIsEditing(false);
           }}
         />
@@ -145,6 +145,9 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
               </div>
               <div className="text-neutral-900 font-medium truncate">{resolvePersonEmail(person).value || 'N/A'}</div>
               <div className="text-neutral-400 text-[10px] pt-1">{person.status === 'Inactive' || person.activeStatus === false ? 'Inactive' : 'Active'}{person.department ? ` · ${person.department}` : ''}</div>
+              {Object.hasOwn(person, 'workEmail') && person.email && (person.workEmail || '').trim().toLowerCase() !== person.email.trim().toLowerCase() && (
+                <div className="break-all pt-1 text-[10px] text-neutral-500">Historical email alias (not used as the active contact): {person.email}</div>
+              )}
             </div>
           </div>
 
@@ -172,6 +175,18 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                     {hasLeadershipRole && canEdit && row.location && onEditLocation && <Button size="sm" variant="ghost" onClick={() => onEditLocation(row.location!)}><Pencil className="h-3 w-3" />Edit Assignment</Button>}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">{row.labels.map(label => <span key={label} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-neutral-700">{label}</span>)}</div>
+                  {row.location && row.labels.some(label => ['Primary workplace', 'Supports'].includes(label)) && row.location.locationInboxEmail && (
+                    <div className="mt-2 rounded-md border border-neutral-200 bg-white px-2 py-1.5">
+                      <div className="text-[10px] font-semibold uppercase text-neutral-500">Shared inbox for this Location</div>
+                      <a href={`mailto:${row.location.locationInboxEmail}`} className="mt-0.5 block break-all text-xs text-red-700 hover:underline">
+                        {row.location.locationInboxEmail}
+                      </a>
+                    </div>
+                  )}
+                  {row.location && !row.labels.some(label => ['Primary workplace', 'Supports'].includes(label))
+                    && row.location.locationInboxEmail && (
+                    <p className="mt-2 text-[10px] text-neutral-500">Leadership association only; this is not shown as a workplace inbox.</p>
+                  )}
                 </div>;
               })}
               {relationships.length === 0 && <EmptyState icon={Store} title="No Locations assigned" description="This person has no workplace, support, or leadership Location relationships." compact />}

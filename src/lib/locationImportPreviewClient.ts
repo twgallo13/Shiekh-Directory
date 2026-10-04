@@ -20,9 +20,9 @@ export class LocationImportRequestError extends Error {
 }
 
 const downloadNames: Record<LocationImportDownload, string> = {
-  template: 'shiekh_locations_import_v1.csv',
-  example: 'shiekh_locations_import_v1_worked_example.csv',
-  fields: 'shiekh_locations_import_v1_field_dictionary.csv',
+  template: 'shiekh_locations_import_v2.csv',
+  example: 'shiekh_locations_import_v2_worked_example.csv',
+  fields: 'shiekh_locations_import_v2_field_dictionary.csv',
   references: 'shiekh_location_import_reference_ids.csv',
 };
 
@@ -91,6 +91,7 @@ export interface InspectedLocationImportFile {
 
 export interface LocationImportPreviewOptions extends InspectedLocationImportFile {
   selectedRowNumbers?: number[];
+  inboxAcknowledgedRowNumbers?: number[];
 }
 
 export type LocationImportConfirmationOutcome = 'pending' | 'rejected' | 'uncertain';
@@ -115,13 +116,14 @@ export async function previewLocationImport(
   const inspected = input instanceof File ? await inspectLocationImportFile(input) : input;
   const { csv, mappings, mode } = inspected;
   const selectedRowNumbers = 'selectedRowNumbers' in inspected ? inspected.selectedRowNumbers : undefined;
+  const inboxAcknowledgedRowNumbers = 'inboxAcknowledgedRowNumbers' in inspected ? inspected.inboxAcknowledgedRowNumbers : undefined;
   const response = await fetch('/api/imports/locations/preview', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${await user.getIdToken()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ csv, mappings, mode, ...(selectedRowNumbers === undefined ? {} : { selectedRowNumbers }) }),
+    body: JSON.stringify({ csv, mappings, mode, ...(selectedRowNumbers === undefined ? {} : { selectedRowNumbers }), ...(inboxAcknowledgedRowNumbers === undefined ? {} : { inboxAcknowledgedRowNumbers }) }),
     cache: 'no-store',
     redirect: 'error',
   });
@@ -143,6 +145,7 @@ export async function confirmLocationImport(
     mappings: LocationImportHeaderMapping[];
     mode: LocationImportMode;
     selectedRowNumbers: number[];
+    inboxAcknowledgedRowNumbers?: number[];
   },
 ): Promise<LocationImportReceipt> {
   const token = await user.getIdToken();
@@ -259,7 +262,7 @@ async function previewRequestError(response: Response, fallback: string) {
 }
 
 function isLocationImportPreview(value: LocationImportPreview): boolean {
-  return value?.schemaVersion === 'locations-v1'
+  return value?.schemaVersion === 'locations-v2'
     && typeof value.snapshotReadAt === 'string'
     && isCountSummary(value.summary)
     && Array.isArray(value.rows)
@@ -286,7 +289,7 @@ function isLocationImportReceipt(value: LocationImportReceipt): boolean {
 
 function isPreparedLocationEditingExport(value: PreparedLocationEditingExport): boolean {
   if (!value
-    || value.schemaVersion !== 'locations-v1'
+    || value.schemaVersion !== 'locations-v2'
     || typeof value.snapshotReadAt !== 'string'
     || !Number.isInteger(value.totalRecords) || value.totalRecords < 0
     || !value.lifecycleCounts
@@ -297,7 +300,7 @@ function isPreparedLocationEditingExport(value: PreparedLocationEditingExport): 
   const partCount = value.parts.length;
   const partsValid = value.parts.every((part, index) => Number.isInteger(part.partNumber)
     && part.partNumber === index + 1
-    && part.filename === `shiekh_locations_editing_v1_part_${String(index + 1).padStart(3, '0')}_of_${String(partCount).padStart(3, '0')}.csv`
+    && part.filename === `shiekh_locations_editing_v2_part_${String(index + 1).padStart(3, '0')}_of_${String(partCount).padStart(3, '0')}.csv`
     && Number.isInteger(part.recordCount) && part.recordCount >= 0 && part.recordCount <= 100
     && Number.isInteger(part.byteCount) && part.byteCount > 0 && part.byteCount <= LOCATION_IMPORT_MAX_BYTES
     && typeof part.csv === 'string' && new TextEncoder().encode(part.csv).byteLength === part.byteCount);

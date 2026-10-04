@@ -14,6 +14,7 @@ import {
   previewLocationImport,
 } from '../src/lib/locationImportPreview';
 import { suggestLocationImportHeaderMappings } from '../src/lib/locationImportSchema';
+import { locationInboxConflictDigest } from '../src/lib/locationInboxEmail';
 import type { DirectorySeed } from '../src/lib/directorySeed';
 
 const baseLocation = {
@@ -34,17 +35,94 @@ const snapshot: Pick<DirectorySeed, 'locations' | 'people' | 'regions' | 'distri
 };
 
 describe('Location CSV import preview', () => {
-  it('downloads the exact supported locations-v1 header', () => {
+  it('downloads the exact locations-v2 header with the shared inbox action fields', () => {
     const [headers] = parse(buildLocationImportTemplate(), { bom: true }) as string[][];
     assert.deepEqual(headers, LOCATION_IMPORT_COLUMNS);
-    const dictionary = parse(buildLocationImportFieldDictionary(), { bom: true, columns: true }) as Array<{ Header: string; Aliases: string; BlankBehavior: string }>;
+    const dictionary = parse(buildLocationImportFieldDictionary(), { bom: true, columns: true }) as Array<{ Header: string; Aliases: string; BlankBehavior: string; Format: string }>;
     assert.deepEqual(dictionary.map(field => field.Header), LOCATION_IMPORT_COLUMNS);
     assert.deepEqual(LOCATION_IMPORT_FIELDS.map(field => field.column), LOCATION_IMPORT_COLUMNS);
     assert.match(dictionary.find(field => field.Header === 'LocationId')?.Aliases || '', /Location ID/);
     assert.match(dictionary.find(field => field.Header === 'SchemaVersion')?.BlankBehavior || '', /when omitted or blank/);
+    assert.match(dictionary.find(field => field.Header === 'LocationInboxEmailAction')?.Format || '', /clear \+ blank: clear/);
     assert.equal(buildLocationImportTemplate().codePointAt(0), 0xfeff);
     assert.equal(buildLocationImportWorkedExample().codePointAt(0), 0xfeff);
     assert.equal(buildLocationImportFieldDictionary().codePointAt(0), 0xfeff);
+  });
+
+  it('applies the complete shared-inbox CSV action matrix and retains locations-v1 input compatibility', () => {
+    const existingSnapshot = { ...snapshot, locations: [{ ...baseLocation, locationInboxEmail: 'old@example.test' }] };
+    const check = (value: string, action: string) => previewLocationImport(csvRow({
+      LocationId: 'loc-007', LocationInboxEmail: value, LocationInboxEmailAction: action,
+    }), existingSnapshot);
+    assert.equal(check('', '').rows[0].action, 'unchanged');
+    assert.deepEqual(check('new@example.test', '').rows[0].changes, [{ field: 'locationInboxEmail', before: 'old@example.test', after: 'new@example.test' }]);
+    assert.equal(check('', 'keep').rows[0].action, 'unchanged');
+    assert.equal(check('new@example.test', 'keep').rows[0].action, 'blocked');
+    assert.equal(check('', 'set').rows[0].action, 'blocked');
+    assert.equal(check('new@example.test', 'set').rows[0].action, 'update');
+    assert.deepEqual(check('', 'clear').rows[0].changes, [{ field: 'locationInboxEmail', before: 'old@example.test', after: null }]);
+    assert.equal(check('new@example.test', 'clear').rows[0].action, 'blocked');
+    assert.equal(check('', 'delete').rows[0].action, 'blocked');
+    assert.equal(check('one@example.test;two@example.test', 'set').rows[0].action, 'blocked');
+  });
+
+  it('warns and binds explicit duplicate-inbox acknowledgments to the final selected Location IDs and versions', () => {
+    const existingSnapshot = {
+      ...snapshot,
+      locations: [
+        { ...baseLocation },
+        { ...baseLocation, id: 'loc-008', storeNumber: '008', name: 'Other Store', locationInboxEmail: 'shared@example.test', version: 4 },
+      ],
+    };
+    const csv = csvRow({ LocationId: 'loc-007', LocationInboxEmail: 'shared@example.test', LocationInboxEmailAction: 'set' });
+    const unacknowledged = buildLocationImportPlan(csv, existingSnapshot, undefined, () => 'loc-new');
+    assert.ok(unacknowledged.preview.rows[0].issues.some(item => item.code === 'duplicate_location_inbox'));
+    assert.equal(unacknowledged.writes[0].locationInboxAcknowledgment, undefined);
+
+    const acknowledged = buildLocationImportPlan(csv, existingSnapshot, undefined, () => 'loc-new', {
+      selectedRowNumbers: [2],
+      inboxAcknowledgedRowNumbers: [2],
+    });
+    assert.deepEqual(acknowledged.writes[0].locationInboxAcknowledgment, {
+      normalizedEmail: 'shared@example.test',
+      conflictDigest: locationInboxConflictDigest('shared@example.test', [
+        { id: 'loc-007', storeNumber: '007', version: 1 },
+        { id: 'loc-008', storeNumber: '008', version: 4 },
+      ]),
+    });
+  });
+
+  it('binds a new import row duplicate acknowledgment to its initial persisted version', () => {
+    const existingSnapshot = {
+      ...snapshot,
+      locations: [{ ...baseLocation, locationInboxEmail: 'shared@example.test', version: 4 }],
+    };
+    const csv = csvRow({
+      LocationId: 'loc-new',
+      StoreNumber: '009',
+      StoreName: 'New Store',
+      Type: 'Other Company Location',
+      Address: '9 Main Street',
+      City: 'Los Angeles',
+      State: 'CA',
+      ZipCode: '90003',
+      Phone: '2135550109',
+      TimeZone: 'America/Los_Angeles',
+      OperationalStatus: 'Open — Normal Operations',
+      RecordStatus: 'Active',
+      LocationInboxEmail: 'shared@example.test',
+    });
+    const acknowledged = buildLocationImportPlan(csv, existingSnapshot, undefined, () => 'loc-new', {
+      selectedRowNumbers: [2],
+      inboxAcknowledgedRowNumbers: [2],
+    });
+    assert.deepEqual(acknowledged.writes[0].locationInboxAcknowledgment, {
+      normalizedEmail: 'shared@example.test',
+      conflictDigest: locationInboxConflictDigest('shared@example.test', [
+        { id: 'loc-new', storeNumber: '009', version: 1 },
+        { id: baseLocation.id, storeNumber: baseLocation.storeNumber, version: 4 },
+      ]),
+    });
   });
 
   it('accepts the supported template with and without a UTF-8 BOM', () => {

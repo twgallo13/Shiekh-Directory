@@ -69,11 +69,11 @@ describe('Location editing export', () => {
     ]);
   });
 
-  it('round-trips conforming records unchanged with exact locations-v1 serialization', () => {
+  it('round-trips conforming records unchanged with exact locations-v2 serialization', () => {
     const source = snapshotWith([location()]);
     const result = buildLocationEditingExport(source, snapshotReadAt);
 
-    assert.equal(result.schemaVersion, 'locations-v1');
+    assert.equal(result.schemaVersion, 'locations-v2');
     assert.equal(result.snapshotReadAt, snapshotReadAt);
     assert.deepEqual(result.roundTrip, { unchanged: 1, updates: 0, additions: 0, blocked: 0, warnings: 0 });
     assert.equal(result.parts.length, 1);
@@ -220,9 +220,9 @@ describe('Location editing export', () => {
 
     assert.deepEqual(result.parts.map(part => part.recordCount), [100, 100, 5]);
     assert.deepEqual(result.parts.map(part => part.filename), [
-      'shiekh_locations_editing_v1_part_001_of_003.csv',
-      'shiekh_locations_editing_v1_part_002_of_003.csv',
-      'shiekh_locations_editing_v1_part_003_of_003.csv',
+      'shiekh_locations_editing_v2_part_001_of_003.csv',
+      'shiekh_locations_editing_v2_part_002_of_003.csv',
+      'shiekh_locations_editing_v2_part_003_of_003.csv',
     ]);
     assert.ok(result.parts.every(part => part.byteCount <= LOCATION_IMPORT_MAX_BYTES));
     const ids = result.parts.flatMap(part => (parse(part.csv!, { bom: true, columns: true }) as Array<{ LocationId: string }>).map(row => row.LocationId));

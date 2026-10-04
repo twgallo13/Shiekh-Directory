@@ -18,6 +18,7 @@ const PUBLIC_LOCATION_FIELDS = [
   "state",
   "zipCode",
   "phone",
+  "locationInboxEmail",
   "phonePrivacy",
   "timeZone",
   "district",

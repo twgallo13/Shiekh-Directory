@@ -53,7 +53,7 @@ test('editing export returns every bounded part from one authoritative snapshot 
     const preparedResponse = await prepare(app.baseUrl);
     assert.equal(preparedResponse.status, 200);
     const prepared = await preparedResponse.json();
-    assert.equal(prepared.schemaVersion, 'locations-v1');
+    assert.equal(prepared.schemaVersion, 'locations-v2');
     assert.equal(prepared.snapshotReadAt, snapshotReadAt);
     assert.equal(prepared.totalRecords, 101);
     assert.deepEqual(prepared.lifecycleCounts, { Active: 99, Draft: 1, Retired: 1, unrecognized: 0 });

@@ -12,6 +12,7 @@ import type { LocationImportManifest } from '../server/locationImportConfirmatio
 import { buildLocationEditingExport } from '../server/locationEditingExport';
 import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
 import { stringify } from 'csv-stringify/sync';
+import { locationInboxConflictDigest } from '../src/lib/locationInboxEmail';
 
 function databaseFixture() {
   const records = new Map<string, Record<string, unknown>>();
@@ -88,6 +89,90 @@ test('Location import confirmation atomically writes mixed changes, correlated a
   assert.equal(records.size, recordCount);
   await assert.rejects(store.confirmLocationImport({ ...manifest, sourceDigest: 'different' }, actor), /different import content/);
   assert.equal(records.size, recordCount);
+});
+
+test('older full Location writes preserve inboxes, explicit clears persist null, and duplicate acknowledgments recheck versions', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/loc-01', {
+    id: 'loc-01', storeNumber: '01', name: 'One', type: 'Other Company Location',
+    hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 0,
+    locationInboxEmail: 'one@example.test',
+  });
+  await store.commit([{
+    collection: 'locations', id: 'loc-01', operation: 'set', expectedVersion: 0,
+    data: { storeNumber: '01', name: 'Renamed', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active' },
+  }], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-01', entityName: 'Store 01', details: 'Older-client write.' }, actor);
+  assert.equal(records.get('locations/loc-01')?.locationInboxEmail, 'one@example.test');
+  await store.commit([{
+    collection: 'locations', id: 'loc-01', operation: 'set', expectedVersion: 1,
+    data: { storeNumber: '01', name: 'Renamed', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', locationInboxEmail: null },
+  }], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-01', entityName: 'Store 01', details: 'Explicit inbox clear.' }, actor);
+  assert.equal(records.get('locations/loc-01')?.locationInboxEmail, null);
+
+  records.set('locations/loc-02', {
+    id: 'loc-02', storeNumber: '02', name: 'Two', type: 'Other Company Location',
+    hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 0,
+  });
+  records.set('locations/loc-03', {
+    id: 'loc-03', storeNumber: '03', name: 'Three', type: 'Other Company Location',
+    hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 1,
+    locationInboxEmail: 'shared@example.test',
+  });
+  const locationWrite = {
+    collection: 'locations' as const, id: 'loc-02', operation: 'set' as const, expectedVersion: 0,
+    data: { storeNumber: '02', name: 'Two', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', locationInboxEmail: 'shared@example.test' },
+  };
+  const audit = { action: 'Location Updated', entityType: 'Location', entityId: 'loc-02', entityName: 'Store 02', details: 'Set shared inbox.' };
+  await assert.rejects(store.commit([locationWrite], audit, actor), DirectoryConflict);
+  const staleAcknowledgment = {
+    normalizedEmail: 'shared@example.test',
+    conflictDigest: locationInboxConflictDigest('shared@example.test', [
+      { id: 'loc-02', storeNumber: '02', version: 1 },
+      { id: 'loc-03', storeNumber: '03', version: 1 },
+    ]),
+  };
+  await store.commit([{
+    collection: 'locations', id: 'loc-03', operation: 'set', expectedVersion: 1,
+    data: { storeNumber: '03', name: 'Three updated', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active' },
+  }], { action: 'Location Updated', entityType: 'Location', entityId: 'loc-03', entityName: 'Store 03', details: 'Unrelated edit.' }, actor);
+  await assert.rejects(store.commit([{ ...locationWrite, locationInboxAcknowledgment: staleAcknowledgment }], audit, actor), DirectoryConflict);
+
+  const currentAcknowledgment = {
+    normalizedEmail: 'shared@example.test',
+    conflictDigest: locationInboxConflictDigest('shared@example.test', [
+      { id: 'loc-02', storeNumber: '02', version: 1 },
+      { id: 'loc-03', storeNumber: '03', version: 2 },
+    ]),
+  };
+  await store.commit([{ ...locationWrite, locationInboxAcknowledgment: currentAcknowledgment }], audit, actor);
+  assert.equal(records.get('locations/loc-02')?.locationInboxEmail, 'shared@example.test');
+  const auditRecord = [...records.entries()].find(([path, value]) => path.startsWith('audit_logs/') && value.entityId === 'loc-02')?.[1];
+  assert.match(String(auditRecord?.details), /Acknowledged shared location inbox duplicate/);
+});
+
+test('a manually created Location can acknowledge a shared inbox without changing identity or assigning login data', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  records.set('locations/loc-existing', {
+    id: 'loc-existing', storeNumber: '07', name: 'Existing', type: 'Other Company Location',
+    hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', locationInboxEmail: 'shared@example.test',
+  });
+  const write = {
+    collection: 'locations' as const, id: 'loc-new', operation: 'set' as const,
+    data: { storeNumber: '08', name: 'New', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', locationInboxEmail: 'shared@example.test' },
+    locationInboxAcknowledgment: {
+      normalizedEmail: 'shared@example.test',
+      conflictDigest: locationInboxConflictDigest('shared@example.test', [
+        { id: 'loc-existing', storeNumber: '07', version: 0 },
+        { id: 'loc-new', storeNumber: '08', version: 0 },
+      ]),
+    },
+  };
+  await store.commit([write], { action: 'Location Created', entityType: 'Location', entityId: 'loc-new', entityName: 'Store 08', details: 'Created with shared inbox.' }, actor);
+  assert.equal(records.get('locations/loc-new')?.locationInboxEmail, 'shared@example.test');
+  assert.equal(records.get('locations/loc-new')?.storeNumber, '08');
+  assert.equal(records.get('locations/loc-new')?.personId, undefined);
 });
 
 test('editing export to preview and confirmation preserves unrelated Location fields', async () => {
@@ -478,6 +563,74 @@ test('directory commit binds approval to persisted location target and requested
 
   assert.equal(records.get('requests/req-1')?.status, 'Approved');
   assert.equal(records.get('locations/loc-07')?.name, 'Approved Name');
+});
+
+test('Location inbox correction approval validates its snapshot, duplicate acknowledgment, and explicit clear', async () => {
+  const { store, records } = databaseFixture();
+  const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const target = {
+    id: 'loc-target', storeNumber: '07', name: 'Target', type: 'Other Company Location',
+    hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 0,
+    locationInboxEmail: 'old@example.test',
+  };
+  const duplicate = {
+    id: 'loc-other', storeNumber: '08', name: 'Other', type: 'Other Company Location',
+    hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 3,
+    locationInboxEmail: 'shared@example.test',
+  };
+  records.set('locations/loc-target', target);
+  records.set('locations/loc-other', duplicate);
+  records.set('requests/req-inbox', {
+    id: 'req-inbox', targetType: 'Location', targetId: 'loc-target', status: 'Pending', version: 0,
+    requestedChanges: { locationInboxEmail: 'shared@example.test' },
+    currentSnapshot: { locationInboxEmail: 'stale@example.test' },
+  });
+  const requestApproval = {
+    collection: 'requests' as const, id: 'req-inbox', operation: 'set' as const, expectedVersion: 0,
+    data: { targetType: 'Location', targetId: 'loc-target', status: 'Approved', requestedChanges: { locationInboxEmail: 'shared@example.test' } },
+  };
+  const targetApproval = {
+    collection: 'locations' as const, id: 'loc-target', operation: 'set' as const, expectedVersion: 0,
+    data: { ...target, version: undefined, locationInboxEmail: 'shared@example.test' },
+    locationInboxAcknowledgment: {
+      normalizedEmail: 'shared@example.test',
+      conflictDigest: locationInboxConflictDigest('shared@example.test', [
+        { id: 'loc-target', storeNumber: '07', version: 1 },
+        { id: 'loc-other', storeNumber: '08', version: 3 },
+      ]),
+    },
+  };
+  await assert.rejects(store.commit([requestApproval, targetApproval], {
+    action: 'Request Approved', entityType: 'Request', entityId: 'req-inbox', entityName: 'Inbox change', details: 'Approve stale request.',
+  }, actor), DirectoryConflict);
+  assert.equal(records.get('locations/loc-target')?.locationInboxEmail, 'old@example.test');
+
+  records.set('requests/req-inbox', {
+    id: 'req-inbox', targetType: 'Location', targetId: 'loc-target', status: 'Pending', version: 0,
+    requestedChanges: { locationInboxEmail: 'shared@example.test' },
+    currentSnapshot: { locationInboxEmail: 'old@example.test' },
+  });
+  await store.commit([requestApproval, targetApproval], {
+    action: 'Request Approved', entityType: 'Request', entityId: 'req-inbox', entityName: 'Inbox change', details: 'Approve reviewed request.',
+  }, actor);
+  assert.equal(records.get('locations/loc-target')?.locationInboxEmail, 'shared@example.test');
+
+  records.set('requests/req-clear', {
+    id: 'req-clear', targetType: 'Location', targetId: 'loc-target', status: 'Pending', version: 0,
+    requestedChanges: { locationInboxEmail: null },
+    currentSnapshot: { locationInboxEmail: 'shared@example.test' },
+  });
+  await store.commit([
+    {
+      collection: 'requests', id: 'req-clear', operation: 'set', expectedVersion: 0,
+      data: { targetType: 'Location', targetId: 'loc-target', status: 'Approved', requestedChanges: { locationInboxEmail: null } },
+    },
+    {
+      collection: 'locations', id: 'loc-target', operation: 'set', expectedVersion: 1,
+      data: { ...records.get('locations/loc-target'), locationInboxEmail: null },
+    },
+  ], { action: 'Request Approved', entityType: 'Request', entityId: 'req-clear', entityName: 'Inbox clear', details: 'Clear reviewed inbox.' }, actor);
+  assert.equal(records.get('locations/loc-target')?.locationInboxEmail, null);
 });
 
 test('directory commit supports person approval and handles linked users when inactivating people', async () => {

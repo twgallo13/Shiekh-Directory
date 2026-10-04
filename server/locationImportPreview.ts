@@ -114,10 +114,27 @@ export function createLocationImportPreviewRouter(
       const issuedAt = now();
       const mode = parseImportMode(request.body?.mode);
       const mappings = parseImportMappings(request.body?.mappings);
-      const plan = buildLocationImportPlan(csv, snapshot, issuedAt.toISOString(), () => `loc-${randomUUID()}`, { mode, mappings });
+      const inboxAcknowledgedRowNumbers = parseInboxAcknowledgedRows(request.body?.inboxAcknowledgedRowNumbers);
+      let nextGeneratedId = 0;
+      const generatedLocationIds = new Map<number, string>();
+      const createLocationId = () => {
+        nextGeneratedId += 1;
+        const key = nextGeneratedId;
+        if (!generatedLocationIds.has(key)) generatedLocationIds.set(key, `loc-${randomUUID()}`);
+        return generatedLocationIds.get(key)!;
+      };
+      let plan = buildLocationImportPlan(csv, snapshot, issuedAt.toISOString(), createLocationId, { mode, mappings });
       if (plan.preview.summary.totalRows > LOCATION_IMPORT_MAX_ROWS) throw new PreviewHttpError(400, 'batch_too_large', `Location imports support at most ${LOCATION_IMPORT_MAX_ROWS} rows.`);
       const defaultSelectionExceedsLimit = request.body?.selectedRowNumbers === undefined && plan.writes.length > LOCATION_IMPORT_MAX_CHANGED_ROWS;
       const selectedRowNumbers = defaultSelectionExceedsLimit ? [] : parseSelectedRows(request.body?.selectedRowNumbers, plan);
+      nextGeneratedId = 0;
+      plan = buildLocationImportPlan(csv, snapshot, issuedAt.toISOString(), createLocationId, {
+        mode, mappings, inboxAcknowledgedRowNumbers, selectedRowNumbers,
+      });
+      if (inboxAcknowledgedRowNumbers.some(rowNumber => !plan.preview.rows.some(row => row.rowNumber === rowNumber
+        && row.issues.some(item => item.code === 'duplicate_location_inbox')))) {
+        throw new PreviewHttpError(400, 'invalid_inbox_acknowledgment', 'A shared inbox acknowledgment does not match a currently conflicting selected CSV row. Preview the file again.');
+      }
       const selectedWrites = plan.writes.filter(write => selectedRowNumbers.includes(write.rowNumber || -1));
       if (selectedWrites.length > LOCATION_IMPORT_MAX_CHANGED_ROWS) throw new PreviewHttpError(400, 'batch_too_large', `Select at most ${LOCATION_IMPORT_MAX_CHANGED_ROWS} changed rows for one atomic import.`);
       const preview = {
@@ -128,6 +145,15 @@ export function createLocationImportPreviewRouter(
         ...(defaultSelectionExceedsLimit ? { confirmationDisabledReason: `This file has more than ${LOCATION_IMPORT_MAX_CHANGED_ROWS} ready changes. Select up to ${LOCATION_IMPORT_MAX_CHANGED_ROWS} rows and revalidate; the server will not split the import.` } : {}),
       };
       if (selectedWrites.length === 0) return response.status(200).json(preview);
+      const missingInboxAcknowledgment = selectedWrites.some(write => plan.preview.rows
+        .find(row => row.rowNumber === write.rowNumber)?.issues.some(item => item.code === 'duplicate_location_inbox')
+        && !write.locationInboxAcknowledgment);
+      if (missingInboxAcknowledgment) {
+        return response.status(200).json({
+          ...preview,
+          confirmationDisabledReason: 'Review and explicitly acknowledge each selected shared location inbox conflict, then revalidate the batch.',
+        });
+      }
       if (!options.tokenSecret || !store.confirmLocationImport) {
         return response.status(200).json({
           ...preview,
@@ -151,10 +177,11 @@ export function createLocationImportPreviewRouter(
         schema: plan.preview.schemaVersion,
         actorDigest: digestLocationImportActor(account),
         sourceDigest: digestLocationImportSource(csv),
-        requestDigest: digestLocationImportRequest({ csv, mappings: plan.preview.mappings || [], mode, selectedRowNumbers }),
+        requestDigest: digestLocationImportRequest({ csv, mappings: plan.preview.mappings || [], mode, selectedRowNumbers, inboxAcknowledgedRowNumbers }),
         mode,
         mappings: plan.preview.mappings,
         selectedRowNumbers,
+        inboxAcknowledgedRowNumbers,
         operationId,
         batchId,
         issuedAt: issuedAt.toISOString(),
@@ -192,7 +219,8 @@ export function createLocationImportPreviewRouter(
       const mode = parseImportMode(request.body?.mode);
       const mappings = parseImportMappings(request.body?.mappings);
       const selectedRowNumbers = parseConfirmationSelectedRows(request.body?.selectedRowNumbers);
-      if (manifest.requestDigest !== digestLocationImportRequest({ csv, mappings, mode, selectedRowNumbers })) {
+      const inboxAcknowledgedRowNumbers = parseInboxAcknowledgedRows(request.body?.inboxAcknowledgedRowNumbers);
+      if (manifest.requestDigest !== digestLocationImportRequest({ csv, mappings, mode, selectedRowNumbers, inboxAcknowledgedRowNumbers })) {
         throw new LocationImportConfirmationError('confirmation_mismatch', 'The file, mappings, mode, or selected rows changed after review. Preview again.');
       }
       if (manifest.actorDigest !== digestLocationImportActor(account)) throw new LocationImportConfirmationError('confirmation_mismatch', 'Your current authority does not match this confirmation.');
@@ -244,7 +272,17 @@ function parseConfirmationSelectedRows(value: unknown): number[] {
     || new Set(value).size !== value.length) {
     throw new PreviewHttpError(400, 'invalid_selection', 'Selected CSV rows must be unique row numbers from this preview.');
   }
+
   return value as number[];
+}
+
+function parseInboxAcknowledgedRows(value: unknown): number[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some(rowNumber => !Number.isInteger(rowNumber) || rowNumber < 2)
+    || new Set(value).size !== value.length) {
+    throw new PreviewHttpError(400, 'invalid_inbox_acknowledgment', 'Shared inbox acknowledgment rows are malformed.');
+  }
+  return [...value as number[]].sort((left, right) => left - right);
 }
 
 export class FirestoreLocationImportPreviewStore implements LocationImportPreviewStore {

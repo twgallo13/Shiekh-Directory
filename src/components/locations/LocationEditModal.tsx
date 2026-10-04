@@ -10,6 +10,7 @@ import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/cont
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
 import { 
   X, 
   Save, 
@@ -69,11 +70,16 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     hoursTemplates, 
     corporateHolidays,
     people,
+    locations,
     regions,
     districts,
   } = useDirectory();
 
   const [formData, setFormData] = useState<LocationRecord | null>(() => location ? normalizeLocation(location) : null);
+  const baselineRef = useRef<LocationRecord | null>(location ? structuredClone(location) : null);
+  const expectedVersionRef = useRef(location?.version ?? 0);
+  const [createId] = useState(() => `loc-${crypto.randomUUID()}`);
+  const [inboxConflictAcknowledged, setInboxConflictAcknowledged] = useState(false);
   const [activeTab, setActiveTab] = useState<EditModalTab>('details');
   const [confirmation, setConfirmation] = useState<'discard' | 'retire' | 'reactivate' | null>(null);
   const [saving, setSaving] = useState(false);
@@ -84,18 +90,21 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
   useEffect(() => {
     if (location) {
-      setFormData(normalizeLocation(location));
+      const baseline = structuredClone(location);
+      baselineRef.current = baseline;
+      expectedVersionRef.current = location.version ?? 0;
+      setFormData(normalizeLocation(baseline));
       setActiveTab('details');
       setConfirmation(null);
       setSaveError('');
       setContactErrors({});
     }
-  }, [location]);
+  }, [location?.id]);
 
   const isDirty = useMemo(() => {
-    if (!location || !formData) return false;
-    return JSON.stringify(formData) !== JSON.stringify(normalizeLocation(location));
-  }, [formData, location]);
+    if (!formData || !baselineRef.current) return false;
+    return JSON.stringify(formData) !== JSON.stringify(normalizeLocation(baselineRef.current));
+  }, [formData]);
 
   const requestClose = useCallback(() => {
     if (saving) return;
@@ -119,6 +128,14 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const currentRegion = regions.find(region => region.id === formData?.regionId);
   const currentDistrict = districts.find(district => district.id === formData?.districtId);
   const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
+  const normalizedInbox = formData?.locationInboxEmail == null ? null : normalizeLocationInboxEmail(formData.locationInboxEmail);
+  const inboxConflicts = normalizedInbox
+    ? locations.filter(item => item.id !== formData?.id
+      && normalizeLocationInboxEmail(item.locationInboxEmail)?.comparisonKey === normalizedInbox.comparisonKey)
+    : [];
+  const retailSuggestion = formData && ['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location'].includes(formData.type)
+    ? suggestedLocationInboxEmail(formData.storeNumber)
+    : null;
 
   if (!location || !formData) return null;
 
@@ -126,13 +143,14 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     e.preventDefault();
     if (saving) return;
     const normalizedPhone = normalizeUsPhone(formData.phone);
-    const legacyPhoneUnchanged = !normalizedPhone && formData.phone === formatUsPhone(location.phone, location.phoneExtension);
+    const baseline = baselineRef.current || location;
+    const legacyPhoneUnchanged = !normalizedPhone && formData.phone === formatUsPhone(baseline.phone, baseline.phoneExtension);
     if (!normalizedPhone && !legacyPhoneUnchanged) {
       setContactErrors({ phone: 'Enter a valid US phone number, such as (555) 123-4567.' });
       return;
     }
-    const normalizedStorePageUrl = formData.storePageUrl && formData.storePageUrl !== location.storePageUrl ? normalizeWebUrl(formData.storePageUrl) : formData.storePageUrl;
-    const normalizedGoogleReviewUrl = formData.googleReviewUrl && formData.googleReviewUrl !== location.googleReviewUrl ? normalizeWebUrl(formData.googleReviewUrl) : formData.googleReviewUrl;
+    const normalizedStorePageUrl = formData.storePageUrl && formData.storePageUrl !== baseline.storePageUrl ? normalizeWebUrl(formData.storePageUrl) : formData.storePageUrl;
+    const normalizedGoogleReviewUrl = formData.googleReviewUrl && formData.googleReviewUrl !== baseline.googleReviewUrl ? normalizeWebUrl(formData.googleReviewUrl) : formData.googleReviewUrl;
     if ((formData.storePageUrl && !normalizedStorePageUrl) || (formData.googleReviewUrl && !normalizedGoogleReviewUrl)) {
       setContactErrors(errors => ({ ...errors, ...(formData.storePageUrl && !normalizedStorePageUrl ? { storePageUrl: 'Enter a valid HTTP or HTTPS URL.' } : {}), ...(formData.googleReviewUrl && !normalizedGoogleReviewUrl ? { googleReviewUrl: 'Enter a valid HTTP or HTTPS URL.' } : {}) }));
       return;
@@ -162,11 +180,34 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
         .filter((name): name is string => Boolean(name)),
       holidayHours: (formData.holidayHours || []).filter(h => h.holidayName.trim().length > 0 || h.date.trim().length > 0)
     };
+    if (isCreating) sanitizedData.id = createId;
+    if (sanitizedData.locationInboxEmail !== undefined && sanitizedData.locationInboxEmail !== null
+      && sanitizedData.locationInboxEmail !== baseline.locationInboxEmail && !normalizeLocationInboxEmail(sanitizedData.locationInboxEmail)) {
+      setContactErrors(errors => ({ ...errors, locationInboxEmail: 'Enter one valid email address, or use Clear to remove it.' }));
+      return;
+    }
+    const inboxChanged = sanitizedData.locationInboxEmail !== baseline.locationInboxEmail;
+    let inboxAcknowledgment;
+    if (inboxChanged && normalizedInbox && inboxConflicts.length > 0) {
+      if (!inboxConflictAcknowledged) {
+        setContactErrors(errors => ({ ...errors, locationInboxEmail: 'Acknowledge the shared inbox locations before saving.' }));
+        return;
+      }
+      const expectedVersion = isCreating ? 0 : expectedVersionRef.current + 1;
+      const members: LocationInboxConflictMember[] = [
+        { id: sanitizedData.id, storeNumber: sanitizedData.storeNumber, version: expectedVersion },
+        ...inboxConflicts.map(item => ({ id: item.id, storeNumber: item.storeNumber, version: item.version ?? 0 })),
+      ];
+      inboxAcknowledgment = {
+        normalizedEmail: normalizedInbox.comparisonKey,
+        conflictDigest: locationInboxConflictDigest(normalizedInbox.value, members),
+      };
+    }
 
     setSaving(true); setSaveError('');
     try {
-      sanitizedData.customMetadata = validateCustomMetadata(sanitizedData.customMetadata || {}, customFieldDefinitions, location.customMetadata || {});
-      await saveLocationRecord(sanitizedData, isCreating, location.customMetadata || {});
+      sanitizedData.customMetadata = validateCustomMetadata(sanitizedData.customMetadata || {}, customFieldDefinitions, baseline.customMetadata || {});
+      await saveLocationRecord(sanitizedData, isCreating, baseline.customMetadata || {}, expectedVersionRef.current, inboxAcknowledgment);
       onSaved?.(`Store #${sanitizedData.storeNumber} was ${isCreating ? 'created' : 'saved'}.`);
       onClose();
     } catch (error) { setSaveError(error instanceof Error ? error.message : 'The location could not be saved.'); }
@@ -648,7 +689,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                 <div className="flex items-center gap-2 pb-2 border-b border-neutral-200">
                   <MapPin className="w-4 h-4 text-neutral-600" />
                   <h3 className="text-sm font-semibold text-neutral-900">
-                    Address & Phone
+                    Address & Contacts
                   </h3>
                 </div>
 
@@ -723,12 +764,74 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       onBlur={(event) => {
                         const normalized = normalizeUsPhone(event.target.value);
                         if (normalized) setFormData({ ...formData, phone: normalized.display });
-                        else if (event.target.value !== formatUsPhone(location.phone, location.phoneExtension)) setContactErrors(errors => ({ ...errors, phone: 'Enter a valid US phone number, such as (555) 123-4567.' }));
+                        else if (event.target.value !== formatUsPhone(baselineRef.current?.phone || '', baselineRef.current?.phoneExtension)) setContactErrors(errors => ({ ...errors, phone: 'Enter a valid US phone number, such as (555) 123-4567.' }));
                       }}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 font-mono text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                     />
                     {contactErrors.phone && <p className="mt-1 text-xs text-red-600">{contactErrors.phone}</p>}
                     {!normalizeUsPhone(formData.phone) && formData.phone && <p className="mt-1 text-xs text-amber-700">Legacy phone value needs review.</p>}
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="location-inbox-email" className="block text-xs font-medium text-neutral-700">
+                        Location / Store Inbox (Optional)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        {retailSuggestion && !formData.locationInboxEmail && (
+                          <button
+                            type="button"
+                            onClick={() => { setFormData({ ...formData, locationInboxEmail: retailSuggestion }); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); setInboxConflictAcknowledged(false); }}
+                            className="text-[11px] font-semibold text-red-700 hover:underline"
+                          >
+                            Use suggestion: {retailSuggestion}
+                          </button>
+                        )}
+                        {formData.locationInboxEmail && (
+                          <button
+                            type="button"
+                            onClick={() => { setFormData({ ...formData, locationInboxEmail: null }); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); setInboxConflictAcknowledged(false); }}
+                            className="text-[11px] font-semibold text-neutral-600 hover:text-red-700 hover:underline"
+                          >
+                            Clear inbox
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <input
+                      id="location-inbox-email"
+                      type="email"
+                      value={formData.locationInboxEmail || ''}
+                      onChange={event => {
+                        setFormData({ ...formData, locationInboxEmail: event.target.value });
+                        setContactErrors(errors => ({ ...errors, locationInboxEmail: '' }));
+                        setInboxConflictAcknowledged(false);
+                      }}
+                      placeholder="store@example.com"
+                      aria-describedby="location-inbox-help"
+                      className="w-full min-w-0 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
+                    />
+                    <p id="location-inbox-help" className="mt-1 text-[11px] text-neutral-500">
+                      Shared location contact only; it does not create or change a person’s sign-in.
+                      {formData.locationInboxEmail === null && baselineRef.current?.locationInboxEmail
+                        ? ' Removal is pending until you save.'
+                        : ''}
+                    </p>
+                    {contactErrors.locationInboxEmail && <p role="alert" className="mt-1 text-xs text-red-700">{contactErrors.locationInboxEmail}</p>}
+                    {inboxConflicts.length > 0 && (
+                      <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950">
+                        <p>This inbox is already recorded for {inboxConflicts.map(item => `Store #${item.storeNumber} (${item.name})`).join(', ')}. Locations may intentionally share an inbox.</p>
+                        <label className="mt-2 flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            checked={inboxConflictAcknowledged}
+                            onChange={event => { setInboxConflictAcknowledged(event.target.checked); setContactErrors(errors => ({ ...errors, locationInboxEmail: '' })); }}
+                            className="mt-0.5 accent-red-700"
+                          />
+                          <span>I reviewed these locations and confirm this inbox may be shared.</span>
+                        </label>
+                      </div>
+                    )}
                   </div>
 
                   <div>

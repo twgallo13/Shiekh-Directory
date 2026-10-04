@@ -10,6 +10,7 @@ import { ConfirmDialog } from '../common/ConfirmDialog';
 import { FormLabel } from '../common/FormLabel';
 import { Modal } from '../common/Modal';
 import { resolvePersonPhone } from '../../lib/personContacts';
+import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -29,6 +30,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   const [newStatus, setNewStatus] = useState('Open — Normal Operations');
   const [noticeText, setNoticeText] = useState('');
   const [newHours, setNewHours] = useState(location?.standardHours || DEFAULT_WEEKLY_HOURS);
+  const [newLocationInboxEmail, setNewLocationInboxEmail] = useState('');
+  const [clearLocationInboxEmail, setClearLocationInboxEmail] = useState(false);
+  const [formError, setFormError] = useState('');
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   const targetLoc = locations.find(l => l.id === selectedLocId);
@@ -41,6 +45,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     newManager ||
     newStatus !== 'Open — Normal Operations' ||
     noticeText.trim()
+    || newLocationInboxEmail.trim()
+    || clearLocationInboxEmail
   );
 
   const requestClose = () => {
@@ -79,6 +85,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     } else if (changeType === 'Standard Hours Adjustment') {
       requestedChanges.standardHours = newHours;
       currentSnapshot.standardHours = targetLoc.standardHours;
+    } else if (changeType === 'Other Store Info Update') {
+      const proposedInbox = clearLocationInboxEmail ? null : normalizeLocationInboxEmail(newLocationInboxEmail)?.value;
+      if (proposedInbox === undefined) {
+        setFormError('Enter one valid shared location inbox email, or explicitly choose Clear inbox.');
+        return;
+      }
+      requestedChanges.locationInboxEmail = proposedInbox;
+      currentSnapshot.locationInboxEmail = targetLoc.locationInboxEmail ?? null;
     }
 
     submitRequest({
@@ -112,6 +126,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
         onClose={requestClose}
       >
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+            {formError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800">{formError}</p>}
           <div>
             <FormLabel>Target Location</FormLabel>
             <select
@@ -145,6 +160,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
               <option value="Store Manager Change">Store Manager Leadership Change</option>
               <option value="Operational Status Change">Operational Status & Temporary Notice</option>
               <option value="Standard Hours Adjustment">Standard Hours Adjustment</option>
+              <option value="Other Store Info Update">Other Store Info Update (including shared inbox)</option>
             </select>
           </div>
 
@@ -209,6 +225,30 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
                 schedule={newHours}
                 onChange={setNewHours}
               />
+            </div>
+          )}
+
+          {changeType === 'Other Store Info Update' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <FormLabel>Proposed Shared Location Inbox</FormLabel>
+                <button type="button" onClick={() => { setClearLocationInboxEmail(true); setNewLocationInboxEmail(''); setFormError(''); }} className="text-[11px] font-semibold text-red-700 hover:underline">
+                  Clear inbox
+                </button>
+              </div>
+              {!clearLocationInboxEmail ? (
+                <input
+                  type="email"
+                  value={newLocationInboxEmail}
+                  onChange={event => { setNewLocationInboxEmail(event.target.value); setFormError(''); }}
+                  placeholder="store@example.com"
+                  className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none"
+                />
+              ) : (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">This request proposes removing the location inbox. Approval is required before the change is applied.</p>
+              )}
+              {clearLocationInboxEmail && <button type="button" onClick={() => setClearLocationInboxEmail(false)} className="text-[11px] font-semibold text-neutral-600 hover:underline">Undo clear</button>}
+              <p className="text-[11px] text-neutral-500">A shared Location contact only. This does not change a person’s sign-in or send email.</p>
             </div>
           )}
 

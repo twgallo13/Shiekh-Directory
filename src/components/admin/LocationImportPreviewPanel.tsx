@@ -26,6 +26,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
   const [mode, setMode] = useState<LocationImportMode>('add-and-update');
   const [mappingReviewed, setMappingReviewed] = useState(false);
   const [selectedRowNumbers, setSelectedRowNumbers] = useState<number[]>([]);
+  const [inboxAcknowledgedRowNumbers, setInboxAcknowledgedRowNumbers] = useState<number[]>([]);
   const [selectionDirty, setSelectionDirty] = useState(false);
   const [confirmationOutcome, setConfirmationOutcome] = useState<LocationImportConfirmationOutcome>('pending');
   const [completedImport, setCompletedImport] = useState<{ preview: LocationImportPreview; receipt: LocationImportReceipt; filename: string } | null>(null);
@@ -49,6 +50,16 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     } finally {
       setBusy(null);
     }
+  };
+
+  const toggleInboxAcknowledgment = (rowNumber: number, acknowledged: boolean) => {
+    setInboxAcknowledgedRowNumbers(current => acknowledged
+      ? [...new Set([...current, rowNumber])].sort((left, right) => left - right)
+      : current.filter(candidate => candidate !== rowNumber));
+    setSelectionDirty(true);
+    setReceipt(null);
+    setConfirmationOutcome('pending');
+    setWarningsReviewed(false);
   };
 
   const prepareEditingExport = async () => {
@@ -92,6 +103,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
     setMappings([]);
     setMappingReviewed(false);
     setSelectedRowNumbers([]);
+    setInboxAcknowledgedRowNumbers([]);
     setSelectionDirty(false);
     setConfirmationOutcome('pending');
     if (!user) {
@@ -132,6 +144,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
         mappings,
         mode,
         ...(selection === undefined ? {} : { selectedRowNumbers: selection }),
+        inboxAcknowledgedRowNumbers,
       });
       setPreview(result.preview);
       setMappings(result.preview.mappings || mappings);
@@ -192,6 +205,7 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
         mappings,
         mode,
         selectedRowNumbers,
+        inboxAcknowledgedRowNumbers,
       });
       onLocationsConfirmed(result.locations.map(location => location.record));
       setReceipt(result);
@@ -491,6 +505,18 @@ export function LocationImportPreviewPanel({ user, onAddStore, onLocationsConfir
                             <div>{issue.reason}</div>
                             {issue.candidates && <div>Candidates: {issue.candidates.join(' | ')}</div>}
                             <div className="font-medium">Next: {issue.correction}</div>
+                            {issue.code === 'duplicate_location_inbox' && (
+                              <label className="mt-2 flex items-start gap-2 text-neutral-800">
+                                <input
+                                  type="checkbox"
+                                  checked={inboxAcknowledgedRowNumbers.includes(row.rowNumber)}
+                                  disabled={Boolean(busy) || outcomeUnknown}
+                                  onChange={event => toggleInboxAcknowledgment(row.rowNumber, event.target.checked)}
+                                  className="mt-0.5"
+                                />
+                                <span>I reviewed the shared inbox conflict for this row. Revalidate to bind my acknowledgment to the current Location IDs and versions.</span>
+                              </label>
+                            )}
                           </div>
                         ))}
                       </td>

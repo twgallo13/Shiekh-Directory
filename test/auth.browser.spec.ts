@@ -241,6 +241,55 @@ test('Location edit reconciles committed versions across consecutive saves and r
   await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Custom metadata changed. Reload the directory before saving.');
 });
 
+for (const width of [320, 390]) {
+  test(`Location inbox edit, clear, and tab persistence at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const fixture = await prepareCustomFields(page);
+    fixture.seed.locations[0].locationInboxEmail = 'old@example.test';
+    await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+
+    const inbox = page.getByLabel('Location / Store Inbox (Optional)');
+    await expect(inbox).toHaveValue('old@example.test');
+    await inbox.fill('Long.Store.Team+contact@example.test');
+    await page.getByRole('button', { name: 'Hours', exact: true }).click();
+    await page.getByRole('button', { name: 'Store', exact: true }).click();
+    await expect(inbox).toHaveValue('Long.Store.Team+contact@example.test');
+    await page.getByRole('button', { name: /Save.*Record/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(fixture.commits[0].writes[0].data.locationInboxEmail).toBe('Long.Store.Team+contact@example.test');
+    expect(fixture.commits[0].writes[0].expectedVersion).toBe(0);
+
+    await page.goto(`${origin}/locations/loc-custom`); await restore(page, true);
+    await expect(page.getByText('Long.Store.Team+contact@example.test', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy location inbox' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Email location inbox' })).toBeVisible();
+    await expect(page.getByText('Phone privacy', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+    await page.getByRole('button', { name: 'Clear inbox' }).click();
+    await expect(page.getByText('Removal is pending until you save.')).toBeVisible();
+    await page.getByRole('button', { name: /Save.*Record/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(fixture.commits[1].writes[0].data.locationInboxEmail).toBeNull();
+    expect(fixture.commits[1].writes[0].expectedVersion).toBe(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}
+
+test('Location inbox draft remains visible after a stale-save conflict', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const fixture = await prepareCustomFields(page);
+  await page.goto(`${origin}/locations/loc-custom/edit`); await restore(page, true);
+  const inbox = page.getByLabel('Location / Store Inbox (Optional)');
+  await inbox.fill('draft@example.test');
+  fixture.failWrites();
+  await page.getByRole('button', { name: /Save.*Record/ }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Custom metadata changed. Reload the directory before saving.');
+  await expect(inbox).toHaveValue('draft@example.test');
+  expect(fixture.commits[0].writes[0].expectedVersion).toBe(0);
+});
+
 for (const width of [1440, 390]) {
   test(`Custom Fields create, save, reload and retire at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });

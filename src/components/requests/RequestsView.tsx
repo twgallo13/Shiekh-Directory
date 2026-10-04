@@ -5,6 +5,7 @@ import { GitPullRequest, Check, X, Clock, Plus } from 'lucide-react';
 import { Button } from '../common/Button';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
+import { locationInboxConflictDigest, normalizeLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
 
 interface RequestsViewProps {
   onOpenNewRequest: () => void;
@@ -118,9 +119,10 @@ const renderFormattedValue = (value: unknown): React.ReactNode => {
 };
 
 export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) => {
-  const { requests, currentUser, approveRequest, rejectRequest } = useDirectory();
+  const { requests, locations, currentUser, approveRequest, rejectRequest } = useDirectory();
   const [filter, setFilter] = useState<'All' | 'Pending' | 'Approved' | 'Rejected'>('All');
   const [reviewerNotes, setReviewerNotes] = useState<{ [id: string]: string }>({});
+  const [inboxConflictAcknowledged, setInboxConflictAcknowledged] = useState<Record<string, boolean>>({});
 
   const canReview = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
@@ -162,6 +164,22 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
       <div className="space-y-3">
         {filtered.map(req => {
           const isPending = req.status === 'Pending';
+          const targetLocation = req.targetType === 'Location' ? locations.find(location => location.id === req.targetId) : undefined;
+          const proposedInbox = req.changeType === 'Other Store Info Update' ? req.requestedChanges.locationInboxEmail : undefined;
+          const normalizedInbox = typeof proposedInbox === 'string' ? normalizeLocationInboxEmail(proposedInbox) : null;
+          const inboxConflicts = normalizedInbox
+            ? locations.filter(location => location.id !== req.targetId
+              && normalizeLocationInboxEmail(location.locationInboxEmail)?.comparisonKey === normalizedInbox.comparisonKey)
+            : [];
+          const inboxConflictMembers: LocationInboxConflictMember[] = targetLocation && normalizedInbox && inboxConflicts.length > 0
+            ? [
+              { id: targetLocation.id, storeNumber: targetLocation.storeNumber, version: (targetLocation.version ?? 0) + 1 },
+              ...inboxConflicts.map(location => ({ id: location.id, storeNumber: location.storeNumber, version: location.version ?? 0 })),
+            ]
+            : [];
+          const inboxAcknowledgment = normalizedInbox && inboxConflictMembers.length > 1 && inboxConflictAcknowledged[req.id]
+            ? { normalizedEmail: normalizedInbox.comparisonKey, conflictDigest: locationInboxConflictDigest(normalizedInbox.value, inboxConflictMembers) }
+            : undefined;
           return (
             <div
               key={req.id}
@@ -267,6 +285,12 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
               {/* Reviewer Action Bar */}
               {isPending && canReview && (
                 <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-3">
+                  {inboxConflicts.length > 0 && (
+                    <label className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-950">
+                      <input type="checkbox" checked={Boolean(inboxConflictAcknowledged[req.id])} onChange={event => setInboxConflictAcknowledged(previous => ({ ...previous, [req.id]: event.target.checked }))} className="mt-0.5" />
+                      <span>This inbox is also assigned to {inboxConflicts.map(location => `Store #${location.storeNumber}`).join(', ')}. I reviewed and acknowledge the shared inbox locations.</span>
+                    </label>
+                  )}
                   <input
                     type="text"
                     placeholder="Optional reviewer notes..."
@@ -284,7 +308,8 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
                     </button>
                     <button
                       type="button"
-                      onClick={() => approveRequest(req.id, reviewerNotes[req.id])}
+                      disabled={inboxConflicts.length > 0 && !inboxAcknowledgment}
+                      onClick={() => approveRequest(req.id, reviewerNotes[req.id], inboxAcknowledgment)}
                       className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors"
                     >
                       <Check className="w-3.5 h-3.5" />

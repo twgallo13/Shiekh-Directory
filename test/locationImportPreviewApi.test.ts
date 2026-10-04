@@ -198,6 +198,50 @@ test('eligible previews issue bound tokens and confirmation rejects tampering, m
   } finally { await warningApp.close(); }
 });
 
+test('shared inbox import acknowledgments are required, signed, and checked at confirmation', async () => {
+  let confirmed: LocationImportManifest | undefined;
+  const snapshot = structuredClone(seed);
+  snapshot.locations[0].locationInboxEmail = 'old@example.test';
+  snapshot.locations.push({
+    id: 'loc-other', storeNumber: '008', name: 'Other Store', type: 'Other Company Location',
+    address: '8 Main', city: 'LA', state: 'CA', zipCode: '90008', phone: '555-0108',
+    timeZone: 'America/Los_Angeles', operationalStatus: 'Open — Normal Operations',
+    hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', standardHours: {},
+    locationInboxEmail: 'shared@example.test',
+  } as DirectorySeed['locations'][number]);
+  const csv = row({ LocationId: 'loc-1', StoreNumber: '001', LocationInboxEmail: 'shared@example.test', LocationInboxEmailAction: 'set' });
+  const store: LocationImportPreviewStore = {
+    async readLocationImportSnapshot() { return structuredClone(snapshot); },
+    async confirmLocationImport(manifest) { confirmed = manifest; return receipt(manifest); },
+  };
+  const app = await harness(account, store);
+  try {
+    const previewWithoutAcknowledgment = await post(app.baseUrl, 'preview', { csv, selectedRowNumbers: [2] });
+    assert.equal(previewWithoutAcknowledgment.status, 200);
+    const blocked = await previewWithoutAcknowledgment.json();
+    assert.equal(blocked.confirmationToken, undefined);
+    assert.match(blocked.confirmationDisabledReason, /acknowledge/);
+
+    const previewResponse = await post(app.baseUrl, 'preview', {
+      csv, selectedRowNumbers: [2], inboxAcknowledgedRowNumbers: [2],
+    });
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json();
+    assert.equal(typeof preview.confirmationToken, 'string');
+    assert.deepEqual(preview.selectedRowNumbers, [2]);
+    assert.deepEqual(confirmed, undefined);
+
+    const tampered = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { inboxAcknowledgedRowNumbers: [] }));
+    assert.equal(tampered.status, 409);
+    assert.equal((await tampered.json()).error.code, 'confirmation_mismatch');
+
+    const confirmedResponse = await post(app.baseUrl, 'confirm', confirmationRequest(preview, csv, { inboxAcknowledgedRowNumbers: [2] }));
+    assert.equal(confirmedResponse.status, 200);
+    assert.deepEqual(confirmed?.inboxAcknowledgedRowNumbers, [2]);
+    assert.equal(confirmed?.writes[0].locationInboxAcknowledgment?.normalizedEmail, 'shared@example.test');
+  } finally { await app.close(); }
+});
+
 test('preview reserves generated addition IDs, enforces batch limits, and only requires a secret for eligible changes', async () => {
   const unavailable = await harness(account, { async readLocationImportSnapshot() { return structuredClone(seed); } }, { tokenSecret: '' });
   try {

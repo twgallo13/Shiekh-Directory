@@ -14,6 +14,20 @@ function fixture() {
   return { target, people, request, validate };
 }
 
+for (const order of ['location-first', 'request-first'] as const) {
+  for (const scenario of ['manager-change', 'unrelated-edit'] as const) {
+    test(`leadership submission rejects a simultaneous target write: ${scenario}, ${order}`, () => {
+      const f = fixture();
+      const data = scenario === 'manager-change' ? { ...f.target, ...f.request.requestedChanges } : { ...f.target, name: 'Renamed store' };
+      const locationWrite: DirectoryWrite = { collection: 'locations', id: f.target.id, operation: 'set', data, expectedVersion: 0 };
+      const requestWrite: DirectoryWrite = { collection: 'requests', id: 'req-synthetic', operation: 'set', data: f.request };
+      const writes = order === 'location-first' ? [locationWrite, requestWrite] : [requestWrite, locationWrite];
+      const previous = order === 'location-first' ? [f.target, undefined] : [undefined, f.target];
+      assert.throws(() => validateMetadataWrites(writes, previous, [], { ...actor, role: 'System Administrator' }, f.people, [f.target]), /separately from changes to its Location/);
+    });
+  }
+}
+
 for (const order of ['person-first', 'request-first'] as const) {
   for (const scenario of ['inactive', 'deleted', 'renamed', 'phone-changed', 'matching-final-details'] as const) {
     test(`leadership request checks final batched Person state for ${scenario} in ${order} order`, () => {

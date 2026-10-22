@@ -54,6 +54,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     || clearLocationInboxEmail
   );
 
+  /** Confirm before discarding an edited draft; close an untouched form immediately. */
   const requestClose = () => {
     if (hasRequestDraft) {
       setIsDiscardConfirmOpen(true);

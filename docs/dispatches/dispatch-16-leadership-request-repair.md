@@ -82,3 +82,16 @@ Validation for this correction:
 - Prior browser results remain applicable: no interactive behavior changed in this correction, only a submission-handler docstring.
 
 This correction is confined to the review branch. No merge, deployment or production-data change was performed. Fresh reviews must evaluate this amended source rather than an older commit.
+
+## Extension and same-target batch review corrections after 30a8519
+
+Codex completed review of 30a8519 without findings. CodeRabbit identified two additional valid edge cases: omitted extensions could be restored after their phone changed or cleared, and a new leadership request could use a stale baseline when its target Location was also written in that transaction. The new synthetic regression run had 47 passes and eight failures before correction.
+
+Person contacts now preserve an omitted extension only when its associated phone is unchanged; changed or cleared phones no longer inherit the previous number's extension. Explicit and inline new extensions remain supported. New Store Manager Change submissions reject any simultaneous write to their target Location, with instructions to save and reload first. This deliberately separates direct Location changes from new correction proposals, regardless of write order; existing request approvals are unaffected.
+
+- Added 12 extension cases across legacy/work phone fields and four same-target batch cases across both write orders.
+- **99 focused tests passed** and **383 full API/unit tests passed**, 12 suites, zero failures/cancellations/skips/todos. TypeScript check, production build and whitespace check passed; the existing bundle-size warning remains.
+- Prior browser results are reused because interactive behavior is unchanged. A close-handler docstring was added; no UI behavior or permissions were expanded.
+- The scanner's prototype-pollution warning on the preservation loop is not applicable: its property keys are a fixed code-owned allowlist, not keys enumerated from user input. No security configuration was changed to suppress checks.
+
+Fresh review is required for this amendment. No merge, deployment, personnel update or other production write was performed.

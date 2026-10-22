@@ -7,6 +7,21 @@ import type { CustomFieldDefinition } from '../src/lib/customFields';
 const actor: Account = { uid: 'admin', email: 'admin@example.test', emailVerified: true, name: 'Admin', role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
 const urlField: CustomFieldDefinition = { id: 'yelpUrl', label: 'Yelp', type: 'url', helpText: '', options: [], order: 0, apiVisible: false, retired: false };
 
+for (const [phone, extension] of [['phone', 'phoneExtension'], ['workPhone', 'workPhoneExtension']] as const) {
+  for (const scenario of ['omitted', 'unchanged', 'changed', 'cleared', 'explicit-extension', 'inline-extension'] as const) {
+    test(`Person ${phone} preserves extensions only for the appropriate number: ${scenario}`, () => {
+      const current = { [phone]: '+12125550100', [extension]: '42', version: 0 };
+      const data: Record<string, unknown> = {};
+      if (scenario !== 'omitted') data[phone] = scenario === 'unchanged' ? current[phone] : scenario === 'cleared' ? '' : scenario === 'inline-extension' ? '2125550101 x9' : '2125550101';
+      if (scenario === 'explicit-extension') data[extension] = '7';
+      const write: DirectoryWrite = { collection: 'people', id: 'person-extension', operation: 'set', data, expectedVersion: 0 };
+      const saved = validateMetadataWrites([write], [current], [], actor)[0].data!;
+      assert.equal(saved[phone], scenario === 'omitted' || scenario === 'unchanged' ? current[phone] : scenario === 'cleared' ? '' : '+12125550101');
+      assert.equal(saved[extension], scenario === 'omitted' || scenario === 'unchanged' ? '42' : scenario === 'explicit-extension' ? '7' : scenario === 'inline-extension' ? '9' : undefined);
+    });
+  }
+}
+
 test('server canonicalizes changed location phones and URLs, including custom URLs', () => {
   const write: DirectoryWrite = { collection: 'locations', id: 'loc-1', operation: 'set', data: { storeNumber: '01', phone: '(212) 555-0100 x123', storePageUrl: 'example.com', customMetadata: { yelpUrl: 'example.test' } }, expectedCustomMetadata: {} };
   assert.deepEqual(validateMetadataWrites([write], [undefined], [urlField], actor)[0].data, {

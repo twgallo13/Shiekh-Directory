@@ -453,6 +453,9 @@ export function validateMetadataWrites(
         }
         const target = locations.find(location => location.id === data.targetId);
         if (!target) throw new DirectoryConflict('The selected Location no longer exists. Reload before submitting.');
+        if (writes.some(candidate => candidate.collection === 'locations' && candidate.id === target.id)) {
+          throw new DirectoryConflict('Submit a leadership request separately from changes to its Location. Reload after saving the Location.');
+        }
         const changes = isPlainRecord(data.requestedChanges) ? data.requestedChanges : {};
         const fields = ['storeManagerId', 'storeManagerName', 'storeManagerPhone'];
         if (Object.keys(changes).length !== fields.length || fields.some(field => !Object.hasOwn(changes, field))) {
@@ -1014,9 +1017,14 @@ function validateCombinedRelationshipState(
 /** Prepare the exact saved Person contact values once for final-state reference checks and persistence. */
 function normalizePersonContactWrite(input: Record<string, unknown>, current: Record<string, unknown> | undefined): Record<string, unknown> {
   const data = { ...input };
-  normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
-  for (const field of ['phone', 'phoneExtension', 'workPhone', 'workPhoneExtension', 'email', 'workEmail'] as const) {
+  for (const field of ['phone', 'workPhone', 'email', 'workEmail'] as const) {
     if (!Object.hasOwn(input, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
+  }
+  for (const [phone, extension] of [['phone', 'phoneExtension'], ['workPhone', 'workPhoneExtension']] as const) {
+    if (!Object.hasOwn(input, extension) && data[phone] === current?.[phone] && current && Object.hasOwn(current, extension)) {
+      data[extension] = current[extension];
+    }
+    normalizePhoneWrite(data, current, phone, extension);
   }
   for (const field of ['email', 'workEmail'] as const) {
     if (!Object.hasOwn(input, field) || isDeepStrictEqual(input[field], current?.[field]) || input[field] === '') continue;
@@ -1024,7 +1032,6 @@ function normalizePersonContactWrite(input: Record<string, unknown>, current: Re
     if (!normalized) throw new DirectoryValidationError(`${field} must be one valid email address.`);
     data[field] = normalized;
   }
-  normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
   return data;
 }
 

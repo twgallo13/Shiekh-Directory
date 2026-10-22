@@ -5,6 +5,36 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+test('API documentation links are discoverable and keyboard-accessible without credential changes', async ({ page }, testInfo) => {
+  await prepare(page, 'System Administrator');
+  await page.setViewportSize({ width: 390, height: 844 });
+  const writes: string[] = [];
+  await page.route('**/api/api-clients**', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { clients: [] } });
+    writes.push(route.request().method()); return route.fulfill({ status: 403, json: { error: {} } });
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Directory API', exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: 'Directory API documentation' });
+  const links = [
+    ['Store API integration guide', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/app-blueprint-directory-api.md'],
+    ['Response fields and schema', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/api-response-schema.md'],
+    ['API reference and endpoints', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/API.md'],
+    ['Published staffing reference', '/api/personnel-guide'],
+    ['Published staffing OpenAPI', '/api/openapi.json'],
+  ];
+  for (const [label, href] of links) {
+    const link = navigation.getByRole('link', { name: new RegExp(label) });
+    await expect(link).toHaveAttribute('href', href); await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  }
+  const first = navigation.getByRole('link', { name: /Store API integration guide/ });
+  await first.focus(); await expect(first).toBeFocused();
+  expect(writes).toHaveLength(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole('complementary', { name: 'API documentation' }).screenshot({ path: testInfo.outputPath('api-documentation-mobile.png') });
+});
+
 async function prepareAddress(page: Page, uncertain = false) {
   await prepare(page, 'System Administrator');
   const seed = seedDirectory(2) as any;
@@ -55,7 +85,7 @@ test('Address unknown submission recovers its original fields and restores an ed
   expect(f.commits[1].writes[0].data.requestedChanges).toEqual(f.commits[0].writes[0].data.requestedChanges);
 });
 
-test('Address editor exposes separate customer directions; detail and mobile request show readable text', async ({ page }) => {
+test('Address editor exposes separate customer directions; detail and mobile request show readable text', async ({ page }, testInfo) => {
   const f = await prepareAddress(page);
   await page.goto(`${origin}/locations/loc-1/edit`); await restore(page, true);
   await page.getByLabel('Finding the store', { exact: true }).fill('Second floor near Macy’s');
@@ -70,7 +100,7 @@ test('Address editor exposes separate customer directions; detail and mobile req
   await page.getByLabel('Change Category').selectOption('Address Update');
   await expect(page.getByLabel('Finding the store', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.screenshot({ path: '../../outputs/address-request-mobile.png', fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath('address-request-mobile.png'), fullPage: true });
 });
 
 test('Address form detects a concurrent address refresh rather than silently rebasing its draft', async ({ page }) => {

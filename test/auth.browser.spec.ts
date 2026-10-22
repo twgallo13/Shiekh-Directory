@@ -221,6 +221,44 @@ async function prepareHierarchyBrowser(page: Page) {
   return { seed, commits };
 }
 
+for (const fail of [false, true]) {
+  test(`District leadership requires a reviewed confirmation and handles ${fail ? 'a stale failure without retry' : 'atomic success and inherited editor'}`, async ({ page }) => {
+    const f = await prepareHierarchyBrowser(page);
+    f.seed.locations = f.seed.locations.filter((l: any) => l.id !== 'loc-unclassified');
+    f.seed.locations.push({ ...f.seed.locations[0], id: 'loc-retired', storeNumber: '099', name: 'Synthetic Retired Store', recordStatus: 'Retired' });
+    f.seed.people.push({ id: 'person-next', fullName: 'Synthetic Next DM', jobTitle: 'DM', status: 'Active', activeStatus: true });
+    if (fail) await page.route('**/api/directory/commit', route => { f.commits.push(route.request().postDataJSON()); return route.fulfill({ status: 409, json: { error: { message: 'District membership changed. Refresh the preview.' } } }); });
+    await page.goto(`${origin}/admin`); await restore(page, true);
+    await page.getByRole('button', { name: 'Region & Districts', exact: true }).click();
+    const panel = page.getByRole('region', { name: 'District leadership handover' });
+    await panel.getByLabel('Leadership District').selectOption('01');
+    await panel.getByLabel('New District Manager', { exact: true }).selectOption('person-next');
+    await panel.getByLabel('Reason for District handover').fill('Synthetic coverage handover');
+    await panel.getByRole('button', { name: 'Preview district-wide change' }).click();
+    await expect(panel.getByText(/2 retail stores will share/)).toBeVisible();
+    const confirm = panel.getByRole('button', { name: 'Confirm District DM assignment' });
+    await expect(confirm).toBeDisabled(); expect(f.commits).toHaveLength(0);
+    await panel.getByRole('checkbox', { name: /I reviewed every affected store/ }).check();
+    await confirm.click(); await expect.poll(() => f.commits.length).toBe(1);
+    if (fail) {
+      await expect(panel.getByRole('status')).toContainText('Do not assume it failed or retry blindly');
+      await expect(confirm).toHaveCount(0); expect(f.commits).toHaveLength(1);
+    } else {
+      await expect(panel.getByRole('status')).toContainText('Saved: Synthetic Next DM');
+      expect(f.commits[0].writes).toHaveLength(3);
+      expect(f.commits[0].writes[0].districtLeadershipMembers).toHaveLength(2);
+      expect(f.commits[0].writes.every((w: any) => w.data.districtManagerId === 'person-next')).toBe(true);
+      // Keep the same provider state: navigation opens a read-only inherited store picker.
+      await page.getByRole('button', { name: /Store Locations/ }).click();
+      await page.getByRole('cell', { name: /101.*Retail Store/ }).click();
+      await page.getByRole('button', { name: 'Edit Store Record' }).click();
+      await expect(page.getByRole('combobox', { name: 'District Manager', exact: true })).toBeDisabled();
+      await expect(page.getByRole('combobox', { name: 'District Manager', exact: true })).toHaveValue('person-next');
+      expect(f.commits).toHaveLength(1);
+    }
+  });
+}
+
 test('Leadership pickers default to their listed positions and preserve unmatched current assignments', async ({ page }) => {
   const f = await prepareHierarchyBrowser(page);
   f.seed.people.push(

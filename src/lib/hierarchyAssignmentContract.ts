@@ -54,6 +54,7 @@ export interface DistrictDefinition {
   name: string;
   regionId: string;
   status?: 'Active' | 'Retired';
+  districtManagerId?: string | null;
 }
 
 export interface HierarchyRegistry {

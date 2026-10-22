@@ -2,6 +2,7 @@ import { parse } from 'csv-parse/sync';
 import type { LocationRecord } from '../types';
 import type { DirectorySeed } from './directorySeed';
 import { validateLocationHierarchyFields, type HierarchyFieldContract, type HierarchyRegistry } from './hierarchyAssignmentContract';
+import { hasDistrictLeadership, isDistrictLeadershipMember } from './districtLeadership';
 import {
   LOCATION_HIERARCHY_APPLICABILITY,
   LOCATION_IMPORT_COLUMNS,
@@ -355,6 +356,18 @@ export function buildLocationImportPlan(
     }
     const proposed = normalized.values;
     if (intendedAddition) proposed.id = row.LocationId || createLocationId();
+    const leadershipDistrict = snapshot.districts.find(d => isDistrictLeadershipMember(proposed, d.id));
+    const enteringManagedDistrict = !existing || existing.districtId !== proposed.districtId || !isDistrictLeadershipMember(existing, leadershipDistrict?.id || '');
+    if (hasDistrictLeadership(leadershipDistrict) && !enteringManagedDistrict && row.DistrictManagerId && (proposed.districtManagerId || null) !== leadershipDistrict!.districtManagerId) {
+      issues.push(issue('error', 'invalid_hierarchy', 'DistrictManagerId', row.DistrictManagerId, existing?.districtManagerId ?? null,
+        'This retail store inherits its DM from the District. A CSV cannot override District ownership.',
+        'Use the District’s canonical DM ID (blank for District vacancy), or change the District DM in Region & Districts settings and download a fresh editing export.', undefined, proposed.districtManagerId ?? null));
+    }
+    if (hasDistrictLeadership(leadershipDistrict)) {
+      const managerId = leadershipDistrict!.districtManagerId;
+      proposed.districtManagerId = managerId || null;
+      proposed.districtManagerName = snapshot.people.find(p => p.id === managerId)?.fullName || '';
+    }
 
     const hierarchyChanged = !existing || hierarchyFields.some(field => !sameValue(existing[field], proposed[field]));
     const assignmentListsChanged = !existing || Object.values(listFields).some(field => !sameValue(existing?.[field], proposed[field]));
@@ -410,6 +423,13 @@ export function buildLocationImportPlan(
     }
 
     const changes = importedChanges(row, proposed, existing as unknown as Record<string, unknown> | undefined);
+    if (hasDistrictLeadership(leadershipDistrict)) {
+      for (const field of ['districtManagerId', 'districtManagerName']) {
+        if (!sameValue(existing?.[field as keyof typeof existing], proposed[field]) && !changes.some(change => change.field === field)) {
+          changes.push({ field, before: existing?.[field as keyof typeof existing] ?? null, after: proposed[field] ?? null });
+        }
+      }
+    }
     const action = issues.some(item => item.severity === 'error') ? 'blocked' : existing ? changes.length ? 'update' : 'unchanged' : 'add';
     proposedWrites.set(rowNumber, proposed);
     return {

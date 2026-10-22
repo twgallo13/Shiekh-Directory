@@ -4,6 +4,7 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { DirectoryCommitError, type DirectoryDependency } from '../../lib/directoryClient';
 import { beginDistrictEdit, beginRegionEdit, discardRegistryDraft, reapplyRegistryDraft, registryEditRecord, reviewRegistryConflict, type RegistryEditState } from '../../lib/hierarchyRegistryEditing';
 import type { DistrictRecord, RegionRecord } from '../../types';
+import { DistrictLeadershipPanel } from './DistrictLeadershipPanel';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 type Feedback = { tone: 'pending' | 'success' | 'error'; message: string; dependencies?: DirectoryDependency[]; correction?: string; refresh?: boolean };
@@ -155,6 +156,7 @@ export function HierarchyRegistryPanel() {
       <div><h2 className="text-base font-semibold text-neutral-900">Region & District Registry</h2><p className="mt-1 text-xs text-neutral-600">IDs are permanent references used by this directory and other applications. Names and a District&apos;s parent Region may be updated; assigned Locations are never moved automatically.</p></div>
     </div>
     {feedback && <FeedbackMessage feedback={feedback} onRefresh={() => void refreshConflict()} />}
+    <DistrictLeadershipPanel />
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="text-sm font-semibold text-neutral-900">Regions</h3>

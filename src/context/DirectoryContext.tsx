@@ -29,6 +29,7 @@ import { parseCustomFieldDefinition, type CustomFieldDefinition, type CustomFiel
 import { resolvePersonPhone, serializePersonUpdate } from '../lib/personContacts';
 import { PERSON_LEADERSHIP_NAME_FIELDS, reconcileLocationLeadershipCopy } from '../lib/personLocationRelationships';
 import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
+import { districtLeadershipWrites, inheritDistrictLeader, type DistrictLeadershipPreview } from '../lib/districtLeadership';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -48,6 +49,7 @@ interface DirectoryContextType {
   customFieldDefinitions: CustomFieldDefinition[];
   saveRegion: (region: RegionRecord, intent: RegistrySaveIntent) => Promise<void>;
   saveDistrict: (district: DistrictRecord, intent: RegistrySaveIntent) => Promise<void>;
+  saveDistrictLeadership: (preview: DistrictLeadershipPreview) => Promise<void>;
   refreshHierarchyRegistry: () => Promise<HierarchyRegistrySnapshot>;
   saveCustomFieldDefinition: (definition: CustomFieldDefinition) => Promise<void>;
   saveLocationRecord: (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>, expectedVersion?: number, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => Promise<void>;
@@ -239,6 +241,14 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     return registry;
   };
 
+  const saveDistrictLeadership = async (preview: DistrictLeadershipPreview) => {
+    await persist(districtLeadershipWrites(preview), {
+      action: 'District Leadership Changed', entityType: 'Setting', entityId: preview.district.id,
+      entityName: preview.district.name,
+      details: `District DM set to ${preview.managerId || 'Vacant'} for ${preview.locations.length} retail stores. Reason: ${preview.reason}`,
+    });
+  };
+
   const saveCustomFieldDefinition = async (input: CustomFieldDefinition) => {
     const definition = parseCustomFieldDefinition(input);
     const previous = customFieldDefinitions.find(field => field.id === definition.id) || null;
@@ -251,7 +261,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
 
   const saveLocationRecord = async (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>, expectedVersion?: number, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => {
     const timestamp = new Date().toISOString();
-    const saved = { ...location, updatedAt: timestamp, ...(create ? { id: location.id, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
+    const saved = { ...inheritDistrictLeader(location, districts, people), updatedAt: timestamp, ...(create ? { id: location.id, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
     const previous = locations.find(record => record.id === saved.id);
     const serialized = serializeLocationReferenceClears(saved, previous);
     const action = create ? 'Location Created' : 'Location Updated';
@@ -264,7 +274,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const updateLocation = (id: string, updates: Partial<LocationRecord>) => {
     const current = locations.find(location => location.id === id);
     if (!current) return;
-    const updated = { ...current, ...updates, updatedAt: new Date().toISOString() };
+    const updated = inheritDistrictLeader({ ...current, ...updates, updatedAt: new Date().toISOString() }, districts, people);
     const details = `Updated attributes: ${Object.keys(updates).join(', ')}`;
     setLocations(previous => previous.map(location => location.id === id ? updated : location));
     addAuditLog('Location Updated', 'Location', current.id, `Store #${current.storeNumber}`, details, current, updated);
@@ -273,7 +283,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   const createLocation = (newLocData: Omit<LocationRecord, 'id'>): LocationRecord => {
-    const newLoc: LocationRecord = {
+    const newLoc: LocationRecord = inheritDistrictLeader({
       ...newLocData,
       id: `loc-${Date.now()}`,
       createdAt: new Date().toISOString(),
@@ -281,7 +291,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       lastVerifiedAt: new Date().toISOString(),
       lastVerifiedBy: currentUser.name,
       recordStatus: newLocData.recordStatus || 'Active'
-    };
+    }, districts, people);
     setLocations(prev => [...prev, newLoc]);
     addAuditLog('Location Created', 'Location', newLoc.id, `Store #${newLoc.storeNumber}`, `Created new location: ${newLoc.name}`, undefined, newLoc);
     persist([{ collection: 'locations', id: newLoc.id, operation: 'set', data: newLoc as unknown as Record<string, unknown> }], { action: 'Location Created', entityType: 'Location', entityId: newLoc.id, entityName: `Store #${newLoc.storeNumber}`, details: `Created new location: ${newLoc.name}` });
@@ -923,6 +933,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         customFieldDefinitions,
         saveRegion,
         saveDistrict,
+        saveDistrictLeadership,
         refreshHierarchyRegistry,
         saveCustomFieldDefinition,
         saveLocationRecord,

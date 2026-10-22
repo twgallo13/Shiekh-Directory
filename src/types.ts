@@ -31,6 +31,8 @@ export interface DistrictRecord {
   name: string;
   regionId: string;
   status: 'Active' | 'Retired';
+  /** Omitted: legacy store-owned DMs. String/null: District-owned DM/vacancy. */
+  districtManagerId?: string | null;
 }
 
 export type UserRole = 

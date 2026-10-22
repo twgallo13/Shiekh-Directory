@@ -17,9 +17,17 @@ Rotation preserves it. Administrator grant changes apply to every active token
 immediately and invalidate existing snapshots/cursors when the grant changes.
 No existing client is automatically upgraded.
 
-Location owns `storeManagerId`, `districtManagerId`, `regionalManagerId`,
-`assistantStoreManagerIds`, `keyHolderIds`. Person owns primary workplace and
-Supports. Region/District own their IDs and hierarchy, not staffing. People and
+Location owns `storeManagerId`, `regionalManagerId`, `assistantStoreManagerIds`
+and `keyHolderIds`. For legacy Districts, Location also owns `districtManagerId`.
+The opt-in District handover feature adds District-owned `districtManagerId`
+(explicit null means vacancy); one atomic transaction updates the compatible
+Location assignment copies for every linked retail store. Non-retail leadership
+is excluded. API fields/scopes are unchanged: staffing still returns the canonical
+Location assignment ID and resolved Person, not a newly exposed District payload.
+Older frozen snapshots keep their original assignments; a new snapshot observes
+the handover together. Deployment/activation evidence and limitations are in
+[Dispatch 18](https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/dispatches/dispatch-18-district-dm-handover.md). Person owns primary workplace and
+Supports. Region/District own their IDs and hierarchy. People and
 Locations are read from persisted documents; no name-derived identities,
 bootstrap migration, copied-name fallback or second assignment collection.
 

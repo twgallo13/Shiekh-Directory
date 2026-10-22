@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { json, Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, APPLICATION_ROLES, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryAudit, type DirectoryCollection, type DirectoryWrite, type DirectoryWriter } from "./firestoreDirectory";
@@ -27,6 +27,15 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
   const router = Router();
   router.use((_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
   router.use(rateLimit({ limit: 120, windowMs: 60_000, standardHeaders: "draft-8", legacyHeaders: false }));
+  // Scoped to Directory commits, not a global increase for authentication or other APIs.
+  router.use((request, response, next) => json({ limit: '1mb' })(request, response, (error?: unknown) => {
+    if (error) {
+      const oversized = (error as { type?: string }).type === 'entity.too.large';
+      response.status(oversized ? 413 : 400).json({ error: { code: 'invalid_commit_body', message: oversized ? 'Directory commit exceeds the 1 MiB request limit. No changes were saved.' : 'Directory commit requires valid JSON.' } });
+      return;
+    }
+    next();
+  }));
   router.post("/commit", async (request, response) => {
     const token = request.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1];
     if (!token || token.length > 8192) return response.status(401).json({ error: { code: "invalid_token" } });
@@ -89,13 +98,17 @@ function parseWrites(value: unknown): DirectoryWrite[] | null {
       locationInboxAcknowledgment = { normalizedEmail: acknowledgment.normalizedEmail, conflictDigest: acknowledgment.conflictDigest };
     }
     const expectedVersion = candidate.expectedVersion;
+    const members = candidate.districtLeadershipMembers;
+    if (Object.hasOwn(candidate, 'districtLeadershipMembers') && (collection !== 'districts' || !Array.isArray(members)
+      || members.length > 99 || members.some(m => !plainObject(m) || typeof m.id !== 'string' || !ID_PATTERN.test(m.id) || typeof m.version !== 'number' || !Number.isInteger(m.version) || m.version < 0 || Object.keys(m).some(k => k !== 'id' && k !== 'version')))) return null;
     if (Object.hasOwn(candidate, 'expectedVersion') && expectedVersion !== null
       && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
     writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}),
       ...(Object.hasOwn(candidate, 'expectedCustomMetadata') ? { expectedCustomMetadata: candidate.expectedCustomMetadata as Record<string, unknown> } : {}),
       ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}),
       ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number | null } : {}),
-      ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}) });
+      ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}),
+      ...(Array.isArray(members) ? { districtLeadershipMembers: members as DirectoryWrite['districtLeadershipMembers'] } : {}) });
   }
   const locationNumbers = writes.filter(write => write.collection === "locations" && write.operation === "set").map(write => String(write.data?.storeNumber || ""));
   if (locationNumbers.some(number => !number.trim()) || new Set(locationNumbers).size !== locationNumbers.length) return null;

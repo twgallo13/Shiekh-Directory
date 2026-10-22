@@ -11,7 +11,15 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #28
+## Current live revision — PR #30
+
+- Source `5e3363e82bdc909bc8021a8693c96d8f7d251544`, identical tree to tested/reviewed `7118b35f4e52ea1b568a27e8c1f010988f9e92c6`. Both Codex and CodeRabbit completed without actionable findings. Cloud Build `aa3b50f6-f3a7-450d-b23d-25e49ddff265` succeeded; immutable image reference remains in revision/restricted release metadata.
+- Revision `shiekh-location-company-directory-pr30-5e3363e` is Ready and sole 100% desired/observed traffic. Both hosts match accepted candidate HTML and all 82 discovered JS/CSS assets; HTML SHA-256 `2a6540863457b7b20057e801d75b34713253229496e9b1a2277251c336acdfb6`. Cache/API-denial/unknown-route guards pass; Firebase, OpenAPI and personnel guide remain unchanged.
+- Runtime/build environment, build/service identity and security/network/scaling settings were preserved. All 26 historical tags remain; temporary `p30-5e3363e` was removed. Branded domain Ready/DomainRoutable verified. No IAM/OAuth/credentials, business-record or notification release probes. Live request history/form rendered after session restoration; delayed/uncertain saves were tested synthetically, not on live records.
+- Prior code revision `shiekh-location-company-directory-pr28-444351f` retains hierarchy ownership guards but lacks the new request-history protections. Prefer forward repair or restrict request review writes during rollback; traffic rollback does not restore data. Pre-ownership rollback restrictions below remain in effect.
+- [Dispatch 20](dispatches/dispatch-20-request-review-integrity.md) contains validation, review, release evidence and remaining P1 work. P6.9 DM work-email API access is planned only. Documentation-only follow-ups need no rebuild.
+
+## Historical PR #28 live revision
 
 - Source `444351f8913db5fcfb94691a729d9dcfbe84e34c`, identical tree to final tested/reviewed `224e3efcc2d374d00b86eac35ef229f92263a7a0`. Cloud Build `0670e49c-8b5d-452f-bbf9-19d8af2a90ae` succeeded; immutable image reference is retained in revision/restricted release metadata.
 - Revision `shiekh-location-company-directory-pr28-444351f` is Ready and sole 100% desired/observed traffic. Both hosts match the accepted zero-traffic candidate's HTML and 82 discovered JS/CSS assets. HTML SHA-256 `9c82213979a0ec2a1be4e9904b6787ce400f5571b8a79415c8faaab5287d1201`. Cache, API-denial/unknown-route guards pass; Firebase configuration, schema and personnel guide are unchanged.

@@ -59,6 +59,7 @@ const normalizeLocation = (location: LocationRecord): LocationRecord => ({
   holidayHours: location.holidayHours || [],
 });
 
+/** Edit a Location draft while preserving untouched canonical staffing and awaiting committed saves. */
 export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   location,
   mode = 'edit',
@@ -120,7 +121,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
   const [showAllLeadershipPeople, setShowAllLeadershipPeople] = useState(false);
   useEffect(() => { setShowAllLeadershipPeople(false); }, [location?.id]);
-  // Discovery filter only: server assignment policy and application permissions are unchanged.
+  /** Render role-focused discovery options without changing server policy or application permissions. */
   const leadershipOptions = (role: LeadershipRole, id?: string, name?: string) =>
     leadershipPickerOptions(people, role, showAllLeadershipPeople, id, name).map(option =>
       <option key={option.id} value={option.id} disabled={option.currentOnly}>{option.label}</option>);

@@ -30,7 +30,7 @@ export function leadershipPickerOptions(people: PickerPerson[], role: Leadership
   const options = leadershipCandidates(people, role, showAll).map(person => ({ id: person.id, label: `${person.fullName} (${person.jobTitle || person.role || 'Staff'})`, currentOnly: false }));
   if (currentId && !options.some(option => option.id === currentId)) {
     const current = people.filter(person => person.id === currentId);
-    options.push({ id: currentId, label: `${current.length === 1 ? current[0].fullName : currentName || 'Unresolved person'} (Current assignment — review position/status)`, currentOnly: true });
+    options.push({ id: currentId, label: `${current.length === 1 ? current[0].fullName : currentName || `Unresolved person [${currentId}]`} (Current assignment — review position/status)`, currentOnly: true });
   }
   return options;
 }

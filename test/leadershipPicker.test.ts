@@ -39,5 +39,6 @@ test('missing and inactive assignments remain reviewable even without copied nam
   for (const id of ['inactive', 'missing']) {
     const options = leadershipPickerOptions(roster, 'District Manager', false, id);
     assert.equal(options.length, 1); assert.equal(options[0].id, id); assert(options[0].currentOnly);
+    if (id === 'missing') assert.match(options[0].label, /Unresolved person \[missing\]/);
   }
 });

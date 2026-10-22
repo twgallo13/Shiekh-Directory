@@ -28,3 +28,7 @@ Karlo's displayed status and real replacement/vacancy remain a separate offboard
 Controlled operational positions and server-enforced eligibility across direct writes, correction approval and imports are not implemented here. Do not mark P2.1/P2.3 complete or treat a discovery filter as security. Keep API staffing identifiers and v1/v2 scopes unchanged. Broader pending-request validation/save feedback, hierarchy ownership, offboarding and immediate expiring closures remain planned work.
 
 This record initially describes an unmerged repair branch. The final PR, source and release evidence are appended after review/publication; no live release is claimed by the tests above.
+
+## Review amendment
+
+PR #24 initially used source `ecef4d908ea0738cf2e8fc4c758732ab969a5130`. Codex completed review without findings. CodeRabbit requested including the canonical ID when an unresolved current assignment has no copied display name. The fallback now includes that ID while retaining the same option value and current-only behavior; all 10 affected helper tests passed again with an explicit assertion. Added function documentation for the two touched editor helpers. The broader successful 393-test and browser results remain applicable; the amendment changes only this fallback label and comments.

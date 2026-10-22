@@ -68,3 +68,17 @@ Validation for this amendment:
 - Added concise function documentation for the touched production components, validator and synthetic fixture helpers in response to the review warning. External docstring scoring must be confirmed by a fresh review rather than assumed.
 
 No merge, deployment, live application write, credential change or notification was performed. Fresh automated review status must be checked against the amended commit; reviews of 045ec41 alone do not approve these corrections.
+
+## Normalized-contact review correction after ea9ab15
+
+CodeRabbit identified that final-state manager checks still compared raw Person contact input before phone normalization. Twelve new cases reproduced this gap: four passed and eight failed before correction. The validator now prepares Person contact values once and uses those same normalized values for both cross-record checks and persistence, independent of batch write order. Changed phones cannot leave a request with a differently formatted copied value; omitted contact fields and unchanged historical values retain the existing preservation behavior.
+
+Validation for this correction:
+
+- **83 focused tests passed**, covering leadership requests, contact normalization, Person contacts and custom-field persistence.
+- **367 tests passed** in the complete API/unit suite, 12 suites, zero failures, cancellations, skips or todos.
+- TypeScript check, production build and whitespace check passed. The existing bundle-size warning remains.
+- New cases cover both batch orders, raw-format rejection, normalized acceptance, extensions, legacy-phone fallback, omitted work phone and unchanged historical formatting. Input immutability is checked against an independent cloned snapshot.
+- Prior browser results remain applicable: no interactive behavior changed in this correction, only a submission-handler docstring.
+
+This correction is confined to the review branch. No merge, deployment or production-data change was performed. Fresh reviews must evaluate this amended source rather than an older commit.

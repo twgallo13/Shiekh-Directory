@@ -51,6 +51,47 @@ test('leadership request accepts a changed canonical active manager without muta
   assert.deepEqual(f.target, before);
 });
 
+for (const order of ['person-first', 'request-first'] as const) {
+  for (const scenario of ['raw-formatted', 'normalized', 'extension', 'legacy-phone', 'omitted-work-phone', 'unchanged-history'] as const) {
+    test(`leadership request compares saved phone details for ${scenario} in ${order} order`, () => {
+      const f = fixture();
+      const person: Record<string, unknown> = { ...f.people[0] };
+      if (scenario === 'unchanged-history') person.workPhone = '(213) 555-0102';
+      const proposedPerson = { ...person };
+      const request = structuredClone(f.request);
+      if (scenario === 'omitted-work-phone') {
+        delete proposedPerson.workPhone;
+      } else if (scenario === 'unchanged-history') {
+        request.requestedChanges.storeManagerPhone = String(person.workPhone);
+      } else if (scenario === 'legacy-phone') {
+        proposedPerson.workPhone = '';
+        proposedPerson.phone = '(213) 555-0103';
+        request.requestedChanges.storeManagerPhone = '+12135550103';
+      } else {
+        proposedPerson.workPhone = scenario === 'extension' ? '(213) 555-0103 ext. 42' : '(213) 555-0103';
+        request.requestedChanges.storeManagerPhone = scenario === 'raw-formatted' ? String(proposedPerson.workPhone) : '+12135550103';
+      }
+      const personWrite: DirectoryWrite = { collection: 'people', id: String(person.id), operation: 'set', expectedVersion: 0, data: proposedPerson };
+      const requestWrite: DirectoryWrite = { collection: 'requests', id: 'req-synthetic', operation: 'set', data: request };
+      const writes = order === 'person-first' ? [personWrite, requestWrite] : [requestWrite, personWrite];
+      const previous = order === 'person-first' ? [person, undefined] : [undefined, person];
+      const originalWrites = structuredClone(writes);
+      const validate = () => validateMetadataWrites(writes, previous, [], { ...actor, role: 'System Administrator' }, [person as typeof f.people[number]], [f.target]);
+      if (scenario === 'raw-formatted') {
+        assert.throws(validate, /selected manager details changed/);
+      } else {
+        const result = validate();
+        const savedPerson = result.find(write => write.collection === 'people')!.data!;
+        const savedRequest = result.find(write => write.collection === 'requests')!.data!;
+        const changes = savedRequest.requestedChanges as Record<string, unknown>;
+        assert.equal(changes.storeManagerPhone, savedPerson.workPhone || savedPerson.phone || '');
+        if (scenario === 'extension') assert.equal(savedPerson.workPhoneExtension, '42');
+      }
+      assert.deepEqual(writes, originalWrites, 'validation does not mutate input writes');
+    });
+  }
+}
+
 for (const scenario of ['empty', 'missing', 'inactive', 'ambiguous', 'same-manager', 'missing-baseline', 'stale', 'extra-field', 'forged-name', 'forged-phone', 'wrong-target'] as const) {
   test(`leadership request rejects ${scenario} before persistence`, () => {
     const f = fixture();

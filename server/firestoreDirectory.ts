@@ -350,16 +350,19 @@ export function validateMetadataWrites(
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
 
   const peopleMap = new Map<string, RelationshipPerson>(people.map(person => [person.id, { ...person }]));
+  const normalizedPersonWrites = new Map<string, Record<string, unknown>>();
 
-  for (const write of writes) {
+  for (const [index, write] of writes.entries()) {
     if (write.collection === "people") {
       if (write.operation === "delete") {
         peopleMap.delete(write.id);
       } else if (write.operation === "set" && write.data) {
         const currentPerson = peopleMap.get(write.id);
+        const normalizedData = normalizePersonContactWrite(write.data, previous[index]);
+        normalizedPersonWrites.set(write.id, normalizedData);
         peopleMap.set(write.id, {
           ...currentPerson,
-          ...write.data,
+          ...normalizedData,
           id: write.id,
           fullName: String(write.data.fullName || write.data.name || "Unknown Person"),
         });
@@ -436,7 +439,7 @@ export function validateMetadataWrites(
     }
 
     if (write.operation !== 'set' || !['locations', 'people', 'users', 'requests'].includes(write.collection)) return write;
-    let data = { ...write.data };
+    let data = { ...(write.collection === 'people' ? normalizedPersonWrites.get(write.id) : write.data) };
 
     if (current || write.expectedVersion !== undefined || typeof data.version === 'number') {
       data.version = ((current?.version as number) || 0) + 1;
@@ -512,7 +515,7 @@ export function validateMetadataWrites(
       return { ...write, data };
     }
 
-    if (write.collection !== 'locations') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
+    if (write.collection !== 'locations' && write.collection !== 'people') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
 
     if (write.collection === 'locations') {
       if (!Object.hasOwn(data, 'locationInboxEmail') && current && Object.hasOwn(current, 'locationInboxEmail')) {
@@ -600,15 +603,6 @@ export function validateMetadataWrites(
 
     if (write.collection === 'people') {
       const originalData = write.data || {};
-      for (const field of ['phone', 'phoneExtension', 'workPhone', 'workPhoneExtension', 'email', 'workEmail'] as const) {
-        if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
-      }
-      for (const field of ['email', 'workEmail'] as const) {
-        if (!Object.hasOwn(originalData, field) || isDeepStrictEqual(originalData[field], current?.[field]) || originalData[field] === '') continue;
-        const normalized = normalizePersonEmail(originalData[field]);
-        if (!normalized) throw new DirectoryValidationError(`${field} must be one valid email address.`);
-        data[field] = normalized;
-      }
       for (const field of ['primaryLocationId', 'supportedLocationIds'] as const) {
         if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
       }
@@ -624,7 +618,6 @@ export function validateMetadataWrites(
         }
         data.supportedLocationIds = [...data.supportedLocationIds];
       }
-      normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
       if (Object.hasOwn(data, 'personId')) {
         try {
           validateUserPersonLink(typeof data.personId === 'string' ? data.personId : undefined, combinedPeople);
@@ -1018,6 +1011,24 @@ function validateCombinedRelationshipState(
   }
 }
 
+/** Prepare the exact saved Person contact values once for final-state reference checks and persistence. */
+function normalizePersonContactWrite(input: Record<string, unknown>, current: Record<string, unknown> | undefined): Record<string, unknown> {
+  const data = { ...input };
+  normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
+  for (const field of ['phone', 'phoneExtension', 'workPhone', 'workPhoneExtension', 'email', 'workEmail'] as const) {
+    if (!Object.hasOwn(input, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
+  }
+  for (const field of ['email', 'workEmail'] as const) {
+    if (!Object.hasOwn(input, field) || isDeepStrictEqual(input[field], current?.[field]) || input[field] === '') continue;
+    const normalized = normalizePersonEmail(input[field]);
+    if (!normalized) throw new DirectoryValidationError(`${field} must be one valid email address.`);
+    data[field] = normalized;
+  }
+  normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
+  return data;
+}
+
+/** Normalize changed phone values while preserving untouched historical values and explicit clears. */
 function normalizePhoneWrite(data: Record<string, unknown>, current: Record<string, unknown> | undefined, field: string, extensionField: string, required = false) {
   if (!Object.hasOwn(data, field)) return;
   const value = data[field];

@@ -62,6 +62,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     onClose();
   };
 
+  /** Validate this proposal and retain its draft until the server confirms the submission. */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;

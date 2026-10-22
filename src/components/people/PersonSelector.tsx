@@ -3,13 +3,13 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
 import { Search, User, X } from 'lucide-react';
 import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
-import { personLifecycle } from '../../lib/personLifecycle';
+import { leadershipCandidates, type LeadershipRole } from '../../lib/leadershipPicker';
 
 export interface PersonSelectorProps {
   label?: string;
   value?: string;
   onChange: (person: Person | null) => void;
-  roleFilter?: string;
+  roleFilter?: LeadershipRole;
   placeholder?: string;
   required?: boolean;
 }
@@ -27,16 +27,13 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
   const fieldId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const clearRef = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
 
   const filteredPeople = useMemo(() => {
-    return people.filter(p => {
-      if (personLifecycle(p) !== 'active') return false;
-      if (roleFilter && p.jobTitle !== roleFilter && p.role !== roleFilter) {
-        return false;
-      }
+    return leadershipCandidates(people, roleFilter, showAll).filter(p => {
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -48,7 +45,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
         p.district?.toLowerCase().includes(term)
       );
     });
-  }, [people, roleFilter, searchTerm]);
+  }, [people, roleFilter, showAll, searchTerm]);
 
   const selectedPerson = useMemo(() => {
     if (!value) return null;
@@ -116,6 +113,10 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
               }
             }} className="absolute left-0 right-0 top-full mt-1 bg-white border border-neutral-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
               <div className="p-2 border-b border-neutral-200 sticky top-0 bg-white">
+                {roleFilter && <label className="mb-2 flex items-start gap-2 text-[11px] text-neutral-600">
+                  <input type="checkbox" checked={showAll} onChange={event => setShowAll(event.target.checked)} />
+                  Show all active people (unusual titles or cross-role coverage)
+                </label>}
                 <input
                   type="text"
                   autoFocus

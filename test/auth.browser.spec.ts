@@ -42,8 +42,9 @@ async function prepareLeadershipRequest(page: Page, fail = false) {
   await prepare(page, 'Viewer');
   const seed = seedDirectory(2);
   const people = [
-    { id: 'person-new', fullName: 'Synthetic New Manager', jobTitle: 'Store Manager', status: 'Active', activeStatus: true, workPhone: '+12135550102' },
+    { id: 'person-new', fullName: 'Synthetic New Manager', jobTitle: ' SM ', status: 'Active', activeStatus: true, workPhone: '+12135550102' },
     { id: 'person-inactive', fullName: 'Synthetic Inactive Manager', jobTitle: 'Store Manager', status: 'Inactive', activeStatus: false },
+    { id: 'person-dm', fullName: 'Synthetic District Lead', jobTitle: 'District Manager', status: 'Active', activeStatus: true },
   ];
   const commits: any[] = [];
   await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: { ...seed, people } }));
@@ -62,6 +63,11 @@ test('Leadership request displays and submits the chosen manager using the keybo
   const selector = page.getByRole('button', { name: 'New Store Manager' });
   await selector.focus(); await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: /Synthetic Inactive Manager/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Synthetic District Lead/ })).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Show all active people' }).check();
+  await expect(page.getByRole('button', { name: /Synthetic District Lead/ })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Show all active people' }).uncheck();
+  await expect(page.getByRole('button', { name: /Synthetic District Lead/ })).toHaveCount(0);
   const option = page.getByRole('button', { name: /Synthetic New Manager/ });
   await option.focus(); await option.press('Enter');
   await expect(page.getByRole('dialog').getByText('Synthetic New Manager', { exact: true })).toBeVisible();
@@ -214,6 +220,37 @@ async function prepareHierarchyBrowser(page: Page) {
   });
   return { seed, commits };
 }
+
+test('Leadership pickers default to their listed positions and preserve unmatched current assignments', async ({ page }) => {
+  const f = await prepareHierarchyBrowser(page);
+  f.seed.people.push(
+    { id: 'person-sm', fullName: 'Synthetic Store Lead', jobTitle: 'SM', status: 'Active', activeStatus: true },
+    { id: 'person-rm', fullName: 'Synthetic Regional Lead', jobTitle: 'Regional Manager', status: 'Active', activeStatus: true },
+    { id: 'person-am', fullName: 'Synthetic Assistant Lead', jobTitle: 'Assistant Manager', status: 'Active', activeStatus: true },
+    { id: 'person-kh', fullName: 'Synthetic Key Lead', jobTitle: 'Keyholder', status: 'Active', activeStatus: true },
+    { id: 'person-other', fullName: 'Synthetic Operations Lead', jobTitle: 'Operations Lead', status: 'Active', activeStatus: true },
+    { id: 'person-inactive', fullName: 'Synthetic Inactive Lead', jobTitle: 'District Manager', status: 'Inactive', activeStatus: false },
+  );
+  Object.assign(f.seed.locations[0], { storeManagerId: 'person-other', storeManagerName: 'Synthetic Operations Lead', assistantStoreManagerIds: ['person-am'], keyHolderIds: ['missing-key'], keyHolderNames: ['Historical Key Lead'] });
+  await page.goto(`${origin}/locations/loc-retail/edit`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  const dm = dialog.getByRole('combobox', { name: 'District Manager', exact: true });
+  await expect(dm.locator('option')).toHaveText(['-- Unassigned / Vacant --', 'District Manager (District Manager)']);
+  await expect(dialog.getByRole('combobox', { name: 'Regional Manager', exact: true }).locator('option')).toHaveText(['-- Unassigned / Vacant --', 'Synthetic Regional Lead (Regional Manager)']);
+  const sm = dialog.getByRole('combobox', { name: 'Store Manager', exact: true });
+  await expect(sm).toHaveValue('person-other');
+  await expect(sm.locator('option:checked')).toContainText('Current assignment');
+  await expect(dialog.getByRole('combobox', { name: 'Assistant Manager 1', exact: true }).locator('option')).toHaveText(['Select a person from the directory...', 'Synthetic Assistant Lead (Assistant Manager)']);
+  const kh = dialog.getByRole('combobox', { name: 'Key Holder 1', exact: true });
+  await expect(kh).toHaveValue('missing-key');
+  await expect(kh.locator('option:checked')).toContainText('Historical Key Lead (Current assignment');
+  await dialog.getByRole('checkbox', { name: 'Show all active people' }).check();
+  await expect(dm.locator('option[value="person-other"]')).toBeAttached();
+  await expect(dm.locator('option[value="person-inactive"]')).toHaveCount(0);
+  await dialog.getByRole('checkbox', { name: 'Show all active people' }).uncheck();
+  await expect(dm.locator('option[value="person-other"]')).toHaveCount(0);
+  expect(f.commits).toHaveLength(0);
+});
 
 async function prepareLocationImportConfirmationBrowser(page: Page, options: { holdConfirmation?: boolean; staleConfirmation?: boolean } = {}) {
   await prepare(page, 'System Administrator');

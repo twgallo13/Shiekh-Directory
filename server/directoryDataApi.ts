@@ -56,6 +56,13 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
     catch (error) { response.status(error instanceof AccessDenied ? 403 : error instanceof AuthenticationUnavailable ? 503 : 401).json({ error: { code: 'operating_access_denied' } }); }
   };
   const operatingLimit = rateLimit({ limit: 10, windowMs: 60_000, standardHeaders: 'draft-8', legacyHeaders: false, keyGenerator: (_request, response) => response.locals.operatingActor.uid });
+  router.get('/operating/directory', operatingAuth, rateLimit({ limit: 20, windowMs: 60_000, standardHeaders: 'draft-8', legacyHeaders: false, keyGenerator: (_request, response) => response.locals.operatingActor.uid }), async (_request, response) => {
+    response.set('Cache-Control', 'no-store');
+    try {
+      if (!store.readOperatingDirectory) throw new Error('Unavailable');
+      return response.json(await store.readOperatingDirectory());
+    } catch { return response.status(503).json({ error: { code: 'operating_refresh_unavailable', message: 'Status refresh is unavailable. Retain existing state and use explicit directory reconciliation.' } }); }
+  });
   for (const mode of ['preview', 'commit', 'cancel'] as const) router.post(`/operating/${mode}`, operatingAuth, operatingLimit, async (request, response) => {
     if (!store.previewOperating || !store.commitOperating || !store.cancelOperating) return response.status(503).json({ error: { code: 'operating_unavailable' } });
     try {

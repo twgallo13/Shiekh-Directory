@@ -9,6 +9,7 @@ async function prepareOperating(page: Page, uncertain = false) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00Z') });
   await prepare(page, 'System Administrator');
   const seed = seedDirectory(1) as any;
+  seed.serverNow = '2026-10-22T18:00:00Z';
   seed.locations[0].version = 3;
   const calls: any[] = [], mail: any[] = [];
   let previews = 0;
@@ -25,6 +26,7 @@ async function prepareOperating(page: Page, uncertain = false) {
   });
   await page.route('**/api/mail/event', route => { mail.push(route.request().postDataJSON()); return route.fulfill({ json: { success: true } }); });
   await page.goto(`${origin}/locations/loc-1`); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'Report temporary closure' })).toBeVisible();
   return { seed, calls, mail, previews: () => previews };
 }
 
@@ -68,6 +70,63 @@ test('Operating expiry returns to schedule on the store clock without requiring 
   await expect(page.getByRole('button', { name: 'Confirm closure for today' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Outside scheduled hours');
   expect(f.calls).toHaveLength(0); expect(f.previews()).toBe(0); expect(f.mail).toHaveLength(0);
+});
+
+test('Operating periodic refresh uses one bounded read, updates closures and retains state on outage', async ({ page }) => {
+  const f = await prepareOperating(page);
+  let refreshes = 0, bootstraps = 0, fail = false;
+  page.on('request', request => { if (request.url().endsWith('/api/auth/bootstrap')) bootstraps++; });
+  await page.route('**/api/directory/operating/directory', route => {
+    refreshes++;
+    return fail ? route.fulfill({ status: 503, json: { error: {} } }) : route.fulfill({ json: f.seed });
+  });
+  f.seed.locations[0].temporaryClosure = { id: '12345678-1234-1234-1234-123456789abc', reason: 'New outage', startsAt: '2026-10-22T17:00:00Z', expiresAt: '2026-10-23T07:00:00Z', timeZone: 'America/Los_Angeles' };
+  await page.clock.fastForward(30000);
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(refreshes).toBe(1); expect(bootstraps).toBe(0);
+  fail = true;
+  await page.clock.fastForward(30000);
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Status refresh is unavailable');
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(f.calls).toHaveLength(0);
+});
+
+for (const fail of [false, true]) test(`Operating bulk dated closures await confirmation and preserve lifecycle: ${fail ? 'uncertain' : 'saved'}`, async ({ page }) => {
+  await prepare(page, 'System Administrator');
+  const seed = seedDirectory(2), commits: any[] = [];
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); commits.push(body);
+    await held;
+    return fail ? route.fulfill({ status: 502, contentType: 'text/html', body: 'Lost reply' }) : route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.goto(`${origin}/locations`); await restore(page, true);
+  await page.getByRole('checkbox', { name: /Select All/ }).check();
+  await page.getByRole('button', { name: 'Configure Bulk Hours & Holiday Exception' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Bulk Update Fleet Locations' });
+  await expect(dialog.getByRole('option', { name: 'Temporarily Closed — Emergency' })).toHaveCount(0);
+  await dialog.getByPlaceholder('e.g., Thanksgiving, Christmas Eve, Special Inventory').fill('Synthetic holiday');
+  await dialog.getByLabel('Exception start date').fill('2026-12-24');
+  await dialog.getByLabel('Exception end date').fill('2026-12-25');
+  const apply = dialog.getByRole('button', { name: 'Apply Updates to 2 Stores' });
+  await apply.click();
+  await expect.poll(() => commits.length).toBe(1);
+  await expect(apply).toBeDisabled();
+  await expect(page.getByText('Successfully updated 2 locations', { exact: true })).toHaveCount(0);
+  release();
+  if (fail) {
+    await expect(dialog.getByRole('alert')).toContainText('0 Location update(s) confirmed');
+    await expect(apply).toBeDisabled(); expect(commits).toHaveLength(1);
+    await expect(dialog.getByRole('button', { name: 'Reload saved directory state' })).toBeVisible();
+  } else {
+    await expect(page.getByText('Successfully updated 2 locations', { exact: true })).toBeVisible();
+    expect(commits).toHaveLength(2);
+  }
+  expect(commits[0].writes[0].data.operationalStatus).toBe('Open — Normal Operations');
+  expect(commits[0].writes[0].data.holidayHours.map((h: any) => h.date)).toEqual(['2026-12-24', '2026-12-25']);
+  expect(commits[0].writes[0].data.holidayHours.every((h: any) => h.hours.isClosed)).toBe(true);
 });
 
 async function prepareHoursCorrection(page: Page, options: { role?: string; request?: 'changed' | 'noop' | 'stale' | 'missing'; conflict?: boolean } = {}) {
@@ -192,6 +251,7 @@ export async function signOut() { await action('signOut'); window.__restore(fals
 `;
 
 async function prepare(page: Page, role = "Viewer") {
+  await page.route('**/api/directory/operating/directory', route => route.fulfill({ status: 503, json: { error: { code: 'synthetic_refresh_offline' } } }));
   await page.route("https://**/*", route => route.abort());
   await page.route("**/node_modules/.vite/deps/firebase_auth.js*", route => route.fulfill({ contentType: "application/javascript", body: sdk }));
   await page.route("**/api/auth/me", async route => {
@@ -226,7 +286,7 @@ function seedDirectory(locationCount: number) {
       recordStatus: 'Active',
       standardHours,
     })),
-    people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [], customFieldDefinitions: [],
+    people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [], customFieldDefinitions: [], regions: [], districts: [],
   };
 }
 

@@ -138,14 +138,14 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const writeFence = useRef({ epoch: 0, pending: 0 });
   const polling = useRef(false);
 
-  const refreshOperatingDirectory = async () => {
+  const refreshOperatingDirectory = async (fullReconciliation = false) => {
     if (polling.current || writeFence.current.pending) return;
     polling.current = true;
     const epoch = writeFence.current.epoch;
     try {
-      const response = await fetch('/api/auth/bootstrap', { headers: { Authorization: `Bearer ${await user.getIdToken()}` }, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(15000) });
+      const response = await fetch(fullReconciliation ? '/api/auth/bootstrap' : '/api/directory/operating/directory', { headers: { Authorization: `Bearer ${await user.getIdToken()}` }, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(15000) });
       const body = await response.json().catch(() => null) as DirectorySeed | null;
-      if (!response.ok || !body || !Array.isArray(body.locations) || !Array.isArray(body.people) || !Array.isArray(body.hoursTemplates) || !body.serverNow || !Number.isFinite(Date.parse(body.serverNow))) throw new Error('Status refresh is unavailable. Information may be outdated; reconnect and refresh before operating updates.');
+      if (!response.ok || !body || !Array.isArray(body.locations) || !Array.isArray(body.people) || !Array.isArray(body.hoursTemplates) || !Array.isArray(body.regions) || !Array.isArray(body.districts) || !body.serverNow || !Number.isFinite(Date.parse(body.serverNow))) throw new Error('Status refresh is unavailable. Information may be outdated; reconnect and refresh before operating updates.');
       if (epoch !== writeFence.current.epoch || writeFence.current.pending) return;
       const canonical = canonicalDirectoryBootstrap(body.locations, body.people, body.hoursTemplates);
       setLocations(canonical.locations); setPeople(canonical.people); setHoursTemplates(body.hoursTemplates);
@@ -970,7 +970,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       value={{
         operatingNow,
         operatingRefreshError,
-        refreshOperatingDirectory,
+        refreshOperatingDirectory: () => refreshOperatingDirectory(true),
         previewOperatingUpdate,
         saveOperatingUpdate,
         cancelOperatingUpdate,

@@ -23,6 +23,7 @@ The API provides these read endpoints:
 | `GET /api/v1/locations` | Lists active stores, in pages. |
 | `GET /api/v1/locations/{storeNumber}` | Returns one active store by its exact store number. Keep leading zeroes: store `007` is not `7`. |
 | `GET /api/v1/location-fields` | Lists the custom fields that are currently approved for API publication. |
+| `GET /api/v1/locations/{storeNumber}/operating-state` | Time-evaluated current Open/Closed/Unknown. Same locations:read credential; no-store, no synchronization query parameters. |
 
 All endpoints require the same credential. The API is not an anonymous public data feed.
 

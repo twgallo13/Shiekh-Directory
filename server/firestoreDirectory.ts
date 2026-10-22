@@ -77,6 +77,7 @@ export interface DirectoryReader {
 }
 
 export interface DirectoryWriter {
+  readOperatingDirectory?(): Promise<Pick<DirectorySeed, 'locations' | 'people' | 'hoursTemplates' | 'regions' | 'districts' | 'serverNow'>>;
   commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult>;
   cancelRequestSubmission?(write: DirectoryWrite, actor: Account): Promise<DirectoryCommitResult & { cancelled: boolean }>;
   previewOperating?(locationId: string, action: string, actor: Account): Promise<OperatingPreview>;
@@ -93,6 +94,20 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       return [field, snapshot.docs.map(document => toRecord(document, collection))] as const;
     }));
     return { ...Object.fromEntries(entries), serverNow: new Date().toISOString() } as unknown as DirectorySeed;
+  }
+
+  /** Bounded coherent business-state refresh: never scans growing request/audit/outbox histories. */
+  async readOperatingDirectory() {
+    const limits = { locations: 1000, people: 5000, hoursTemplates: 100, regions: 100, districts: 500 } as const;
+    return this.firestore.runTransaction(async transaction => {
+      const entries = await Promise.all(Object.entries(limits).map(async ([field, maximum]) => {
+        const collection = DIRECTORY_COLLECTIONS[field as keyof typeof limits];
+        const snapshot = await transaction.get(this.firestore.collection(collection).limit(maximum + 1));
+        if (snapshot.size > maximum) throw new Error('Operating refresh capacity exceeded; retain existing state and use explicit reconciliation.');
+        return [field, snapshot.docs.map(document => toRecord(document, collection))] as const;
+      }));
+      return { ...Object.fromEntries(entries), serverNow: new Date().toISOString() } as Pick<DirectorySeed, 'locations' | 'people' | 'hoursTemplates' | 'regions' | 'districts' | 'serverNow'>;
+    }, { readOnly: true });
   }
 
   previewOperating(locationId: string, action: string, actor: Account) { return previewOperating(this.firestore, locationId, action, actor); }

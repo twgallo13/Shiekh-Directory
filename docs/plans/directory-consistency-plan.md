@@ -269,3 +269,9 @@ At each handoff report completed tasks, current source and deployed revision sep
 - [Current hours calculation](../../src/utils/timezoneHelper.ts), [persistence](../../src/context/DirectoryContext.tsx), [server validation](../../server/firestoreDirectory.ts), [write authorization](../../server/directoryDataApi.ts), and [authentication roles](../../server/authAuthority.ts)
 
 This plan lives at `docs/plans/directory-consistency-plan.md`. Relative links above are resolved from that repository location. Update this plan as evidence arrives; preserve earlier dispatches as historical records.
+
+# October 22 continuation checkpoint
+
+PR #32 request validation/recovery is published: source `ea53efb1124f1db82f73908f4d0b0f2f66a00414`, production revision `shiekh-location-company-directory-pr32-ea53efb`, 100% on both hosts. [Dispatch 21](../dispatches/dispatch-21-request-validation-recovery.md) has exact validation/production evidence. This supersedes older current-release/next-task notes below without erasing their history.
+
+Active slice: [dispatch 22](../dispatches/dispatch-22-immediate-operating-state.md), immediate expiring closure command/shared current-state resolver and explicit current-state API; not deployed until its checkpoint is recorded. Next: address/suite/mall directions requests with shared approved UI/API/import/export semantics. No restoration, staffing cleanup, private API sample, real mail-delivery acceptance or DM work-email publication is implied. Preserve the owner's testing DM and existing District ownership.

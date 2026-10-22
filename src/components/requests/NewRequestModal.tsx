@@ -271,13 +271,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
             >
               <option value="Phone Number Correction">Phone Number Correction</option>
               <option value="Store Manager Change">Store Manager Leadership Change</option>
-              <option value="Operational Status Change">Operational Status & Temporary Notice</option>
+              <option value="Operational Status Change">Lifecycle / Hours Modifier & Notice (approval required)</option>
               <option value="Standard Hours Adjustment">Standard Hours Adjustment</option>
               <option value="Other Store Info Update">Other Store Info Update (including shared inbox)</option>
             </select>
           </div>
 
           {/* Conditional change inputs */}
+          <p className="rounded-lg bg-blue-50 p-2 text-blue-900">For a power outage or other immediate closure, open the Location and use Report temporary closure. It expires at store-local midnight and does not wait for correction approval. Holiday exceptions remain managed in the existing holiday settings, not this request form.</p>
           {changeType === 'Phone Number Correction' && (
             <div>
               <FormLabel required>New Customer Direct Phone</FormLabel>
@@ -316,7 +317,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
                   <option value="Open — Normal Operations">Open — Normal Operations</option>
                   <option value="Temporarily Modified Hours">Temporarily Modified Hours</option>
                   <option value="Under Remodel / Renovation">Under Remodel / Renovation</option>
-                  <option value="Temporarily Closed — Emergency">Temporarily Closed — Emergency</option>
+                  {targetLoc?.operationalStatus === 'Temporarily Closed — Emergency' && <option value="Temporarily Closed — Emergency" disabled>Legacy emergency — review and replace</option>}
                 </select>
               </div>
               <div>

@@ -1,6 +1,7 @@
 import type { LocationRecord, Person, UserProfile, UpdateRequest, HoursTemplate, CorporateHoliday, AuditLogEntry, EmailTemplate, NotificationRule, OutboxLogEntry, SopRunbook, RegionRecord, DistrictRecord } from '../types';
 
 export interface DirectorySeed {
+  serverNow?: string;
   locations: LocationRecord[];
   people: Person[];
   users: UserProfile[];

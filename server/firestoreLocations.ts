@@ -99,6 +99,13 @@ export class FirestoreLocationRepository implements LocationRepository {
     assertUniqueStoreNumbers(snapshot.docs.map(toLocationDocument));
     return snapshot.empty ? null : toLocationDocument(snapshot.docs[0]);
   }
+
+  async findOperatingByStoreNumber(storeNumber: string): Promise<LocationDocument | null> {
+    const snapshot = await this.firestore.collection('locations').where('storeNumber', '==', storeNumber)
+      .select(...PUBLIC_LOCATION_FIELDS, 'temporaryClosure').limit(2).get();
+    assertUniqueStoreNumbers(snapshot.docs.map(toLocationDocument));
+    return snapshot.empty ? null : toLocationDocument(snapshot.docs[0]);
+  }
 }
 
 export function createFirestoreLocationRepository(): FirestoreLocationRepository {

@@ -652,7 +652,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">
-                      Operational Status
+                      Lifecycle / Hours Modifier (not current open/closed state)
                     </label>
                     <select
                       value={formData.operationalStatus}
@@ -663,7 +663,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <option value="Temporarily Modified Hours">Temporarily Modified Hours</option>
                       <option value="Under Remodel / Renovation">Under Remodel / Renovation</option>
                       <option value="Opening Soon — New Store">Opening Soon — New Store</option>
-                      <option value="Temporarily Closed — Emergency">Temporarily Closed — Emergency</option>
+                      {location?.operationalStatus === 'Temporarily Closed — Emergency' && <option value="Temporarily Closed — Emergency">Legacy emergency — expiry needs verification</option>}
                       <option value="Permanently Closed">Permanently Closed</option>
                     </select>
                   </div>

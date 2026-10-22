@@ -23,7 +23,9 @@ This first release completes the active-category validation/recovery boundary. S
 
 ## Validation / release state
 
-In progress on `codex/request-validation-recovery`, not yet merged/deployed.
+Published through PR #32. Merged source `ea53efb1124f1db82f73908f4d0b0f2f66a00414` has the exact tested final-head tree `7036b2b39821c65b9dba2ebd5cb1435206cceb17`. Final type/build passed. CodeRabbit latest-head check succeeded; Codex's final phone-extension finding was reproduced, fixed and covered by two affected passing browser cases. Earlier unaffected successes were reused, not presented as a fresh full-suite run.
+
+Production revision `shiekh-location-company-directory-pr32-ea53efb` serves 100% on both hosts. Build `2575582c-ba38-484b-822a-8bc40a8dc0ec` succeeded. Candidate/production checks verified the matching 86-asset graph, auth guards, no-store HTML, unchanged Firebase configuration and served personnel documents. Runtime/build environment, identities, security/network/scaling and 26 historical traffic tags were preserved; only the temporary release tag was removed. Branded domain Ready/Routable. Fresh browser verification reached Sign In; **no authenticated live request or mail-delivery acceptance is claimed**. No business records were changed as probes.
 
 - An initial parallel suite failed before test execution because the local process environment exhausted memory (`uv_os_get_passwd` ENOMEM). Serial execution is the verified runner; this was not an application assertion failure.
 - Full serial API/unit run: **459/459 passed**. Final audit/cancellation-bypass changes then passed **108/108 affected tests**; unchanged full-suite successes are reused.

@@ -6,9 +6,10 @@ import { buildDistrictManagerGroupLabel, resolveActivePerson } from '../../lib/r
 import { HierarchyGroupKey, classifyHierarchyLocationType, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
+import { effectiveNotice, resolveOperatingState } from '../../lib/operatingState';
 
 export const PrintSheetView: React.FC = () => {
-  const { locations, people, regions, districts } = useDirectory();
+  const { locations, people, regions, districts, operatingNow } = useDirectory();
   const [districtFilter, setDistrictFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -156,6 +157,7 @@ export const PrintSheetView: React.FC = () => {
         id="print-directory-sheet"
         className="rounded-xl border border-neutral-200 bg-white p-6 text-neutral-900 shadow-xs print:m-0 print:rounded-none print:border-none print:p-0 print:shadow-none"
       >
+        <p className="text-[9px] text-neutral-500">Operating state snapshot: {operatingNow.toISOString()} · Printed copies do not update.</p>
         
         {/* Printable Header */}
         <div className="print-sheet-header mb-3 flex items-center justify-between border-b-2 border-neutral-900 pb-2">
@@ -215,7 +217,9 @@ export const PrintSheetView: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-neutral-100 font-normal">
                   {stores.map((loc, idx) => {
-                    const hasNotice = loc.operationalStatus !== 'Open — Normal Operations' || Boolean(loc.activeNotice);
+                    const currentState = resolveOperatingState(loc, operatingNow);
+                    const notice = effectiveNotice(loc, operatingNow);
+                    const hasNotice = currentState.scheduleSource === 'temporary-closure' || currentState.state === 'Unknown' || Boolean(notice);
                     const hierarchy = hierarchyByLocationId.get(loc.id);
                     const unclassifiedTypeWarning = classifyHierarchyLocationType(loc.type) === 'unclassified'
                       ? `Location type is ${loc.type ? `'${loc.type}'` : 'missing'}, not a recognized business type.`
@@ -236,13 +240,14 @@ export const PrintSheetView: React.FC = () => {
                         <td className="py-1 px-1.5 font-medium text-neutral-900">
                           {(hasNotice || hierarchyWarnings.length > 0) && (
                             <span 
-                              title={[hasNotice ? `Notice: ${loc.activeNotice?.shortDescription || loc.operationalStatus}` : null, ...hierarchyWarnings].filter(Boolean).join(' ')}
+                              title={[hasNotice ? `Notice: ${notice?.shortDescription || currentState.reason}` : null, ...hierarchyWarnings].filter(Boolean).join(' ')}
                               className="inline-flex items-center text-amber-600 mr-1 align-middle"
                             >
                               <AlertTriangle className="w-3 h-3 inline" />
                             </span>
                           )}
                           <span>{loc.name}</span>
+                          <span className="block text-[9px] font-normal text-neutral-600">{currentState.state === 'Unknown' ? 'Needs verification' : currentState.state} · {notice?.shortDescription || currentState.reason}</span>
                           {hierarchyWarnings.length > 0 && (
                             <span className="block text-[9px] font-normal text-amber-700">{hierarchyWarnings.join(' ')}</span>
                           )}

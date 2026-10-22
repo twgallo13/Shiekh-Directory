@@ -137,6 +137,7 @@ export interface LocationRecord {
   keyHolderNames?: string[];
   operationalStatus: OperationalStatus;
   activeNotice?: TemporaryNotice;
+  temporaryClosure?: import('./lib/operatingState').TemporaryClosure | null;
   standardHours: WeeklySchedule;
   hoursTemplateId?: string;
   hoursMode?: 'template' | 'custom';

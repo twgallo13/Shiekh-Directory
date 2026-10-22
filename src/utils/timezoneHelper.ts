@@ -1,91 +1,21 @@
-import { LocationRecord, DayHours } from '../types';
+import type { LocationRecord } from '../types';
+import { resolveOperatingState } from '../lib/operatingState';
 
-export function getTodayHoursForLocation(loc: LocationRecord): {
-  dayName: string;
-  hoursString: string;
-  isOpenNow: boolean;
-  isHolidayOverride: boolean;
-  holidayName?: string;
-} {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-  const now = new Date();
-  const dayIndex = now.getDay();
-  const dayName = days[dayIndex];
-  
-  // Format today as YYYY-MM-DD
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const dateNum = String(now.getDate()).padStart(2, '0');
-  const todayStr = `${year}-${month}-${dateNum}`;
-
-  // Check holiday override
-  if (loc.holidayHours && loc.holidayHours.length > 0) {
-    const holidayMatch = loc.holidayHours.find(h => h.date === todayStr);
-    if (holidayMatch) {
-      const hHours = holidayMatch.hours;
-      if (hHours.isClosed) {
-        return {
-          dayName: holidayMatch.holidayName,
-          hoursString: 'Closed for Holiday',
-          isOpenNow: false,
-          isHolidayOverride: true,
-          holidayName: holidayMatch.holidayName
-        };
-      }
-      return {
-        dayName: holidayMatch.holidayName,
-        hoursString: `${formatTime(hHours.open)} – ${formatTime(hHours.close)}`,
-        isOpenNow: checkIsOpen(hHours.open, hHours.close),
-        isHolidayOverride: true,
-        holidayName: holidayMatch.holidayName
-      };
-    }
-  }
-
-  const standardDay: DayHours = loc.standardHours?.[dayName] || { open: '10:00', close: '20:00', isClosed: false };
-  if (standardDay.isClosed) {
-    return {
-      dayName: capitalize(dayName),
-      hoursString: 'Closed Today',
-      isOpenNow: false,
-      isHolidayOverride: false
-    };
-  }
-
+/** Compatibility view of the shared resolver; no viewer-local dates or fabricated default hours. */
+export function getTodayHoursForLocation(location: LocationRecord, now = new Date()) {
+  const state = resolveOperatingState(location, now);
   return {
-    dayName: capitalize(dayName),
-    hoursString: `${formatTime(standardDay.open)} – ${formatTime(standardDay.close)}`,
-    isOpenNow: checkIsOpen(standardDay.open, standardDay.close),
-    isHolidayOverride: false
+    ...state,
+    dayName: state.dayName ? state.dayName[0].toUpperCase() + state.dayName.slice(1) : 'Unknown local day',
+    hoursString: state.hours ? state.hours.isClosed ? 'Closed Today' : `${formatTime(state.hours.open)} – ${formatTime(state.hours.close)}` : state.scheduleSource === 'temporary-closure' ? 'Closed temporarily' : state.state === 'Closed' ? state.reason : 'Hours need verification',
+    isOpenNow: state.state === 'Open',
+    isHolidayOverride: state.scheduleSource === 'holiday' || state.scheduleSource === 'special',
+    holidayName: state.scheduleSource === 'holiday' ? 'Holiday schedule' : undefined,
   };
 }
 
-function checkIsOpen(openTimeStr: string, closeTimeStr: string): boolean {
-  if (!openTimeStr || !closeTimeStr) return false;
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentMin = now.getMinutes();
-  const currentTotal = currentHour * 60 + currentMin;
-
-  const [oH, oM] = openTimeStr.split(':').map(Number);
-  const [cH, cM] = closeTimeStr.split(':').map(Number);
-  const openTotal = oH * 60 + (oM || 0);
-  const closeTotal = cH * 60 + (cM || 0);
-
-  return currentTotal >= openTotal && currentTotal < closeTotal;
-}
-
-export function formatTime(timeStr: string): string {
-  if (!timeStr) return '';
-  const [hStr, mStr] = timeStr.split(':');
-  const h = parseInt(hStr, 10);
-  const m = parseInt(mStr || '0', 10);
-  const period = h >= 12 ? 'PM' : 'AM';
-  const displayH = h % 12 === 0 ? 12 : h % 12;
-  const displayM = m === 0 ? '' : `:${String(m).padStart(2, '0')}`;
-  return `${displayH}${displayM} ${period}`;
-}
-
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+export function formatTime(time: string): string {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time || '')) return '';
+  const [hour, minute] = time.split(':').map(Number);
+  return `${hour % 12 || 12}${minute ? `:${String(minute).padStart(2, '0')}` : ''} ${hour >= 12 ? 'PM' : 'AM'}`;
 }

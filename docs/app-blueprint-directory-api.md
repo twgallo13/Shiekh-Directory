@@ -1,5 +1,7 @@
 # Store information available to a new app
 
+For live Open/Closed/Needs verification, use the separate authenticated `/api/v1/locations/{storeNumber}/operating-state` endpoint described in [API.md](../API.md#current-operating-state-separate-from-synchronization), not the raw synchronization lifecycle/modifier. It is no-store, explicitly time-evaluated and can change through expiry without a record update. Re-read at transitions and periodically; mark stale/unknown on outage. Existing v1/v2 frozen synchronization contracts do not change. Publication checkpoint: [dispatch 22](dispatches/dispatch-22-immediate-operating-state.md).
+
 This is a plain-language reference for planning an app that reads stores from the existing Shiekh Directory API. The API is read-only: it can give the app published store information, but it cannot create or edit stores.
 
 For a compact technical allowlist of the emitted JSON shapes, see the [response-schema reference](api-response-schema.md).
@@ -21,6 +23,7 @@ The API provides these read endpoints:
 | `GET /api/v1/locations` | Lists active stores, in pages. |
 | `GET /api/v1/locations/{storeNumber}` | Returns one active store by its exact store number. Keep leading zeroes: store `007` is not `7`. |
 | `GET /api/v1/location-fields` | Lists the custom fields that are currently approved for API publication. |
+| `GET /api/v1/locations/{storeNumber}/operating-state` | Time-evaluated current Open/Closed/Unknown. Same locations:read credential; no-store, no synchronization query parameters. |
 
 All endpoints require the same credential. The API is not an anonymous public data feed.
 

@@ -1,9 +1,12 @@
 import React from 'react';
-import { OperationalStatus, ContactPrivacyLevel } from '../../types';
+import { OperationalStatus, ContactPrivacyLevel, LocationRecord } from '../../types';
+import { resolveOperatingState } from '../../lib/operatingState';
+import { useDirectory } from '../../context/DirectoryContext';
 
 interface OperationalStatusBadgeProps {
   status: OperationalStatus;
   surface?: 'light' | 'dark';
+  location?: LocationRecord;
 }
 
 const statusConfig: Record<OperationalStatus, {
@@ -55,11 +58,17 @@ const statusConfig: Record<OperationalStatus, {
 export const OperationalStatusBadge: React.FC<OperationalStatusBadgeProps> = ({
   status,
   surface = 'light',
+  location,
 }) => {
-  const config = statusConfig[status];
+  const { operatingNow } = useDirectory();
+  const state = location ? resolveOperatingState(location, operatingNow) : null;
+  const config = state ? state.state === 'Open' ? statusConfig['Open — Normal Operations'] : state.state === 'Closed'
+    ? { ...statusConfig['Permanently Closed'], label: 'Closed' }
+    : { ...statusConfig['Temporarily Modified Hours'], label: 'Needs verification' }
+    : statusConfig[status] || { ...statusConfig['Temporarily Modified Hours'], label: 'Needs verification' };
 
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${config[surface]}`}>
+    <span title={state?.reason} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${config[surface]}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${config.dot} ${config.pulse ? 'animate-pulse' : ''}`} aria-hidden="true" />
       {config.label}
     </span>

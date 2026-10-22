@@ -48,6 +48,31 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
     try { return response.json(await store.cancelRequestSubmission(writes[0], actor)); }
     catch (e) { return response.status(e instanceof DirectoryConflict ? 409 : e instanceof DirectoryValidationError ? 400 : 503).json({ error: { code: 'submission_recovery_failed', message: e instanceof DirectoryConflict || e instanceof DirectoryValidationError ? e.message : 'Recovery could not be confirmed. Keep this submission and try recovery again.' } }); }
   });
+  const operatingAuth: import('express').RequestHandler = async (request, response, next) => {
+    const token = request.get('authorization')?.match(/^Bearer ([^\s]+)$/i)?.[1];
+    if (!token || token.length > 8192) { response.status(401).json({ error: { code: 'invalid_token' } }); return; }
+    if (!authenticate) { response.status(503).json({ error: { code: 'directory_unavailable' } }); return; }
+    try { response.locals.operatingActor = await authenticate(token); next(); }
+    catch (error) { response.status(error instanceof AccessDenied ? 403 : error instanceof AuthenticationUnavailable ? 503 : 401).json({ error: { code: 'operating_access_denied' } }); }
+  };
+  const operatingLimit = rateLimit({ limit: 10, windowMs: 60_000, standardHeaders: 'draft-8', legacyHeaders: false, keyGenerator: (_request, response) => response.locals.operatingActor.uid });
+  router.get('/operating/directory', operatingAuth, rateLimit({ limit: 20, windowMs: 60_000, standardHeaders: 'draft-8', legacyHeaders: false, keyGenerator: (_request, response) => response.locals.operatingActor.uid }), async (_request, response) => {
+    response.set('Cache-Control', 'no-store');
+    try {
+      if (!store.readOperatingDirectory) throw new Error('Unavailable');
+      return response.json(await store.readOperatingDirectory());
+    } catch { return response.status(503).json({ error: { code: 'operating_refresh_unavailable', message: 'Status refresh is unavailable. Retain existing state and use explicit directory reconciliation.' } }); }
+  });
+  for (const mode of ['preview', 'commit', 'cancel'] as const) router.post(`/operating/${mode}`, operatingAuth, operatingLimit, async (request, response) => {
+    if (!store.previewOperating || !store.commitOperating || !store.cancelOperating) return response.status(503).json({ error: { code: 'operating_unavailable' } });
+    try {
+      const actor = response.locals.operatingActor as Account;
+      const result = mode === 'preview' ? await store.previewOperating(String(request.body?.locationId || ''), String(request.body?.action || ''), actor) : mode === 'cancel' ? await store.cancelOperating(request.body, actor) : await store.commitOperating(request.body, actor);
+      return response.json(result);
+    } catch (error) {
+      return response.status(error instanceof DirectoryConflict ? 409 : error instanceof DirectoryWriteDenied ? 403 : error instanceof DirectoryValidationError ? 400 : 503).json({ error: { code: error instanceof DirectoryConflict ? 'operating_conflict' : error instanceof DirectoryWriteDenied ? 'operating_access_denied' : error instanceof DirectoryValidationError ? 'invalid_operating_update' : 'operating_unavailable', message: error instanceof DirectoryConflict || error instanceof DirectoryWriteDenied || error instanceof DirectoryValidationError ? error.message : 'The operating update could not be confirmed. Recover the same operation before trying another.' } });
+    }
+  });
   router.post("/commit", async (request, response) => {
     const token = request.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1];
     if (!token || token.length > 8192) return response.status(401).json({ error: { code: "invalid_token" } });

@@ -53,7 +53,7 @@ export interface MailMessage {
   disableFileAccess: true;
   disableUrlAccess: true;
 }
-export type MailEvent = "request-submitted" | "request-approved" | "request-rejected";
+export type MailEvent = "request-submitted" | "request-approved" | "request-rejected" | "operating-updated";
 export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">>;
 export type ResolveDiagnosticTemplate = (configuration: MailConfiguration) => Promise<Pick<MailMessage, "subject" | "text" | "html">>;
 export type ResolveInvitationLink = (entityId: string, identity: MailIdentity) => Promise<string>;
@@ -73,6 +73,10 @@ export interface MailOutcome {
   errorMessage?: string;
 }
 export type RecordMailOutcome = (outcome: MailOutcome) => Promise<void>;
+export interface OperatingMailDelivery {
+  claim(entityId: string, requestId: string, recipient: string, identity: MailIdentity): Promise<'claimed' | 'accepted' | 'uncertain'>;
+  finish(entityId: string, requestId: string, status: 'Accepted' | 'Unknown' | 'NotStarted'): Promise<void>;
+}
 
 export interface MailApiOptions {
   authenticate: ((token: string) => Promise<MailIdentity>) | null;
@@ -80,6 +84,7 @@ export interface MailApiOptions {
   send: ((message: MailMessage, configuration?: MailConfiguration) => Promise<boolean>) | null;
   settings?: MailSettingsStore;
   resolveEvent?: ResolveMailEvent;
+  operatingDelivery?: OperatingMailDelivery;
   resolveDiagnostic?: ResolveDiagnosticTemplate;
   resolveInvitationLink?: ResolveInvitationLink;
   resolveInvitationEmail?: ResolveInvitationEmail;
@@ -267,34 +272,51 @@ export function createMailRouter(options: MailApiOptions): Router {
       }
     },
   );
+  const requestEventLimit = limiter(20, 10 * 60_000, () => 'mail-event-global');
+  const operatingEventLimit = rateLimit({ limit: 3, windowMs: 10 * 60_000, standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: request => `operating-event:${String(request.body?.entityId || '')}`,
+    handler: (_request, response) => mailError(response, 429, 'mail_rate_limited', 'This operating alert recovery limit was reached. The operating update remains saved.'),
+  });
   router.post("/event",
-    limiter(20, 10 * 60_000, () => "mail-event-global"),
     json({ limit: "2kb", strict: true, inflate: false }),
+    (request, response, next) => (request.body?.event === 'operating-updated' ? operatingEventLimit : requestEventLimit)(request, response, next),
     async (request, response) => {
       const body = request.body;
-      const events: MailEvent[] = ["request-submitted", "request-approved", "request-rejected"];
+      const events: MailEvent[] = ["request-submitted", "request-approved", "request-rejected", "operating-updated"];
       if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(field => field !== "event" && field !== "entityId")
         || !events.includes(body.event) || typeof body.entityId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.entityId)) {
         return mailError(response, 400, "invalid_mail_event", "A supported mail event and entityId are required.");
       }
       const identity = response.locals.mailIdentity as MailIdentity;
-      if (body.event !== "request-submitted" && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
+      if (!['request-submitted', 'operating-updated'].includes(body.event) && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
       let configuration: MailConfiguration | null;
       try { configuration = await activeConfiguration(options); }
       catch { return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }
       if (!configuration || !options.send || !options.resolveEvent) return mailError(response, 503, "mail_not_configured", "Mail delivery is not configured.");
       let resolved: Awaited<ReturnType<ResolveMailEvent>> | null = null;
+      let operatingClaimed = false, sendStarted = false, operatingAccepted = false;
       try {
         resolved = await options.resolveEvent(body.event, body.entityId, identity, configuration);
         if (!mailbox(resolved.to)) throw new Error("Invalid resolved recipient");
+        if (body.event === 'operating-updated') {
+          if (!options.operatingDelivery) return mailError(response, 503, 'operating_delivery_unavailable', 'Operating notification recovery is unavailable. The operating update remains saved.');
+          const claim = await options.operatingDelivery.claim(body.entityId, response.locals.requestId, resolved.to, identity);
+          if (claim === 'accepted') return response.json({ success: true, status: 'already-accepted', requestId: response.locals.requestId });
+          if (claim === 'uncertain') return mailError(response, 409, 'mail_delivery_uncertain', 'This notification is already in progress or its delivery is uncertain. Check the outbox before any manual resend. The operating update remains saved.');
+          operatingClaimed = true;
+        }
         await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Queued", recipient: resolved.to, subject: resolved.subject, templateId: body.event, entityId: body.entityId, requestedBy: identity.uid });
+        sendStarted = true;
         const accepted = await options.send({ ...resolved, from: formattedSender(configuration), ...(configuration.replyTo ? { replyTo: configuration.replyTo } : {}), disableFileAccess: true, disableUrlAccess: true }, configuration);
         if (!accepted) throw new Error("Not accepted");
+        if (operatingClaimed) { await options.operatingDelivery!.finish(body.entityId, response.locals.requestId, 'Accepted'); operatingAccepted = true; }
         await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Accepted", recipient: resolved.to, subject: resolved.subject, templateId: body.event, entityId: body.entityId, requestedBy: identity.uid });
         response.locals.mailOutcome = "accepted";
         response.json({ success: true, status: "accepted", requestId: response.locals.requestId });
       } catch (error) {
-        if (resolved) await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Failed", recipient: resolved.to, subject: resolved.subject, templateId: body.event, entityId: body.entityId, requestedBy: identity.uid, errorMessage: "The SMTP relay did not accept the message." }).catch(() => undefined);
+        if (operatingAccepted) return response.json({ success: true, status: 'accepted', requestId: response.locals.requestId, warning: 'Outbox display could not be updated; the durable operating receipt confirms relay acceptance.' });
+        if (operatingClaimed) await options.operatingDelivery!.finish(body.entityId, response.locals.requestId, sendStarted ? 'Unknown' : 'NotStarted').catch(() => undefined);
+        if (resolved) await options.recordMailOutcome?.({ requestId: response.locals.requestId, status: "Failed", recipient: resolved.to, subject: resolved.subject, templateId: body.event, entityId: body.entityId, requestedBy: identity.uid, errorMessage: operatingClaimed && sendStarted ? 'Operating delivery may have been accepted. Check the durable receipt; do not resend blindly.' : 'The mail attempt was not confirmed.' }).catch(() => undefined);
         if (error instanceof AccessDenied) return mailError(response, 403, "mail_event_not_allowed", "The requested mail event is not allowed.");
         mailError(response, 502, "mail_delivery_failed", "The mail relay could not accept the message.");
       }

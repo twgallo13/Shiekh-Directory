@@ -118,3 +118,7 @@ Each `fields` entry has exactly: `id` (string), `label` (string), `type` (`url`,
 ## Error and not-modified responses
 
 Errors use an `error` object with exactly `code`, `message`, and `requestId`. Error responses do not include `data`, `sync`, `pagination`, or location fields. A successful conditional request may return `304 Not Modified` with no JSON body.
+
+# Explicit current-state read
+
+The separate `GET /api/v1/locations/{storeNumber}/operating-state` response is documented in [API.md](../API.md#current-operating-state-separate-from-synchronization). It uses the same locations:read credential and exact store number, but no synchronization parameters, snapshot caching or personnel grants. The `location-operating-state-v1` contract emits current Open/Closed/Unknown with evaluatedAt/nextTransitionAt, store zone/date, reason/source, hours, issues and an active expiring closure or null. It does not reinterpret the raw lifecycle field on existing list/detail snapshots. Check [dispatch 22](dispatches/dispatch-22-immediate-operating-state.md) before assuming this implementation is deployed.

@@ -8,6 +8,7 @@ import { canonicalHierarchyState, resolveLocationHierarchy } from "../src/lib/hi
 import type { ApiClientAuthenticator, ManagedApiCredential } from "./apiClientApi";
 import { normalizeLocationInboxEmail } from "../src/lib/locationInboxEmail";
 import type { ApiScope } from "../src/lib/apiScopes";
+import { resolveOperatingState } from "../src/lib/operatingState";
 
 export const LOCATION_READ_SCOPE = "locations:read" as const;
 
@@ -20,6 +21,7 @@ export interface LocationDocument {
 export interface LocationRepository {
   readPage(options: LocationPageOptions): Promise<LocationPage>;
   findActiveByStoreNumber(storeNumber: string, snapshotAt?: Date): Promise<LocationDocument | null>;
+  findOperatingByStoreNumber?(storeNumber: string): Promise<LocationDocument | null>;
   readHierarchy?(snapshotAt?: Date): Promise<HierarchyRegistry>;
   readCustomFieldDefinitions?(): Promise<CustomFieldDefinition[]>;
 }
@@ -191,6 +193,29 @@ export function createDirectoryApiRouter(options: DirectoryApiOptions): Router {
     });
   });
 
+  // Current state is deliberately separate from frozen synchronization snapshots.
+  router.get("/locations/:storeNumber/operating-state", async (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    if (!request.params.storeNumber || request.params.storeNumber.length > 64 || Object.keys(request.query).length) {
+      return sendError(response, 400, 'invalid_operating_query', 'Use an exact storeNumber without snapshot or pagination parameters.');
+    }
+    if (!options.locations.findOperatingByStoreNumber) return sendError(response, 503, 'operating_state_unavailable', 'Current operating state is unavailable.');
+    const location = await options.locations.findOperatingByStoreNumber(request.params.storeNumber);
+    if (!location || location.data.recordStatus !== 'Active') return sendError(response, 404, 'location_not_found', 'Location not found.');
+    const state = resolveOperatingState(location.data, now());
+    // Explicit projection: internal command receipts, actors and extra historical fields never escape.
+    const closure = state.temporaryClosure;
+    const hours = state.hours;
+    return response.json({ data: {
+      locationId: location.id, storeNumber: location.data.storeNumber,
+      state: state.state, reason: state.reason, scheduleSource: state.scheduleSource,
+      hours: hours ? { open: hours.open, close: hours.close, isClosed: hours.isClosed } : null,
+      localDate: state.localDate, timeZone: state.timeZone, evaluatedAt: state.evaluatedAt,
+      nextTransitionAt: state.nextTransitionAt, issues: state.issues,
+      temporaryClosure: closure ? { id: closure.id, reason: closure.reason, startsAt: closure.startsAt, expiresAt: closure.expiresAt, timeZone: closure.timeZone } : null,
+    }, contract: 'location-operating-state-v1' });
+  });
+
   router.get("/locations/:storeNumber", async (request, response) => {
     const storeNumber = request.params.storeNumber;
     if (!storeNumber || storeNumber.length > 64) {
@@ -312,6 +337,7 @@ function logAuthentication(request: Request, response: Response, outcome: "denie
 }
 
 function logRoute(request: Request): string {
+  if (/^\/locations\/[^/]+\/operating-state$/.test(request.path)) return '/locations/:storeNumber/operating-state';
   if (request.path === "/locations") return "/locations";
   if (request.path === "/location-fields") return "/location-fields";
   if (/^\/locations\/[^/]+$/.test(request.path)) return "/locations/:storeNumber";

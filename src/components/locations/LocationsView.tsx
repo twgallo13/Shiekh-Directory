@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { resolveOperatingState } from '../../lib/operatingState';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
@@ -61,13 +62,15 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 }) => {
   const { 
     locations, 
+    operatingNow,
+    operatingRefreshError,
     people, 
     regions,
     districts: registryDistricts,
     currentUser, 
     hoursTemplates, 
-    applyHoursTemplate, 
-    updateLocation 
+    updateLocation,
+    saveLocationRecord,
   } = useDirectory();
 
   // State Restoration
@@ -87,6 +90,10 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
   const [bulkStatus, setBulkStatus] = useState<string>('');
   const [bulkTemplateId, setBulkTemplateId] = useState<string>('');
   const [bulkSuccessMsg, setBulkSuccessMsg] = useState<string | null>(null);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState('');
+  const [bulkNeedsReload, setBulkNeedsReload] = useState(false);
+  const bulkBusy = useRef(false);
 
   // Corporate Holiday / Temporary Exception State
   const [exceptionName, setExceptionName] = useState<string>('');
@@ -146,7 +153,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
       const hierarchy = hierarchyByLocationId.get(loc.id);
       if (districtFilter !== 'all' && hierarchyGroupId(resolveHierarchyGroupKey(hierarchy, loc.type)) !== districtFilter) return false;
       if (stateFilter !== 'all' && loc.state !== stateFilter) return false;
-      if (statusFilter !== 'all' && loc.operationalStatus !== statusFilter) return false;
+      if (statusFilter !== 'all' && resolveOperatingState(loc, operatingNow).state !== statusFilter) return false;
       if (typeFilter !== 'all' && loc.type !== typeFilter) return false;
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
@@ -165,7 +172,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
         hierarchy?.regionId?.toLowerCase().includes(term)
       );
     });
-  }, [locations, includeRetired, districtFilter, stateFilter, statusFilter, typeFilter, searchTerm, leadershipByLocationId, hierarchyByLocationId]);
+  }, [locations, operatingNow, includeRetired, districtFilter, stateFilter, statusFilter, typeFilter, searchTerm, leadershipByLocationId, hierarchyByLocationId]);
 
   // District Groups calculation
   const districtGroups = useMemo(() => {
@@ -225,15 +232,40 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
     setTypeFilter('all');
   };
 
-  const handleApplyBulkUpdates = () => {
-    if (selectedStoreIds.length === 0) return;
+  const handleApplyBulkUpdates = async () => {
+    if (selectedStoreIds.length === 0 || bulkBusy.current || bulkNeedsReload) return;
+    if (selectedStoreIds.some(id => !locations.some(location => location.id === id))) { setBulkError('A selected Location is no longer available. Refresh and select the intended stores again. Nothing was saved.'); return; }
+    const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+    if (exceptionName.trim() && (!validDate(exceptionStartDate) || !validDate(exceptionEndDate || exceptionStartDate) || (exceptionEndDate && exceptionEndDate < exceptionStartDate))) { setBulkError('Choose valid explicit start/end dates for the dated exception.'); return; }
+    if (exceptionName.trim() && exceptionOperatingStatus !== 'Closed' && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(exceptionOpenTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(exceptionCloseTime) || exceptionOpenTime === exceptionCloseTime)) { setBulkError('Choose valid, different opening and closing times.'); return; }
+    const dates: string[] = [];
+    if (exceptionName.trim()) {
+      for (let date = exceptionStartDate; date <= (exceptionEndDate || exceptionStartDate); date = new Date(Date.parse(date) + 86400000).toISOString().slice(0, 10)) {
+        dates.push(date);
+        if (dates.length > 366) { setBulkError('Limit a dated exception to 366 days.'); return; }
+      }
+    }
+    if (exceptionName.trim()) {
+      const conflicts = selectedStoreIds.map(id => locations.find(l => l.id === id)).filter((location): location is LocationRecord => Boolean(location && (
+        !Array.isArray(location.holidayHours || []) || !Array.isArray(location.specialHours || [])
+        || (location.holidayHours || []).some(h => !h || typeof h.date !== 'string' || (dates.includes(h.date) && h.holidayName !== exceptionName.trim()))
+        || (location.specialHours || []).some(s => !s || typeof s.startDate !== 'string' || typeof s.endDate !== 'string' || dates.some(date => s.startDate <= date && s.endDate >= date))
+      )));
+      if (conflicts.length) { setBulkError(`Resolve existing dated schedules first: ${conflicts.map(l => `#${l.storeNumber}`).join(', ')}. Nothing was saved.`); return; }
+    }
+    bulkBusy.current = true; setBulkSaving(true); setBulkError('');
+    let confirmed = 0;
+    try {
 
-    selectedStoreIds.forEach(storeId => {
+    for (const storeId of selectedStoreIds) {
       const loc = locations.find(l => l.id === storeId);
+      if (!loc) throw new Error('A selected Location is no longer available.');
       const updates: Partial<LocationRecord> & { holidayOverrides?: any[] } = {};
 
       if (bulkTemplateId) {
-        applyHoursTemplate(storeId, bulkTemplateId);
+        const template = hoursTemplates.find(item => item.id === bulkTemplateId);
+        if (!template) throw new Error('The chosen hours template is no longer available.');
+        Object.assign(updates, { standardHours: template.schedule, hoursMode: 'template', hoursTemplateId: template.id });
       }
       if (bulkStatus) {
         updates.operationalStatus = bulkStatus as OperationalStatus;
@@ -255,37 +287,31 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
         };
 
         // 2. Map into holidayHours / holidayOverrides array
-        const newOverride = {
-          id: `hol-${Date.now()}-${storeId}`,
+        const newOverrides = dates.map(date => ({
+          id: `hol-${crypto.randomUUID()}`,
           holidayName: exceptionName.trim(),
-          date: exceptionStartDate || new Date().toISOString().split('T')[0],
+          date,
           hours: {
             open: isClosed ? '00:00' : exceptionOpenTime,
             close: isClosed ? '00:00' : exceptionCloseTime,
             isClosed: isClosed
           }
-        };
+        }));
 
         const existingHolidays = loc?.holidayHours || [];
         const filteredHolidays = existingHolidays.filter(
-          h => h.holidayName !== exceptionName.trim() || h.date !== newOverride.date
+          h => h.holidayName !== exceptionName.trim() || !dates.includes(h.date)
         );
-        const combinedHolidays = [...filteredHolidays, newOverride];
+        const combinedHolidays = [...filteredHolidays, ...newOverrides];
         updates.holidayHours = combinedHolidays;
-        updates.holidayOverrides = combinedHolidays;
-
-        // If operational status was not explicitly selected, set appropriate status
-        if (!bulkStatus) {
-          updates.operationalStatus = isClosed 
-            ? 'Temporarily Closed — Emergency' 
-            : 'Temporarily Modified Hours';
-        }
+        // The dated schedule carries both closure and modified hours; lifecycle stays unchanged.
       }
 
       if (Object.keys(updates).length > 0) {
-        updateLocation(storeId, updates);
+        await saveLocationRecord({ ...loc, ...updates }, false, loc.customMetadata || {}, loc.version ?? 0);
       }
-    });
+      confirmed++;
+    }
 
     const count = selectedStoreIds.length;
     setBulkSuccessMsg(`Successfully updated ${count} location${count > 1 ? 's' : ''}`);
@@ -300,10 +326,15 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
     setExceptionOperatingStatus('Closed');
     setExceptionOpenTime('10:00');
     setExceptionCloseTime('18:00');
+    } catch (error) {
+      setBulkNeedsReload(true);
+      setBulkError(`${confirmed} Location update(s) confirmed. The remaining save may have failed or its reply may be lost. ${error instanceof Error ? error.message : ''} Reload saved directory state before preparing another batch; no automatic retry was sent.`);
+    } finally { bulkBusy.current = false; setBulkSaving(false); }
   };
 
   return (
     <div className="space-y-4">
+      {operatingRefreshError && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{operatingRefreshError}</p>}
       <PageHeader
         title="Store Locations Directory"
         description={`${activeCount} active location${activeCount === 1 ? '' : 's'}${states.length > 0 ? ` across ${states.join(', ')}` : ''}${retiredCount > 0 ? ` (${retiredCount} retired in archive)` : ''}`}
@@ -382,12 +413,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
           {/* All Statuses Dropdown */}
           <select
             value={statusFilter}
+            aria-label="Current operating status"
             onChange={(e) => setStatusFilter(e.target.value)}
             className="bg-neutral-50 hover:bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
           >
             <option value="all">All Statuses</option>
-            {operationalStatuses.map(st => (
-              <option key={st} value={st}>{st}</option>
+            {['Open', 'Closed', 'Unknown'].map(st => (
+              <option key={st} value={st}>{st === 'Unknown' ? 'Needs verification' : st}</option>
             ))}
           </select>
 
@@ -556,7 +588,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                   </tr>
                 ) : (
                   filtered.map(loc => {
-                    const todayHours = getTodayHoursForLocation(loc);
+                    const todayHours = getTodayHoursForLocation(loc, operatingNow);
                     const isRetired = loc.recordStatus === 'Retired';
                     const isSelected = selectedStoreIds.includes(loc.id);
 
@@ -609,7 +641,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                         </td>
 
                         <td className="py-3 px-4">
-                          <OperationalStatusBadge status={loc.operationalStatus} />
+                          <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                         </td>
 
                         <td className="py-3 px-4">
@@ -714,7 +746,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                     <table className="w-full text-left text-xs text-neutral-700">
                       <tbody className="divide-y divide-neutral-100">
                         {distLocs.map(loc => {
-                          const todayHours = getTodayHoursForLocation(loc);
+                          const todayHours = getTodayHoursForLocation(loc, operatingNow);
                           const isSelected = selectedStoreIds.includes(loc.id);
 
                           return (
@@ -748,7 +780,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                                 <span className="font-medium text-neutral-700">{todayHours.hoursString}</span>
                               </td>
                               <td className="py-2.5 px-4">
-                                <OperationalStatusBadge status={loc.operationalStatus} />
+                                <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                               </td>
                               <td className="py-2.5 px-4">
                                 <span className="text-neutral-600">{leadershipByLocationId.get(loc.id)?.storeManager?.fullName || 'Vacant'}</span>
@@ -780,7 +812,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(loc => {
                 const isSelected = selectedStoreIds.includes(loc.id);
-                const todayHours = getTodayHoursForLocation(loc);
+                const todayHours = getTodayHoursForLocation(loc, operatingNow);
                 const isRetired = loc.recordStatus === 'Retired';
 
                 return (
@@ -815,7 +847,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                           <span className="text-[10px] text-neutral-400">{loc.type}</span>
                         </div>
                       </div>
-                      <OperationalStatusBadge status={loc.operationalStatus} />
+                      <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                     </div>
 
                     {/* Card Details */}
@@ -852,7 +884,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
       {/* Bulk Update Hours & Status Modal */}
       {isBulkModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-neutral-200 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+          <div role="dialog" aria-modal="true" aria-label="Bulk Update Fleet Locations" className="bg-white border border-neutral-200 rounded-2xl p-6 max-w-lg w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
               <div>
                 <h3 className="font-bold text-neutral-900 text-base">Bulk Update Fleet Locations</h3>
@@ -862,6 +894,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
               </div>
               <button
                 type="button"
+                disabled={bulkSaving}
                 onClick={() => setIsBulkModalOpen(false)}
                 className="text-neutral-400 hover:text-neutral-700 p-1 cursor-pointer"
               >
@@ -869,18 +902,22 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            {bulkError && <p role="alert" className="text-xs text-red-800">{bulkError}</p>}
+            {bulkNeedsReload && <button type="button" onClick={() => window.location.reload()} className="text-xs underline">Reload saved directory state</button>}
+            {bulkSaving && <p role="status" className="text-xs">Saving confirmed updates…</p>}
+            <fieldset disabled={bulkSaving || bulkNeedsReload} className="space-y-4 text-xs">
               <div>
                 <label className="block font-semibold text-neutral-700 mb-1.5">
                   Update Operational Status
                 </label>
                 <select
                   value={bulkStatus}
+                  aria-label="Bulk lifecycle modifier"
                   onChange={(e) => setBulkStatus(e.target.value)}
                   className="w-full bg-neutral-50 border border-neutral-200 rounded-lg p-2 text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer"
                 >
                   <option value="">-- Keep Current Status (No Change) --</option>
-                  {operationalStatuses.map(st => (
+                  {operationalStatuses.filter(st => st !== 'Temporarily Closed — Emergency').map(st => (
                     <option key={st} value={st}>{st}</option>
                   ))}
                 </select>
@@ -940,6 +977,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                       <input
                         type="date"
                         value={exceptionStartDate}
+                        aria-label="Exception start date"
                         onChange={(e) => setExceptionStartDate(e.target.value)}
                         className="w-full bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500"
                       />
@@ -951,6 +989,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                       <input
                         type="date"
                         value={exceptionEndDate}
+                        aria-label="Exception end date"
                         onChange={(e) => setExceptionEndDate(e.target.value)}
                         className="w-full bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500"
                       />
@@ -1015,27 +1054,27 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                   )}
 
                   <p className="text-[10px] text-neutral-500">
-                    Will inject schedule overrides into Google Maps and public store directory active notices.
+                    Saves a dated Directory schedule. Google Business Profile publication is a separate integration, not confirmed by this action.
                   </p>
                 </div>
               </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 text-[11px]">
-                ⚠️ Warning: Bulk operations will immediately update all {selectedStoreIds.length} stores in staging state. Ensure you have confirmed hours schedules with district management before applying.
+                Updates are saved one Location at a time, with version checks. Confirm these schedules with district management before applying; partial or uncertain outcomes require a saved-state reload.
               </div>
-            </div>
-
+            </fieldset>
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-neutral-100">
               <button
                 type="button"
                 onClick={() => setIsBulkModalOpen(false)}
+                disabled={bulkSaving}
                 className="px-4 py-2 rounded-lg text-xs font-semibold text-neutral-600 hover:text-neutral-800 bg-neutral-100 hover:bg-neutral-200/80 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                disabled={!bulkStatus && !bulkTemplateId && !exceptionName.trim()}
+                disabled={bulkSaving || bulkNeedsReload || (!bulkStatus && !bulkTemplateId && !exceptionName.trim())}
                 onClick={handleApplyBulkUpdates}
                 className={`px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-xs ${
                   bulkStatus || bulkTemplateId || exceptionName.trim()

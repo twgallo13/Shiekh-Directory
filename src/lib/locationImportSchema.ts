@@ -78,6 +78,7 @@ export type LocationImportColumn = typeof LOCATION_IMPORT_COLUMNS[number];
 export type LocationImportMode = 'add-and-update' | 'update-existing-only';
 
 export const LOCATION_IMPORT_INFORMATIONAL_COLUMNS = [
+  'CurrentOperatingState', 'OperatingReason', 'OperatingEvaluatedAt', 'OperatingNextTransitionAt', 'TemporaryClosureExpiresAt',
   'RegionName',
   'DistrictName',
   'District',

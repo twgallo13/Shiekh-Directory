@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord } from '../../types';
+import { resolveOperatingState, effectiveNotice } from '../../lib/operatingState';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
@@ -39,7 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToPeople,
   onNavigateToRequests,
 }) => {
-  const { locations, people, requests, regions, districts } = useDirectory();
+  const { locations, people, requests, regions, districts, operatingNow, operatingRefreshError } = useDirectory();
 
   // Quick Reference Search & District Filter
   const [quickSearch, setQuickSearch] = useState('');
@@ -50,10 +51,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   // Stores with Active Operational Notices (modified hours, remodel, emergency, or temporary notices)
   const storesWithNotices = useMemo(() => {
     return locations.filter(l => 
-      l.operationalStatus !== 'Open — Normal Operations' || 
-      (l.activeNotice && l.activeNotice.shortDescription)
+      l.recordStatus === 'Active' && (l.operationalStatus !== 'Open — Normal Operations' || Boolean(effectiveNotice(l, operatingNow)) || resolveOperatingState(l, operatingNow).scheduleSource === 'temporary-closure' || resolveOperatingState(l, operatingNow).state === 'Unknown')
     );
-  }, [locations]);
+  }, [locations, operatingNow]);
 
   const verifiedStores = locations.filter(l => l.lastVerifiedAt);
   const hierarchyByLocationId = useMemo(() => new Map(locations.map(location => [
@@ -110,6 +110,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {operatingRefreshError && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{operatingRefreshError}</p>}
+      <p aria-label="Current store operating totals" className="text-xs text-neutral-600">{['Open', 'Closed', 'Unknown'].map(state => `${state === 'Unknown' ? 'Needs verification' : state}: ${locations.filter(l => l.recordStatus === 'Active' && resolveOperatingState(l, operatingNow).state === state).length}`).join(' · ')}</p>
       <PageHeader
         title="Operations Dashboard"
         description="Current store coverage, directory health, and items requiring attention"
@@ -215,11 +217,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {loc.name}
                       </span>
                     </div>
-                    <OperationalStatusBadge status={loc.operationalStatus} />
+                    <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                   </div>
 
                   {/* Active Notice Banner */}
-                  {loc.activeNotice && (
+                  {effectiveNotice(loc, operatingNow) && (
                     <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-lg text-xs space-y-1">
                       <div className="flex items-start gap-1.5 text-amber-900 font-semibold">
                         <AlertCircle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
@@ -237,7 +239,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   )}
 
                   {/* Status Banner when no activeNotice string is present but status is abnormal */}
-                  {!loc.activeNotice && (
+                  {!effectiveNotice(loc, operatingNow) && (
                     <div className={`p-2 rounded-lg text-xs flex items-center gap-2 ${
                       isEmergency
                         ? 'bg-rose-50 text-rose-800 border border-rose-200'
@@ -247,9 +249,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     }`}>
                       <Clock className="w-3.5 h-3.5 shrink-0" />
                       <span className="text-[11px] font-medium">
-                        {isRemodel && 'Facility actively under renovation — standard customer operations suspended.'}
-                        {isEmergency && 'Emergency closure in effect — customer entry prohibited.'}
-                        {isModified && 'Operating on non-standard temporary schedule.'}
+                        {isRemodel && 'Renovation is recorded; current operating state needs verification.'}
+                        {isEmergency && 'Legacy emergency closure recorded; expiry needs verification.'}
+                        {isModified && 'Hours modifier recorded separately from current Open/Closed state.'}
+                        {!isRemodel && !isEmergency && !isModified && resolveOperatingState(loc, operatingNow).reason}
                       </span>
                     </div>
                   )}
@@ -377,7 +380,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
 
                     <div className="text-right shrink-0">
-                      <OperationalStatusBadge status={loc.operationalStatus} />
+                      <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                     </div>
                   </button>
 

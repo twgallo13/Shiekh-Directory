@@ -5,6 +5,154 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+async function prepareOperating(page: Page, uncertain = false) {
+  await page.clock.install({ time: new Date('2026-10-22T18:00:00Z') });
+  await prepare(page, 'System Administrator');
+  const seed = seedDirectory(1) as any;
+  seed.serverNow = '2026-10-22T18:00:00Z';
+  seed.locations[0].version = 3;
+  const calls: any[] = [], mail: any[] = [];
+  let previews = 0;
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: { ...seed, serverNow: new Date('2026-10-22T18:00:00Z').toISOString() } }));
+  await page.route('**/api/directory/operating/preview', route => {
+    previews++;
+    return route.fulfill({ json: { locationId: 'loc-1', locationName: seed.locations[0].name, storeNumber: '001', timeZone: 'America/Los_Angeles', action: route.request().postDataJSON().action, expectedVersion: seed.locations[0].version, expectedClosureId: seed.locations[0].temporaryClosure?.id ?? null, expectedExpiresAt: '2026-10-23T07:00:00Z', evaluatedAt: '2026-10-22T18:00:00Z', state: { state: 'Open' } } });
+  });
+  await page.route('**/api/directory/operating/commit', route => {
+    const command = route.request().postDataJSON(); calls.push(command);
+    if (uncertain && calls.length === 1) return route.fulfill({ status: 502, contentType: 'text/html', body: 'Lost reply' });
+    seed.locations[0] = { ...seed.locations[0], version: 4, temporaryClosure: { id: command.operationId, reason: command.reason, startsAt: '2026-10-22T18:00:00Z', expiresAt: command.expectedExpiresAt, timeZone: 'America/Los_Angeles' } };
+    return route.fulfill({ json: { operationId: command.operationId, replayed: uncertain && calls.length > 1, records: [{ collection: 'locations', operation: 'set', id: 'loc-1', data: seed.locations[0] }], state: { state: 'Closed', reason: command.reason, evaluatedAt: '2026-10-22T18:00:00Z' } } });
+  });
+  await page.route('**/api/mail/event', route => { mail.push(route.request().postDataJSON()); return route.fulfill({ json: { success: true, status: 'accepted' } }); });
+  await page.goto(`${origin}/locations/loc-1`); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'Report temporary closure' })).toBeVisible();
+  return { seed, calls, mail, previews: () => previews };
+}
+
+test('Operating closure previews without writes, confirms immediately and publishes its exact expiry', async ({ page }) => {
+  const f = await prepareOperating(page);
+  await page.getByRole('button', { name: 'Report temporary closure' }).click();
+  const dialog = page.getByRole('dialog').filter({ has: page.getByLabel('Reason for operating update') });
+  await expect(dialog).toContainText('Store #001');
+  await expect(dialog.getByRole('button', { name: 'Confirm closure', exact: true })).toBeDisabled();
+  expect(f.calls).toHaveLength(0); expect(f.mail).toHaveLength(0);
+  await dialog.getByLabel('Reason for operating update').fill('Power outage');
+  await dialog.getByRole('button', { name: 'Confirm closure', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Temporary closure automatically ends');
+  expect(f.calls).toHaveLength(1); expect(f.calls[0].expectedExpiresAt).toBe('2026-10-23T07:00:00Z');
+  await expect.poll(() => f.mail.length).toBe(1);
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(f.calls[0]).not.toHaveProperty('actorId');
+  await page.getByRole('button', { name: 'Check / recover steward alert' }).click();
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Inbox delivery is not confirmed');
+  expect(f.calls).toHaveLength(1); expect(f.mail).toHaveLength(2);
+  expect(f.mail[1].entityId).toBe(f.calls[0].operationId);
+});
+
+test('Operating uncertain save survives reload and retries only the same immutable command', async ({ page }) => {
+  const f = await prepareOperating(page, true);
+  await page.getByRole('button', { name: 'Report temporary closure' }).click();
+  await page.getByLabel('Reason for operating update').fill('Power outage');
+  await page.getByRole('button', { name: 'Confirm closure', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Recover operating update' })).toBeVisible();
+  expect(f.mail).toHaveLength(0);
+  await page.reload(); await restore(page, true);
+  await page.getByRole('button', { name: 'Recover operating update' }).click();
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(f.calls).toHaveLength(2); expect(f.calls[1]).toEqual(f.calls[0]);
+  await expect.poll(() => f.mail.length).toBe(1);
+});
+
+test('Operating expiry returns to schedule on the store clock without requiring a cleanup write', async ({ page }) => {
+  const f = await prepareOperating(page);
+  f.seed.locations[0].temporaryClosure = { id: 'event', reason: 'Power outage', startsAt: '2026-10-22T17:00:00Z', expiresAt: '2026-10-23T07:00:00Z', timeZone: 'America/Los_Angeles' };
+  await page.reload(); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  // An offline screen still expires its locally retained closure; no stale fixture clock reset.
+  await page.route('**/api/auth/bootstrap', route => route.abort());
+  await page.clock.fastForward(14 * 3600000);
+  await expect(page.getByRole('button', { name: 'Confirm closure for today' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Outside scheduled hours');
+  expect(f.calls).toHaveLength(0); expect(f.previews()).toBe(0); expect(f.mail).toHaveLength(0);
+});
+
+test('Operating periodic refresh uses one bounded read, updates closures and retains state on outage', async ({ page }) => {
+  const f = await prepareOperating(page);
+  let refreshes = 0, bootstraps = 0, fail = false;
+  page.on('request', request => { if (request.url().endsWith('/api/auth/bootstrap')) bootstraps++; });
+  await page.route('**/api/directory/operating/directory', route => {
+    refreshes++;
+    return fail ? route.fulfill({ status: 503, json: { error: {} } }) : route.fulfill({ json: f.seed });
+  });
+  f.seed.locations[0].temporaryClosure = { id: '12345678-1234-1234-1234-123456789abc', reason: 'New outage', startsAt: '2026-10-22T17:00:00Z', expiresAt: '2026-10-23T07:00:00Z', timeZone: 'America/Los_Angeles' };
+  await page.clock.fastForward(30000);
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(refreshes).toBe(1); expect(bootstraps).toBe(0);
+  fail = true;
+  await page.clock.fastForward(30000);
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Status refresh is unavailable');
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(f.calls).toHaveLength(0);
+});
+
+for (const fail of [false, true]) test(`Operating bulk dated closures await confirmation and preserve lifecycle: ${fail ? 'uncertain' : 'saved'}`, async ({ page }) => {
+  await prepare(page, 'System Administrator');
+  const seed = seedDirectory(2), commits: any[] = [];
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); commits.push(body);
+    await held;
+    return fail ? route.fulfill({ status: 502, contentType: 'text/html', body: 'Lost reply' }) : route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.goto(`${origin}/locations`); await restore(page, true);
+  await page.getByRole('checkbox', { name: /Select All/ }).check();
+  await page.getByRole('button', { name: 'Configure Bulk Hours & Holiday Exception' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Bulk Update Fleet Locations' });
+  await expect(dialog.getByRole('option', { name: 'Temporarily Closed — Emergency' })).toHaveCount(0);
+  await dialog.getByPlaceholder('e.g., Thanksgiving, Christmas Eve, Special Inventory').fill('Synthetic holiday');
+  await dialog.getByLabel('Exception start date').fill('2026-12-24');
+  await dialog.getByLabel('Exception end date').fill('2026-12-25');
+  const apply = dialog.getByRole('button', { name: 'Apply Updates to 2 Stores' });
+  await apply.click();
+  await expect.poll(() => commits.length).toBe(1);
+  await expect(apply).toBeDisabled();
+  await expect(page.getByText('Successfully updated 2 locations', { exact: true })).toHaveCount(0);
+  release();
+  if (fail) {
+    await expect(dialog.getByRole('alert')).toContainText('0 Location update(s) confirmed');
+    await expect(apply).toBeDisabled(); expect(commits).toHaveLength(1);
+    await expect(dialog.getByRole('button', { name: 'Reload saved directory state' })).toBeVisible();
+  } else {
+    await expect(page.getByText('Successfully updated 2 locations', { exact: true })).toBeVisible();
+    expect(commits).toHaveLength(2);
+  }
+  expect(commits[0].writes[0].data.operationalStatus).toBe('Open — Normal Operations');
+  expect(commits[0].writes[0].data.holidayHours.map((h: any) => h.date)).toEqual(['2026-12-24', '2026-12-25']);
+  expect(commits[0].writes[0].data.holidayHours.every((h: any) => h.hours.isClosed)).toBe(true);
+});
+
+for (const special of [false, true]) test(`Operating bulk schedule preflight checks every store before any write: ${special ? 'special range' : 'other holiday'}`, async ({ page }) => {
+  await prepare(page, 'System Administrator');
+  const seed = seedDirectory(2) as any, commits: any[] = [];
+  if (special) seed.locations[1].specialHours = [{ id: 'special', startDate: '2026-12-24', endDate: '2026-12-26', hours: { open: '08:00', close: '12:00', isClosed: false } }];
+  else seed.locations[1].holidayHours = [{ id: 'holiday', holidayName: 'Existing holiday', date: '2026-12-24', hours: { open: '08:00', close: '12:00', isClosed: false } }];
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', route => { commits.push(route.request().postDataJSON()); return route.fulfill({ json: commitResponseFor(commits.at(-1)) }); });
+  await page.goto(`${origin}/locations`); await restore(page, true);
+  await page.getByRole('checkbox', { name: /Select All/ }).check();
+  await page.getByRole('button', { name: 'Configure Bulk Hours & Holiday Exception' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Bulk Update Fleet Locations' });
+  await dialog.getByPlaceholder('e.g., Thanksgiving, Christmas Eve, Special Inventory').fill('New holiday');
+  await dialog.getByLabel('Exception start date').fill('2026-12-24');
+  await dialog.getByRole('button', { name: 'Apply Updates to 2 Stores' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('#002');
+  await expect(dialog.getByRole('alert')).toContainText('Nothing was saved');
+  expect(commits).toHaveLength(0);
+});
+
 async function prepareHoursCorrection(page: Page, options: { role?: string; request?: 'changed' | 'noop' | 'stale' | 'missing'; conflict?: boolean } = {}) {
   await prepare(page, options.role || 'Directory Data Steward');
   const locations: LocationRecord[] = seedDirectory(3).locations.map((loc, index) => ({
@@ -127,6 +275,7 @@ export async function signOut() { await action('signOut'); window.__restore(fals
 `;
 
 async function prepare(page: Page, role = "Viewer") {
+  await page.route('**/api/directory/operating/directory', route => route.fulfill({ status: 503, json: { error: { code: 'synthetic_refresh_offline' } } }));
   await page.route("https://**/*", route => route.abort());
   await page.route("**/node_modules/.vite/deps/firebase_auth.js*", route => route.fulfill({ contentType: "application/javascript", body: sdk }));
   await page.route("**/api/auth/me", async route => {
@@ -145,6 +294,7 @@ async function prepare(page: Page, role = "Viewer") {
 function seedDirectory(locationCount: number) {
   const standardHours = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, { open: '10:00', close: '20:00', isClosed: false }]));
   return {
+    serverNow: new Date().toISOString(),
     locations: Array.from({ length: locationCount }, (_value, index) => ({
       id: `loc-${index + 1}`,
       storeNumber: String(index + 1).padStart(3, '0'),
@@ -160,7 +310,7 @@ function seedDirectory(locationCount: number) {
       recordStatus: 'Active',
       standardHours,
     })),
-    people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [], customFieldDefinitions: [],
+    people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [], customFieldDefinitions: [], regions: [], districts: [],
   };
 }
 

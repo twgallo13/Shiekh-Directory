@@ -11,7 +11,21 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #33 and PR #34
+## Current live revision — PR #37
+
+Released 2026-10-22 UTC: merged source `6614ac09487437bb84c12e411b87f0c58efc6bfd`, tree `ed010e7edcbb9c324ee33a38648be00065e286a9`, identical to final tested/reviewed `a5a669578cb39bf099c1fe763eb6ba272f4021c5`. Cloud Build `ff2e3e80-92aa-4f39-9cbb-3537ce2e7f88` succeeded with unchanged build identity. Revision `shiekh-location-company-directory-pr37-6614ac0` is Ready and sole 100% desired/observed production traffic.
+
+The no-traffic candidate passed before etag-guarded promotion. Runtime/build/security/network/scaling configuration and identities were preserved; all 26 historical tag mappings remain and only temporary `p37-6614ac0` was removed. Both public addresses serve matching HTML SHA-256 `5347d54b27acd1f9cbed41095534be0d8ada0a13ac0d3417aace756881e270e3` and 46 MIME-validated JS/CSS assets. API/operating authentication guards, unknown-route rejection, cache protections and unchanged Firebase/served staffing documentation passed. Branded routing is Ready/DomainRoutable. A fresh browser rendered Sign in; no authenticated business mutation or API-consumer acceptance is claimed.
+
+[Dispatch 24](dispatches/dispatch-24-person-card-linked-positions.md#publication-checkpoint--october-22-2026) records incremental tests, final clean Codex code/security reviews, addressed CodeRabbit findings and final review rate limit. The release delivers controlled concurrent positions, responsibility previews, safer profile saves and consistent District-owned DM UI reads, not a data migration or public staffing-contract reinterpretation. Next is issue #36/P6.9; work contacts and client grants remain unpublished/unchanged. Documentation-only publication commits need no rebuild.
+
+**Rollback gate:** prefer forward repair. Earlier writers do not enforce controlled position eligibility and may overwrite title aliases or create inconsistent staffing. Restrict affected People/staffing writes and reconcile in-flight saves before an older-code rollback. Traffic rollback does not restore People, assignments or accounts. The status/address/request safeguards below also remain relevant.
+
+<a id="current-live-revision--pr-33-and-pr-34"></a>
+
+## Previous live revision — PR #33 and PR #34
+
+Historical checkpoint, superseded by PR #37 above; its next-task statements describe the prior release, not current priority.
 
 Released 2026-10-22 UTC: merged application source `27c3536f476314fb715b591f55df82bc7d8a7837`, identical tree `a8f79a8b7fcebe878dd12f18a54e4954954ae06c` to final PR #34 head `e54496a`. PR #33 merged as `a202344`. Cloud Build `15963d9e-1a4c-4acb-97e9-1a8f7c5f8c31` succeeded; revision `shiekh-location-company-directory-pr34-27c3536` is Ready and the sole 100% desired/observed revision. Both production hosts serve matching HTML (`d831249a925d9996d9ae3fc12c2f62e832d3c625cdccec65a3af87c32a682582`) and **46 unique, MIME-validated JS/CSS assets**. Existing Firebase configuration and served staffing documents are unchanged. New operating read/command routes return structured no-store 401 without authentication; unknown API routes remain structured 404.
 

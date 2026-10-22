@@ -444,6 +444,9 @@ export function validateMetadataWrites(
       return { ...write, data };
     }
 
+    if (write.collection === 'requests' && write.operation === 'delete') {
+      throw new DirectoryValidationError('Correction requests are retained as history. Reject a pending request instead of deleting it.');
+    }
     if (write.operation !== 'set' || !['locations', 'people', 'users', 'requests'].includes(write.collection)) return write;
     let data = { ...(write.collection === 'people' ? normalizedPersonWrites.get(write.id) : write.data) };
 
@@ -453,6 +456,22 @@ export function validateMetadataWrites(
     }
 
     if (write.collection === 'requests') {
+      if (Object.hasOwn(data, 'id') && data.id !== write.id) throw new DirectoryValidationError('Correction request IDs cannot change.');
+      if (current) {
+        if (current.status !== 'Pending' || !['Approved', 'Rejected'].includes(String(data.status))) {
+          throw new DirectoryConflict('Submitted requests cannot be edited or reopened. Review a pending request, or submit a replacement.');
+        }
+        const reviewFields = new Set(['id', 'status', 'reviewedBy', 'reviewedAt', 'reviewerNotes', 'version', 'updatedAt']);
+        for (const [field, value] of Object.entries(data)) {
+          if (!reviewFields.has(field) && !isDeepStrictEqual(value, current[field])) {
+            throw new DirectoryValidationError(`Submitted request ${field} is immutable. Reject this request and submit a replacement.`);
+          }
+        }
+        // Older review clients may omit submission fields. Preserve them, never erase history.
+        data = { ...current, ...data, id: write.id };
+      } else if (data.status !== 'Pending') {
+        throw new DirectoryValidationError('New correction requests must be submitted as Pending.');
+      }
       if (!current && data.changeType === 'Store Manager Change') {
         if (data.status !== 'Pending' || data.targetType !== 'Location') {
           throw new DirectoryValidationError('Leadership corrections must be submitted as pending Location requests.');

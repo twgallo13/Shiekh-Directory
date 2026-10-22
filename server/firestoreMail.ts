@@ -3,12 +3,36 @@ import { Firestore } from "@google-cloud/firestore";
 import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth, type Auth, type UserRecord } from "firebase-admin/auth";
 import { AccessDenied } from "./authAuthority";
-import { parseMailSettings, type MailConfiguration, type MailEvent, type MailIdentity, type MailOutcome, type MailSettingsStore, type RecordMailOutcome, type ResolveDiagnosticTemplate, type ResolveInvitationEmail, type ResolveInvitationLink, type ResolveMailEvent } from "./mailApi";
+import { parseMailSettings, type OperatingMailDelivery, type MailConfiguration, type MailEvent, type MailIdentity, type MailOutcome, type MailSettingsStore, type RecordMailOutcome, type ResolveDiagnosticTemplate, type ResolveInvitationEmail, type ResolveInvitationLink, type ResolveMailEvent } from "./mailApi";
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 export function createFirestoreMailEventResolver(): ResolveMailEvent {
   const firestore = createFirestore();
   return async (event, entityId, identity, configuration) => resolveEvent(firestore, event, entityId, identity, configuration);
+}
+
+export function createFirestoreOperatingMailDelivery(): OperatingMailDelivery { return operatingMailDelivery(createFirestore()); }
+
+/** A committed event is durable notification intent. A send claim is never expired/reissued blindly. */
+export function operatingMailDelivery(firestore: Firestore): OperatingMailDelivery {
+  return {
+    claim: (entityId, requestId, recipient, identity) => firestore.runTransaction(async transaction => {
+      const reference = firestore.collection('operating_mail_receipts').doc(entityId);
+      const [event, receipt] = await Promise.all([transaction.get(firestore.collection('operating_events').doc(entityId)), transaction.get(reference)]);
+      if (!event.exists || (event.data()?.actorId !== identity.uid && !['System Administrator', 'Directory Data Steward'].includes(String(identity.role)))) throw new AccessDenied();
+      const saved = receipt.data();
+      if (saved?.status === 'Accepted') return 'accepted' as const;
+      if (receipt.exists && saved?.status !== 'NotStarted') return 'uncertain' as const;
+      transaction.set(reference, { id: entityId, requestId, recipient, requestedBy: identity.uid, status: 'Sending', timestamp: new Date().toISOString() });
+      return 'claimed' as const;
+    }),
+    finish: (entityId, requestId, status) => firestore.runTransaction(async transaction => {
+      const reference = firestore.collection('operating_mail_receipts').doc(entityId), receipt = await transaction.get(reference);
+      if (!receipt.exists || receipt.data()?.requestId !== requestId) throw new Error('Operating mail claim changed.');
+      if (receipt.data()?.status === 'Accepted') return;
+      transaction.set(reference, { ...receipt.data(), status, updatedAt: new Date().toISOString() });
+    }),
+  };
 }
 
 export function createFirestoreInvitationLinkResolver(): ResolveInvitationLink {

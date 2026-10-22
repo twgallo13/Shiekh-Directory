@@ -22,9 +22,9 @@ async function prepareOperating(page: Page, uncertain = false) {
     const command = route.request().postDataJSON(); calls.push(command);
     if (uncertain && calls.length === 1) return route.fulfill({ status: 502, contentType: 'text/html', body: 'Lost reply' });
     seed.locations[0] = { ...seed.locations[0], version: 4, temporaryClosure: { id: command.operationId, reason: command.reason, startsAt: '2026-10-22T18:00:00Z', expiresAt: command.expectedExpiresAt, timeZone: 'America/Los_Angeles' } };
-    return route.fulfill({ json: { operationId: command.operationId, records: [{ collection: 'locations', operation: 'set', id: 'loc-1', data: seed.locations[0] }], state: { state: 'Closed', reason: command.reason, evaluatedAt: '2026-10-22T18:00:00Z' } } });
+    return route.fulfill({ json: { operationId: command.operationId, replayed: uncertain && calls.length > 1, records: [{ collection: 'locations', operation: 'set', id: 'loc-1', data: seed.locations[0] }], state: { state: 'Closed', reason: command.reason, evaluatedAt: '2026-10-22T18:00:00Z' } } });
   });
-  await page.route('**/api/mail/event', route => { mail.push(route.request().postDataJSON()); return route.fulfill({ json: { success: true } }); });
+  await page.route('**/api/mail/event', route => { mail.push(route.request().postDataJSON()); return route.fulfill({ json: { success: true, status: 'accepted' } }); });
   await page.goto(`${origin}/locations/loc-1`); await restore(page, true);
   await expect(page.getByRole('button', { name: 'Report temporary closure' })).toBeVisible();
   return { seed, calls, mail, previews: () => previews };
@@ -44,6 +44,10 @@ test('Operating closure previews without writes, confirms immediately and publis
   await expect.poll(() => f.mail.length).toBe(1);
   await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
   expect(f.calls[0]).not.toHaveProperty('actorId');
+  await page.getByRole('button', { name: 'Check / recover steward alert' }).click();
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Inbox delivery is not confirmed');
+  expect(f.calls).toHaveLength(1); expect(f.mail).toHaveLength(2);
+  expect(f.mail[1].entityId).toBe(f.calls[0].operationId);
 });
 
 test('Operating uncertain save survives reload and retries only the same immutable command', async ({ page }) => {
@@ -57,6 +61,7 @@ test('Operating uncertain save survives reload and retries only the same immutab
   await page.getByRole('button', { name: 'Recover operating update' }).click();
   await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
   expect(f.calls).toHaveLength(2); expect(f.calls[1]).toEqual(f.calls[0]);
+  await expect.poll(() => f.mail.length).toBe(1);
 });
 
 test('Operating expiry returns to schedule on the store clock without requiring a cleanup write', async ({ page }) => {
@@ -127,6 +132,25 @@ for (const fail of [false, true]) test(`Operating bulk dated closures await conf
   expect(commits[0].writes[0].data.operationalStatus).toBe('Open — Normal Operations');
   expect(commits[0].writes[0].data.holidayHours.map((h: any) => h.date)).toEqual(['2026-12-24', '2026-12-25']);
   expect(commits[0].writes[0].data.holidayHours.every((h: any) => h.hours.isClosed)).toBe(true);
+});
+
+for (const special of [false, true]) test(`Operating bulk schedule preflight checks every store before any write: ${special ? 'special range' : 'other holiday'}`, async ({ page }) => {
+  await prepare(page, 'System Administrator');
+  const seed = seedDirectory(2) as any, commits: any[] = [];
+  if (special) seed.locations[1].specialHours = [{ id: 'special', startDate: '2026-12-24', endDate: '2026-12-26', hours: { open: '08:00', close: '12:00', isClosed: false } }];
+  else seed.locations[1].holidayHours = [{ id: 'holiday', holidayName: 'Existing holiday', date: '2026-12-24', hours: { open: '08:00', close: '12:00', isClosed: false } }];
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', route => { commits.push(route.request().postDataJSON()); return route.fulfill({ json: commitResponseFor(commits.at(-1)) }); });
+  await page.goto(`${origin}/locations`); await restore(page, true);
+  await page.getByRole('checkbox', { name: /Select All/ }).check();
+  await page.getByRole('button', { name: 'Configure Bulk Hours & Holiday Exception' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Bulk Update Fleet Locations' });
+  await dialog.getByPlaceholder('e.g., Thanksgiving, Christmas Eve, Special Inventory').fill('New holiday');
+  await dialog.getByLabel('Exception start date').fill('2026-12-24');
+  await dialog.getByRole('button', { name: 'Apply Updates to 2 Stores' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('#002');
+  await expect(dialog.getByRole('alert')).toContainText('Nothing was saved');
+  expect(commits).toHaveLength(0);
 });
 
 async function prepareHoursCorrection(page: Page, options: { role?: string; request?: 'changed' | 'noop' | 'stale' | 'missing'; conflict?: boolean } = {}) {

@@ -165,7 +165,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   }, [user]);
 
   const previewOperatingUpdate = (locationId: string, action: OperatingCommand['action']) => fetchOperatingPreview(user, locationId, action);
-  const cancelOperatingUpdate = (command: OperatingCommand) => cancelOperatingCommand(user, command);
+  const cancelOperatingUpdate = async (command: OperatingCommand) => {
+    const cancelled = await cancelOperatingCommand(user, command);
+    if (!cancelled) void sendMailEvent('operating-updated', command.operationId).catch(error => setPersistenceError(`Operating update saved. Steward alert recovery could not be confirmed: ${error instanceof Error ? error.message : 'relay unavailable'}`));
+    return cancelled;
+  };
   const saveOperatingUpdate = async (command: OperatingCommand) => {
     writeFence.current.epoch++; writeFence.current.pending++;
     try {
@@ -173,7 +177,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       reconcileCommittedRecords(result);
       anchor.current = { server: Date.parse(result.state.evaluatedAt), monotonic: performance.now() };
       setOperatingNow(new Date(anchor.current.server));
-      if (!result.replayed) void sendMailEvent('operating-updated', command.operationId).catch(error => setPersistenceError(`Operating update saved. Notification could not be sent: ${error instanceof Error ? error.message : 'relay unavailable'}`));
+      // Replays recover an unsent alert; server claims prevent duplicate SMTP attempts for the same event.
+      void sendMailEvent('operating-updated', command.operationId).catch(error => setPersistenceError(`Operating update saved. Notification could not be confirmed: ${error instanceof Error ? error.message : 'relay unavailable'}`));
       return { replayed: Boolean(result.replayed), state: result.state };
     } finally { writeFence.current.pending--; }
   };

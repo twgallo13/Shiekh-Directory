@@ -8,7 +8,7 @@ import {
 } from "./server/directoryApi";
 import { createFirestoreLocationRepository } from "./server/firestoreLocations";
 import { createMailRouter, createMailSender, loadMailConfiguration } from "./server/mailApi";
-import { createFirestoreDiagnosticResolver, createFirestoreInvitationEmailResolver, createFirestoreInvitationLinkResolver, createFirestoreMailEventResolver, createFirestoreMailOutcomeRecorder, createFirestoreMailSettingsStore } from "./server/firestoreMail";
+import { createFirestoreDiagnosticResolver, createFirestoreInvitationEmailResolver, createFirestoreInvitationLinkResolver, createFirestoreMailEventResolver, createFirestoreMailOutcomeRecorder, createFirestoreMailSettingsStore, createFirestoreOperatingMailDelivery } from "./server/firestoreMail";
 import { createAuthRouter, createFirebaseAuthenticator } from "./server/authAuthority";
 import { createFirestoreDirectoryStore } from "./server/firestoreDirectory";
 import { createDirectoryDataRouter } from "./server/directoryDataApi";
@@ -55,6 +55,7 @@ async function startServer() {
     send: mailConfiguration ? (message, configuration = mailConfiguration) => createMailSender(configuration)!(message) : null,
     settings: mailSettings,
     resolveEvent: createFirestoreMailEventResolver(),
+    operatingDelivery: createFirestoreOperatingMailDelivery(),
     resolveDiagnostic: createFirestoreDiagnosticResolver(),
     resolveInvitationLink: createFirestoreInvitationLinkResolver(),
     resolveInvitationEmail: createFirestoreInvitationEmailResolver(),

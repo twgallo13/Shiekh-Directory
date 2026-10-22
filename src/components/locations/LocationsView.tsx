@@ -234,6 +234,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
   const handleApplyBulkUpdates = async () => {
     if (selectedStoreIds.length === 0 || bulkBusy.current || bulkNeedsReload) return;
+    if (selectedStoreIds.some(id => !locations.some(location => location.id === id))) { setBulkError('A selected Location is no longer available. Refresh and select the intended stores again. Nothing was saved.'); return; }
     const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
     if (exceptionName.trim() && (!validDate(exceptionStartDate) || !validDate(exceptionEndDate || exceptionStartDate) || (exceptionEndDate && exceptionEndDate < exceptionStartDate))) { setBulkError('Choose valid explicit start/end dates for the dated exception.'); return; }
     if (exceptionName.trim() && exceptionOperatingStatus !== 'Closed' && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(exceptionOpenTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(exceptionCloseTime) || exceptionOpenTime === exceptionCloseTime)) { setBulkError('Choose valid, different opening and closing times.'); return; }
@@ -243,6 +244,14 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
         dates.push(date);
         if (dates.length > 366) { setBulkError('Limit a dated exception to 366 days.'); return; }
       }
+    }
+    if (exceptionName.trim()) {
+      const conflicts = selectedStoreIds.map(id => locations.find(l => l.id === id)).filter((location): location is LocationRecord => Boolean(location && (
+        !Array.isArray(location.holidayHours || []) || !Array.isArray(location.specialHours || [])
+        || (location.holidayHours || []).some(h => !h || typeof h.date !== 'string' || (dates.includes(h.date) && h.holidayName !== exceptionName.trim()))
+        || (location.specialHours || []).some(s => !s || typeof s.startDate !== 'string' || typeof s.endDate !== 'string' || dates.some(date => s.startDate <= date && s.endDate >= date))
+      )));
+      if (conflicts.length) { setBulkError(`Resolve existing dated schedules first: ${conflicts.map(l => `#${l.storeNumber}`).join(', ')}. Nothing was saved.`); return; }
     }
     bulkBusy.current = true; setBulkSaving(true); setBulkError('');
     let confirmed = 0;

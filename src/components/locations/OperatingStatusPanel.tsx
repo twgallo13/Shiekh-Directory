@@ -8,6 +8,7 @@ import type { OperatingCommand } from '../../../server/operatingCommand';
 import type { OperatingPreview } from '../../../server/firestoreOperating';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { Button } from '../common/Button';
+import { sendMailEvent } from '../../lib/mailClient';
 
 /** Dedicated immediate path, independent of correction approval and permanent Location editing. */
 export function OperatingStatusPanel({ location }: { location: LocationRecord }) {
@@ -24,6 +25,7 @@ export function OperatingStatusPanel({ location }: { location: LocationRecord })
   const [preview, setPreview] = useState<OperatingPreview | null>(null);
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState('');
+  const [notificationId, setNotificationId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -48,6 +50,7 @@ export function OperatingStatusPanel({ location }: { location: LocationRecord })
       const result = await saveOperatingUpdate(command);
       try { sessionStorage.removeItem(key); } catch { /* Durable replay remains safe. */ }
       setPending(null); setPreview(null); setReason('');
+      setNotificationId(command.operationId);
       void refreshOperatingDirectory();
       setMessage(`${result.replayed ? 'Saved operation recovered' : 'Operating update saved'}. Current state: ${result.state.state === 'Unknown' ? 'Needs verification' : result.state.state}. ${result.state.reason}`);
     } catch (e) {
@@ -71,6 +74,17 @@ export function OperatingStatusPanel({ location }: { location: LocationRecord })
   };
   const confirm = () => { if (!preview || !reason.trim()) return; void attempt({ operationId: crypto.randomUUID(), locationId: preview.locationId, action: preview.action, reason: reason.trim(), expectedVersion: preview.expectedVersion, expectedClosureId: preview.expectedClosureId, expectedExpiresAt: preview.expectedExpiresAt }, false); };
   const active = Boolean(state.temporaryClosure);
+  const recoverAlert = async () => {
+    const id = notificationId || state.temporaryClosure?.id;
+    if (!id || busyRef.current) return;
+    busyRef.current = true; setBusy(true); setError('');
+    try {
+      const result = await sendMailEvent('operating-updated', id);
+      if (result.success !== true || !['accepted', 'already-accepted'].includes(result.status)) throw new Error('Notification result is uncertain. Check the outbox before any manual resend.');
+      setMessage('Steward alert accepted by the mail relay (or previously accepted). Inbox delivery is not confirmed. The operating state is unchanged.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Notification recovery is unavailable. Operating state is unchanged.'); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
   return <section aria-label="Current operating state" className="rounded-xl border border-neutral-200 bg-white p-4 space-y-3">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">{state.state === 'Unknown' ? 'Needs verification' : state.state}</h3><p className="text-neutral-600">{state.reason}</p></div><p className="text-[11px] text-neutral-500">Store-local time · {location.timeZone}</p></div>
     {state.temporaryClosure && <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-900">Temporary closure automatically ends {expiryLabel(state.temporaryClosure.expiresAt, state.temporaryClosure.timeZone)}. After expiry, the applicable schedule/lifecycle applies—not forced opening.</p>}
@@ -85,6 +99,7 @@ export function OperatingStatusPanel({ location }: { location: LocationRecord })
     </div> : canOperate && !stored.error && <div className="flex flex-wrap gap-2">
       {active ? <Button variant="secondary" disabled={busy} size="sm" onClick={() => void begin('reopen')}>End temporary closure</Button> : <Button variant="danger" disabled={busy} size="sm" onClick={() => void begin(location.temporaryClosure ? 'renew' : 'close')}>{location.temporaryClosure ? 'Confirm closure for today' : 'Report temporary closure'}</Button>}
       <Button variant="ghost" disabled={busy} size="sm" onClick={() => void refreshOperatingDirectory()}>Refresh saved state</Button>
+      {(notificationId || state.temporaryClosure) && <Button variant="ghost" disabled={busy} size="sm" onClick={() => void recoverAlert()}>Check / recover steward alert</Button>}
     </div>}
     <p className="text-[11px] text-neutral-500">Hours modifiers and permanent lifecycle are separate. Connected visible screens refresh within a target of 60 seconds; offline changes cannot be guaranteed current.</p>
     <ConfirmDialog isOpen={Boolean(preview)} title={preview?.action === 'reopen' ? 'End this temporary closure?' : 'Confirm immediate temporary closure'} description={preview ? `Store #${preview.storeNumber} — ${preview.locationName}. ${preview.action === 'reopen' ? 'Return to the applicable schedule and lifecycle. This does not force the store open.' : `Publish immediately, without steward approval, until ${expiryLabel(preview.expectedExpiresAt!, preview.timeZone)}. Continuing closure on another day requires explicit confirmation.`}` : ''} confirmLabel={busy ? 'Saving…' : preview?.action === 'reopen' ? 'End temporary closure' : 'Confirm closure'} confirmDisabled={busy || !reason.trim() || reason.trim().length > 500} cancelDisabled={busy} onCancel={() => { if (!busyRef.current) setPreview(null); }} onConfirm={confirm}>

@@ -3,6 +3,8 @@ import { once } from "node:events";
 import { test, mock } from "node:test";
 import express from "express";
 import nodemailer from "nodemailer";
+import { operatingMailDelivery } from '../server/firestoreMail';
+import { transactionDatabase } from './fixtures/transactionDatabase';
 import { createMailRouter, createMailSender, DIAGNOSTIC_TEMPLATE, loadMailConfiguration, smtpTransportOptions, MailAuthenticationUnavailable, type MailApiOptions, type MailMessage } from "../server/mailApi";
 
 const configuration = {
@@ -12,7 +14,7 @@ const configuration = {
 
 test('operating event actors can notify the steward without gaining general mail privileges', async () => {
   for (const role of ['Editor', 'Viewer']) {
-    const app = await harness({ authenticate: async () => ({ uid: 'operator', role }), resolveEvent: async (event, id, identity) => {
+    const app = await harness({ operatingDelivery: { claim: async () => 'claimed', finish: async () => {} }, authenticate: async () => ({ uid: 'operator', role }), resolveEvent: async (event, id, identity) => {
       assert.equal(event, 'operating-updated'); assert.equal(id, 'committed-event'); assert.equal(identity.uid, 'operator');
       return { to: 'steward@example.test', subject: 'Operating update', text: 'Saved closure' };
     } });
@@ -53,6 +55,34 @@ async function harness(overrides: Partial<MailApiOptions> = {}) {
     async close() { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); },
   };
 }
+
+test('recovered operating alerts deduplicate by event; uncertain SMTP blocks automatic resend', async () => {
+  for (const uncertain of [false, true]) {
+    const f = transactionDatabase(); f.records.set('operating_events/event', { actorId: 'operator' });
+    let attempts = 0;
+    const app = await harness({ authenticate: async () => ({ uid: 'operator', role: 'Viewer' }), operatingDelivery: operatingMailDelivery(f.firestore), resolveEvent: async () => ({ to: 'steward@example.test', subject: 'Operating update', text: 'Saved' }), send: async () => { attempts++; if (uncertain) throw new Error('Lost SMTP acknowledgement'); return true; } });
+    try {
+      const first = await app.request('event', { event: 'operating-updated', entityId: 'event' });
+      assert.equal(first.status, uncertain ? 502 : 200);
+      const second = await app.request('event', { event: 'operating-updated', entityId: 'event' });
+      assert.equal(second.status, uncertain ? 409 : 200);
+      assert.equal(attempts, 1);
+      if (!uncertain) assert.equal((await second.json()).status, 'already-accepted');
+    } finally { await app.close(); }
+  }
+});
+
+test('operating outbox failure after durable relay acceptance cannot downgrade or resend mail', async () => {
+  const f = transactionDatabase(); f.records.set('operating_events/event', { actorId: 'operator' });
+  let attempts = 0;
+  const app = await harness({ authenticate: async () => ({ uid: 'operator', role: 'Viewer' }), operatingDelivery: operatingMailDelivery(f.firestore), resolveEvent: async () => ({ to: 'steward@example.test', subject: 'Operating update', text: 'Saved' }), send: async () => { attempts++; return true; }, recordMailOutcome: async outcome => { if (outcome.status === 'Accepted') throw new Error('Outbox unavailable'); } });
+  try {
+    assert.equal((await app.request('event', { event: 'operating-updated', entityId: 'event' })).status, 200);
+    assert.equal(f.records.get('operating_mail_receipts/event')?.status, 'Accepted');
+    assert.equal((await app.request('event', { event: 'operating-updated', entityId: 'event' })).status, 200);
+    assert.equal(attempts, 1);
+  } finally { await app.close(); }
+});
 
 test("mail remains functional for an authorized identity with server-owned transport and template", async () => {
   const app = await harness();

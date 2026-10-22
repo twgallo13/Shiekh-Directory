@@ -3,7 +3,7 @@ import type { DistrictRecord, RegionRecord } from '../types';
 import type { LocationInboxAcknowledgment } from './locationInboxEmail';
 
 export type DirectoryCollection = 'locations' | 'people' | 'users' | 'hours_templates' | 'corporate_holidays' | 'requests' | 'email_templates' | 'notification_rules' | 'sop_runbooks' | 'custom_field_definitions' | 'regions' | 'districts';
-export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data?: Record<string, unknown>; expectedDefinition?: import('./customFields').CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment }
+export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data?: Record<string, unknown>; expectedDefinition?: import('./customFields').CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment; districtLeadershipMembers?: import('./districtLeadership').DistrictLeadershipMember[] }
 export interface DirectoryAudit { action: string; entityType: 'Location' | 'Person' | 'User' | 'Setting' | 'Request' | 'Communication'; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data: Record<string, unknown> | null }
 export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }

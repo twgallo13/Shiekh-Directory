@@ -11,6 +11,7 @@ import { locationInboxConflictDigest, normalizeLocationInboxEmail, normalizePers
 import { isDeepStrictEqual } from "node:util";
 import { applyCorrection } from '../src/lib/correctionRequest';
 import { personLifecycle } from '../src/lib/personLifecycle';
+import { validateDistrictLeadershipState } from './districtLeadership';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -37,7 +38,7 @@ export const DIRECTORY_COLLECTIONS = {
 } as const;
 
 export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRECTORY_COLLECTIONS];
-export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment }
+export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment; districtLeadershipMembers?: import('../src/lib/districtLeadership').DistrictLeadershipMember[] }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
 export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
@@ -104,7 +105,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const userSnapshot = needsRelationshipState
         ? await transaction.get(this.firestore.collection("users"))
         : null;
-      const hierarchySnapshot = writes.some(write => write.collection === "locations" || write.collection === "regions" || write.collection === "districts")
+      const hierarchySnapshot = needsRelationshipState
         ? await Promise.all([
           transaction.get(this.firestore.collection("regions")),
           transaction.get(this.firestore.collection("districts")),
@@ -120,7 +121,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const users = userSnapshot?.docs.map(document => ({ ...document.data(), id: document.id })) || [];
       const hierarchyRegistry: HierarchyRegistry = {
         regions: hierarchySnapshot?.[0].docs.map(document => ({ id: document.id, name: String(document.data().name || ""), status: document.data().status })) || [],
-        districts: hierarchySnapshot?.[1].docs.map(document => ({ id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })) || [],
+        districts: hierarchySnapshot?.[1].docs.map(document => ({ ...document.data(), id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })) || [],
       };
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
@@ -259,7 +260,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const locations = locationSnapshot.docs.map(document => ({ ...document.data(), id: document.id }));
       const hierarchyRegistry: HierarchyRegistry = {
         regions: regionSnapshot.docs.map(document => ({ id: document.id, name: String(document.data().name || ""), status: document.data().status })),
-        districts: districtSnapshot.docs.map(document => ({ id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })),
+        districts: districtSnapshot.docs.map(document => ({ ...document.data(), id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })),
       };
       const validatedWrites = validateMetadataWrites(writes, targetSnapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, [], hierarchyRegistry);
       validateLocationInboxConflicts(validatedWrites, locations);
@@ -425,6 +426,9 @@ export function validateMetadataWrites(
       if (typeof data.name !== 'string' || !data.name.trim()) throw new DirectoryValidationError('Hierarchy registry records require a name.');
       if (data.status !== 'Active' && data.status !== 'Retired') throw new DirectoryValidationError('Hierarchy registry status must be Active or Retired.');
       if (write.collection === 'districts') {
+        if (current && Object.hasOwn(current, 'districtManagerId') && !Object.hasOwn(data, 'districtManagerId')) {
+          data.districtManagerId = current.districtManagerId;
+        }
         if (typeof data.regionId !== 'string' || !data.regionId.trim()) throw new DirectoryValidationError('Districts require a Region.');
         const parentMustBeValidated = !current
           || data.regionId !== current.regionId
@@ -660,6 +664,7 @@ export function validateMetadataWrites(
     return { ...write, data };
   });
 
+  validateDistrictLeadershipState(validatedWrites, previous, locations, combinedPeople, hierarchyRegistry, actor);
   validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
   validateEmploymentRelationshipState(validatedWrites, people, locations);
   validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry, previous);
@@ -786,6 +791,8 @@ function applyHierarchyRegistryWrites(registry: HierarchyRegistry, writes: Direc
     }
     if (write.collection === 'districts') {
       registry.districts = [...registry.districts.filter(district => district.id !== write.id), {
+        ...registry.districts.find(district => district.id === write.id),
+        ...(Object.hasOwn(write.data, 'districtManagerId') ? { districtManagerId: write.data.districtManagerId as string | null } : {}),
         id: write.id,
         name: String(write.data.name || ''),
         regionId: String(write.data.regionId || ''),

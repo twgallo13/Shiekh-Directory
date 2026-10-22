@@ -10,6 +10,7 @@ import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/cont
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
+import { hasDistrictLeadership, inheritDistrictLeader, isDistrictLeadershipMember } from '../../lib/districtLeadership';
 import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
 import { 
@@ -189,6 +190,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       holidayHours: (formData.holidayHours || []).filter(h => h.holidayName.trim().length > 0 || h.date.trim().length > 0)
     };
     if (!isCreating) sanitizedData = preserveUnchangedStaffing(formData, baseline, sanitizedData);
+    sanitizedData = inheritDistrictLeader(sanitizedData, districts, people);
     if (isCreating) sanitizedData.id = createId;
     if (sanitizedData.locationInboxEmail !== undefined && sanitizedData.locationInboxEmail !== null
       && sanitizedData.locationInboxEmail !== baseline.locationInboxEmail && !normalizeLocationInboxEmail(sanitizedData.locationInboxEmail)) {
@@ -440,7 +442,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   };
 
   // Currently assigned manager IDs are canonical; no legacy name-based fallback matching.
-  const currentDmId = formData.districtManagerId || '';
+  const leadershipDistrict = districts.find(d => isDistrictLeadershipMember(formData, d.id));
+  const districtOwnsDm = hasDistrictLeadership(leadershipDistrict);
+  const currentDmId = districtOwnsDm ? leadershipDistrict?.districtManagerId || '' : formData.districtManagerId || '';
   const currentSmId = formData.storeManagerId || '';
   const currentRmId = formData.regionalManagerId || '';
   const currentStoreManager = people.find(person => person.id === currentSmId);
@@ -906,6 +910,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="District Manager"
+                      disabled={districtOwnsDm}
                       value={currentDmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -929,6 +934,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <option value="">-- Unassigned / Vacant --</option>
                       {leadershipOptions('District Manager', currentDmId, formData.districtManagerName)}
                     </select>
+                    {districtOwnsDm && <p className="mt-1 text-xs text-neutral-600">Inherited from District settings. Change the District DM there to update every linked retail store.</p>}
                   </div>
 
                   <div>

@@ -2,6 +2,7 @@ import { parse } from 'csv-parse/sync';
 import type { LocationRecord } from '../types';
 import type { DirectorySeed } from './directorySeed';
 import { validateLocationHierarchyFields, type HierarchyFieldContract, type HierarchyRegistry } from './hierarchyAssignmentContract';
+import { hasDistrictLeadership, isDistrictLeadershipMember } from './districtLeadership';
 import {
   LOCATION_HIERARCHY_APPLICABILITY,
   LOCATION_IMPORT_COLUMNS,
@@ -355,6 +356,12 @@ export function buildLocationImportPlan(
     }
     const proposed = normalized.values;
     if (intendedAddition) proposed.id = row.LocationId || createLocationId();
+    const leadershipDistrict = snapshot.districts.find(d => isDistrictLeadershipMember(proposed, d.id));
+    if (hasDistrictLeadership(leadershipDistrict) && (proposed.districtManagerId || null) !== leadershipDistrict!.districtManagerId) {
+      issues.push(issue('error', 'invalid_hierarchy', 'DistrictManagerId', row.DistrictManagerId, existing?.districtManagerId ?? null,
+        'This retail store inherits its DM from the District. A CSV cannot override District ownership.',
+        'Use the District’s canonical DM ID (blank for District vacancy), or change the District DM in Region & Districts settings and download a fresh editing export.', undefined, proposed.districtManagerId ?? null));
+    }
 
     const hierarchyChanged = !existing || hierarchyFields.some(field => !sameValue(existing[field], proposed[field]));
     const assignmentListsChanged = !existing || Object.values(listFields).some(field => !sameValue(existing?.[field], proposed[field]));

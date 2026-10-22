@@ -6,6 +6,8 @@ The Directory will provide consistent organizational assignments and store infor
 
 ## Scope and working agreement
 
+Latest owner direction (October 21): continue autonomously with District-wide DM administration, leave the reported departed DM unchanged for testing, and regard current data as test-affected. A later restore is intended but no restore source, destructive reset or replacement selection has been approved. [Dispatch 18](../dispatches/dispatch-18-district-dm-handover.md) records the opt-in District ownership slice, compatible store copies, validation and restore/rollback boundaries. This focused user priority does not mark the earlier request-save prerequisites or all Phase 2/3 work complete; broader hierarchy cutover remains gated on their evidence.
+
 - Repository: `twgallo13/Shiekh-Directory`. Source audit baseline: `baa2b937f4d79ddb8be24434b5176e6f2e98a690` on `main`. Recheck the baseline before implementation and account for intervening work.
 - Theo approved the audit recommendations, the documented plan, and proceeding with implementation after recording the review refinements. Keep the planning PR documentation-only and place application repairs in separate reviewable PRs. Personnel changes, credential creation, imports, merges, production deployment, and exact data cutover remain subject to the user's current authorization and the release gates below; this execution step does not perform them.
 - Work in small reviewable branches and PRs. Preserve unrelated changes and historical evidence. Use the existing project, named database, identities, and deployment process; do not change Dynamic-Qr, ROPI, or other applications as part of this plan.

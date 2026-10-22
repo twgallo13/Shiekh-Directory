@@ -89,13 +89,17 @@ function parseWrites(value: unknown): DirectoryWrite[] | null {
       locationInboxAcknowledgment = { normalizedEmail: acknowledgment.normalizedEmail, conflictDigest: acknowledgment.conflictDigest };
     }
     const expectedVersion = candidate.expectedVersion;
+    const members = candidate.districtLeadershipMembers;
+    if (Object.hasOwn(candidate, 'districtLeadershipMembers') && (collection !== 'districts' || !Array.isArray(members)
+      || members.length > 99 || members.some(m => !plainObject(m) || typeof m.id !== 'string' || !ID_PATTERN.test(m.id) || typeof m.version !== 'number' || !Number.isInteger(m.version) || m.version < 0 || Object.keys(m).some(k => k !== 'id' && k !== 'version')))) return null;
     if (Object.hasOwn(candidate, 'expectedVersion') && expectedVersion !== null
       && (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 0)) return null;
     writes.push({ collection, id: String(candidate.id), operation: candidate.operation as "set" | "delete", ...(data ? { data } : {}),
       ...(Object.hasOwn(candidate, 'expectedCustomMetadata') ? { expectedCustomMetadata: candidate.expectedCustomMetadata as Record<string, unknown> } : {}),
       ...(Object.hasOwn(candidate, 'expectedDefinition') ? { expectedDefinition: candidate.expectedDefinition as DirectoryWrite['expectedDefinition'] } : {}),
       ...(Object.hasOwn(candidate, 'expectedVersion') ? { expectedVersion: expectedVersion as number | null } : {}),
-      ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}) });
+      ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}),
+      ...(Array.isArray(members) ? { districtLeadershipMembers: members as DirectoryWrite['districtLeadershipMembers'] } : {}) });
   }
   const locationNumbers = writes.filter(write => write.collection === "locations" && write.operation === "set").map(write => String(write.data?.storeNumber || ""));
   if (locationNumbers.some(number => !number.trim()) || new Set(locationNumbers).size !== locationNumbers.length) return null;

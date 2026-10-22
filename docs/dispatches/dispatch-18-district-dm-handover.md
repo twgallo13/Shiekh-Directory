@@ -1,0 +1,45 @@
+# District-owned DM handover — bounded implementation
+
+## Owner direction and data boundary
+
+On October 21, 2026 (America/Los_Angeles), Theo approved autonomous continuation toward assigning a DM once per District so all its retail stores change together. He explicitly asked to leave the reported departed DM unchanged for testing and reported that current data is test-affected, with a restore intended after the application is finalized. Treat current records as test-affected, not a verified business roster. This does not authorize guessing personnel, disabling integrity checks, deleting records, or choosing a restore source. No current Person or assignment is changed by implementing/deploying this feature.
+
+## Contract and transitional ownership
+
+- `DistrictRecord.districtManagerId` is additive: **omitted** means legacy per-Location ownership; a canonical Person ID means District ownership; **null** means an explicit District-owned vacancy. A normal District edit preserves this field even if an older client omits it. There is no UI opt-out back to competing store-owned authority.
+- An administrator explicitly previews and confirms one active District with an active parent Region. The complete current set of linked retail Locations, including retired ones, is reviewed. Non-retail Locations retain independent leadership and are listed as excluded. Unknown Location types or mismatched Region/applicability stop the handover rather than guessing.
+- One transaction writes the District owner and compatible `districtManagerId`/`districtManagerName` copies on every affected retail Location, increments existing versions/timestamps and records before/after audit states. These Location values are **server-validated compatibility copies**, not a second writable authority once a District is opted in. Existing readers, staffing API, reporting/editing exports, print, search, dashboards and mail readers continue to read the same canonical Location assignment IDs. No title, name or email is converted into identity or an access grant.
+- Exact District/Location versions and the complete current membership are checked inside the transaction. Added, removed, moved, changed or omitted stores invalidate a stale preview; unrelated writes and unrelated District/store edits are rejected. The command is limited to 99 retail stores plus one District, and 8 MB of serialized writes. Oversized scopes stop; there are no hidden non-atomic batches.
+- Store-level direct writes and signed import confirmation cannot override a managed District's DM. Editor saves and quick-add/context helpers inherit the District owner for new/moved retail stores. CSV preview explains mismatches; CSV callers must supply the matching DM ID (or vacancy) rather than treating CSV as a new authority. A stale import is independently rejected at confirmation.
+- Changing a District-owned Person to inactive/deleted is blocked until its District ownership is reassigned/vacated, including Districts with no retail stores. This is a reference safeguard, not an implemented offboarding/access-revocation flow.
+
+## Administrator workflow
+
+1. Open **Admin & Integrations → Region & Districts → District Manager — all district stores**.
+2. Choose the District and explicitly choose an active Person or **Vacant**. The list defaults to listed DMs; optional show-all supports unusual descriptive titles without granting permissions.
+3. Enter a reason and select **Preview district-wide change**. Review every before/after store and excluded non-retail Location.
+4. Check the review acknowledgment, then **Confirm District DM assignment**. No save occurs during selection/preview. Saving never changes employment/access or sends email.
+5. If the response is uncertain or conflicts, do not assume failure and do not blindly retry. Reload, inspect saved District/store state, and build a fresh preview if still needed. Successful data updates are reconciled from the server response, not announced optimistically.
+
+## Coverage and limits
+
+Changed: shared District types/preview/write builder; admin handover UI; context reconciliation and create/edit inheritance; Location editor inherited display; server registry reads, final-state validator and commit manifest parser; CSV preview and final confirmation guard. Existing Person/reference validation and atomic audit storage are reused. Existing v1/v2 scopes, wire fields and frozen snapshot rules are unchanged: snapshots issued before handover retain old assignments; new snapshots see all committed copies together.
+
+No global authority cutover occurs on deployment. Legacy Districts remain legacy until explicit confirmation; no majority-name mapping or historical manifest is applied. Regional Manager ownership, acting assignments, store-specific exceptions, controlled position eligibility, guided offboarding/access changes, immediate expiring closures and remaining correction-save work are still unfinished. P2/P3 must not be marked wholly complete. Non-retail exceptions are preserved by exclusion, not a new exception subsystem.
+
+Existing raw administrator scripts and historical destructive seed/migration loaders are not an approved restore path: they bypass application validation and may destroy modern inbox/hierarchy/audit state. Restoration needs a named trusted source, restricted backup, canonical-ID/leading-zero preservation, update-only preview, compatible District ownership/copies, freshness checks and bounded recovery. Do not run `migrate:firestore --apply` or the historical Dispatch 12B manifest to “clean” test data. No restoration is performed here.
+
+## Validation and release boundary
+
+- Initial full API/unit suite: **414 passed**, zero failed/skipped/cancelled, 12 suites. Initial build passed with the existing bundle-size advisory.
+- Subsequent safeguard amendment added rejection of unrelated District-field edits and a signed-import race regression. All **23 affected District tests passed**, plus TypeScript. Do not describe this as a new full-suite aggregate.
+- Two synthetic browser cases passed in 8.8 seconds: explicit acknowledgment/success/inherited editor and stale failure/no blind retry. Earlier attempts first exposed a misconfigured synthetic Firebase fixture (fixed only in runner environment), then a missing exact accessible name on the new selector (corrected in the UI). No production credentials/data were used; external HTTPS is blocked in these tests.
+- Final build, review, merge and deployment evidence must be appended when observed. This implementation record alone is not a release claim or a live handover acceptance claim.
+
+## Release and recovery gates
+
+Use the existing Cloud Run release process with source/build/image, no-traffic checks, unchanged runtime/Firebase/security settings and prior tags. The personnel guide changes intentionally explain ownership; verify its new published hash instead of expecting unchanged prose. API schema and wire allowlists must remain unchanged.
+
+Before any District has activated ownership, prior PR #24 code is data-compatible. **After activation, an old writer can bypass the new guard. Do not roll back to a pre-feature writer with writes enabled.** Prefer a compatible rebuild retaining District ownership enforcement; otherwise restrict writes and coordinate recovery first. Traffic rollback does not undo District/Location/audit data. Capture restricted before-images and versions before a concrete handover, preserve legitimate later edits, and use a reviewed compensating transaction rather than deleting ownership fields. A data-restore request is separate from application deployment.
+
+Next work after this bounded release: complete P1.2/P1.3/P1.4 request immutability/per-type validation/save feedback, inventory production reference drift before broader cutover, then controlled positions, RM ownership and guided handover/offboarding. Leave the testing DM unchanged until a concrete owner-selected handover is requested.

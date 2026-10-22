@@ -1,5 +1,11 @@
 # Dispatch 22 — Immediate operating state
 
+## Publication checkpoint — 2026-10-22 UTC
+
+PR #33 merged as `a202344634eceea8b10baf71765a44c7cceb0a8e` and was published together with PR #34 at source `27c3536f476314fb715b591f55df82bc7d8a7837`. Build `15963d9e-1a4c-4acb-97e9-1a8f7c5f8c31` succeeded; `shiekh-location-company-directory-pr34-27c3536` is Ready/sole 100% desired and observed. Both hosts match 46 MIME-validated assets and passed public authentication/cache/docs/Firebase checks, including operating-route denial. Prior configuration and all 26 historical tags were preserved; temporary candidate tag removed. Final status code review of `0f2433e` completed without major issues; CodeRabbit acknowledged the final rate-budget repair but its full final review was rate-limited. All actionable threads resolved. See the [current runbook](../cloud-run-deployment-runbook.md) for exact release/rollback limits. No authenticated business-record or mail-delivery acceptance probe.
+
+Mail attempt budgets are in-process safeguards; Firestore delivery claims provide cross-instance send arbitration. They are not a distributed hard request quota. Earlier implementation/release-gate notes below are historical and superseded by this publication checkpoint; broader plan tasks remain unfinished.
+
 ## Scope and release state
 
 Owner-approved continuation after published PR #32 (`ea53efb`). Implementation on `codex/immediate-operating-status`; not merged or deployed yet. Next slice is address/suite/wayfinding corrections and consistent consumer/export surfaces. No staffing migration, data restoration, DM-email publication, account/credential or other-application changes.

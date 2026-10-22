@@ -8,6 +8,8 @@ For a compact technical allowlist of the emitted JSON shapes, see the [response-
 
 ## What has and has not been checked
 
+**Latest publication — 2026-10-22 UTC:** merged source `27c3536` is deployed as `shiekh-location-company-directory-pr34-27c3536`, including suite/directions and the separate operating-state endpoint. Both production hosts, MIME-validated assets, public docs/cache rules and unauthenticated API guards passed. No successful authenticated live payload, populated-field completeness or consumer integration was sampled. [Release record](cloud-run-deployment-runbook.md#current-live-revision--pr-33-and-pr-34) separates those limits from code/synthetic evidence. Settings → Directory API now links the maintained guides/schema and deployed staffing references; their public visibility does not grant API access.
+
 **Checked live on 2026-10-04:** the production host `https://shiekh-dir.ai.studio` answered requests to the store list, single-store, and field-catalog routes. Each request returned `401 invalid_token` because no authorized API credential was available for this check. This confirms that the routes require access; it does **not** verify a successful live store payload, the live data values, or that production is running the same revision as the workspace code.
 
 **Documented from the current workspace code and automated tests:** the field names, filtering and shaping rules, pagination, and access behavior below. Examples are invented to illustrate the format; they are not live store data. Before finalizing an app integration, have an authorized owner verify a successful response and the published custom-field list.

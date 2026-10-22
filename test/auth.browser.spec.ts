@@ -85,6 +85,21 @@ test('Address unknown submission recovers its original fields and restores an ed
   expect(f.commits[1].writes[0].data.requestedChanges).toEqual(f.commits[0].writes[0].data.requestedChanges);
 });
 
+for (const legacy of [{ state: 'ca' }, { address: '  Legacy street  ' }, { city: 'x'.repeat(101) }, { mallOrCenterName: null }]) {
+  test(`Address request preserves untouched legacy ${Object.keys(legacy)[0]} while changing directions`, async ({ page }) => {
+    const f = await prepareAddress(page);
+    Object.assign(f.seed.locations[0], legacy);
+    await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+    await page.getByLabel('Change Category').selectOption('Address Update');
+    await page.getByLabel('Finding the store', { exact: true }).fill('  Use the east entrance  ');
+    await page.getByRole('button', { name: 'Submit for Approval' }).click();
+    await expect.poll(() => f.commits.length).toBe(1);
+    const request = f.commits[0].writes[0].data;
+    expect(request.requestedChanges).toEqual({ wayfindingDirections: 'Use the east entrance' });
+    expect(request.currentSnapshot).toEqual({ wayfindingDirections: 'Old entrance' });
+  });
+}
+
 test('Address editor exposes separate customer directions; detail and mobile request show readable text', async ({ page }, testInfo) => {
   const f = await prepareAddress(page);
   await page.goto(`${origin}/locations/loc-1/edit`); await restore(page, true);

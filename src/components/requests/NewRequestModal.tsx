@@ -148,9 +148,13 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       currentSnapshot.phoneExtension = targetLoc.phoneExtension ?? null;
     } else if (changeType === 'Address Update') {
       if (!addressBaseline || addressBaseline.id !== targetLoc.id || ADDRESS_FIELDS.some(field => !structurallyEqual(addressBaseline[field] ?? null, targetLoc[field] ?? null))) { setFormError('The address changed while drafting. Select the Location again and review current information before submitting.'); return; }
-      const normalized = normalizeAddressValues(addressDraft);
+      // Compare the raw preloaded values first; an unrelated correction must not
+      // normalize or validate untouched historical fields (including null/omitted inputs).
+      const edited = Object.fromEntries(ADDRESS_FIELDS.filter(field => addressDraft[field] !== (targetLoc[field] ?? '')).map(field => [field, addressDraft[field]]));
+      const normalized = normalizeAddressValues(edited);
       if (normalized.issues.length) { setFormError(normalized.issues.map(issue => issue.message).join(' ')); return; }
       for (const field of ADDRESS_FIELDS) {
+        if (!Object.hasOwn(edited, field)) continue;
         const value = normalized.values[field] ?? null;
         if (!structurallyEqual(value, targetLoc[field] ?? null)) {
           Object.assign(requestedChanges, { [field]: value });

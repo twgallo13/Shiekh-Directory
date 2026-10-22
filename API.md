@@ -1,5 +1,7 @@
 # Store Directory API v1
 
+Current authorization update: after publication, the owner-approved Shiekh-Intel client received the two new v3 grants, retaining its old grants/token. Successful consumer authentication/payload acceptance remains unverified. See Dispatch 25; grant-required fields never imply sign-in or account access.
+
 District-owned DM roster/work-contact contract: see the separate [v3 leadership guide](docs/district-leadership-api.md) and [strict OpenAPI](docs/district-leadership-openapi.json). It uses new explicit grants and the canonical `districtManager.workEmail` field as contact only, not sign-in identity. Existing v1/v2 fields/scopes stay unchanged. Implementation/deployment/authorization are separate milestones in [Dispatch 25](docs/dispatches/dispatch-25-district-leadership-api.md).
 
 Release checkpoint (October 22, 2026): source `238d46f` / revision `shiekh-location-company-directory-pr39-238d46f` publishes the separate v3 leadership/work-contact capability and retains earlier Person-card/status/address improvements. See the [release evidence and limits](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-39). Both hosts passed public denial/docs checks; new client grants, successful authenticated production payloads and data completeness are not claimed. Settings → Directory API links the maintained references and deployed v2/v3 guides/OpenAPI. Future contract changes must update affected documentation in their implementation PR.

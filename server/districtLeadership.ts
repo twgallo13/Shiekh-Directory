@@ -30,7 +30,7 @@ export function validateDistrictLeadershipState(writes: DirectoryWrite[], previo
       || !registry?.regions.some(r => r.id === data.regionId && r.status === 'Active')) {
       throw new DirectoryValidationError('Save an active District and its parent separately before changing its leader.');
     }
-    const districtFields = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([key]) => !['districtManagerId', 'version', 'updatedAt'].includes(key)));
+    const districtFields = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([key]) => !['id', 'districtManagerId', 'version', 'updatedAt'].includes(key)));
     if (!isDeepStrictEqual(districtFields(data), districtFields(before))) throw new DirectoryValidationError('District handover cannot change unrelated District fields.');
     if (id !== null) {
       const matches = people.filter(p => p.id === id);

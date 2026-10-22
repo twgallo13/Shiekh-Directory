@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { json, Router } from "express";
 import { rateLimit } from "express-rate-limit";
 import { AccessDenied, APPLICATION_ROLES, AuthenticationUnavailable, type Account, type Authenticate } from "./authAuthority";
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryAudit, type DirectoryCollection, type DirectoryWrite, type DirectoryWriter } from "./firestoreDirectory";
@@ -27,6 +27,15 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
   const router = Router();
   router.use((_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
   router.use(rateLimit({ limit: 120, windowMs: 60_000, standardHeaders: "draft-8", legacyHeaders: false }));
+  // Scoped to Directory commits, not a global increase for authentication or other APIs.
+  router.use((request, response, next) => json({ limit: '1mb' })(request, response, (error?: unknown) => {
+    if (error) {
+      const oversized = (error as { type?: string }).type === 'entity.too.large';
+      response.status(oversized ? 413 : 400).json({ error: { code: 'invalid_commit_body', message: oversized ? 'Directory commit exceeds the 1 MiB request limit. No changes were saved.' : 'Directory commit requires valid JSON.' } });
+      return;
+    }
+    next();
+  }));
   router.post("/commit", async (request, response) => {
     const token = request.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1];
     if (!token || token.length > 8192) return response.status(401).json({ error: { code: "invalid_token" } });

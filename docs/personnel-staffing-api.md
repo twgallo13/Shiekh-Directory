@@ -26,7 +26,7 @@ is excluded. API fields/scopes are unchanged: staffing still returns the canonic
 Location assignment ID and resolved Person, not a newly exposed District payload.
 Older frozen snapshots keep their original assignments; a new snapshot observes
 the handover together. Deployment/activation evidence and limitations are in
-[Dispatch 18](dispatches/dispatch-18-district-dm-handover.md). Person owns primary workplace and
+[Dispatch 18](https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/dispatches/dispatch-18-district-dm-handover.md). Person owns primary workplace and
 Supports. Region/District own their IDs and hierarchy. People and
 Locations are read from persisted documents; no name-derived identities,
 bootstrap migration, copied-name fallback or second assignment collection.

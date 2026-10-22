@@ -116,6 +116,11 @@ test('Ordinary District rename preserves ownership even if an older client omits
   assert.equal(f.records.get('districts/d-1')!.districtManagerId, 'p-new');
 });
 
+test('Legacy District without a stored id uses its canonical document ID during handover', async () => {
+  const f = fixture(); delete f.records.get('districts/d-1')!.id;
+  await f.commit(); assert.equal(f.records.get('districts/d-1')!.districtManagerId, 'p-new');
+});
+
 test('Editor inheritance handles new stores, moves, explicit vacancy and leaves non-retail/legacy alone', () => {
   const f = fixture(); const managed = { ...f.district, districtManagerId: 'p-new' };
   assert.equal(inheritDistrictLeader(f.locations[0], [managed], f.people).districtManagerId, 'p-new');
@@ -187,6 +192,22 @@ test('Authenticated HTTP handover passes versioned membership to storage; other 
     const writes = districtLeadershipWrites(f.preview()); role = 'Editor'; assert.equal((await send(writes)).status, 403);
     role = 'System Administrator'; const bad = structuredClone(writes); bad[0].districtLeadershipMembers![0].version = -1; assert.equal((await send(bad)).status, 403);
     assert.equal((await send(writes)).status, 200);
+  } finally { server.close(); await once(server, 'close'); }
+});
+
+test('Production-style commit mounting accepts a valid >100 KiB handover and returns structured oversize errors', async () => {
+  const f = fixture();
+  Object.assign(f.all[0], { notes: 'x'.repeat(120_000) }); f.records.set('locations/loc-1', { ...f.all[0] });
+  const app = express(); app.use('/api/directory', createDirectoryDataRouter(async () => f.actor, f.store)); app.use(express.json());
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const send = (body: string) => fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/api/directory/commit`, { method: 'POST', headers: { authorization: 'Bearer synthetic', 'Content-Type': 'application/json' }, body });
+  try {
+    const body = JSON.stringify({ writes: districtLeadershipWrites(f.preview()), audit: f.audit }); assert(Buffer.byteLength(body) > 100 * 1024);
+    assert.equal((await send(body)).status, 200);
+    const before = structuredClone([...f.records]);
+    const large = await send(JSON.stringify({ padding: 'x'.repeat(1_100_000) })); assert.equal(large.status, 413); assert.equal((await large.json()).error.code, 'invalid_commit_body');
+    const malformed = await send('{broken'); assert.equal(malformed.status, 400);
+    assert.deepEqual([...f.records], before);
   } finally { server.close(); await once(server, 'close'); }
 });
 

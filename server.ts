@@ -60,8 +60,8 @@ async function startServer() {
     resolveInvitationEmail: createFirestoreInvitationEmailResolver(),
     recordMailOutcome: createFirestoreMailOutcomeRecorder(),
   }));
-  app.use(express.json());
   app.use("/api/directory", createDirectoryDataRouter(authenticate, directory));
+  app.use(express.json());
   app.use("/api/api-clients", createApiClientRouter(authenticate, apiClients));
 
   app.use("/api/v1", createDirectoryApiRouter({

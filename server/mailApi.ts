@@ -272,9 +272,14 @@ export function createMailRouter(options: MailApiOptions): Router {
       }
     },
   );
+  const requestEventLimit = limiter(20, 10 * 60_000, () => 'mail-event-global');
+  const operatingEventLimit = rateLimit({ limit: 3, windowMs: 10 * 60_000, standardHeaders: 'draft-8', legacyHeaders: false,
+    keyGenerator: request => `operating-event:${String(request.body?.entityId || '')}`,
+    handler: (_request, response) => mailError(response, 429, 'mail_rate_limited', 'This operating alert recovery limit was reached. The operating update remains saved.'),
+  });
   router.post("/event",
-    limiter(20, 10 * 60_000, () => "mail-event-global"),
     json({ limit: "2kb", strict: true, inflate: false }),
+    (request, response, next) => (request.body?.event === 'operating-updated' ? operatingEventLimit : requestEventLimit)(request, response, next),
     async (request, response) => {
       const body = request.body;
       const events: MailEvent[] = ["request-submitted", "request-approved", "request-rejected", "operating-updated"];

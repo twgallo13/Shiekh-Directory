@@ -27,10 +27,11 @@ test('operating event actors can notify the steward without gaining general mail
   }
 });
 
-async function harness(overrides: Partial<MailApiOptions> = {}) {
+async function harness(overrides: Partial<MailApiOptions> = {}, trustProxy = false) {
   const sent: MailMessage[] = [];
   const events: Record<string, string>[] = [];
   const app = express();
+  if (trustProxy) app.set('trust proxy', 1); // Synthetic distinct operators, not a production proxy change.
   app.use("/api/mail", createMailRouter({
     authenticate: async (token) => {
       if (token !== "test-firebase-token") throw new Error("invalid");
@@ -55,6 +56,18 @@ async function harness(overrides: Partial<MailApiOptions> = {}) {
     async close() { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); },
   };
 }
+
+test('operating alerts do not consume the request-event budget, and exhausted requests cannot starve incident alerts', async () => {
+  const app = await harness({ operatingDelivery: { claim: async () => 'claimed', finish: async () => {} }, resolveEvent: async () => ({ to: 'approved@example.test', subject: 'Synthetic', text: 'No real SMTP' }) }, true);
+  const request = (index: number, event: string, entityId: string) => fetch(app.origin + '/api/mail/event', { method: 'POST', headers: { Authorization: 'Bearer test-firebase-token', 'Content-Type': 'application/json', 'X-Forwarded-For': `192.0.2.${index}` }, body: JSON.stringify({ event, entityId }) });
+  try {
+    for (let index = 1; index <= 20; index++) assert.equal((await request(index, 'request-submitted', `request-${index}`)).status, 200);
+    assert.equal((await request(21, 'request-submitted', 'request-overflow')).status, 429);
+    for (let index = 22; index <= 24; index++) assert.equal((await request(index, 'operating-updated', 'incident')).status, 200);
+    assert.equal((await request(25, 'operating-updated', 'incident')).status, 429);
+    assert.equal((await request(26, 'operating-updated', 'other-incident')).status, 200);
+  } finally { await app.close(); }
+});
 
 test('recovered operating alerts deduplicate by event; uncertain SMTP blocks automatic resend', async () => {
   for (const uncertain of [false, true]) {

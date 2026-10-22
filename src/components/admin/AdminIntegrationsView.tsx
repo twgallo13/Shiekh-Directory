@@ -1136,6 +1136,8 @@ export const AdminIntegrationsView: React.FC = () => {
                   ['API reference and endpoints', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/API.md'],
                   ['Published staffing reference', '/api/personnel-guide'],
                   ['Published staffing OpenAPI', '/api/openapi.json'],
+                  ['Published District leadership guide', '/api/leadership-guide'],
+                  ['Published District leadership OpenAPI', '/api/leadership-openapi.json'],
                 ].map(([label, href]) => <a key={href} href={href} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-800 underline decoration-blue-200 underline-offset-2 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">{label}<span className="sr-only"> (opens in a new tab)</span></a>)}
               </nav>
               <p className="text-[11px] text-neutral-500">Repository guides track maintained main-branch documentation; published staffing references come from this deployed app. Check each guide’s release checkpoint before relying on a new field.</p>

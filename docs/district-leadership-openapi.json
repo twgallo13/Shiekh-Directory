@@ -1,0 +1,725 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Directory District Leadership and Store Membership",
+    "version": "district-leadership-v3.1",
+    "description": "Read-only app-neutral effective District-owned DM roster, including zero-store Districts, plus membership at one pinned time. Work email is separately permissioned contact, never verified login. Legacy v1/v2 unchanged. Complete both datasets before reconciliation; errors are not empty data."
+  },
+  "servers": [
+    {
+      "url": "https://shiekh-dir.ai.studio"
+    }
+  ],
+  "security": [
+    {
+      "DirectoryToken": []
+    }
+  ],
+  "paths": {
+    "/api/v3/snapshot": {
+      "get": {
+        "operationId": "createLeadershipSnapshot",
+        "description": "Requires district-leadership:read. No query parameters. Expires in 15 minutes; bound to client/token/grants.",
+        "responses": {
+          "200": {
+            "description": "Complete read response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v3/district-leadership": {
+      "get": {
+        "operationId": "listDistrict",
+        "description": "Requires district-leadership:read. Full pinned snapshot, including retired records. Work email additionally requires district-leadership:contacts:read; old grants do not authorize v3.",
+        "parameters": [
+          {
+            "name": "snapshot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete read response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistrictPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v3/district-leadership/{id}": {
+      "get": {
+        "operationId": "getDistrict",
+        "description": "Exact canonical District/Location document ID, not store number. Same snapshot as both list datasets.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "snapshot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete read response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistrictDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v3/location-districts": {
+      "get": {
+        "operationId": "listMembership",
+        "description": "Requires district-leadership:read. Full pinned snapshot, including retired records. Work email additionally requires district-leadership:contacts:read; old grants do not authorize v3.",
+        "parameters": [
+          {
+            "name": "snapshot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete read response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v3/location-districts/{id}": {
+      "get": {
+        "operationId": "getMembership",
+        "description": "Exact canonical District/Location document ID, not store number. Same snapshot as both list datasets.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "snapshot",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete read response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "DirectoryToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Existing managed API token with explicitly approved grants; do not put it in a URL/browser bundle."
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Read or authorization failed. Never reconcile partial/failed results.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Issue": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "field"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          }
+        }
+      },
+      "DistrictManager": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "personId",
+          "fullName",
+          "lifecycle",
+          "workEmail",
+          "workEmailStatus",
+          "issues"
+        ],
+        "properties": {
+          "personId": {
+            "type": "string"
+          },
+          "fullName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lifecycle": {
+            "enum": [
+              "active",
+              "inactive",
+              "unknown"
+            ]
+          },
+          "workEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Contact only, never a sign-in or authorization identifier; requires both leadership grants and eligible source."
+          },
+          "workEmailStatus": {
+            "enum": [
+              "not_granted",
+              "missing",
+              "invalid",
+              "unapproved_domain",
+              "shared_location_inbox",
+              "withheld_inactive",
+              "withheld_unknown_lifecycle",
+              "unresolved_person",
+              "available"
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Issue"
+            }
+          }
+        }
+      },
+      "District": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "districtId",
+          "districtName",
+          "recordStatus",
+          "regionId",
+          "regionName",
+          "regionStatus",
+          "assignmentState",
+          "districtManager",
+          "issues"
+        ],
+        "properties": {
+          "districtId": {
+            "type": "string"
+          },
+          "districtName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recordStatus": {
+            "enum": [
+              "active",
+              "retired",
+              "unknown"
+            ]
+          },
+          "regionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "regionName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "regionStatus": {
+            "enum": [
+              "active",
+              "retired",
+              "unknown",
+              null
+            ]
+          },
+          "assignmentState": {
+            "enum": [
+              "assigned",
+              "vacant",
+              "unmanaged",
+              "invalid",
+              "unresolved"
+            ]
+          },
+          "districtManager": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DistrictManager"
+              }
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Issue"
+            }
+          }
+        }
+      },
+      "Membership": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "locationId",
+          "storeNumber",
+          "recordStatus",
+          "locationType",
+          "hierarchyApplicability",
+          "regionId",
+          "districtId",
+          "issues"
+        ],
+        "properties": {
+          "locationId": {
+            "type": "string"
+          },
+          "storeNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recordStatus": {
+            "enum": [
+              "active",
+              "retired",
+              "draft",
+              "unknown"
+            ]
+          },
+          "locationType": {
+            "enum": [
+              "retail",
+              "non-retail",
+              "unclassified"
+            ]
+          },
+          "hierarchyApplicability": {
+            "enum": [
+              "Applicable",
+              "Not Applicable",
+              "Unknown"
+            ]
+          },
+          "regionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "districtId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Issue"
+            }
+          }
+        }
+      },
+      "Sync": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "snapshotAt",
+          "contractVersion",
+          "contactAccess"
+        ],
+        "properties": {
+          "mode": {
+            "const": "full"
+          },
+          "snapshotAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contractVersion": {
+            "const": "district-leadership-v3.1"
+          },
+          "contactAccess": {
+            "enum": [
+              "none",
+              "work-email"
+            ]
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "limit",
+          "nextCursor"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Snapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "snapshot",
+          "snapshotAt",
+          "expiresAt",
+          "contractVersion"
+        ],
+        "properties": {
+          "snapshot": {
+            "type": "string"
+          },
+          "snapshotAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "contractVersion": {
+            "const": "district-leadership-v3.1"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "DistrictPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "pagination",
+          "sync"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/District"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "sync": {
+            "$ref": "#/components/schemas/Sync"
+          }
+        }
+      },
+      "MembershipPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "pagination",
+          "sync"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Membership"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          },
+          "sync": {
+            "$ref": "#/components/schemas/Sync"
+          }
+        }
+      },
+      "DistrictDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "sync"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/District"
+          },
+          "sync": {
+            "$ref": "#/components/schemas/Sync"
+          }
+        }
+      },
+      "MembershipDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "sync"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Membership"
+          },
+          "sync": {
+            "$ref": "#/components/schemas/Sync"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,7 @@
 # Store information available to a new app
 
+For District-owned managers (including zero-store Districts) and separately permissioned work email, use the [v3 District leadership guide](district-leadership-api.md) and [OpenAPI](district-leadership-openapi.json), with one v3 snapshot for both District and Location-membership datasets. Field name: `districtManager.workEmail`; contact only, with account access linked explicitly by `personId`. Existing store/persisted staffing APIs below are unchanged. Check [Dispatch 25](dispatches/dispatch-25-district-leadership-api.md) before assuming it is deployed or your client has access. A new v3 consumer does not need the broader v2 `staffing:read` just to read DMs.
+
 For live Open/Closed/Needs verification, use the separate authenticated `/api/v1/locations/{storeNumber}/operating-state` endpoint described in [API.md](../API.md#current-operating-state-separate-from-synchronization), not the raw synchronization lifecycle/modifier. It is no-store, explicitly time-evaluated and can change through expiry without a record update. Re-read at transitions and periodically; mark stale/unknown on outage. Existing v1/v2 frozen synchronization contracts do not change. Publication checkpoint: [dispatch 22](dispatches/dispatch-22-immediate-operating-state.md).
 
 This is a plain-language reference for planning an app that reads stores from the existing Shiekh Directory API. The API is read-only: it can give the app published store information, but it cannot create or edit stores.

@@ -11,7 +11,7 @@ import {
   updateApiClientScopes,
   type ApiClientSummary,
 } from '../../lib/apiClientAdminClient';
-import { API_SCOPES, type ApiScope } from '../../lib/apiScopes';
+import { API_SCOPES, parseApiScopes, type ApiScope } from '../../lib/apiScopes';
 
 type PendingAction = {
   kind: 'disable' | 'rotate' | 'rotate-immediate' | 'revoke' | 'scopes';
@@ -48,7 +48,7 @@ export function ApiClientsPanel() {
 
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (controlsLocked || !name.trim() || newScopes.length === 0) return;
+    if (controlsLocked || !name.trim() || !parseApiScopes(newScopes)) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const issued = await createApiClient(name.trim(), newScopes);
@@ -98,7 +98,8 @@ export function ApiClientsPanel() {
         <div><h3 id="api-clients-title" className="text-sm font-bold text-neutral-900">API Clients</h3><p className="text-xs text-neutral-500">System Administrator managed server credentials</p></div>
         <button type="button" title="Refresh clients" aria-label="Refresh API clients" disabled={loading || controlsLocked} onClick={() => void load()} className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-300 text-neutral-700 disabled:opacity-50"><RefreshCw className="h-4 w-4" /></button>
       </div>
-      <p className="text-xs text-neutral-600">Personnel contacts are not published. Grant access only after consumer approval. <a className="underline" href="/api/personnel-guide" target="_blank" rel="noreferrer">API guide</a> · <a className="underline" href="/api/openapi.json" target="_blank" rel="noreferrer">Shareable OpenAPI</a></p>
+      <p className="text-xs text-neutral-600">V1/v2 personnel contacts remain excluded. Grant access only after consumer approval. <a className="underline" href="/api/personnel-guide" target="_blank" rel="noreferrer">API guide</a> · <a className="underline" href="/api/openapi.json" target="_blank" rel="noreferrer">Shareable OpenAPI</a></p>
+      <p className="text-xs text-neutral-600">V3 District leadership has separate grants: district-leadership:read for District managers and store links, plus district-leadership:contacts:read for eligible company work emails. Work email is contact only, never sign-in or account permission. <a className="underline" href="/api/leadership-guide" target="_blank" rel="noreferrer">District leadership guide</a> · <a className="underline" href="/api/leadership-openapi.json" target="_blank" rel="noreferrer">V3 OpenAPI</a></p>
 
       {error && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
       {notice && <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p>}
@@ -111,7 +112,7 @@ export function ApiClientsPanel() {
       <form onSubmit={create} className="flex flex-col gap-2">
         <label className="min-w-0 flex-1 text-xs font-semibold text-neutral-700">Client name<input required disabled={controlsLocked} maxLength={100} autoComplete="off" value={name} onChange={event => setName(event.target.value)} placeholder="Store Manager sync" className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm" /></label>
         <ScopeChoices label="New client grants" scopes={newScopes} disabled={controlsLocked} onChange={setNewScopes} />
-        <button type="submit" disabled={controlsLocked || !name.trim() || newScopes.length === 0} className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Plus className="h-4 w-4" />Create client with selected grants</button>
+        <button type="submit" disabled={controlsLocked || !name.trim() || !parseApiScopes(newScopes)} className="mt-auto inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><Plus className="h-4 w-4" />Create client with selected grants</button>
       </form>
 
       <div className="divide-y divide-neutral-200 border-y border-neutral-200">
@@ -119,6 +120,7 @@ export function ApiClientsPanel() {
         {!loading && clients.length === 0 && <p className="py-5 text-sm text-neutral-500">No API clients have been created.</p>}
         {clients.map(client => <article key={client.id} className="space-y-3 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-neutral-900">{client.name}</h4><p className="mt-1 break-all font-mono text-xs text-neutral-500">{client.scopes.join(', ')}</p></div><span className={`rounded px-2 py-1 text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : client.status === 'Disabled' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800'}`}>{client.status}</span></div>
+          <p className="break-all text-[11px] text-neutral-500">Client ID: <code>{client.id}</code></p>
           <dl className="grid gap-1 text-xs text-neutral-600 sm:grid-cols-2"><div><dt className="inline font-semibold text-neutral-800">Last used: </dt><dd className="inline">{client.lastUsedAt ? new Date(client.lastUsedAt).toLocaleString() : 'Never'}</dd></div><div><dt className="inline font-semibold text-neutral-800">Token versions: </dt><dd className="inline">{client.tokenVersions.length}</dd></div></dl>
           {client.status !== 'Revoked' && <div className="flex flex-wrap gap-2">
             <button type="button" disabled={controlsLocked} onClick={() => setScopeDraft({ client, scopes: [...client.scopes] })} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">Edit grants</button>
@@ -131,7 +133,7 @@ export function ApiClientsPanel() {
       {scopeDraft && <div className="space-y-3 rounded-md border border-amber-300 p-3">
         <ScopeChoices label={`Grants for ${scopeDraft.client.name}`} scopes={scopeDraft.scopes} disabled={busy} onChange={scopes => setScopeDraft({ ...scopeDraft, scopes })} />
         <p className="text-xs">All active tokens change immediately. Existing snapshots become invalid when grants change.</p>
-        <button type="button" disabled={busy || scopeDraft.scopes.length === 0} onClick={() => setPending({ kind: 'scopes', client: scopeDraft.client, scopes: [...scopeDraft.scopes] })} className="rounded border px-3 py-2 text-xs">Review grant change</button>
+        <button type="button" disabled={busy || !parseApiScopes(scopeDraft.scopes)} onClick={() => setPending({ kind: 'scopes', client: scopeDraft.client, scopes: [...scopeDraft.scopes] })} className="rounded border px-3 py-2 text-xs">Review grant change</button>
         <button type="button" disabled={busy} onClick={() => setScopeDraft(null)} className="ml-2 text-xs underline">Cancel grant edit</button>
       </div>}
 
@@ -149,7 +151,7 @@ function confirmationTitle(pending: PendingAction | null): string {
 }
 
 function confirmationDescription(pending: PendingAction | null): string {
-  if (pending?.kind === 'scopes') return `Current: ${pending.client.scopes.join(', ')}. Proposed: ${pending.scopes?.join(', ')}. This immediately changes every active token's access.`;
+  if (pending?.kind === 'scopes') return `Client ${pending.client.id}. Current: ${pending.client.scopes.join(', ')}. Proposed: ${pending.scopes?.join(', ')}. This immediately changes every active token's access and invalidates existing snapshots; tokens are not rotated. Work email is contact only, never account permission.`;
   if (pending?.kind === 'disable') return 'Requests from every token for this client will be denied until the client is re-enabled.';
   if (pending?.kind === 'rotate') return 'A new token will be shown once. Existing active tokens will remain valid for at most 24 hours.';
   if (pending?.kind === 'rotate-immediate') return 'A new token will be shown once and every previous token will stop working immediately.';
@@ -165,7 +167,7 @@ function confirmationLabel(pending: PendingAction | null): string {
 }
 
 function ScopeChoices({ label, scopes, disabled, onChange }: { label: string; scopes: ApiScope[]; disabled: boolean; onChange: (scopes: ApiScope[]) => void }) {
-  return <fieldset disabled={disabled} className="flex flex-wrap gap-3 text-xs"><legend className="mb-1 font-semibold">{label}</legend>{API_SCOPES.map(scope =>
+  return <fieldset disabled={disabled} className="flex flex-wrap gap-3 text-xs"><legend className="mb-1 font-semibold">{label}</legend>{scopes.includes('district-leadership:contacts:read') && !scopes.includes('district-leadership:read') && <p role="alert" className="w-full text-amber-800">Work-email contact access also requires District leadership read access. Select both grants to continue.</p>}{API_SCOPES.map(scope =>
     <label key={scope} className="inline-flex items-center gap-1"><input type="checkbox" checked={scopes.includes(scope)} onChange={event => onChange(API_SCOPES.filter(candidate => candidate === scope ? event.target.checked : scopes.includes(candidate)))} />{scope}</label>,
   )}</fieldset>;
 }

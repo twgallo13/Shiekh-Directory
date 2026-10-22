@@ -1646,6 +1646,45 @@ test('Personnel scopes UI preserves location-only default and requires explicit 
   expect(requests[0]).toEqual({ scopes: ['locations:read', 'personnel:read', 'staffing:read'], expectedScopes: ['locations:read'] });
 });
 
+test('District leadership grants stay opt-in and work-email dependency requires explicit review without token rotation', async ({ page }, testInfo) => {
+  await prepare(page, 'System Administrator');
+  await page.setViewportSize({ width: 390, height: 850 });
+  const client = { id: 'synthetic-leadership-client', name: 'Synthetic Leadership Consumer', status: 'Active', scopes: ['locations:read'], tokenVersions: [], createdAt: '2026-10-22T15:00:00.000Z', updatedAt: '2026-10-22T15:00:00.000Z' };
+  const requests: Record<string, unknown>[] = [];
+  await page.route('**/api/api-clients**', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { clients: [client] } });
+    expect(new URL(route.request().url()).pathname).toBe('/api/api-clients/synthetic-leadership-client/scopes');
+    const body = route.request().postDataJSON(); requests.push(body);
+    return route.fulfill({ json: { ...client, scopes: body.scopes } });
+  });
+  await page.goto(origin + '/admin'); await restore(page, true);
+  await page.getByRole('button', { name: 'Directory API', exact: true }).click();
+  const fresh = page.getByRole('group', { name: 'New client grants' });
+  await expect(page.getByText('Client ID: synthetic-leadership-client', { exact: true })).toBeVisible();
+  await expect(fresh.getByLabel('district-leadership:read', { exact: true })).not.toBeChecked();
+  await expect(fresh.getByLabel('district-leadership:contacts:read', { exact: true })).not.toBeChecked();
+  await expect(page.getByRole('link', { name: 'District leadership guide', exact: true })).toHaveAttribute('href', '/api/leadership-guide');
+  await expect(page.getByRole('link', { name: 'V3 OpenAPI', exact: true })).toHaveAttribute('href', '/api/leadership-openapi.json');
+  await page.getByRole('button', { name: 'Edit grants', exact: true }).click();
+  const edits = page.getByRole('group', { name: 'Grants for Synthetic Leadership Consumer' });
+  await edits.getByLabel('district-leadership:contacts:read', { exact: true }).check();
+  await expect(edits.getByRole('alert')).toContainText('Select both grants');
+  await expect(page.getByRole('button', { name: 'Review grant change' })).toBeDisabled();
+  expect(requests).toHaveLength(0);
+  await edits.getByLabel('district-leadership:read', { exact: true }).check();
+  await page.getByRole('button', { name: 'Review grant change' }).click();
+  await expect(page.getByRole('alertdialog')).toContainText('district-leadership:contacts:read');
+  await expect(page.getByRole('alertdialog')).toContainText('Client synthetic-leadership-client');
+  await expect(page.getByRole('alertdialog')).toContainText('tokens are not rotated');
+  expect(requests).toHaveLength(0);
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Confirm explicit grants' }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0]).toEqual({ scopes: ['locations:read', 'district-leadership:read', 'district-leadership:contacts:read'], expectedScopes: ['locations:read'] });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('heading', { name: 'API Clients', exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('leadership-settings-mobile.png'), fullPage: true });
+});
+
 test('Location Edit hierarchy draft remains visible after a stale-version conflict', async ({ page }) => {
   await prepareHierarchyBrowser(page);
   let submitted: any;

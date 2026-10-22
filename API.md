@@ -1,12 +1,14 @@
 # Store Directory API v1
 
+District-owned DM roster/work-contact contract: see the separate [v3 leadership guide](docs/district-leadership-api.md) and [strict OpenAPI](docs/district-leadership-openapi.json). It uses new explicit grants and the canonical `districtManager.workEmail` field as contact only, not sign-in identity. Existing v1/v2 fields/scopes stay unchanged. Implementation/deployment/authorization are separate milestones in [Dispatch 25](docs/dispatches/dispatch-25-district-leadership-api.md).
+
 Release checkpoint (2026-10-22 UTC): the Person-card upgrade is published and includes the earlier status/address additions at source `6614ac0` / revision `shiekh-location-company-directory-pr37-6614ac0`. See the [release evidence and limits](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-37). Public denial/docs checks passed; successful authenticated production payload/data completeness is not claimed. Settings → Directory API links this reference, the consumer guide/schema and deployed staffing references. Future contract changes must update affected documentation in their implementation PR.
 
 The Directory API is a read-only, server-authenticated view of active location records in the named Firestore database. Reads never mutate location or personnel data; successful authentication may update redacted client/token last-used metadata at most once per 15 minutes.
 
 For the exhaustive allowlist of successful response fields, nested shapes, pagination metadata, and intentional exclusions, see [the emitted response schema](docs/api-response-schema.md).
 
-Person-card follow-up: internal linked position IDs are not new public response properties or account grants; existing v1/v2 allowlists stay contact-free. [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) / plan P6.9 tracks separately permissioned DM business-contact access. That contact feature is not implemented or authorized by an existing `personnel:read`/`staffing:read` grant. Person work contact is not proof of a verified sign-in identity.
+Person-card linked position IDs remain internal and do not grant access. Existing v1/v2 personnel/staffing allowlists stay contact-free. [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) / P6.9 defines separate v3 District work-contact access with explicit new grants; no existing personnel/staffing grant authorizes it. Work contact is not verified sign-in identity; check Dispatch 25 for actual publication and client authorization.
 
 For a plain-language guide intended for a consuming app's blueprint, including examples, per-field availability, retrieval/synchronization steps, and live-verification limits, see [the app blueprint reference](docs/app-blueprint-directory-api.md).
 

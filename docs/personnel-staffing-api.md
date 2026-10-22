@@ -146,3 +146,6 @@ Production builds copy only this guide and the schema into `dist/api-docs`.
 Any source-upload ignore configuration must include these two source documents
 and the build script; otherwise the build intentionally fails rather than
 shipping missing documentation. Nothing else under `docs` is served publicly.
+# Separate District-owned leadership contract
+
+This guide's existing v2 payloads remain contact-free and describe persisted Location staffing, not effective District ownership. The separate v3 [District leadership guide](district-leadership-api.md) and [OpenAPI](district-leadership-openapi.json) define canonical District/DM and same-snapshot Location membership plus separately granted work contact. Do not reinterpret v2, use email as account authority or assume an existing personnel/staffing grant authorizes v3. See the [release checkpoint](https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/dispatches/dispatch-25-district-leadership-api.md) for actual publication and consumer acceptance.

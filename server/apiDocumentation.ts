@@ -10,5 +10,11 @@ export function createApiDocumentationRouter(root = process.cwd()): Router {
   router.get('/personnel-guide', (_request, response) => {
     response.set('Cache-Control', 'no-store').type('text/plain').sendFile(path.join(directory, 'personnel-staffing-api.md'));
   });
+  router.get('/leadership-openapi.json', (_request, response) => {
+    response.set('Cache-Control', 'no-store').sendFile(path.join(directory, 'district-leadership-openapi.json'));
+  });
+  router.get('/leadership-guide', (_request, response) => {
+    response.set('Cache-Control', 'no-store').type('text/plain').sendFile(path.join(directory, 'district-leadership-api.md'));
+  });
   return router;
 }

@@ -22,6 +22,7 @@ import {
   type LocationImportMode,
 } from './locationImportSchema';
 import { normalizeLocationWriteValues } from './locationWriteContract';
+import { OPTIONAL_ADDRESS_COLUMNS } from './locationAddress';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, type LocationInboxConflictMember } from './locationInboxEmail';
 
 export {
@@ -317,6 +318,13 @@ export function buildLocationImportPlan(
     }
     for (const [column, field] of Object.entries(scalarFields)) {
       if (row[column]) proposedInput[field] = row[column];
+    }
+    for (const [column, field] of Object.entries(OPTIONAL_ADDRESS_COLUMNS)) {
+      const value = (row[column] || '').trim(), action = (row[`${column}Action`] || '').trim().toLowerCase();
+      if ((!action && value) || (action === 'set' && value)) proposedInput[field] = value;
+      else if (action === 'clear' && !value) proposedInput[field] = null;
+      else if ((!action || action === 'keep') && !value) { /* omission/blank keeps existing values */ }
+      else issues.push(issue('error', 'invalid_attribute', `${column}Action`, action, existing?.[field] ?? null, `Invalid ${column} value/action combination.`, 'Use blank+blank or keep+blank to preserve, set+value to set, or clear+blank to remove.'));
     }
     for (const [column, field] of Object.entries(listFields)) {
       if (!row[column]) continue;
@@ -632,10 +640,11 @@ function validateRowIdentitySyntax(row: ImportRow, issues: LocationImportIssue[]
 function validateImportedAttributes(row: ImportRow, proposed: Record<string, unknown>, existing: Record<string, unknown> | undefined, issues: LocationImportIssue[]): void {
   validateAllowed(row, 'Type', LOCATION_TYPES, proposed, existing, issues, true);
   validateAllowed(row, 'OperationalStatus', LOCATION_OPERATIONAL_STATUSES, proposed, existing, issues);
+  if (row.OperationalStatus === 'Temporarily Closed — Emergency' && existing?.operationalStatus !== row.OperationalStatus) issues.push(issue('error', 'invalid_attribute', 'OperationalStatus', row.OperationalStatus, existing?.operationalStatus ?? null, 'New indefinite emergency closures are not supported.', 'Use Report temporary closure on the Location detail screen for an immediate expiring update.'));
   validateAllowed(row, 'RecordStatus', LOCATION_RECORD_STATUSES, proposed, existing, issues);
   validateAllowed(row, 'TimeZone', LOCATION_TIME_ZONES, proposed, existing, issues);
   validateAllowed(row, 'HierarchyApplicability', LOCATION_HIERARCHY_APPLICABILITY, proposed, existing, issues, true);
-  if (row.State && !/^[A-Z]{2}$/.test(row.State)) {
+  if (row.State && !/^[A-Z]{2}$/.test(row.State.toUpperCase())) {
     issues.push(issue('error', 'invalid_attribute', 'State', row.State, existing?.state ?? null, 'State must be a two-letter uppercase abbreviation.', 'Use a value such as CA.', undefined, proposed.state));
   }
   if (row.ZipCode && !/^\d{5}(?:-\d{4})?$/.test(row.ZipCode)) {
@@ -672,6 +681,7 @@ function importedChanges(row: ImportRow, proposed: Record<string, unknown>, exis
     ...Object.entries(scalarFields).filter(([column]) => row[column]).map(([, field]) => field),
     ...Object.entries(listFields).filter(([column]) => row[column]).map(([, field]) => field),
     ...(row.LocationInboxEmail || row.LocationInboxEmailAction ? ['locationInboxEmail'] : []),
+      ...Object.entries(OPTIONAL_ADDRESS_COLUMNS).filter(([column]) => row[column] || row[`${column}Action`]).map(([, field]) => field),
     ...(row.Phone && proposed.phoneExtension !== existing?.phoneExtension ? ['phoneExtension'] : []),
   ];
   return [...new Set(fields)]

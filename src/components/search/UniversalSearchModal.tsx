@@ -43,6 +43,7 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
     ? locations.filter(l => 
         l.storeNumber.includes(cleanQuery) ||
         l.name.toLowerCase().includes(cleanQuery) ||
+        [l.address, l.suite, l.mallOrCenterName, l.wayfindingDirections].some(value => value?.toLowerCase().includes(cleanQuery)) ||
         l.city.toLowerCase().includes(cleanQuery) ||
         l.address.toLowerCase().includes(cleanQuery)
       ).slice(0, 5)

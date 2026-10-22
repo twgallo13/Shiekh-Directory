@@ -70,6 +70,14 @@ export const LOCATION_IMPORT_FIELDS: readonly LocationImportFieldDefinition[] = 
   { column: 'RecordStatus', field: 'recordStatus', purpose: 'Directory lifecycle status. Retirement is blocked by incoming Works at or Supports references.', additions: 'Required', updates: 'Optional', format: 'One allowed value', allowedValues: LOCATION_RECORD_STATUSES, example: 'Active' },
   { column: 'GoogleReviewUrl', field: 'googleReviewUrl', aliases: ['Google Review URL'], purpose: 'Public review link. Preview shows the normalized saved value.', additions: 'Optional', updates: 'Optional', format: 'HTTP/HTTPS URL without credentials', example: 'https://example.test/reviews' },
   { column: 'StorePageUrl', field: 'storePageUrl', aliases: ['Store Page URL'], purpose: 'Public store page. Preview shows the normalized saved value.', additions: 'Optional', updates: 'Optional', format: 'HTTP/HTTPS URL without credentials', example: 'https://example.test/stores/007' },
+  ...([
+    ['Suite', 'suite', 'Suite or space within the postal address.', '100', 'Space 2148'],
+    ['MallOrCenterName', 'mallOrCenterName', 'Location-owned mall or center name.', '200', 'Example Galleria'],
+    ['WayfindingDirections', 'wayfindingDirections', 'Customer-facing directions; no private notes or personal information.', '1000', 'Second floor, next to Macy’s; north entrance.'],
+  ] as const).flatMap(([column, field, purpose, max, example]) => [
+    { column, field, purpose, additions: 'Optional', updates: 'Optional; blank preserves', format: `Plain text, maximum ${max} characters. Clear only with ${column}Action=clear.`, example },
+    { column: `${column}Action`, purpose: `Explicit keep/set/clear for ${column}.`, additions: 'Optional', updates: 'Optional', format: 'Blank + blank: keep; blank + value: set; keep + blank: keep; set + value: set; clear + blank: null. All other combinations are invalid.', example: 'set' },
+  ]),
 ];
 
 export const LOCATION_IMPORT_COLUMNS = LOCATION_IMPORT_FIELDS.map(field => field.column);

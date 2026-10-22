@@ -161,6 +161,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
       return (
         loc.storeNumber.includes(term) ||
         loc.name.toLowerCase().includes(term) ||
+        [loc.address, loc.suite, loc.mallOrCenterName, loc.wayfindingDirections].some(value => value?.toLowerCase().includes(term)) ||
         loc.city.toLowerCase().includes(term) ||
         loc.state.toLowerCase().includes(term) ||
         loc.type.toLowerCase().includes(term) ||

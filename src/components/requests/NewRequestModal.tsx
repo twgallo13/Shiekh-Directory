@@ -17,6 +17,7 @@ import { validateRequestProposal } from '../../lib/requestValidation';
 import { loadSubmission, submissionStorageKey } from '../../lib/requestSubmission';
 import { DirectoryCommitError } from '../../lib/directoryClient';
 import { formatUsPhone } from '../../lib/contactNormalization';
+import { ADDRESS_FIELDS, normalizeAddressValues } from '../../lib/locationAddress';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -33,6 +34,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
 
   // Form field states for requested changes
   const [newPhone, setNewPhone] = useState('');
+  const [addressDraft, setAddressDraft] = useState<Partial<LocationRecord>>(() => Object.fromEntries(ADDRESS_FIELDS.map(field => [field, locations.find(l => l.id === (location?.id || locations[0]?.id))?.[field] ?? ''])));
+  const [addressBaseline, setAddressBaseline] = useState(() => structuredClone(locations.find(l => l.id === (location?.id || locations[0]?.id))));
   const [newManager, setNewManager] = useState<Person | null>(null);
   const [newStatus, setNewStatus] = useState<OperationalStatus>('Open — Normal Operations');
   const [noticeText, setNoticeText] = useState('');
@@ -87,6 +90,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       setHoursBaseline(structuredClone(locations.find(l => l.id === p.targetId)));
       setNewLocationInboxEmail(p.requestedChanges.locationInboxEmail || '');
       setClearLocationInboxEmail(p.requestedChanges.locationInboxEmail === null);
+      setAddressDraft(Object.fromEntries(ADDRESS_FIELDS.map(field => [field, Object.hasOwn(p.requestedChanges, field) ? p.requestedChanges[field] ?? '' : locations.find(l => l.id === p.targetId)?.[field] ?? ''])));
+      setAddressBaseline(structuredClone(locations.find(l => l.id === p.targetId)));
       setPendingSubmission(null); setRecoveryMode(false); setFormError('The uncommitted operation is safely cancelled. Review this restored draft against current information before submitting a replacement.');
     } catch (e) { setFormError(e instanceof Error ? e.message : 'Cancellation could not be confirmed. Keep recovering this operation.'); }
     finally { submissionBusy.current = false; setSubmitting(false); }
@@ -94,6 +99,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
 
   const targetLoc = locations.find(l => l.id === selectedLocId);
   const resetProposal = (target: LocationRecord | undefined) => {
+    setAddressDraft(Object.fromEntries(ADDRESS_FIELDS.map(field => [field, target?.[field] ?? ''])));
+    setAddressBaseline(structuredClone(target));
     setNewPhone(''); setNewManager(null); setNewStatus('Open — Normal Operations');
     setNoticeText(''); setReason(''); setNewLocationInboxEmail(''); setClearLocationInboxEmail(false);
     setNewHours(hoursDraft(target, DEFAULT_WEEKLY_HOURS)); setHoursBaseline(structuredClone(target)); setFormError('');
@@ -139,6 +146,21 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       requestedChanges.phone = newPhone;
       currentSnapshot.phone = targetLoc.phone ?? null;
       currentSnapshot.phoneExtension = targetLoc.phoneExtension ?? null;
+    } else if (changeType === 'Address Update') {
+      if (!addressBaseline || addressBaseline.id !== targetLoc.id || ADDRESS_FIELDS.some(field => !structurallyEqual(addressBaseline[field] ?? null, targetLoc[field] ?? null))) { setFormError('The address changed while drafting. Select the Location again and review current information before submitting.'); return; }
+      // Compare the raw preloaded values first; an unrelated correction must not
+      // normalize or validate untouched historical fields (including null/omitted inputs).
+      const edited = Object.fromEntries(ADDRESS_FIELDS.filter(field => addressDraft[field] !== (targetLoc[field] ?? '')).map(field => [field, addressDraft[field]]));
+      const normalized = normalizeAddressValues(edited);
+      if (normalized.issues.length) { setFormError(normalized.issues.map(issue => issue.message).join(' ')); return; }
+      for (const field of ADDRESS_FIELDS) {
+        if (!Object.hasOwn(edited, field)) continue;
+        const value = normalized.values[field] ?? null;
+        if (!structurallyEqual(value, targetLoc[field] ?? null)) {
+          Object.assign(requestedChanges, { [field]: value });
+          Object.assign(currentSnapshot, { [field]: targetLoc[field] ?? null });
+        }
+      }
     } else if (changeType === 'Store Manager Change') {
       if (!newManager || personLifecycle(newManager) !== 'active') {
         setFormError('Choose an active Store Manager before submitting this request.');
@@ -270,6 +292,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
               className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500 cursor-pointer"
             >
               <option value="Phone Number Correction">Phone Number Correction</option>
+              <option value="Address Update">Address &amp; Finding the Store</option>
               <option value="Store Manager Change">Store Manager Leadership Change</option>
               <option value="Operational Status Change">Lifecycle / Hours Modifier & Notice (approval required)</option>
               <option value="Standard Hours Adjustment">Standard Hours Adjustment</option>
@@ -278,6 +301,14 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
           </div>
 
           {/* Conditional change inputs */}
+          {changeType === 'Address Update' && <div className="space-y-3">
+            <p className="text-neutral-600">Published Location information. Corrections require approval. Keep personal information and internal notes out of customer directions.</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{([
+              ['address', 'Street address', 300, true], ['suite', 'Suite / space', 100, false], ['city', 'City', 100, true], ['state', 'State', 2, true], ['zipCode', 'ZIP code', 10, true], ['mallOrCenterName', 'Mall / center', 200, false],
+            ] as const).map(([field, label, maxLength, required]) => <label key={field} className="block font-semibold">{label}{required ? ' *' : ''}<input aria-label={label} value={addressDraft[field] || ''} maxLength={maxLength} required={required} onChange={e => setAddressDraft(previous => ({ ...previous, [field]: e.target.value }))} className="mt-1 w-full rounded-lg border border-neutral-300 p-2 font-normal" /></label>)}</div>
+            <label className="block font-semibold">Finding the store<textarea aria-label="Finding the store" rows={3} maxLength={1000} value={addressDraft.wayfindingDirections || ''} onChange={e => setAddressDraft(previous => ({ ...previous, wayfindingDirections: e.target.value }))} placeholder="Second floor, next to Macy’s; use the north entrance." className="mt-1 w-full rounded-lg border border-neutral-300 p-2 font-normal" /></label>
+            <p className="text-[11px] text-neutral-500">Optional suite, mall and directions can be cleared by emptying their fields. Street, city, state and ZIP cannot be cleared. Existing store identity and staffing are unchanged.</p>
+          </div>}
           <p className="rounded-lg bg-blue-50 p-2 text-blue-900">For a power outage or other immediate closure, open the Location and use Report temporary closure. It expires at store-local midnight and does not wait for correction approval. Holiday exceptions remain managed in the existing holiday settings, not this request form.</p>
           {changeType === 'Phone Number Correction' && (
             <div>

@@ -105,7 +105,9 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
 
   const handleCopyStoreInfo = async () => {
     const summary = `Shiekh Shoes — Store #${location.storeNumber} (${location.name})
-Address: ${location.address}, ${location.city}, ${location.state} ${location.zipCode}
+Address: ${location.address}${location.suite ? `, ${location.suite}` : ''}, ${location.city}, ${location.state} ${location.zipCode}
+Mall / center: ${location.mallOrCenterName || 'None recorded'}
+Finding the store: ${location.wayfindingDirections || 'None recorded'}
 Phone: ${formatUsPhone(location.phone, location.phoneExtension)}
 Location inbox: ${location.locationInboxEmail || 'None recorded'}
 Hours (Today): ${todayStatus.hoursString}
@@ -387,7 +389,7 @@ Operational lifecycle: ${location.operationalStatus}`;
                         </div>
                         <div>
                           <div className="text-xs font-bold text-neutral-800 group-hover:text-red-700 group-hover:underline">
-                            {location.address}
+                            {location.address}{location.suite ? `, ${location.suite}` : ''}
                           </div>
                           <div className="text-xs text-neutral-600 font-normal">
                             {location.city}, {location.state} {location.zipCode}
@@ -409,7 +411,8 @@ Operational lifecycle: ${location.operationalStatus}`;
                         <span className="font-semibold text-neutral-800 truncate max-w-[180px]">{location.mallOrCenterName}</span>
                       </div>
                     )}
-                    {/* External Store & Review Links if available */}
+                      {location.wayfindingDirections && <div className="rounded-lg border border-blue-100 bg-blue-50 p-3"><h4 className="text-xs font-semibold text-blue-900">Finding the store</h4><p className="mt-1 whitespace-pre-wrap break-words text-xs text-blue-900">{location.wayfindingDirections}</p></div>}
+                      {/* External Store & Review Links if available */}
                     {(location.googleReviewUrl || location.storePageUrl) && (
                       <div className="pt-1.5 flex flex-wrap gap-1.5">
                         {location.googleReviewUrl && (

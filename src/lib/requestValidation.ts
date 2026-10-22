@@ -2,9 +2,11 @@ import { normalizeUsPhone } from './contactNormalization';
 import { normalizeLocationInboxEmail } from './locationInboxEmail';
 import { LOCATION_OPERATIONAL_STATUSES } from './locationImportSchema';
 import { structurallyEqual } from './correctionRequest';
+import { ADDRESS_FIELDS, normalizeAddressValues } from './locationAddress';
 
 const fields: Record<string, readonly string[]> = {
   'Phone Number Correction': ['phone', 'phoneExtension'],
+  'Address Update': ADDRESS_FIELDS,
   'Store Manager Change': ['storeManagerId', 'storeManagerName', 'storeManagerPhone'],
   'Standard Hours Adjustment': ['standardHours'],
   'Operational Status Change': ['operationalStatus', 'activeNotice'],
@@ -33,6 +35,11 @@ export function validateRequestProposal(request: Record<string, unknown>, target
     const extension = phone.extension ?? changes.phoneExtension ?? null;
     if (extension !== null && (typeof extension !== 'string' || !/^\d{1,10}$/.test(extension))) return fail('Phone extension must contain 1 to 10 digits.');
     changes.phoneExtension = extension;
+  }
+  if (request.changeType === 'Address Update') {
+    const address = normalizeAddressValues(changes);
+    if (address.issues.length) return fail(address.issues.map(issue => issue.message).join(' '));
+    Object.assign(changes, address.values);
   }
   if (request.changeType === 'Store Manager Change' && (keys.length !== 3 || allowed.some(k => typeof changes[k] !== 'string') || !changes.storeManagerId)) return fail('Choose an active Store Manager with canonical identity and contact details.');
   if (request.changeType === 'Standard Hours Adjustment') {

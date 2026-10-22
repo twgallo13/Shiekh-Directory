@@ -55,6 +55,7 @@ export const PrintSheetView: React.FC = () => {
     return (
       loc.storeNumber.includes(term) ||
       loc.name.toLowerCase().includes(term) ||
+      [loc.address, loc.suite, loc.mallOrCenterName, loc.wayfindingDirections].some(value => value?.toLowerCase().includes(term)) ||
       loc.city.toLowerCase().includes(term) ||
       loc.state.toLowerCase().includes(term) ||
       loc.phone.toLowerCase().includes(term) ||
@@ -253,7 +254,8 @@ export const PrintSheetView: React.FC = () => {
                           )}
                         </td>
                         <td className="py-1 px-1.5 text-neutral-600 truncate max-w-[180px]">
-                          {loc.address}
+                          {loc.address}{loc.suite ? `, ${loc.suite}` : ''}
+                          {loc.wayfindingDirections && <div className="whitespace-pre-wrap break-words text-[8px]">Find us: {loc.wayfindingDirections}</div>}
                         </td>
                         <td className="py-1 px-1.5 text-neutral-800 whitespace-nowrap font-medium">
                           {loc.city}

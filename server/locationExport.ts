@@ -82,6 +82,7 @@ const LOCATION_EXPORT_COLUMNS = [
   "StorePageUrl",
   "HierarchyApplicability",
   "CurrentOperatingState", "OperatingReason", "OperatingEvaluatedAt", "OperatingNextTransitionAt", "TemporaryClosureExpiresAt",
+  "Suite", "MallOrCenterName", "WayfindingDirections",
 ] as const;
 
 const EXPORT_TOKEN_TTL_MS = 2 * 60_000;
@@ -337,6 +338,9 @@ function toCsvRow(
     OperatingEvaluatedAt: operating.evaluatedAt,
     OperatingNextTransitionAt: operating.nextTransitionAt || '',
     TemporaryClosureExpiresAt: operating.temporaryClosure?.expiresAt || '',
+    Suite: stringField(location.suite),
+    MallOrCenterName: stringField(location.mallOrCenterName),
+    WayfindingDirections: stringField(location.wayfindingDirections),
   };
 }
 

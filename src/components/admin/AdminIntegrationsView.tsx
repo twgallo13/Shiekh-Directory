@@ -1127,6 +1127,20 @@ export const AdminIntegrationsView: React.FC = () => {
               </div>
             </div>
 
+            <aside aria-labelledby="directory-api-docs-title" className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 space-y-3">
+              <div><h4 id="directory-api-docs-title" className="text-sm font-bold text-neutral-900">API documentation</h4><p className="mt-1 text-xs text-neutral-600">Integration steps, available fields, hours and examples. Guides distinguish deployed features from planned work. Never include live credentials when sharing documentation.</p></div>
+              <nav aria-label="Directory API documentation" className="flex flex-wrap gap-2">
+                {[
+                  ['Store API integration guide', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/app-blueprint-directory-api.md'],
+                  ['Response fields and schema', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/api-response-schema.md'],
+                  ['API reference and endpoints', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/API.md'],
+                  ['Published staffing reference', '/api/personnel-guide'],
+                  ['Published staffing OpenAPI', '/api/openapi.json'],
+                ].map(([label, href]) => <a key={href} href={href} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-800 underline decoration-blue-200 underline-offset-2 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">{label}<span className="sr-only"> (opens in a new tab)</span></a>)}
+              </nav>
+              <p className="text-[11px] text-neutral-500">Repository guides track maintained main-branch documentation; published staffing references come from this deployed app. Check each guide’s release checkpoint before relying on a new field.</p>
+            </aside>
+
             {currentUser.role === 'System Administrator' && <ApiClientsPanel />}
 
             {/* Webhook Endpoint Configuration */}

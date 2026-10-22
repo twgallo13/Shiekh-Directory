@@ -5,6 +5,135 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+test('API documentation links are discoverable and keyboard-accessible without credential changes', async ({ page }, testInfo) => {
+  await prepare(page, 'System Administrator');
+  await page.setViewportSize({ width: 390, height: 844 });
+  const writes: string[] = [];
+  await page.route('**/api/api-clients**', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { clients: [] } });
+    writes.push(route.request().method()); return route.fulfill({ status: 403, json: { error: {} } });
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Directory API', exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: 'Directory API documentation' });
+  const links = [
+    ['Store API integration guide', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/app-blueprint-directory-api.md'],
+    ['Response fields and schema', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/docs/api-response-schema.md'],
+    ['API reference and endpoints', 'https://github.com/twgallo13/Shiekh-Directory/blob/main/API.md'],
+    ['Published staffing reference', '/api/personnel-guide'],
+    ['Published staffing OpenAPI', '/api/openapi.json'],
+  ];
+  for (const [label, href] of links) {
+    const link = navigation.getByRole('link', { name: new RegExp(label) });
+    await expect(link).toHaveAttribute('href', href); await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  }
+  const first = navigation.getByRole('link', { name: /Store API integration guide/ });
+  await first.focus(); await expect(first).toBeFocused();
+  expect(writes).toHaveLength(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.getByRole('complementary', { name: 'API documentation' }).screenshot({ path: testInfo.outputPath('api-documentation-mobile.png') });
+});
+
+async function prepareAddress(page: Page, uncertain = false) {
+  await prepare(page, 'System Administrator');
+  const seed = seedDirectory(2) as any;
+  seed.locations[0] = { ...seed.locations[0], suite: 'Space 21', wayfindingDirections: 'Old entrance', version: 3 };
+  const commits: any[] = [];
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', route => {
+    const body = route.request().postDataJSON(); commits.push(body);
+    if (uncertain && commits.length === 1) return route.fulfill({ status: 502, contentType: 'text/html', body: 'Lost reply' });
+    return route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.route('**/api/directory/submissions/cancel', route => route.fulfill({ json: { cancelled: true, records: [] } }));
+  return { seed, commits };
+}
+
+test('Address request submits meaningful approved-field changes and explicit optional clears without identity changes', async ({ page }) => {
+  const f = await prepareAddress(page);
+  await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+  await page.getByLabel('Change Category').selectOption('Address Update');
+  await expect(page.getByLabel('Street address', { exact: true })).toHaveValue('1 Local State Street');
+  await page.getByLabel('Suite / space', { exact: true }).fill('');
+  await page.getByLabel('Finding the store', { exact: true }).fill('Second floor, next to Macy’s.\nNorth entrance.');
+  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  const request = f.commits[0].writes[0].data;
+  expect(request.changeType).toBe('Address Update');
+  expect(request.requestedChanges).toEqual({ suite: null, wayfindingDirections: 'Second floor, next to Macy’s.\nNorth entrance.' });
+  expect(request.currentSnapshot).toEqual({ suite: 'Space 21', wayfindingDirections: 'Old entrance' });
+  expect(request.targetStoreNumber).toBe('001');
+  expect(f.commits[0].writes).toHaveLength(1);
+});
+
+test('Address unknown submission recovers its original fields and restores an editable draft after confirmed cancellation', async ({ page }) => {
+  const f = await prepareAddress(page, true);
+  await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+  await page.getByLabel('Change Category').selectOption('Address Update');
+  await page.getByLabel('Suite / space', { exact: true }).fill('');
+  await page.getByLabel('Finding the store', { exact: true }).fill('Second floor');
+  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(page.getByRole('button', { name: 'Recover saved submission' })).toBeVisible();
+  await page.reload(); await restore(page, true);
+  await page.getByRole('button', { name: 'Check saved state / cancel if not saved' }).click();
+  await expect(page.getByLabel('Finding the store', { exact: true })).toHaveValue('Second floor');
+  await expect(page.getByLabel('Suite / space', { exact: true })).toHaveValue('');
+  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect.poll(() => f.commits.length).toBe(2);
+  expect(f.commits[1].writes[0].id).not.toBe(f.commits[0].writes[0].id);
+  expect(f.commits[1].writes[0].data.requestedChanges).toEqual(f.commits[0].writes[0].data.requestedChanges);
+});
+
+for (const legacy of [{ state: 'ca' }, { address: '  Legacy street  ' }, { city: 'x'.repeat(101) }, { mallOrCenterName: null }]) {
+  test(`Address request preserves untouched legacy ${Object.keys(legacy)[0]} while changing directions`, async ({ page }) => {
+    const f = await prepareAddress(page);
+    Object.assign(f.seed.locations[0], legacy);
+    await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+    await page.getByLabel('Change Category').selectOption('Address Update');
+    await page.getByLabel('Finding the store', { exact: true }).fill('  Use the east entrance  ');
+    await page.getByRole('button', { name: 'Submit for Approval' }).click();
+    await expect.poll(() => f.commits.length).toBe(1);
+    const request = f.commits[0].writes[0].data;
+    expect(request.requestedChanges).toEqual({ wayfindingDirections: 'Use the east entrance' });
+    expect(request.currentSnapshot).toEqual({ wayfindingDirections: 'Old entrance' });
+  });
+}
+
+test('Address editor exposes separate customer directions; detail and mobile request show readable text', async ({ page }, testInfo) => {
+  const f = await prepareAddress(page);
+  await page.goto(`${origin}/locations/loc-1/edit`); await restore(page, true);
+  await page.getByLabel('Finding the store', { exact: true }).fill('Second floor near Macy’s');
+  await page.getByRole('button', { name: /Save.*Record/ }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes[0].data.wayfindingDirections).toBe('Second floor near Macy’s');
+  expect(f.commits[0].writes[0].data.suite).toBe('Space 21');
+  await page.goto(`${origin}/locations/loc-1`); await restore(page, true);
+  await expect(page.getByText('Old entrance', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+  await page.getByLabel('Change Category').selectOption('Address Update');
+  await expect(page.getByLabel('Finding the store', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('address-request-mobile.png'), fullPage: true });
+});
+
+test('Address form detects a concurrent address refresh rather than silently rebasing its draft', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-22T18:00:00Z') });
+  const f = await prepareAddress(page);
+  let reads = 0;
+  await page.route('**/api/directory/operating/directory', route => { reads++; return route.fulfill({ json: f.seed }); });
+  await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+  await page.getByLabel('Change Category').selectOption('Address Update');
+  await page.getByLabel('Finding the store', { exact: true }).fill('Draft directions');
+  f.seed.locations[0] = { ...f.seed.locations[0], address: 'Concurrent saved street', version: 4 };
+  await page.clock.fastForward(30000);
+  await expect.poll(() => reads).toBe(1);
+  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('address changed while drafting');
+  expect(f.commits).toHaveLength(0);
+});
+
 async function prepareOperating(page: Page, uncertain = false) {
   await page.clock.install({ time: new Date('2026-10-22T18:00:00Z') });
   await prepare(page, 'System Administrator');

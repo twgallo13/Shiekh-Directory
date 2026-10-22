@@ -658,6 +658,8 @@ export function validateMetadataWrites(
       // The immediate command is the only writer of this server-owned override. Older editors/imports preserve it.
       if (Object.hasOwn(data, 'temporaryClosure') && !isDeepStrictEqual(data.temporaryClosure ?? null, current?.temporaryClosure ?? null)) throw new DirectoryWriteDenied('Use the dedicated temporary operating update command to change closures.');
       if (current && Object.hasOwn(current, 'temporaryClosure')) data.temporaryClosure = current.temporaryClosure;
+      // Older editors omit new fields. Omission preserves; explicit null clears through validation.
+      for (const field of ['suite', 'wayfindingDirections', 'mallOrCenterName']) if (!Object.hasOwn(data, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
       const companyScope = ['Company', 'Company-wide'].includes(actor.accessScope);
       const scopedStore = actor.accessScope.match(/^Store ([0-9]+)$/)?.[1];
       if (!companyScope && (!scopedStore || scopedStore !== data.storeNumber || (current && scopedStore !== current.storeNumber))) throw new DirectoryWriteDenied('Your access scope does not permit direct changes to this Location.');

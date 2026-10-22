@@ -1,8 +1,9 @@
 import { normalizeUsPhone, normalizeWebUrl } from './contactNormalization';
 import { normalizeLocationInboxEmail } from './locationInboxEmail';
+import { normalizeAddressValues, type AddressField } from './locationAddress';
 
 export interface LocationWriteNormalizationIssue {
-  field: 'phone' | 'phoneExtension' | 'googleReviewUrl' | 'storePageUrl' | 'locationInboxEmail';
+  field: 'phone' | 'phoneExtension' | 'googleReviewUrl' | 'storePageUrl' | 'locationInboxEmail' | AddressField;
   message: string;
 }
 
@@ -15,8 +16,9 @@ export function normalizeLocationWriteValues(
   input: Record<string, unknown>,
   current?: Record<string, unknown>,
 ): LocationWriteNormalizationResult {
-  const values = { ...input };
-  const issues: LocationWriteNormalizationIssue[] = [];
+  const address = normalizeAddressValues(input, current);
+  const values = address.values;
+  const issues: LocationWriteNormalizationIssue[] = [...address.issues];
 
   if (Object.hasOwn(values, 'locationInboxEmail')
     && values.locationInboxEmail !== current?.locationInboxEmail

@@ -143,7 +143,7 @@ test("current-state reporting columns append without moving any pre-existing col
       "AssistantStoreManagers", "OperationalStatus", "RecordStatus", "GoogleReviewUrl", "StorePageUrl",
     ];
     assert.deepEqual(headers.slice(0, preexisting.length), preexisting);
-    assert.deepEqual(headers.slice(preexisting.length), ['HierarchyApplicability', 'CurrentOperatingState', 'OperatingReason', 'OperatingEvaluatedAt', 'OperatingNextTransitionAt', 'TemporaryClosureExpiresAt']);
+    assert.deepEqual(headers.slice(preexisting.length), ['HierarchyApplicability', 'CurrentOperatingState', 'OperatingReason', 'OperatingEvaluatedAt', 'OperatingNextTransitionAt', 'TemporaryClosureExpiresAt', 'Suite', 'MallOrCenterName', 'WayfindingDirections']);
     const rows = parse(csv, { columns: true }) as (CsvRow & { HierarchyApplicability: string })[];
     assert.equal(rows[0].HierarchyApplicability, "Applicable");
     assert.equal((rows[0] as any).CurrentOperatingState, 'Unknown');

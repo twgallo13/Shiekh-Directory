@@ -14,6 +14,8 @@ const PUBLIC_LOCATION_FIELDS = [
   "type",
   "mallOrCenterName",
   "address",
+  "suite",
+  "wayfindingDirections",
   "city",
   "state",
   "zipCode",

@@ -37,6 +37,8 @@ const records: LocationDocument[] = [
       zipCode: "90001",
       phone: "555-0107",
       locationInboxEmail: " Store@example.test ",
+      suite: 'Space 2148',
+      wayfindingDirections: 'Second floor, next to Macy’s.',
       phonePrivacy: "Public",
       timeZone: "America/Los_Angeles",
       regionId: "reg-west",
@@ -91,6 +93,15 @@ const repository: LocationRepository = {
   },
   async readHierarchy() { return structuredClone(hierarchy); },
 };
+
+it('published optional address fields are consistent across list/detail with explicit null on missing values', async () => {
+  const list = await (await apiFetch(baseUrl, '/api/v1/locations', READ_TOKEN)).json();
+  const detail = await (await apiFetch(baseUrl, '/api/v1/locations/07', READ_TOKEN)).json();
+  assert.equal(detail.data.suite, 'Space 2148'); assert.equal(detail.data.wayfindingDirections, 'Second floor, next to Macy’s.');
+  assert.equal(list.data.find((x: any) => x.storeNumber === '07').wayfindingDirections, detail.data.wayfindingDirections);
+  const missing = list.data.find((x: any) => x.storeNumber === '08');
+  assert.equal(missing.suite, null); assert.equal(missing.wayfindingDirections, null);
+});
 
 const authenticator: ApiClientAuthenticator = {
   async authenticate(token) {

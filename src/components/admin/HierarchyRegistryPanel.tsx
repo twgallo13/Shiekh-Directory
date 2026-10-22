@@ -124,6 +124,7 @@ export function HierarchyRegistryPanel() {
   };
 
   const refreshConflict = async () => {
+    if (busy) return;
     const draft = editing;
     begin('refresh-registry', 'Refreshing the latest saved hierarchy values...');
     try {
@@ -161,7 +162,7 @@ export function HierarchyRegistryPanel() {
       <Building2 className="h-5 w-5 text-red-700" aria-hidden="true" />
       <div><h2 className="text-lg font-semibold text-neutral-900">Regions & Districts</h2><p className="mt-1 text-sm text-neutral-600">Region → District → Store. Manage the District Manager on the District; stores inherit that assignment.</p><p className="mt-2 text-xs text-neutral-500">Permanent IDs keep this directory and connected applications linked. Changing a District&apos;s parent does not move its stores.</p></div>
     </div>
-    {feedback && <FeedbackMessage feedback={feedback} onRefresh={() => void refreshConflict()} />}
+    {feedback && <FeedbackMessage feedback={feedback} onRefresh={() => void refreshConflict()} disabled={busy} />}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(240px,1fr)_minmax(0,2fr)]">
       <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
         <h3 className="text-base font-semibold text-neutral-900">Regions <span className="text-sm font-normal text-neutral-500">({regions.length})</span></h3>
@@ -213,12 +214,12 @@ export function HierarchyRegistryPanel() {
   </section>;
 }
 
-function FeedbackMessage({ feedback, onRefresh }: { feedback: Feedback; onRefresh: () => void }) {
+function FeedbackMessage({ feedback, onRefresh, disabled }: { feedback: Feedback; onRefresh: () => void; disabled: boolean }) {
   return <div role={feedback.tone === 'error' ? 'alert' : 'status'} className={`rounded-md border px-3 py-2 text-xs ${feedback.tone === 'error' ? 'border-red-200 bg-red-50 text-red-900' : feedback.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
     <p>{feedback.message}</p>
     {feedback.correction && <p className="mt-1 font-medium">{feedback.correction}</p>}
     {feedback.dependencies && feedback.dependencies.length > 0 && <ul className="mt-2 space-y-1">{feedback.dependencies.map(item => <li key={`${item.type}-${item.id}`}>{item.href ? <a href={item.href} className="font-semibold underline">{item.name}{item.storeNumber ? ` (Store ${item.storeNumber})` : ''}</a> : <span className="font-semibold">{item.name} ({item.id})</span>} <span className="font-mono">{item.id}</span></li>)}</ul>}
-    {feedback.refresh && <button type="button" onClick={onRefresh} className="mt-2 inline-flex items-center gap-1 font-semibold underline"><RefreshCw className="h-3.5 w-3.5" />Refresh saved values and review</button>}
+    {feedback.refresh && <button type="button" disabled={disabled} onClick={onRefresh} className="mt-2 inline-flex items-center gap-1 font-semibold underline disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" />Refresh saved values and review</button>}
   </div>;
 }
 

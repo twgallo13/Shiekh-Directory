@@ -259,6 +259,40 @@ for (const fail of [false, true]) {
   });
 }
 
+test('Registry refresh cannot overlap a pending District manager save', async ({ page }) => {
+  const f = await prepareHierarchyBrowser(page);
+  f.seed.locations = f.seed.locations.filter((location: any) => location.id !== 'loc-unclassified');
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); f.commits.push(body);
+    if (f.commits.length === 1) return route.fulfill({ status: 409, json: { error: { code: 'directory_conflict', message: 'Registry changed. Refresh saved values.' } } });
+    await gate;
+    return route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Region & Districts', exact: true }).click();
+  const district = page.getByRole('group', { name: 'District Renamed North', exact: true });
+  await district.getByRole('button', { name: 'Retire', exact: true }).click();
+  const refresh = page.getByRole('button', { name: 'Refresh saved values and review' });
+  await expect(refresh).toBeEnabled();
+  await district.getByRole('button', { name: 'Set up District Manager' }).click();
+  const panel = district.getByRole('region', { name: 'District leadership handover' });
+  await panel.getByLabel('New District Manager', { exact: true }).selectOption('person-dm');
+  await panel.getByLabel('Reason for District handover').fill('Synthetic reviewed District setup');
+  await panel.getByRole('button', { name: 'Preview district-wide change' }).click();
+  await panel.getByRole('checkbox', { name: /I reviewed every affected store/ }).check();
+  await panel.getByRole('button', { name: 'Confirm District DM assignment' }).click();
+  try {
+    await expect.poll(() => f.commits.length).toBe(2);
+    await expect(refresh).toBeDisabled();
+    await expect(district.getByRole('button', { name: 'Close manager settings' })).toBeDisabled();
+  } finally { release(); }
+  await expect(panel.getByRole('status')).toContainText('Saved: District Manager');
+  await expect(refresh).toBeEnabled();
+  await expect(district.getByText('Inherited by stores', { exact: false })).toBeVisible();
+});
+
 test('Registry is browse-first, filters Districts by Region and opens leadership in its District', async ({ page }) => {
   const f = await prepareHierarchyBrowser(page);
   await page.setViewportSize({ width: 390, height: 844 });

@@ -1,5 +1,7 @@
 # Directory API v1: emitted response fields
 
+V3 work-contact eligibility additionally withholds conventional store-number mailboxes as `shared_location_inbox` without requiring populated Location inbox data. Existing field names/status enums and v1/v2 shapes are unchanged. See Dispatch 25 for the safeguard's release status.
+
 Separate v3 contract: [District leadership fields and synchronization](district-leadership-api.md), [strict emitted schema](district-leadership-openapi.json). V3 returns a canonical District roster plus Location membership under one snapshot; `districtManager.workEmail` requires an additional explicit contact grant and never confers sign-in/access. This does not add email to the v1/v2 allowlists below. See [Dispatch 25](dispatches/dispatch-25-district-leadership-api.md) for actual release/authorization status.
 
 This reference documents the JSON properties emitted by the Directory API serializer. It is intentionally an allowlist: a field is not part of the public contract just because it exists on a Firestore document or in the application.

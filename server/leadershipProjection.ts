@@ -18,7 +18,9 @@ function workContact(person: SourceRecord | undefined, access: LeadershipContact
   const email = normalizeLocationInboxEmail(person.data.workEmail);
   if (!email) return withheld('invalid');
   if (!WORK_EMAIL_DOMAINS.some(domain => email.comparisonKey.endsWith('@' + domain))) return withheld('unapproved_domain');
-  if (access.sharedInboxKeys.has(email.comparisonKey)) return withheld('shared_location_inbox');
+  // Company store-number mailboxes are shared even before Location inbox data is populated.
+  // Include zero-padded legacy variants conservatively; never generate/modify an address here.
+  if (/^store[0-9]+@shiekhshoes\.com$/.test(email.comparisonKey) || access.sharedInboxKeys.has(email.comparisonKey)) return withheld('shared_location_inbox');
   return { workEmail: email.value, workEmailStatus: 'available' };
 }
 

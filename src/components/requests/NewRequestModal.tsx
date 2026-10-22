@@ -54,7 +54,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     setSubmitting(true);
     try {
       // Fail before sending if recovery cannot be retained across reload/navigation.
-      sessionStorage.setItem(storageKey, JSON.stringify(request));
+      try { sessionStorage.setItem(storageKey, JSON.stringify(request)); }
+      catch { setFormError('No new request was sent. This browser tab cannot retain the submission for recovery. Enable session storage and try again; your draft is unchanged.'); return; }
       setPendingSubmission(request);
       await submitRequest(request);
       try { sessionStorage.removeItem(storageKey); } catch { /* A later replay is still safe. */ }
@@ -73,7 +74,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     submissionBusy.current = true; setSubmitting(true);
     try {
       const cancelled = await cancelRequestSubmission(pendingSubmission);
-      sessionStorage.removeItem(storageKey);
+      try { sessionStorage.removeItem(storageKey); } catch { /* The confirmed server state is authoritative; any stored replay remains safe. */ }
       if (!cancelled) { setPendingSubmission(null); onClose(); return; }
       const p = pendingSubmission;
       setSelectedLocId(p.targetId); setChangeType(p.changeType); setReason(p.reason || '');

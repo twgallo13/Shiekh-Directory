@@ -18,7 +18,8 @@ const date = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test
 /** Shared proposal boundary; rejection intentionally does not require historic proposals to be valid. */
 export function validateRequestProposal(request: Record<string, unknown>, target: Record<string, unknown>): { changes: Record<string, unknown>; error?: string } {
   const personInfo = request.targetType === 'Person' && request.changeType === 'Other Store Info Update';
-  const allowed = personInfo ? ['fullName', 'primaryLocationId', 'supportedLocationIds'] : fields[String(request.changeType)];
+  const category = String(request.changeType);
+  const allowed = personInfo ? ['fullName', 'primaryLocationId', 'supportedLocationIds'] : Object.hasOwn(fields, category) ? fields[category] : undefined;
   const changes = record(request.requestedChanges) ? structuredClone(request.requestedChanges) : {};
   const fail = (error: string) => ({ changes, error });
   if ((!personInfo && request.targetType !== 'Location') || !allowed) return fail('This correction category or target is unsupported. Reject the old request and submit a supported replacement.');

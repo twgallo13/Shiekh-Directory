@@ -19,7 +19,7 @@ test('all proposed fields need present, current baselines', () => {
   for (const currentSnapshot of [{ phone: target.phone }, { phone: 'stale', phoneExtension: '12' }]) assert.ok(validateRequestProposal({ ...proposal, currentSnapshot }, target).error);
 });
 test('unknown categories, Person targets, and oversized notes are rejected', () => {
-  for (const patch of [{ changeType: 'Holiday Hours Exception' }, { targetType: 'Person' }, { reason: 'x'.repeat(2001) }]) assert.ok(validateRequestProposal({ ...proposal, ...patch }, target).error);
+  for (const patch of [{ changeType: 'Holiday Hours Exception' }, { changeType: 'constructor' }, { changeType: 'toString' }, { changeType: '__proto__' }, { targetType: 'Person' }, { reason: 'x'.repeat(2001) }]) assert.ok(validateRequestProposal({ ...proposal, ...patch }, target).error);
 });
 test('hours require complete baseline, valid seven-day shape, and an actual change', () => {
   const request = { changeType: 'Standard Hours Adjustment', targetType: 'Location', currentSnapshot: { standardHours: target.standardHours, hoursMode: target.hoursMode, hoursTemplateId: target.hoursTemplateId }, requestedChanges: { standardHours: { ...DEFAULT_WEEKLY_HOURS, monday: { open: '09:00', close: '20:00', isClosed: false } } } };

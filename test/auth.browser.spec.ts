@@ -1405,6 +1405,36 @@ test('Request submission validates normalized phone no-ops before sending', asyn
   await expect(dialog.getByRole('alert')).toContainText('No change'); expect(f.commits).toHaveLength(0);
 });
 
+test('Request submission blocked storage keeps the editable draft and sends nothing', async ({ page }) => {
+  const f = await prepareHoursCorrection(page);
+  await page.addInitScript(() => { const original = Storage.prototype.setItem; Storage.prototype.setItem = function(key, value) { if (key.startsWith('directory-request-submission:')) throw new Error('Synthetic quota failure'); return original.call(this, key, value); }; });
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102'); await dialog.locator('textarea').fill('Keep despite storage failure');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('No new request was sent');
+  await expect(dialog.getByLabel('Target Location')).toBeEnabled();
+  await expect(dialog.locator('textarea')).toHaveValue('Keep despite storage failure');
+  await expect(dialog.getByRole('button', { name: 'Recover saved submission' })).toHaveCount(0);
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Request submission confirmed cancellation restores the draft even when browser cleanup fails', async ({ page }) => {
+  await prepareHoursCorrection(page);
+  await page.addInitScript(() => { const original = Storage.prototype.removeItem; Storage.prototype.removeItem = function(key) { if (key.startsWith('directory-request-submission:')) throw new Error('Synthetic removal failure'); return original.call(this, key); }; });
+  await page.route('**/api/directory/commit', route => route.abort('failed'));
+  await page.route('**/api/directory/submissions/cancel', route => route.fulfill({ json: { records: [], cancelled: true } }));
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102'); await dialog.locator('textarea').fill('Keep despite cleanup failure');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Recover this exact submission');
+  await dialog.getByRole('button', { name: 'Check saved state / cancel if not saved' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('safely cancelled');
+  await expect(dialog.getByLabel('Target Location')).toBeEnabled();
+  await expect(dialog.locator('textarea')).toHaveValue('Keep despite cleanup failure');
+});
+
 test('Request submission holds its draft and close controls until persistence finishes', async ({ page }) => {
   const f = await prepareHoursCorrection(page);
   let release = () => {};

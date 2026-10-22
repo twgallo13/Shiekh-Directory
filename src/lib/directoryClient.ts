@@ -19,9 +19,16 @@ export class DirectoryCommitError extends Error {
 /** Reconcile-or-seal an uncertain submission; never discard a potentially in-flight write. */
 export async function cancelDirectorySubmission(user: SessionUser, write: DirectoryWrite): Promise<DirectoryCommitResult & { cancelled: boolean }> {
   const response = await fetch('/api/directory/submissions/cancel', { method: 'POST', headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' }, cache: 'no-store', redirect: 'error', body: JSON.stringify({ write }) });
-  const result = await response.json();
-  if (!response.ok) throw new DirectoryCommitError(result.error?.message || 'Submission recovery could not be confirmed. Keep this operation and try again.', result.error?.code);
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result || typeof result.cancelled !== 'boolean' || !Array.isArray(result.records)
+    || (result.cancelled ? result.records.length !== 0 : !validSubmissionResult(result, write.id))) throw new DirectoryCommitError(result?.error?.message || 'Submission recovery could not be confirmed. Keep this operation and try again.', result?.error?.code);
   return result;
+}
+
+function validSubmissionResult(result: DirectoryCommitResult, id: string): boolean {
+  const record = result?.records?.[0];
+  return Array.isArray(result?.records) && result.records.length === 1 && record?.collection === 'requests' && record.id === id && record.operation === 'set'
+    && record.data?.id === id && ['Pending', 'Approved', 'Rejected'].includes(String(record.data?.status)) && (result.replayed === undefined || typeof result.replayed === 'boolean');
 }
 
 export function buildRegistryWrite(
@@ -61,7 +68,13 @@ export async function commitDirectory(user: SessionUser, writes: DirectoryWrite[
     redirect: 'error',
     body: JSON.stringify({ writes, audit }),
   });
-  if (response.ok) return await response.json() as DirectoryCommitResult;
+  if (response.ok) {
+    const result = await response.json().catch(() => null) as DirectoryCommitResult | null;
+    if (!result || !Array.isArray(result.records) || (writes.length === 1 && writes[0].collection === 'requests' && writes[0].data?.status === 'Pending' && !validSubmissionResult(result, writes[0].id))) {
+      throw new DirectoryCommitError('The save response could not be confirmed. Recover the original submission before creating another.');
+    }
+    return result;
+  }
   const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string; details?: { dependencies?: DirectoryDependency[]; correction?: string } } } | null;
   throw new DirectoryCommitError(
     body?.error?.message || (response.status === 403 ? 'Your role cannot make this directory change.' : 'The directory database could not save this change.'),

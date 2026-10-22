@@ -124,6 +124,17 @@ test('CSV preview blocks a newly assigned mapped-ineligible manager and preserve
   assert.equal(historical.preview.summary.blocked, 0);
 });
 
+test('CSV reconciles inherited DM copies without treating canonical historical ownership as a new assignment', () => {
+  const mapped = { ...person, positionIds: ['store-manager'] } as Person;
+  for (const districtManagerId of [undefined, 'old-dm', person.id]) {
+    const current = { ...store, districtManagerId };
+    const plan = buildLocationImportPlan('LocationId,StoreName\r\nloc-007,Updated store name\r\n', { locations: [current], people: [mapped], regions: [region], districts: [district] });
+    assert.equal(plan.preview.summary.blocked, 0);
+    assert(plan.preview.rows[0].changes.some(c => c.field === 'name'));
+    if (districtManagerId !== person.id) assert(plan.preview.rows[0].changes.some(c => c.field === 'districtManagerId' && c.after === person.id));
+  }
+});
+
 test('phone visibility omitted by old writers is retained and changed invalid values are rejected', () => {
   const current = { ...person, phonePrivacy: 'Restricted' };
   const write = { collection: 'people' as const, operation: 'set' as const, id: person.id, expectedVersion: 2, data: { ...person, department: 'Finance' } };

@@ -411,6 +411,8 @@ export function buildLocationImportPlan(
     }
 
     for (const [column, field] of Object.entries(personColumns)) {
+      // District-owned DM copies are reconciliation, not a new store assignment.
+      if (field === 'districtManagerId' && hasDistrictLeadership(leadershipDistrict)) continue;
       if (existing && sameValue(existing[field as keyof typeof existing], proposed[field])) continue;
       const ids = Array.isArray(proposed[field]) ? proposed[field] as string[] : proposed[field] ? [String(proposed[field])] : [];
       for (const personId of ids) {

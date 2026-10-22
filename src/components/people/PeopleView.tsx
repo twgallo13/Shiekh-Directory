@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
 import { Search, Plus, UserRoundSearch, Phone, Mail, MapPin } from 'lucide-react';
@@ -9,6 +9,7 @@ import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
 import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
 import { PersonEditorForm } from './PersonEditorForm';
+import { listedPosition, personPositions, PERSON_POSITIONS, personPositionLabel } from '../../lib/personPositions';
 
 interface PeopleViewProps {
   onSelectPerson: (person: Person) => void;
@@ -19,17 +20,23 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [isAddingPerson, setIsAddingPerson] = useState(false);
+  const editorClose = useRef<(() => void) | null>(null);
+  const [editorFooter, setEditorFooter] = useState<HTMLDivElement | null>(null);
 
   const canAdd = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
   const filtered = people.filter(p => {
-    if (roleFilter !== 'all' && p.jobTitle !== roleFilter && p.role !== roleFilter) {
+    const matchesRole = roleFilter === 'Store Manager' || roleFilter === 'District Manager'
+      ? listedPosition(p, roleFilter) : p.jobTitle === roleFilter || p.role === roleFilter;
+    if (roleFilter !== 'all' && !matchesRole) {
       return false;
     }
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
       p.fullName?.toLowerCase().includes(term) ||
+      p.jobTitle?.toLowerCase().includes(term) ||
+      PERSON_POSITIONS.some(position => personPositions(p).ids.includes(position.id) && position.label.toLowerCase().includes(term)) ||
       p.phone?.toLowerCase().includes(term) ||
       p.workPhone?.toLowerCase().includes(term) ||
       resolvePersonEmail(p).value.toLowerCase().includes(term) ||
@@ -91,7 +98,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
                 </div>
                 <div>
                   <h3 className="font-bold text-neutral-900 text-sm">{person.fullName}</h3>
-                  <p className="text-xs text-neutral-500">{person.jobTitle || person.role}</p>
+                  <p className="text-xs text-neutral-500">{personPositionLabel(person)}</p>
                 </div>
               </div>
               <PrivacyBadge level={person.phonePrivacy} />
@@ -128,10 +135,13 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
         isOpen={isAddingPerson}
         title="Add Person"
         description="Create a personnel record for the directory."
-        size="sm"
-        onClose={() => setIsAddingPerson(false)}
+        footer={<div ref={setEditorFooter} className="w-full" />}
+        size="lg"
+        onClose={() => editorClose.current?.()}
       >
         <PersonEditorForm
+          registerClose={close => { editorClose.current = close; }}
+          footerTarget={editorFooter}
           locations={locations}
           submitLabel="Save Record"
           onCancel={() => setIsAddingPerson(false)}

@@ -2,6 +2,7 @@ import type { DistrictRecord, LocationRecord, Person, RegionRecord } from '../ty
 import type { DirectoryWrite } from './directoryClient';
 import { classifyHierarchyLocationType, isRetailHierarchyType } from './hierarchyResolution';
 import { personLifecycle } from './personLifecycle';
+import { allowsLeadershipPosition } from './personPositions';
 
 export interface DistrictLeadershipMember { id: string; version: number }
 export interface DistrictLeadershipPreview {
@@ -35,6 +36,7 @@ export function previewDistrictLeadership(district: DistrictRecord, managerId: s
     throw new Error('Choose one active Person or explicitly choose Vacant.');
   }
   const members = locations.filter(l => isDistrictLeadershipMember(l, district.id));
+  if (manager && !allowsLeadershipPosition(manager, 'District Manager')) throw new Error('Add the District Manager position to this Person before assigning District leadership.');
   if ([district, ...members].some(r => !Number.isInteger(r.version ?? 0) || (r.version ?? 0) < 0)) throw new Error('Invalid record versions require review before handover.');
   if (members.length > 99) throw new Error('This District exceeds the 99-store atomic handover limit. No changes were made.');
   if (new Set(members.map(l => l.id)).size !== members.length) throw new Error('Duplicate Location IDs require review before handover.');

@@ -1,4 +1,5 @@
-import type { LocationRecord, PersonRecord, UserProfile } from '../types';
+import type { DistrictRecord, LocationRecord, PersonRecord, UserProfile } from '../types';
+import { isRetailHierarchyType } from './hierarchyResolution';
 
 export type PersonLocationRelationshipLabel =
   | 'Primary workplace'
@@ -34,6 +35,7 @@ const LABEL_ORDER: PersonLocationRelationshipLabel[] = [
 export function buildPersonLocationRelationships(
   person: PersonRecord,
   locations: LocationRecord[],
+  districts: DistrictRecord[] = [],
 ): PersonLocationRelationshipRow[] {
   const labelsByLocationId = new Map<string, Set<PersonLocationRelationshipLabel>>();
   const add = (locationId: string | undefined, label: PersonLocationRelationshipLabel) => {
@@ -48,7 +50,9 @@ export function buildPersonLocationRelationships(
   for (const location of locations) {
     if (location.storeManagerId === person.id) add(location.id, 'Store Manager');
     if (location.assistantStoreManagerIds?.includes(person.id)) add(location.id, 'Assistant Manager');
-    if (location.districtManagerId === person.id) add(location.id, 'District Manager');
+    const district = districts.find(d => d.id === location.districtId);
+    const districtOwned = isRetailHierarchyType(location.type) && district && Object.hasOwn(district, 'districtManagerId');
+    if ((districtOwned ? district.districtManagerId : location.districtManagerId) === person.id) add(location.id, 'District Manager');
     if (location.regionalManagerId === person.id) add(location.id, 'Regional Manager');
     if (location.keyHolderIds?.includes(person.id)) add(location.id, 'Key Holder');
   }
@@ -72,9 +76,10 @@ export function getPersonDeletionBlockers(
   person: PersonRecord,
   locations: LocationRecord[],
   users: UserProfile[],
+  districts: DistrictRecord[] = [],
 ): PersonDeletionBlockers {
   return {
-    locations: buildPersonLocationRelationships(person, locations)
+    locations: buildPersonLocationRelationships(person, locations, districts)
       .map(row => ({ ...row, labels: row.labels.filter(label => label !== 'Primary workplace' && label !== 'Supports') }))
       .filter(row => row.labels.length > 0),
     users: users.filter(user => user.personId === person.id),

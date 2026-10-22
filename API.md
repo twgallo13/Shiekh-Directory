@@ -6,6 +6,8 @@ The Directory API is a read-only, server-authenticated view of active location r
 
 For the exhaustive allowlist of successful response fields, nested shapes, pagination metadata, and intentional exclusions, see [the emitted response schema](docs/api-response-schema.md).
 
+Person-card follow-up: internal linked position IDs are not new public response properties or account grants; existing v1/v2 allowlists stay contact-free. [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) / plan P6.9 tracks separately permissioned DM business-contact access. That contact feature is not implemented or authorized by an existing `personnel:read`/`staffing:read` grant. Person work contact is not proof of a verified sign-in identity.
+
 For a plain-language guide intended for a consuming app's blueprint, including examples, per-field availability, retrieval/synchronization steps, and live-verification limits, see [the app blueprint reference](docs/app-blueprint-directory-api.md).
 
 ## Endpoints

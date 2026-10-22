@@ -4,6 +4,8 @@ For live Open/Closed/Needs verification, use the separate authenticated `/api/v1
 
 This is a plain-language reference for planning an app that reads stores from the existing Shiekh Directory API. The API is read-only: it can give the app published store information, but it cannot create or edit stores.
 
+The Person-card linked-position upgrade does not add emails or permissions to this API. DM business-contact access is tracked separately in [issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) / P6.9. A Person's work contact may differ from a verified sign-in address; use the stable Person ID and an explicit account link, not an email match as authority. Existing staffing reads describe saved assignments at their snapshot time, not a new effective-leadership contract.
+
 For a compact technical allowlist of the emitted JSON shapes, see the [response-schema reference](api-response-schema.md).
 
 ## What has and has not been checked

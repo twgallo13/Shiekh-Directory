@@ -3,6 +3,25 @@ import { describe, it } from "node:test";
 import { buildDistrictManagerGroupLabel, buildLocationReadProjection, resolveActiveLocationManagers, resolveActivePerson, resolveActivePersonList } from "../src/lib/readProjectionContract";
 
 describe("read projection contract", () => {
+  it("uses canonical District ownership and explicit vacancy for UI reads without changing default persisted projections", () => {
+    const location = { id: 'loc-1', storeNumber: '007', name: 'Synthetic store', type: 'Street / Standalone Location', districtId: 'd-1', districtManagerId: 'old', districtManagerName: 'Historical name' };
+    const people = [{ id: 'old', fullName: 'Old DM', status: 'Active' }, { id: 'new', fullName: 'Canonical DM', status: 'Active' }];
+    const district = { id: 'd-1', districtManagerId: 'new' };
+    assert.equal(resolveActiveLocationManagers(location, people, [district]).districtManager?.id, 'new');
+    const result = buildLocationReadProjection(location, people, [district]);
+    assert.equal(result.districtManager, 'Canonical DM');
+    assert(result.warnings.some(w => /historical Location copy/.test(w)));
+    for (const districtManagerId of [null, 'missing']) {
+      const registry = [{ ...district, districtManagerId }];
+      assert.equal(resolveActiveLocationManagers(location, people, registry).districtManager, undefined);
+      assert.equal(buildLocationReadProjection(location, people, registry).districtManager, '');
+    }
+    assert.equal(resolveActiveLocationManagers(location, [{ ...people[1], status: 'Inactive' }], [district]).districtManager, undefined);
+    assert.equal(resolveActiveLocationManagers(location, people, [{ id: 'd-1' }]).districtManager?.id, 'old');
+    assert.equal(resolveActiveLocationManagers({ ...location, type: 'Other Company Location' }, people, [district]).districtManager?.id, 'old');
+    assert.equal(buildLocationReadProjection(location, people).districtManager, 'Old DM');
+  });
+
   it("prefers canonical person IDs over stale copied names when the reference is valid", () => {
     const result = buildLocationReadProjection(
       {

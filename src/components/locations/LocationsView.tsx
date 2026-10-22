@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
-import { resolveActivePerson } from '../../lib/readProjectionContract';
+import { resolveActiveLocationManagers } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { resolveOperatingState } from '../../lib/operatingState';
 import { OperationalStatusBadge } from '../common/StatusBadge';
@@ -117,13 +117,10 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
   const leadershipByLocationId = useMemo(() => {
     const map = new Map<string, { storeManager?: PersonRecord; districtManager?: PersonRecord }>();
     locations.forEach(loc => {
-      map.set(loc.id, {
-        storeManager: resolveActivePerson(loc.storeManagerId, people),
-        districtManager: resolveActivePerson(loc.districtManagerId, people),
-      });
+      map.set(loc.id, resolveActiveLocationManagers(loc, people, registryDistricts));
     });
     return map;
-  }, [locations, people]);
+  }, [locations, people, registryDistricts]);
 
   const hierarchyByLocationId = useMemo(() => new Map(locations.map(location => [
     location.id,

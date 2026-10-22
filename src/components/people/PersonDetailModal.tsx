@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { LocationRecord, PersonRecord, UserProfile } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Mail, MapPin, Pencil, Phone, Store, Trash2, UserX } from 'lucide-react';
@@ -12,6 +12,8 @@ import { buildPersonLocationRelationships, getPersonDeletionBlockers } from '../
 import { PersonEditorForm } from './PersonEditorForm';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { personLifecycle } from '../../lib/personLifecycle';
+import { personPositionLabel } from '../../lib/personPositions';
+import { personProfileImpact } from '../../lib/personProfileImpact';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -28,8 +30,10 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   onEditLocation,
   onSelectUser,
 }) => {
-  const { locations, users, currentUser, updatePerson, deletePerson } = useDirectory();
+  const { locations, districts, regions, users, currentUser, updatePerson, deletePerson } = useDirectory();
   const [isEditing, setIsEditing] = useState(false);
+  const editorClose = useRef<(() => void) | null>(null);
+  const [editorFooter, setEditorFooter] = useState<HTMLDivElement | null>(null);
   const [pendingAction, setPendingAction] = useState<'inactivate' | 'delete' | null>(null);
   const [confirmationName, setConfirmationName] = useState('');
   const [actionError, setActionError] = useState('');
@@ -43,18 +47,20 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   }, [person?.id]);
 
   const relationships = useMemo(
-    () => person ? buildPersonLocationRelationships(person, locations) : [],
-    [locations, person],
+    () => person ? buildPersonLocationRelationships(person, locations, districts) : [],
+    [locations, person, districts],
   );
   const blockers = useMemo(
-    () => person ? getPersonDeletionBlockers(person, locations, users) : { locations: [], users: [] },
-    [locations, person, users],
+    () => person ? getPersonDeletionBlockers(person, locations, users, districts) : { locations: [], users: [] },
+    [locations, person, users, districts],
   );
 
   if (!person) return null;
 
   const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
-  const hasBlockers = blockers.locations.length > 0 || blockers.users.length > 0;
+  const impact = personProfileImpact(person, locations, districts, regions, users);
+  const ownedDistricts = districts.filter(d => d.districtManagerId === person.id);
+  const hasBlockers = blockers.locations.length > 0 || blockers.users.length > 0 || ownedDistricts.length > 0;
 
   const closeAction = () => {
     if (isActionPending) return;
@@ -85,6 +91,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
   const blockerDetails = hasBlockers ? (
     <div className="mt-4 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+      {ownedDistricts.length > 0 && <div><p className="font-semibold">Reassign or vacate District leadership first:</p>{ownedDistricts.map(d => <p key={d.id}>{d.name} · {d.status}</p>)}<a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="underline">Open Organization & leadership settings</a></div>}
       {blockers.locations.length > 0 && <div className="space-y-1.5"><p className="font-semibold">Clear these leadership assignments first:</p>{blockers.locations.map(row => (
         <button key={row.locationId} type="button" disabled={!row.location || !onEditLocation} onClick={() => row.location && onEditLocation?.(row.location)} className="flex w-full items-center justify-between rounded border border-amber-200 bg-white px-2 py-1.5 text-left hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-70">
           <span>{row.location ? `#${row.location.storeNumber} ${row.location.name}` : `Unavailable Location ${row.locationId}`}</span><span className="font-medium">{row.labels.join(', ')}</span>
@@ -103,15 +110,15 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
     <Modal
       isOpen
       title={person.fullName}
-      description={person.jobTitle || person.role || 'Team Member'}
-      size="md"
-      onClose={onClose}
+      description={personPositionLabel(person)}
+      size={isEditing ? 'lg' : 'md'}
+      onClose={() => isEditing ? editorClose.current?.() : onClose()}
       icon={(
         <div className="flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-sm font-bold text-red-700">
           {person.fullName?.[0] || 'P'}
         </div>
       )}
-      footer={isEditing ? undefined : <div className="flex w-full flex-wrap justify-end gap-2">
+      footer={isEditing ? <div ref={setEditorFooter} className="w-full" /> : <div className="flex w-full flex-wrap justify-end gap-2">
         {canEdit && person.status !== 'Inactive' && person.activeStatus !== false && <Button size="sm" variant="danger" onClick={() => setPendingAction('inactivate')}><UserX className="h-3.5 w-3.5" />Inactivate</Button>}
         {canEdit && <Button size="sm" variant="danger" onClick={() => setPendingAction('delete')}><Trash2 className="h-3.5 w-3.5" />Delete</Button>}
         {canEdit && <Button size="sm" variant="primary" onClick={() => setIsEditing(true)}><Pencil className="h-3.5 w-3.5" />Edit Person</Button>}
@@ -122,6 +129,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
         <PersonEditorForm
           key={person.id}
           person={person}
+          registerClose={close => { editorClose.current = close; }}
+          footerTarget={editorFooter}
           locations={locations}
           submitLabel="Save Person"
           onCancel={() => setIsEditing(false)}
@@ -157,13 +166,15 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
             <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-                <span className="text-neutral-600">Territory / District:</span>
+                <span className="text-neutral-600">Legacy territory/district text (reference only):</span>
               </div>
               <span className="font-semibold text-neutral-900">{person.district}</span>
             </div>
           )}
 
           <div className="space-y-2">
+            {ownedDistricts.length > 0 && <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3"><h3 className="font-semibold">District-owned management responsibilities</h3>{impact.responsibilities.filter(r => r.key.startsWith('district:')).map(row => <p key={row.key} className="mt-2">{row.label} · {row.source}</p>)}{canEdit && <a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-red-700 underline">Manage District leadership in Organization settings</a>}</div>}
+            {impact.issues.map(issue => <p key={issue} className="text-amber-900">{issue}</p>)}
             <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Locations ({relationships.length})</div>
             <div className="space-y-1.5 max-h-64 overflow-y-auto">
               {relationships.map(row => {

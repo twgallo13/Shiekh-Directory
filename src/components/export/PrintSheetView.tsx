@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Printer, AlertTriangle, Filter, Search } from 'lucide-react';
 import { LocationRecord } from '../../types';
-import { buildDistrictManagerGroupLabel, resolveActivePerson } from '../../lib/readProjectionContract';
+import { buildDistrictManagerGroupLabel, resolveActiveLocationManagers } from '../../lib/readProjectionContract';
 import { HierarchyGroupKey, classifyHierarchyLocationType, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
@@ -20,13 +20,14 @@ export const PrintSheetView: React.FC = () => {
   const leadershipByLocationId = useMemo(() => {
     const map = new Map<string, { storeManagerName?: string; districtManagerName?: string }>();
     locations.forEach(loc => {
+      const leadership = resolveActiveLocationManagers(loc, people, districts);
       map.set(loc.id, {
-        storeManagerName: resolveActivePerson(loc.storeManagerId, people)?.fullName,
-        districtManagerName: resolveActivePerson(loc.districtManagerId, people)?.fullName,
+        storeManagerName: leadership.storeManager?.fullName,
+        districtManagerName: leadership.districtManager?.fullName,
       });
     });
     return map;
-  }, [locations, people]);
+  }, [locations, people, districts]);
 
   const hierarchyByLocationId = useMemo(() => new Map(locations.map(location => [
     location.id,

@@ -1,4 +1,18 @@
 import { personLifecycle } from './personLifecycle';
+import { isRetailHierarchyType } from './hierarchyResolution';
+import type { DistrictRecord } from '../types';
+
+type DistrictReference = Pick<DistrictRecord, 'id' | 'districtManagerId'>;
+type ManagerLocation = { type?: string; districtId?: string; storeManagerId?: string; districtManagerId?: string; regionalManagerId?: string };
+
+/** Explicit District ownership (including vacancy) overrides retail store copies. */
+export function resolveDistrictManagerId(location: ManagerLocation, districts: DistrictReference[] = []): string | undefined {
+  const district = districts.find(d => d.id === location.districtId);
+  if (isRetailHierarchyType(location.type) && district && Object.hasOwn(district, 'districtManagerId')) {
+    return typeof district.districtManagerId === 'string' && district.districtManagerId ? district.districtManagerId : undefined;
+  }
+  return location.districtManagerId;
+}
 
 export interface ReadProjectionPerson {
   id: string;
@@ -32,12 +46,13 @@ export function resolveActivePersonList<T extends ReadProjectionPerson>(
 }
 
 export function resolveActiveLocationManagers<T extends ReadProjectionPerson>(
-  location: { storeManagerId?: string; districtManagerId?: string; regionalManagerId?: string },
+  location: ManagerLocation,
   people: T[],
+  districts: DistrictReference[] = [],
 ): { storeManager?: T; districtManager?: T; regionalManager?: T } {
   return {
     storeManager: resolveActivePerson(location.storeManagerId, people),
-    districtManager: resolveActivePerson(location.districtManagerId, people),
+    districtManager: resolveActivePerson(resolveDistrictManagerId(location, districts), people),
     regionalManager: resolveActivePerson(location.regionalManagerId, people),
   };
 }
@@ -55,6 +70,7 @@ export interface LocationReadProjectionInput {
   name: string;
   type: string;
   district?: string;
+  districtId?: string;
   districtManagerId?: string;
   districtManagerName?: string;
   regionalManagerId?: string;
@@ -150,6 +166,7 @@ function resolveCanonicalList(
 export function buildLocationReadProjection(
   location: LocationReadProjectionInput,
   people: ReadProjectionPerson[],
+  districts: DistrictReference[] = [],
 ): LocationReadProjection {
   const warnings: string[] = [];
 
@@ -159,9 +176,13 @@ export function buildLocationReadProjection(
     people,
     "storeManager",
   );
+  const districtManagerId = resolveDistrictManagerId(location, districts);
+  const owningDistrict = districts.find(d => d.id === location.districtId);
+  const districtOwned = isRetailHierarchyType(location.type) && owningDistrict && Object.hasOwn(owningDistrict, 'districtManagerId');
+  if (districtOwned && (location.districtManagerId || undefined) !== districtManagerId) warnings.push('District-owned DM differs from historical Location copy; District ownership is used.');
   const districtManager = resolveCanonicalName(
-    location.districtManagerId,
-    location.districtManagerName,
+    districtManagerId,
+    districtOwned ? undefined : location.districtManagerName,
     people,
     "districtManager",
   );
@@ -187,7 +208,7 @@ export function buildLocationReadProjection(
   warnings.push(...keyHolderResult.warnings);
 
   const district = location.district || "";
-  const canonicalLeadershipRefs = [location.districtManagerId, location.storeManagerId, location.regionalManagerId].filter((id): id is string => Boolean(id));
+  const canonicalLeadershipRefs = [districtManagerId, location.storeManagerId, location.regionalManagerId].filter((id): id is string => Boolean(id));
   const validCanonicalLeadership = canonicalLeadershipRefs.filter(id =>
     people.some(person => person.id === id && personLifecycle(person) === 'active'),
   );

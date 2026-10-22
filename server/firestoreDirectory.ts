@@ -12,6 +12,9 @@ import { isDeepStrictEqual } from "node:util";
 import { applyCorrection } from '../src/lib/correctionRequest';
 import { validateRequestProposal } from '../src/lib/requestValidation';
 import { personLifecycle } from '../src/lib/personLifecycle';
+import { validatePersonPositionState } from './personPositionValidation';
+import { allowsLeadershipPosition } from '../src/lib/personPositions';
+import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { previewOperating, commitOperating, cancelOperating, type OperatingPreview } from './firestoreOperating';
 import {
@@ -62,6 +65,7 @@ export class LocationImportIdempotencyConflict extends Error {}
 export class LocationImportPayloadTooLarge extends Error {}
 
 type RelationshipPerson = {
+  positionIds?: unknown;
   id: string;
   fullName: string;
   status?: string;
@@ -560,7 +564,7 @@ export function validateMetadataWrites(
           throw new DirectoryValidationError('Choose an active Store Manager; leadership corrections may change only the manager identity, name and phone.');
         }
         const manager = combinedPeople.find(person => person.id === changes.storeManagerId);
-        if (!manager || personLifecycle(manager) !== 'active') {
+        if (!manager || personLifecycle(manager) !== 'active' || !allowsLeadershipPosition(manager, 'Store Manager')) {
           throw new DirectoryValidationError('Choose an active Store Manager before submitting this request.');
         }
         if (changes.storeManagerId === target.storeManagerId) {
@@ -802,8 +806,10 @@ export function validateMetadataWrites(
     return { ...write, data };
   });
 
+  try { validatePersonPositionState(validatedWrites, previous, combinedPeople, locations, hierarchyRegistry?.districts || []); }
+  catch (error) { throw new DirectoryValidationError(error instanceof Error ? error.message : 'Invalid position assignment.'); }
   validateDistrictLeadershipState(validatedWrites, previous, locations, combinedPeople, hierarchyRegistry, actor);
-  validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users);
+  validateCombinedRelationshipState(validatedWrites, locations, combinedPeople, users, hierarchyRegistry);
   validateEmploymentRelationshipState(validatedWrites, people, locations);
   validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry, previous);
   validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry, previous);
@@ -1115,6 +1121,7 @@ function validateCombinedRelationshipState(
   currentLocations: Array<Record<string, unknown>>,
   people: Array<{ id: string; fullName: string; status?: string; activeStatus?: boolean }>,
   users: Array<Record<string, unknown>>,
+  registry?: HierarchyRegistry,
 ): void {
   const peopleById = new Map(people.map(person => [person.id, person]));
   const changedPersonIds = new Set(writes.filter(write => write.collection === 'people').map(write => write.id));
@@ -1142,6 +1149,8 @@ function validateCombinedRelationshipState(
 
       for (const [field, id] of leadershipRefs) {
         if (typeof id !== 'string' || !id.trim() || !changedPersonIds.has(id)) continue;
+        const district = registry?.districts.find(d => d.id === location.districtId);
+        if (field === 'districtManagerId' && isRetailHierarchyType(location.type) && district && Object.hasOwn(district, 'districtManagerId')) continue;
         const person = peopleById.get(id);
         if (!person) throw new DirectoryValidationError(`${field} references missing person ${id}.`);
         if ((person.status && person.status !== 'Active') || person.activeStatus === false) {
@@ -1169,7 +1178,8 @@ function validateCombinedRelationshipState(
 /** Prepare the exact saved Person contact values once for final-state reference checks and persistence. */
 function normalizePersonContactWrite(input: Record<string, unknown>, current: Record<string, unknown> | undefined): Record<string, unknown> {
   const data = { ...input };
-  for (const field of ['phone', 'workPhone', 'email', 'workEmail'] as const) {
+  if (Object.hasOwn(input, 'phonePrivacy') && !isDeepStrictEqual(input.phonePrivacy, current?.phonePrivacy) && !['Public', 'Internal', 'Restricted'].includes(String(input.phonePrivacy))) throw new DirectoryValidationError('Phone visibility must be Public, Internal or Restricted.');
+  for (const field of ['phone', 'workPhone', 'email', 'workEmail', 'phonePrivacy', 'positionIds'] as const) {
     if (!Object.hasOwn(input, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
   }
   for (const [phone, extension] of [['phone', 'phoneExtension'], ['workPhone', 'workPhoneExtension']] as const) {

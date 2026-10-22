@@ -4,6 +4,7 @@ import { Person } from '../../types';
 import { Search, User, X } from 'lucide-react';
 import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
 import { leadershipCandidates, type LeadershipRole } from '../../lib/leadershipPicker';
+import { personPositionLabel } from '../../lib/personPositions';
 
 export interface PersonSelectorProps {
   label?: string;
@@ -74,7 +75,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
             </div>
             <div>
               <span className="font-semibold text-neutral-900">{selectedPerson.fullName}</span>
-              <span className="text-[11px] text-neutral-500 ml-2">({selectedPerson.jobTitle || selectedPerson.role || 'Staff'})</span>
+              <span className="text-[11px] text-neutral-500 ml-2">({personPositionLabel(selectedPerson)})</span>
             </div>
           </div>
           <button
@@ -117,6 +118,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
                   <input type="checkbox" checked={showAll} onChange={event => setShowAll(event.target.checked)} />
                   Show all active people (unusual titles or cross-role coverage)
                 </label>}
+                {roleFilter && <p className="mb-2 text-[10px] text-neutral-500">Explicit linked-position requirements still apply. Map an additional position on the Person before assigning a different responsibility.</p>}
                 <input
                   type="text"
                   autoFocus
@@ -143,7 +145,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
                   >
                     <div>
                       <div className="font-semibold text-neutral-900 text-xs">{p.fullName}</div>
-                      <div className="text-[11px] text-neutral-500">{p.jobTitle || p.role} • {formatPersonPhone(p)}</div>
+                      <div className="text-[11px] text-neutral-500">{personPositionLabel(p)} • {formatPersonPhone(p)}</div>
                     </div>
                     {p.district && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 font-medium">

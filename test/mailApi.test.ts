@@ -10,6 +10,21 @@ const configuration = {
   from: "directory@example.test", recipients: ["approved@example.test"],
 };
 
+test('operating event actors can notify the steward without gaining general mail privileges', async () => {
+  for (const role of ['Editor', 'Viewer']) {
+    const app = await harness({ authenticate: async () => ({ uid: 'operator', role }), resolveEvent: async (event, id, identity) => {
+      assert.equal(event, 'operating-updated'); assert.equal(id, 'committed-event'); assert.equal(identity.uid, 'operator');
+      return { to: 'steward@example.test', subject: 'Operating update', text: 'Saved closure' };
+    } });
+    try {
+      assert.equal((await app.request('event', { event: 'operating-updated', entityId: 'committed-event' })).status, 200);
+      assert.equal(app.sent.length, 1); assert.equal(app.sent[0].to, 'steward@example.test');
+      assert.equal((await app.request('event', { event: 'request-approved', entityId: 'request' })).status, 403);
+      assert.equal((await app.request()).status, 403);
+    } finally { await app.close(); }
+  }
+});
+
 async function harness(overrides: Partial<MailApiOptions> = {}) {
   const sent: MailMessage[] = [];
   const events: Record<string, string>[] = [];

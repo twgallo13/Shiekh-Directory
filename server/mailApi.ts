@@ -278,7 +278,7 @@ export function createMailRouter(options: MailApiOptions): Router {
         return mailError(response, 400, "invalid_mail_event", "A supported mail event and entityId are required.");
       }
       const identity = response.locals.mailIdentity as MailIdentity;
-      if (body.event !== "request-submitted" && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
+      if (!['request-submitted', 'operating-updated'].includes(body.event) && !hasMailRole(identity)) return mailError(response, 403, "mail_role_required", "An authorized directory administrator role is required.");
       let configuration: MailConfiguration | null;
       try { configuration = await activeConfiguration(options); }
       catch { return mailError(response, 503, "mail_configuration_unavailable", "Mail configuration is unavailable."); }

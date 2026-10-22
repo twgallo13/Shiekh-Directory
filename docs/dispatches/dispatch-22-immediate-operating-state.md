@@ -26,4 +26,6 @@ Full initial integrated serial suite: 478/478. After subsequent API/deadline/rec
 
 ## Rollback / remaining work
 
+PR #33 Codex review identified a preliminary mail-role gate that denied Editor/Viewer operating-event creators before the actor-bound resolver ran. A focused HTTP regression reproduced 403 instead of 200. The event now reaches its existing committed-event actor check; approval notifications and diagnostic mail remain admin/steward-only. Synthetic recipient/escaping checks and the actor notification test cover this distinction. No live mail was sent.
+
 PR #32 lacks the new override/receipt protections. Prefer forward repair. Before any older writer serves, restrict operating changes and ordinary Location writers and reconcile in-flight operations; traffic rollback alone is not data recovery. Preserve identities, environment, domain, historical traffic tags and other app resources. Keep old emergency records for owner review. Address suite/directions and their migration-free nullable contract are next; broader hierarchy/position/offboarding phases remain separate.

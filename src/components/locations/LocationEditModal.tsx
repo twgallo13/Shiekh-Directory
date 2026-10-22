@@ -446,6 +446,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const districtOwnsDm = hasDistrictLeadership(leadershipDistrict);
   const retailDistrictDm = isRetailHierarchyType(formData.type);
   const currentDmId = districtOwnsDm ? leadershipDistrict?.districtManagerId || '' : formData.districtManagerId || '';
+  const unresolvedLegacyDmName = !districtOwnsDm && !currentDmId ? formData.districtManagerName?.trim() : '';
   const currentSmId = formData.storeManagerId || '';
   const currentRmId = formData.regionalManagerId || '';
   const currentStoreManager = people.find(person => person.id === currentSmId);
@@ -932,7 +933,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       }}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
-                      <option value="">-- Unassigned / Vacant --</option>
+                      <option value="">{unresolvedLegacyDmName ? `${unresolvedLegacyDmName} (Unresolved legacy assignment — needs review)` : '-- Unassigned / Vacant --'}</option>
                       {leadershipOptions('District Manager', currentDmId, formData.districtManagerName)}
                     </select>
                     {districtOwnsDm && <p className="mt-1 text-xs text-neutral-600">Inherited from District settings. Change the District DM there to update every linked retail store.</p>}

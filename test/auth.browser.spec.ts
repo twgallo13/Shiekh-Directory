@@ -284,17 +284,21 @@ test('Registry is browse-first, filters Districts by Region and opens leadership
 
 test('Store hierarchy filters Districts and inherits their DM without a store-level override', async ({ page }) => {
   const f = await prepareHierarchyBrowser(page);
+  delete f.seed.locations[0].districtManagerId;
+  f.seed.locations[0].districtManagerName = 'Synthetic legacy DM';
   Object.assign(f.seed.districts[1], { districtManagerId: null });
   await page.goto(`${origin}/locations/loc-retail/edit`); await restore(page, true);
   const dialog = page.getByRole('dialog');
   const dm = dialog.getByRole('combobox', { name: 'District Manager', exact: true });
   await expect(dm).toBeDisabled();
+  await expect(dm.locator('option:checked')).toHaveText('Synthetic legacy DM (Unresolved legacy assignment — needs review)');
   await expect(dialog.getByText(/District Manager setup is required/)).toBeVisible();
   await dialog.getByLabel('Region Name', { exact: true }).selectOption('reg-east');
   const districts = dialog.getByLabel('District Name', { exact: true });
   await expect(districts.locator('option[value="01"]')).toHaveCount(0);
   await districts.selectOption('02');
   await expect(dm).toBeDisabled(); await expect(dm).toHaveValue('');
+  await expect(dm.locator('option:checked')).toHaveText('-- Unassigned / Vacant --');
   await expect(dialog.getByText(/Inherited from District settings/)).toBeVisible();
   expect(f.commits).toHaveLength(0);
 });

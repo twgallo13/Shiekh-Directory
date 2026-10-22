@@ -10,6 +10,7 @@ import { normalizeLocationWriteValues } from "../src/lib/locationWriteContract";
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, normalizePersonEmail, type LocationInboxAcknowledgment, type LocationInboxConflictMember } from "../src/lib/locationInboxEmail";
 import { isDeepStrictEqual } from "node:util";
 import { applyCorrection } from '../src/lib/correctionRequest';
+import { personLifecycle } from '../src/lib/personLifecycle';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -62,6 +63,8 @@ type RelationshipPerson = {
   fullName: string;
   status?: string;
   activeStatus?: boolean;
+  phone?: string;
+  workPhone?: string;
   primaryLocationId?: unknown;
   supportedLocationIds?: unknown;
 };
@@ -332,6 +335,7 @@ function toLocationImportReceipt(receipt: LocationImportReceipt, replayed: boole
   };
 }
 
+/** Validate transaction writes and their final relationships without persisting any records. */
 export function validateMetadataWrites(
   writes: DirectoryWrite[],
   previous: (Record<string, unknown> | undefined)[],
@@ -346,16 +350,19 @@ export function validateMetadataWrites(
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
 
   const peopleMap = new Map<string, RelationshipPerson>(people.map(person => [person.id, { ...person }]));
+  const normalizedPersonWrites = new Map<string, Record<string, unknown>>();
 
-  for (const write of writes) {
+  for (const [index, write] of writes.entries()) {
     if (write.collection === "people") {
       if (write.operation === "delete") {
         peopleMap.delete(write.id);
       } else if (write.operation === "set" && write.data) {
         const currentPerson = peopleMap.get(write.id);
+        const normalizedData = normalizePersonContactWrite(write.data, previous[index]);
+        normalizedPersonWrites.set(write.id, normalizedData);
         peopleMap.set(write.id, {
           ...currentPerson,
-          ...write.data,
+          ...normalizedData,
           id: write.id,
           fullName: String(write.data.fullName || write.data.name || "Unknown Person"),
         });
@@ -432,7 +439,7 @@ export function validateMetadataWrites(
     }
 
     if (write.operation !== 'set' || !['locations', 'people', 'users', 'requests'].includes(write.collection)) return write;
-    let data = { ...write.data };
+    let data = { ...(write.collection === 'people' ? normalizedPersonWrites.get(write.id) : write.data) };
 
     if (current || write.expectedVersion !== undefined || typeof data.version === 'number') {
       data.version = ((current?.version as number) || 0) + 1;
@@ -440,6 +447,38 @@ export function validateMetadataWrites(
     }
 
     if (write.collection === 'requests') {
+      if (!current && data.changeType === 'Store Manager Change') {
+        if (data.status !== 'Pending' || data.targetType !== 'Location') {
+          throw new DirectoryValidationError('Leadership corrections must be submitted as pending Location requests.');
+        }
+        const target = locations.find(location => location.id === data.targetId);
+        if (!target) throw new DirectoryConflict('The selected Location no longer exists. Reload before submitting.');
+        if (writes.some(candidate => candidate.collection === 'locations' && candidate.id === target.id)) {
+          throw new DirectoryConflict('Submit a leadership request separately from changes to its Location. Reload after saving the Location.');
+        }
+        const changes = isPlainRecord(data.requestedChanges) ? data.requestedChanges : {};
+        const fields = ['storeManagerId', 'storeManagerName', 'storeManagerPhone'];
+        if (Object.keys(changes).length !== fields.length || fields.some(field => !Object.hasOwn(changes, field))) {
+          throw new DirectoryValidationError('Choose an active Store Manager; leadership corrections may change only the manager identity, name and phone.');
+        }
+        const manager = combinedPeople.find(person => person.id === changes.storeManagerId);
+        if (!manager || personLifecycle(manager) !== 'active') {
+          throw new DirectoryValidationError('Choose an active Store Manager before submitting this request.');
+        }
+        if (changes.storeManagerId === target.storeManagerId) {
+          throw new DirectoryValidationError('Choose a different Store Manager. This request would not change the assignment.');
+        }
+        if (changes.storeManagerName !== manager.fullName || changes.storeManagerPhone !== (manager.workPhone || manager.phone || '')) {
+          throw new DirectoryValidationError('The selected manager details changed. Reload and select the manager again.');
+        }
+        const baseline = isPlainRecord(data.currentSnapshot) ? data.currentSnapshot : {};
+        if (fields.some(field => !Object.hasOwn(baseline, field))) {
+          throw new DirectoryValidationError('The manager submission baseline is missing. Reload and submit a replacement request.');
+        }
+        if (fields.some(field => !isDeepStrictEqual(baseline[field] ?? null, target[field] ?? null))) {
+          throw new DirectoryConflict('The store leadership changed while drafting. Reload and submit a replacement request.');
+        }
+      }
       if (data.status === 'Approved' || data.status === 'Rejected') {
         if (!['System Administrator', 'Directory Data Steward'].includes(actor.role)) {
           throw new DirectoryWriteDenied('Only a steward or administrator can review correction requests.');
@@ -479,7 +518,7 @@ export function validateMetadataWrites(
       return { ...write, data };
     }
 
-    if (write.collection !== 'locations') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
+    if (write.collection !== 'locations' && write.collection !== 'people') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
 
     if (write.collection === 'locations') {
       if (!Object.hasOwn(data, 'locationInboxEmail') && current && Object.hasOwn(current, 'locationInboxEmail')) {
@@ -567,15 +606,6 @@ export function validateMetadataWrites(
 
     if (write.collection === 'people') {
       const originalData = write.data || {};
-      for (const field of ['phone', 'phoneExtension', 'workPhone', 'workPhoneExtension', 'email', 'workEmail'] as const) {
-        if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
-      }
-      for (const field of ['email', 'workEmail'] as const) {
-        if (!Object.hasOwn(originalData, field) || isDeepStrictEqual(originalData[field], current?.[field]) || originalData[field] === '') continue;
-        const normalized = normalizePersonEmail(originalData[field]);
-        if (!normalized) throw new DirectoryValidationError(`${field} must be one valid email address.`);
-        data[field] = normalized;
-      }
       for (const field of ['primaryLocationId', 'supportedLocationIds'] as const) {
         if (!Object.hasOwn(originalData, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
       }
@@ -591,7 +621,6 @@ export function validateMetadataWrites(
         }
         data.supportedLocationIds = [...data.supportedLocationIds];
       }
-      normalizePhoneWrite(data, current, 'workPhone', 'workPhoneExtension');
       if (Object.hasOwn(data, 'personId')) {
         try {
           validateUserPersonLink(typeof data.personId === 'string' ? data.personId : undefined, combinedPeople);
@@ -985,6 +1014,28 @@ function validateCombinedRelationshipState(
   }
 }
 
+/** Prepare the exact saved Person contact values once for final-state reference checks and persistence. */
+function normalizePersonContactWrite(input: Record<string, unknown>, current: Record<string, unknown> | undefined): Record<string, unknown> {
+  const data = { ...input };
+  for (const field of ['phone', 'workPhone', 'email', 'workEmail'] as const) {
+    if (!Object.hasOwn(input, field) && current && Object.hasOwn(current, field)) data[field] = current[field];
+  }
+  for (const [phone, extension] of [['phone', 'phoneExtension'], ['workPhone', 'workPhoneExtension']] as const) {
+    if (!Object.hasOwn(input, extension) && data[phone] === current?.[phone] && current && Object.hasOwn(current, extension)) {
+      data[extension] = current[extension];
+    }
+    normalizePhoneWrite(data, current, phone, extension);
+  }
+  for (const field of ['email', 'workEmail'] as const) {
+    if (!Object.hasOwn(input, field) || isDeepStrictEqual(input[field], current?.[field]) || input[field] === '') continue;
+    const normalized = normalizePersonEmail(input[field]);
+    if (!normalized) throw new DirectoryValidationError(`${field} must be one valid email address.`);
+    data[field] = normalized;
+  }
+  return data;
+}
+
+/** Normalize changed phone values while preserving untouched historical values and explicit clears. */
 function normalizePhoneWrite(data: Record<string, unknown>, current: Record<string, unknown> | undefined, field: string, extensionField: string, required = false) {
   if (!Object.hasOwn(data, field)) return;
   const value = data[field];

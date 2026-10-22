@@ -12,12 +12,14 @@ import { Modal } from '../common/Modal';
 import { resolvePersonPhone } from '../../lib/personContacts';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { hoursDraft, structurallyEqual } from '../../lib/correctionRequest';
+import { personLifecycle } from '../../lib/personLifecycle';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
   onClose: () => void;
 }
 
+/** Submit proposed Location corrections with selected-person identity and saved-value baselines. */
 export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onClose }) => {
   const { locations, currentUser, submitRequest } = useDirectory();
   
@@ -52,6 +54,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     || clearLocationInboxEmail
   );
 
+  /** Confirm before discarding an edited draft; close an untouched form immediately. */
   const requestClose = () => {
     if (hasRequestDraft) {
       setIsDiscardConfirmOpen(true);
@@ -60,8 +63,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
     onClose();
   };
 
+  /** Validate this proposal and retain its draft until the server confirms the submission. */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!targetLoc) {
       setFormError('Choose an existing location before submitting a request.');
       return;
@@ -74,11 +79,22 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       requestedChanges.phone = newPhone;
       currentSnapshot.phone = targetLoc.phone;
     } else if (changeType === 'Store Manager Change') {
-      requestedChanges.storeManagerId = newManager?.id;
-      requestedChanges.storeManagerName = newManager?.fullName || '';
-      requestedChanges.storeManagerPhone = resolvePersonPhone(newManager || undefined).value;
-      currentSnapshot.storeManagerId = targetLoc.storeManagerId;
-      currentSnapshot.storeManagerName = targetLoc.storeManagerName;
+      if (!newManager || personLifecycle(newManager) !== 'active') {
+        setFormError('Choose an active Store Manager before submitting this request.');
+        return;
+      }
+      if (newManager.id === targetLoc.storeManagerId) {
+        setFormError('Choose a different Store Manager. This request would not change the assignment.');
+        return;
+      }
+      requestedChanges.storeManagerId = newManager.id;
+      requestedChanges.storeManagerName = newManager.fullName;
+      requestedChanges.storeManagerPhone = resolvePersonPhone(newManager).value;
+      Object.assign(currentSnapshot, {
+        storeManagerId: targetLoc.storeManagerId ?? null,
+        storeManagerName: targetLoc.storeManagerName ?? null,
+        storeManagerPhone: targetLoc.storeManagerPhone ?? null,
+      });
     } else if (changeType === 'Operational Status Change') {
       requestedChanges.operationalStatus = newStatus;
       if (noticeText) {
@@ -163,6 +179,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
               onChange={(e) => {
                 const newId = e.target.value;
                 setSelectedLocId(newId);
+                setNewManager(null);
                 const loc = locations.find(l => l.id === newId);
                 setNewHours(hoursDraft(loc, DEFAULT_WEEKLY_HOURS));
                 setHoursBaseline(structuredClone(loc));
@@ -213,8 +230,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
             <div>
               <PersonSelector
                 label="New Store Manager"
+                value={newManager?.id}
                 roleFilter="Store Manager"
-                onChange={(p) => setNewManager(p)}
+                onChange={(p) => { setNewManager(p); setFormError(''); }}
                 required
               />
             </div>

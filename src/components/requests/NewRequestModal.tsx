@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { LocationRecord, RequestChangeType, Person, OperationalStatus } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { PersonSelector } from '../people/PersonSelector';
@@ -13,6 +13,10 @@ import { resolvePersonPhone } from '../../lib/personContacts';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { hoursDraft, structurallyEqual } from '../../lib/correctionRequest';
 import { personLifecycle } from '../../lib/personLifecycle';
+import { validateRequestProposal } from '../../lib/requestValidation';
+import { loadSubmission, submissionStorageKey } from '../../lib/requestSubmission';
+import { DirectoryCommitError } from '../../lib/directoryClient';
+import { formatUsPhone } from '../../lib/contactNormalization';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -21,7 +25,7 @@ interface NewRequestModalProps {
 
 /** Submit proposed Location corrections with selected-person identity and saved-value baselines. */
 export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onClose }) => {
-  const { locations, currentUser, submitRequest } = useDirectory();
+  const { locations, people, currentUser, submitRequest, cancelRequestSubmission } = useDirectory();
   
   const [selectedLocId, setSelectedLocId] = useState(location?.id || locations[0]?.id || '');
   const [changeType, setChangeType] = useState<RequestChangeType>('Phone Number Correction');
@@ -39,6 +43,54 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   const [formError, setFormError] = useState('');
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [recovery] = useState(() => { try { return { request: loadSubmission(sessionStorage, currentUser.id), error: '' }; } catch (e) { return { request: null, error: e instanceof Error ? e.message : 'Submission recovery is unavailable.' }; } });
+  const [pendingSubmission, setPendingSubmission] = useState(recovery.request);
+  const [recoveryMode, setRecoveryMode] = useState(Boolean(recovery.request));
+  const storageKey = submissionStorageKey(currentUser.id);
+  const submissionBusy = useRef(false);
+
+  const attemptSubmission = async (request: import('../../types').UpdateRequest, recovering: boolean) => {
+    if (submissionBusy.current) return;
+    submissionBusy.current = true;
+    setSubmitting(true);
+    try {
+      // Fail before sending if recovery cannot be retained across reload/navigation.
+      try { sessionStorage.setItem(storageKey, JSON.stringify(request)); }
+      catch { setFormError('No new request was sent. This browser tab cannot retain the submission for recovery. Enable session storage and try again; your draft is unchanged.'); return; }
+      setPendingSubmission(request);
+      await submitRequest(request);
+      try { sessionStorage.removeItem(storageKey); } catch { /* A later replay is still safe. */ }
+      setPendingSubmission(null);
+      onClose();
+    } catch (error) {
+      const definiteRejection = !recovering && error instanceof DirectoryCommitError && ['invalid_metadata', 'write_not_allowed', 'directory_conflict'].includes(error.code || '');
+      if (definiteRejection) { try { sessionStorage.removeItem(storageKey); setPendingSubmission(null); } catch { setRecoveryMode(true); } }
+      else setRecoveryMode(true);
+      setFormError(`${error instanceof Error ? error.message : 'The save result is unknown.'}${definiteRejection ? '' : ' Recover this exact submission before starting another. Do not create a replacement blindly.'}`);
+    } finally { submissionBusy.current = false; setSubmitting(false); }
+  };
+
+  const reconcileOrCancel = async () => {
+    if (!pendingSubmission || submissionBusy.current) return;
+    submissionBusy.current = true; setSubmitting(true);
+    try {
+      const cancelled = await cancelRequestSubmission(pendingSubmission);
+      try { sessionStorage.removeItem(storageKey); } catch { /* The confirmed server state is authoritative; any stored replay remains safe. */ }
+      if (!cancelled) { setPendingSubmission(null); onClose(); return; }
+      const p = pendingSubmission;
+      setSelectedLocId(p.targetId); setChangeType(p.changeType); setReason(p.reason || '');
+      setNewPhone(formatUsPhone(p.requestedChanges.phone || '', p.requestedChanges.phoneExtension));
+      setNewManager(people.find(person => person.id === p.requestedChanges.storeManagerId) || null);
+      setNewStatus(p.requestedChanges.operationalStatus || 'Open — Normal Operations');
+      setNoticeText(p.requestedChanges.activeNotice?.shortDescription || '');
+      setNewHours(p.requestedChanges.standardHours || hoursDraft(locations.find(l => l.id === p.targetId), DEFAULT_WEEKLY_HOURS));
+      setHoursBaseline(structuredClone(locations.find(l => l.id === p.targetId)));
+      setNewLocationInboxEmail(p.requestedChanges.locationInboxEmail || '');
+      setClearLocationInboxEmail(p.requestedChanges.locationInboxEmail === null);
+      setPendingSubmission(null); setRecoveryMode(false); setFormError('The uncommitted operation is safely cancelled. Review this restored draft against current information before submitting a replacement.');
+    } catch (e) { setFormError(e instanceof Error ? e.message : 'Cancellation could not be confirmed. Keep recovering this operation.'); }
+    finally { submissionBusy.current = false; setSubmitting(false); }
+  };
 
   const targetLoc = locations.find(l => l.id === selectedLocId);
   const resetProposal = (target: LocationRecord | undefined) => {
@@ -62,6 +114,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   /** Confirm before discarding an edited draft; close an untouched form immediately. */
   const requestClose = () => {
     if (submitting) return;
+    if (pendingSubmission || recovery.error) { onClose(); return; }
     if (hasRequestDraft) {
       setIsDiscardConfirmOpen(true);
       return;
@@ -73,6 +126,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
+    if (pendingSubmission || recovery.error) return;
     if (!targetLoc) {
       setFormError('Choose an existing location before submitting a request.');
       return;
@@ -83,7 +137,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
 
     if (changeType === 'Phone Number Correction') {
       requestedChanges.phone = newPhone;
-      currentSnapshot.phone = targetLoc.phone;
+      currentSnapshot.phone = targetLoc.phone ?? null;
+      currentSnapshot.phoneExtension = targetLoc.phoneExtension ?? null;
     } else if (changeType === 'Store Manager Change') {
       if (!newManager || personLifecycle(newManager) !== 'active') {
         setFormError('Choose an active Store Manager before submitting this request.');
@@ -110,6 +165,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
         };
       }
       currentSnapshot.operationalStatus = targetLoc.operationalStatus;
+      if (noticeText) currentSnapshot.activeNotice = targetLoc.activeNotice ?? null;
     } else if (changeType === 'Standard Hours Adjustment') {
       if (!hoursBaseline || hoursBaseline.id !== targetLoc.id
         || !structurallyEqual(hoursBaseline.standardHours, targetLoc.standardHours)) {
@@ -121,7 +177,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
         return;
       }
       requestedChanges.standardHours = newHours;
-      Object.assign(currentSnapshot, { standardHours: targetLoc.standardHours ?? null });
+      Object.assign(currentSnapshot, { standardHours: targetLoc.standardHours ?? null, hoursMode: targetLoc.hoursMode ?? null, hoursTemplateId: targetLoc.hoursTemplateId ?? null });
     } else if (changeType === 'Other Store Info Update') {
       const proposedInbox = clearLocationInboxEmail ? null : normalizeLocationInboxEmail(newLocationInboxEmail)?.value;
       if (proposedInbox === undefined) {
@@ -138,9 +194,12 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       currentSnapshot.locationInboxEmail = targetLoc.locationInboxEmail ?? null;
     }
 
-    setSubmitting(true);
-    try {
-      await submitRequest({
+    const checked = validateRequestProposal({ changeType, targetType: 'Location', requestedChanges, currentSnapshot, reason }, targetLoc as unknown as Record<string, unknown>);
+    if (checked.error) { setFormError(checked.error); return; }
+    await attemptSubmission({
+        id: `req-${crypto.randomUUID()}`,
+        requestedAt: new Date().toISOString(),
+        status: 'Pending',
         targetId: targetLoc.id,
         targetType: 'Location',
         targetStoreNumber: targetLoc.storeNumber,
@@ -152,17 +211,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
           email: currentUser.email,
           role: currentUser.role
         },
-        requestedChanges,
+        requestedChanges: checked.changes,
         currentSnapshot,
         reason
-      });
-
-      onClose();
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'The correction request could not be saved.');
-    } finally {
-      setSubmitting(false);
-    }
+      }, false);
   };
 
   return (
@@ -177,8 +229,16 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       >
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
             {formError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800">{formError}</p>}
+          {recovery.error && <p role="alert">{recovery.error}</p>}
+          {recoveryMode && pendingSubmission && <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+            <p>Recover submission {pendingSubmission.id} for {pendingSubmission.targetName}: {pendingSubmission.changeType}. Its original content is locked; recovery will not create another request or reopen a reviewed request. You may close this dialog and resume from Submit New Request in this tab.</p>
+            {pendingSubmission.reason && <p>Original notes: {pendingSubmission.reason}</p>}
+            <details><summary className="cursor-pointer font-semibold">Original proposed changes</summary><dl className="mt-2 space-y-2">{Object.entries(pendingSubmission.requestedChanges).map(([key, value]) => <div key={key}><dt className="font-semibold">{key.replace(/([A-Z])/g, ' $1')}</dt><dd className="whitespace-pre-wrap break-words">{value === null ? 'Clear value' : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}</dd></div>)}</dl></details>
+            <Button type="button" disabled={submitting} onClick={() => void attemptSubmission(pendingSubmission, true)}>Recover saved submission</Button>
+            <Button type="button" disabled={submitting} onClick={() => void reconcileOrCancel()}>Check saved state / cancel if not saved</Button>
+          </div>}
           {submitting && <p role="status" className="text-neutral-600">Submitting this request. Please wait for confirmation before closing.</p>}
-          <fieldset disabled={submitting} className="space-y-3.5">
+          <fieldset hidden={recoveryMode || Boolean(recovery.error)} disabled={submitting || Boolean(pendingSubmission) || Boolean(recovery.error)} className="space-y-3.5">
           <p className="text-neutral-600">Changing the location or category resets proposed values and notes so one store&apos;s details are not carried into another request.</p>
           <div>
             <FormLabel>Target Location</FormLabel>

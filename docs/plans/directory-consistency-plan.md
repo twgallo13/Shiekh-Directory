@@ -121,6 +121,8 @@ Exit evidence: reproduced bug cases or precise reproduction blockers, source/dep
 
 ## Phase 1 Repair request and save defects
 
+Active follow-through: [Dispatch 21](../dispatches/dispatch-21-request-validation-recovery.md), branch `codex/request-validation-recovery`, adds explicit category validation, complete baselines, server attribution and durable submission replay/cancellation. It is not a deployed-release claim; see the dispatch's validation/release state. The owner requested status/address improvements next, without restoring test-affected data or changing staffing.
+
 Published bounded implementation: [Dispatch 20](../dispatches/dispatch-20-request-review-integrity.md), PR #30, hardens submitted history, confirmed review saves, and draft isolation. Keep the full Phase 1 items unchecked until the remaining per-type validation and new-submission outcome/receipt work is verified. Lower-priority DM work-email API planning is P6.9, not part of the current contact-free API.
 
 - [ ] P1.1 Bind selected manager IDs to `PersonSelector`, make it keyboard accessible, show the selected person, and support intentional replacement, vacancy, and cancellation.

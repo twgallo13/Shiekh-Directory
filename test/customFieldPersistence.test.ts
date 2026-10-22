@@ -66,7 +66,7 @@ function hoursCorrectionFixture() {
   const original = structuredClone(DEFAULT_WEEKLY_HOURS);
   const proposed = { ...original, monday: { ...original.monday, open: '09:00' } };
   const target = { id: 'loc-hours', storeNumber: '150', name: 'Synthetic Store', type: 'Other Company Location', hierarchyApplicability: 'Not Applicable', recordStatus: 'Active', version: 3, standardHours: original, hoursTemplateId: 'template-1', hoursMode: 'template', storeManagerId: 'missing-person', regionalManagerId: 'missing-rm', keyHolderIds: ['missing-key'] };
-  const request = { id: 'req-hours', targetType: 'Location', targetId: target.id, changeType: 'Standard Hours Adjustment', status: 'Pending', version: 2, currentSnapshot: { standardHours: original }, requestedChanges: { standardHours: proposed } };
+  const request = { id: 'req-hours', targetType: 'Location', targetId: target.id, changeType: 'Standard Hours Adjustment', status: 'Pending', version: 2, currentSnapshot: { standardHours: original, hoursMode: target.hoursMode, hoursTemplateId: target.hoursTemplateId }, requestedChanges: { standardHours: proposed } };
   fixture.records.set('locations/loc-hours', target);
   fixture.records.set('requests/req-hours', request);
   const writes = [
@@ -76,6 +76,85 @@ function hoursCorrectionFixture() {
   const audit = { action: 'Request Approved', entityType: 'Request', entityId: request.id, entityName: 'Hours change', details: 'Synthetic approval.' };
   return { ...fixture, actor, target, request, proposed, writes, audit };
 }
+
+test('submission receipt survives response loss, concurrent retries and later review without duplicate audit', async () => {
+  const f = databaseFixture();
+  const actor: Account = { uid: 'submitter', email: 'submitter@example.test', name: 'Submitter', emailVerified: true, role: 'Viewer', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const target = { id: 'receipt-store', storeNumber: '007', name: 'Receipt Store', phone: '+12135550101' };
+  f.records.set('locations/receipt-store', target);
+  const request = { id: 'req-receipt', targetType: 'Location', targetId: target.id, status: 'Pending', changeType: 'Phone Number Correction', requestedChanges: { phone: '+12135550102', phoneExtension: null }, currentSnapshot: { phone: target.phone, phoneExtension: null }, requestedBy: { id: 'forged' }, requestedAt: 'forged' };
+  const writes = [{ collection: 'requests' as const, id: request.id, operation: 'set' as const, data: request }];
+  const audit = { action: 'Request Submitted', entityType: 'Request', entityId: request.id, entityName: 'Phone', details: 'Synthetic receipt test' };
+  const results = await Promise.all([f.store.commit(writes, audit, actor), f.store.commit(writes, audit, actor)]);
+  assert.equal(results.filter(x => x.replayed).length, 1);
+  assert.equal([...f.records.keys()].filter(x => x.startsWith('audit_logs/')).length, 1);
+  const saved = f.records.get('requests/req-receipt')!;
+  assert.equal((saved.requestedBy as { id: string }).id, actor.uid);
+  assert.notEqual(saved.requestedAt, 'forged');
+  assert.equal(saved.updatedAt, saved.requestedAt);
+  const reviewer = { ...actor, uid: 'reviewer', name: 'Real Reviewer', role: 'System Administrator' as const };
+  await f.store.commit([{ ...writes[0], expectedVersion: Number(saved.version || 0), data: { ...saved, status: 'Rejected', reviewedBy: 'Forged', reviewedAt: 'Forged' } }], { ...audit, action: 'Request Rejected' }, reviewer);
+  const replay = await f.store.commit(writes, audit, actor);
+  assert.equal(replay.replayed, true);
+  assert.equal(replay.records[0].data?.status, 'Rejected');
+  assert.equal(replay.records[0].data?.reviewedBy, reviewer.name);
+  assert.equal(replay.records[0].data?.reviewerId, reviewer.uid);
+  assert.equal([...f.records.keys()].filter(x => x.startsWith('audit_logs/')).length, 2);
+  await assert.rejects(f.store.commit([{ ...writes[0], data: { ...request, reason: 'changed' } }], audit, actor), /already used/);
+  await assert.rejects(f.store.commit(writes, audit, { ...actor, uid: 'other-actor' }), /another actor/);
+});
+
+test('recovery cancellation seals late arrivals, is replayable and cannot cancel a committed request', async () => {
+  for (const committedFirst of [false, true]) {
+    const f = hoursCorrectionFixture();
+    f.records.delete('requests/req-hours');
+    const write = { ...f.writes[0], expectedVersion: undefined, data: { ...f.request, status: 'Pending' } };
+    if (committedFirst) await f.store.commit([write], f.audit, f.actor);
+    const first = await f.store.cancelRequestSubmission(write, f.actor);
+    const second = await f.store.cancelRequestSubmission(write, f.actor);
+    assert.equal(first.cancelled, !committedFirst);
+    assert.equal(second.cancelled, !committedFirst);
+    assert.equal(second.replayed, true);
+    assert.equal([...f.records.keys()].filter(x => x.startsWith('audit_logs/')).length, 1);
+    if (committedFirst) assert.equal((await f.store.commit([write], f.audit, f.actor)).replayed, true);
+    else {
+      await assert.rejects(f.store.commit([write], f.audit, f.actor), /safely cancelled/);
+      await assert.rejects(f.store.commit([write, { collection: 'sop_runbooks', id: 'unrelated', operation: 'set', data: { title: 'Synthetic' } }], f.audit, f.actor), /safely cancelled/);
+      assert.equal(f.records.has('sop_runbooks/unrelated'), false);
+    }
+    await assert.rejects(f.store.cancelRequestSubmission(write, { ...f.actor, uid: 'another-actor' }), /another actor/);
+    await assert.rejects(f.store.cancelRequestSubmission({ ...write, data: { ...write.data, reason: 'different' } }, f.actor), /different content/);
+  }
+});
+
+test('submission/cancellation races resolve atomically in either order', async () => {
+  for (const cancelFirst of [true, false]) {
+    const f = hoursCorrectionFixture(); f.records.delete('requests/req-hours');
+    const write = { ...f.writes[0], expectedVersion: undefined, data: { ...f.request, status: 'Pending' } };
+    const ops = cancelFirst
+      ? [f.store.cancelRequestSubmission(write, f.actor), f.store.commit([write], f.audit, f.actor)]
+      : [f.store.commit([write], f.audit, f.actor), f.store.cancelRequestSubmission(write, f.actor)];
+    await Promise.allSettled(ops);
+    assert.equal(f.records.has('requests/req-hours'), !cancelFirst);
+    assert.equal(f.records.has('request_submission_receipts/req-hours'), cancelFirst);
+    assert.equal([...f.records.keys()].filter(x => x.startsWith('audit_logs/')).length, 1);
+  }
+});
+
+test('submission cancellation HTTP requires current authentication and a request envelope', async () => {
+  const f = hoursCorrectionFixture(); f.records.delete('requests/req-hours');
+  const app = express(); app.use('/api/directory', createDirectoryDataRouter(async token => { if (token !== 'synthetic') throw new Error(); return f.actor; }, f.store));
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    const address = server.address() as { port: number };
+    const url = `http://127.0.0.1:${address.port}/api/directory/submissions/cancel`;
+    assert.equal((await fetch(url, { method: 'POST' })).status, 401);
+    const post = (write: unknown) => fetch(url, { method: 'POST', headers: { Authorization: 'Bearer synthetic', 'Content-Type': 'application/json' }, body: JSON.stringify({ write }) });
+    assert.equal((await post({ collection: 'users', id: 'user', operation: 'delete' })).status, 400);
+    const result = await post({ ...f.writes[0], data: { ...f.request, status: 'Pending' } });
+    assert.equal(result.status, 200); assert.equal((await result.json()).cancelled, true);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
 
 test('request history tampering cannot partially update its target or append an audit', async () => {
   for (const mode of ['rewrite-changes', 'rewrite-baseline', 'pending-edit', 'delete'] as const) {
@@ -153,7 +232,7 @@ test('hours approval rejects stale/missing baselines, missing target and stale v
 test('new hours requests reject no-op, stale baseline and missing selected target but accept real changes', async () => {
   for (const scenario of ['noop', 'stale', 'missing', 'changed']) {
     const f = hoursCorrectionFixture(); f.records.delete('requests/req-hours');
-    const request = { ...f.request, version: undefined, requestedChanges: { standardHours: scenario === 'noop' ? f.target.standardHours : f.proposed }, currentSnapshot: { standardHours: scenario === 'stale' ? f.proposed : f.target.standardHours } };
+    const request = { ...f.request, version: undefined, requestedChanges: { standardHours: scenario === 'noop' ? f.target.standardHours : f.proposed }, currentSnapshot: { standardHours: scenario === 'stale' ? f.proposed : f.target.standardHours, hoursMode: f.target.hoursMode, hoursTemplateId: f.target.hoursTemplateId } };
     if (scenario === 'missing') f.records.delete('locations/loc-hours');
     const op = f.store.commit([{ collection: 'requests', id: 'req-hours', operation: 'set', data: request }], f.audit, { ...f.actor, role: 'Viewer' });
     if (scenario === 'changed') { await op; assert.equal(f.records.get('requests/req-hours')?.status, 'Pending'); }
@@ -712,7 +791,7 @@ test('directory commit binds approval to persisted location target and requested
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
   records.set('locations/loc-07', { id: 'loc-07', storeNumber: '07', name: 'Original Store', version: 0, recordStatus: 'Active' });
   records.set('locations/loc-08', { id: 'loc-08', storeNumber: '08', name: 'Other Store', version: 0, recordStatus: 'Active' });
-  records.set('requests/req-1', { id: 'req-1', targetType: 'Location', targetId: 'loc-07', status: 'Pending', version: 0, requestedChanges: { name: 'Approved Name' } });
+  records.set('requests/req-1', { id: 'req-1', targetType: 'Location', targetId: 'loc-07', changeType: 'Other Store Info Update', status: 'Pending', version: 0, requestedChanges: { name: 'Approved Name' }, currentSnapshot: { name: 'Original Store' } });
 
   await assert.rejects(store.commit([
     { collection: 'requests', id: 'req-1', operation: 'set', expectedVersion: 0, data: { targetType: 'Location', targetId: 'loc-07', status: 'Approved', requestedChanges: { name: 'Approved Name' } } },
@@ -749,7 +828,7 @@ test('Location inbox correction approval validates its snapshot, duplicate ackno
   records.set('locations/loc-target', target);
   records.set('locations/loc-other', duplicate);
   records.set('requests/req-inbox', {
-    id: 'req-inbox', targetType: 'Location', targetId: 'loc-target', status: 'Pending', version: 0,
+    id: 'req-inbox', targetType: 'Location', targetId: 'loc-target', changeType: 'Other Store Info Update', status: 'Pending', version: 0,
     requestedChanges: { locationInboxEmail: 'shared@example.test' },
     currentSnapshot: { locationInboxEmail: 'stale@example.test' },
   });
@@ -774,7 +853,7 @@ test('Location inbox correction approval validates its snapshot, duplicate ackno
   assert.equal(records.get('locations/loc-target')?.locationInboxEmail, 'old@example.test');
 
   records.set('requests/req-inbox', {
-    id: 'req-inbox', targetType: 'Location', targetId: 'loc-target', status: 'Pending', version: 0,
+    id: 'req-inbox', targetType: 'Location', targetId: 'loc-target', changeType: 'Other Store Info Update', status: 'Pending', version: 0,
     requestedChanges: { locationInboxEmail: 'shared@example.test' },
     currentSnapshot: { locationInboxEmail: 'old@example.test' },
   });
@@ -784,7 +863,7 @@ test('Location inbox correction approval validates its snapshot, duplicate ackno
   assert.equal(records.get('locations/loc-target')?.locationInboxEmail, 'shared@example.test');
 
   records.set('requests/req-clear', {
-    id: 'req-clear', targetType: 'Location', targetId: 'loc-target', status: 'Pending', version: 0,
+    id: 'req-clear', targetType: 'Location', targetId: 'loc-target', changeType: 'Other Store Info Update', status: 'Pending', version: 0,
     requestedChanges: { locationInboxEmail: null },
     currentSnapshot: { locationInboxEmail: 'shared@example.test' },
   });
@@ -806,7 +885,7 @@ test('directory commit supports person approval and handles linked users when in
   const actor: Account = { uid: 'admin-test', email: 'admin@example.test', name: 'Administrator', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
   records.set('people/per-1', { id: 'per-1', fullName: 'Original Person', status: 'Active', version: 0 });
   records.set('users/usr-1', { id: 'usr-1', name: 'Linked User', email: 'linked@example.test', role: 'Viewer', status: 'Active', accessScope: 'Company-wide', personId: 'per-1', version: 0 });
-  records.set('requests/req-person', { id: 'req-person', targetType: 'Person', targetId: 'per-1', status: 'Pending', version: 0, requestedChanges: { fullName: 'Approved Person' } });
+  records.set('requests/req-person', { id: 'req-person', targetType: 'Person', targetId: 'per-1', changeType: 'Other Store Info Update', currentSnapshot: { fullName: 'Original Person' }, status: 'Pending', version: 0, requestedChanges: { fullName: 'Approved Person' } });
 
   await store.commit([
     { collection: 'requests', id: 'req-person', operation: 'set', expectedVersion: 0, data: { targetType: 'Person', targetId: 'per-1', status: 'Approved', requestedChanges: { fullName: 'Approved Person' } } },
@@ -846,7 +925,7 @@ test('Person employment relationships support ordinary Corporate/DC assignments,
   assert.deepEqual(records.get('people/per-corp')?.supportedLocationIds, ['dc-1', 'store-1']);
   assert.equal(records.get('people/per-corp')?.version, 2);
 
-  records.set('requests/req-employment', { id: 'req-employment', targetType: 'Person', targetId: 'per-corp', status: 'Pending', version: 0, requestedChanges: { primaryLocationId: null, supportedLocationIds: [] } });
+  records.set('requests/req-employment', { id: 'req-employment', targetType: 'Person', targetId: 'per-corp', changeType: 'Other Store Info Update', currentSnapshot: { primaryLocationId: 'corp-1', supportedLocationIds: ['dc-1', 'store-1'] }, status: 'Pending', version: 0, requestedChanges: { primaryLocationId: null, supportedLocationIds: [] } });
   await store.commit([
     { collection: 'requests', id: 'req-employment', operation: 'set', expectedVersion: 0, data: { targetType: 'Person', targetId: 'per-corp', status: 'Approved', requestedChanges: { primaryLocationId: null, supportedLocationIds: [] } } },
     { collection: 'people', id: 'per-corp', operation: 'set', expectedVersion: 2, data: { fullName: 'Renamed Employee', jobTitle: 'Accountant', status: 'Active', primaryLocationId: null, supportedLocationIds: [] } },

@@ -30,6 +30,7 @@ import { resolvePersonPhone, serializePersonUpdate } from '../lib/personContacts
 import { PERSON_LEADERSHIP_NAME_FIELDS, reconcileLocationLeadershipCopy } from '../lib/personLocationRelationships';
 import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
 import { districtLeadershipWrites, inheritDistrictLeader, type DistrictLeadershipPreview } from '../lib/districtLeadership';
+import { cancelDirectorySubmission } from '../lib/directoryClient';
 
 interface DirectoryContextType {
   locations: LocationRecord[];
@@ -68,7 +69,8 @@ interface DirectoryContextType {
   updatePerson: (id: string, updates: PersonUpdate, expectedVersion?: number) => Promise<void>;
   deletePerson: (id: string) => Promise<void>;
   togglePersonPhonePrivacy: (id: string, privacy: ContactPrivacyLevel) => void;
-  submitRequest: (request: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>) => Promise<void>;
+  submitRequest: (request: UpdateRequest) => Promise<void>;
+  cancelRequestSubmission: (request: UpdateRequest) => Promise<boolean>;
   approveRequest: (requestId: string, reviewerNotes?: string, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => Promise<void>;
   rejectRequest: (requestId: string, reviewerNotes?: string) => Promise<void>;
   applyHoursTemplate: (locationId: string, templateId: string) => void;
@@ -428,18 +430,20 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     void updatePerson(id, { phonePrivacy: privacy });
   };
 
-  const submitRequest = async (reqData: Omit<UpdateRequest, 'id' | 'requestedAt' | 'status'>): Promise<void> => {
-    const newReq: UpdateRequest = {
-      ...reqData,
-      id: `req-${Date.now()}`,
-      requestedAt: new Date().toISOString(),
-      status: 'Pending'
-    };
-    const operation = persist([{ collection: 'requests', id: newReq.id, operation: 'set', data: newReq as unknown as Record<string, unknown> }], { action: 'Request Submitted', entityType: 'Request', entityId: newReq.id, entityName: newReq.changeType, details: `Submitted change request for ${newReq.targetName}` });
-    await operation;
-    setRequests(prev => prev.some(request => request.id === newReq.id) ? prev : [newReq, ...prev]);
-    addAuditLog('Request Submitted', 'Request', newReq.id, newReq.changeType, `Submitted change request for ${newReq.targetName}`);
-    notifyAfterSave(operation, 'request-submitted', newReq.id);
+  const cancelRequestSubmission = async (request: UpdateRequest): Promise<boolean> => {
+    const result = await cancelDirectorySubmission(user, { collection: 'requests', id: request.id, operation: 'set', data: request as unknown as Record<string, unknown> });
+    reconcileCommittedRecords(result);
+    return result.cancelled;
+  };
+
+  const submitRequest = async (newReq: UpdateRequest): Promise<void> => {
+    const operation = persist([{ collection: 'requests', id: newReq.id, operation: 'set', data: newReq as unknown as Record<string, unknown> }], { action: 'Request Submitted', entityType: 'Request', entityId: newReq.id, entityName: newReq.changeType, details: `Submitted change request for ${newReq.targetName}` }, false);
+    const result = await operation;
+    // Replayed submissions reconcile the saved record, including any later review, without duplicate side effects.
+    if (!result.replayed) {
+      addAuditLog('Request Submitted', 'Request', newReq.id, newReq.changeType, `Submitted change request for ${newReq.targetName}`);
+      notifyAfterSave(operation, 'request-submitted', newReq.id);
+    }
   };
 
   const approveRequest = async (requestId: string, reviewerNotes?: string, locationInboxAcknowledgment?: LocationInboxAcknowledgment): Promise<void> => {
@@ -943,6 +947,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         deletePerson,
         togglePersonPhonePrivacy,
         submitRequest,
+        cancelRequestSubmission,
         approveRequest,
         rejectRequest,
         applyHoursTemplate,

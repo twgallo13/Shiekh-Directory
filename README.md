@@ -4,6 +4,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
+- [Request validation and submission recovery](docs/dispatches/dispatch-21-request-validation-recovery.md): current next release; exact validation/replay/cancellation contract, acceptance limits and status/address follow-through. Check its release state before assuming publication.
+
 - [Published request review safeguards](docs/dispatches/dispatch-20-request-review-integrity.md): PR #30 is live. Submitted history is protected, review success waits for confirmation, failed/uncertain review requires saved-state reload, and changing request target/category resets its draft. Lower-priority District Manager work-email API planning is P6.9; email is not part of the current API contract.
 
 - [Published hierarchy UX and release record](docs/dispatches/dispatch-19-hierarchy-registry-ux.md): PR #28 is live. Region means Territory; District-owned DM settings, browse-first registry and read-only retail store DM. Existing assignments remain unchanged by the release; legacy District setup and broader migration remain separate.

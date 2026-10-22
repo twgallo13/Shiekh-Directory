@@ -10,6 +10,7 @@ import { normalizeLocationWriteValues } from "../src/lib/locationWriteContract";
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, normalizePersonEmail, type LocationInboxAcknowledgment, type LocationInboxConflictMember } from "../src/lib/locationInboxEmail";
 import { isDeepStrictEqual } from "node:util";
 import { applyCorrection } from '../src/lib/correctionRequest';
+import { validateRequestProposal } from '../src/lib/requestValidation';
 import { personLifecycle } from '../src/lib/personLifecycle';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import {
@@ -41,7 +42,7 @@ export type DirectoryCollection = typeof DIRECTORY_COLLECTIONS[keyof typeof DIRE
 export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data?: Record<string, unknown>; expectedDefinition?: CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment; districtLeadershipMembers?: import('../src/lib/districtLeadership').DistrictLeadershipMember[] }
 export interface DirectoryAudit { action: string; entityType: string; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: "set" | "delete"; data: Record<string, unknown> | null }
-export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
+export interface DirectoryCommitResult { records: DirectoryCommittedRecord[]; replayed?: boolean }
 export class DirectoryConflict extends Error {}
 export interface DirectoryDependency {
   type: 'Location' | 'District';
@@ -76,6 +77,7 @@ export interface DirectoryReader {
 
 export interface DirectoryWriter {
   commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult>;
+  cancelRequestSubmission?(write: DirectoryWrite, actor: Account): Promise<DirectoryCommitResult & { cancelled: boolean }>;
 }
 
 export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter {
@@ -92,6 +94,17 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult> {
     return this.firestore.runTransaction(async transaction => {
       const snapshots = await Promise.all(writes.map(write => transaction.get(this.firestore.collection(write.collection).doc(write.id))));
+      // The request itself is the durable receipt. Retained after review and never deleted.
+      const submission = writes.length === 1 && writes[0].collection === 'requests' && writes[0].operation === 'set' && writes[0].data?.status === 'Pending';
+      const digest = submission ? submissionDigest(writes[0].data!) : undefined;
+      const candidates = writes.filter(write => write.collection === 'requests' && write.operation === 'set' && write.data?.status === 'Pending');
+      const cancellations = await Promise.all(candidates.map(write => transaction.get(this.firestore.collection('request_submission_receipts').doc(write.id))));
+      if (cancellations.some(receipt => receipt.exists)) throw new DirectoryConflict('This submission was safely cancelled. Start a new proposal with a new submission ID.');
+      if (submission && snapshots[0].exists) {
+        const saved = snapshots[0].data()!;
+        if (saved.submissionActor !== actor.uid || saved.submissionDigest !== digest) throw new DirectoryConflict('This submission ID is already used for different content or another actor. Reload saved requests.');
+        return { records: [{ collection: 'requests', id: writes[0].id, operation: 'set', data: { ...saved, id: writes[0].id } }], replayed: true };
+      }
       const needsDefinitions = writes.some(write => write.collection === 'custom_field_definitions' || (write.collection === 'locations' && write.operation === 'set'));
       const definitionSnapshot = needsDefinitions ? await transaction.get(this.firestore.collection('custom_field_definitions').limit(101)) : null;
       const definitions = definitionSnapshot?.docs.map(document => parseCustomFieldDefinition({ ...document.data(), id: document.id })) || [];
@@ -125,6 +138,9 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       };
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
+      validatedWrites.forEach((write, index) => {
+        if (write.collection === 'requests' && write.operation === 'set' && !snapshots[index].exists) Object.assign(write.data!, { submissionDigest: submissionDigest(writes[index].data!), submissionActor: actor.uid });
+      });
       const acknowledgedInboxConflicts = validateLocationInboxConflicts(validatedWrites, locations);
       const locationQueries = writes.filter(write => write.collection === "locations" && write.operation === "set")
         .map(write => ({ write, query: this.firestore.collection("locations").where("storeNumber", "==", write.data?.storeNumber).limit(2) }));
@@ -159,7 +175,13 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         operation: write.operation,
         data: write.operation === "set" ? { ...write.data, id: write.id } : null,
       }));
-      if (audit) {
+      const requestWrite = validatedWrites.find(write => write.collection === 'requests');
+      const storedAudit = requestWrite ? {
+        action: requestWrite.data?.status === 'Approved' ? 'Request Approved' : requestWrite.data?.status === 'Rejected' ? 'Request Rejected' : 'Request Submitted',
+        entityType: 'Request', entityId: requestWrite.id, entityName: String(requestWrite.data?.changeType || 'Correction'),
+        details: `Server-confirmed ${String(requestWrite.data?.status)} correction for ${String(requestWrite.data?.targetName || requestWrite.data?.targetId || requestWrite.id)}.`,
+      } : audit;
+      if (storedAudit) {
         const id = `aud-${Date.now()}-${randomUUID().slice(0, 8)}`;
         const previousState = snapshots.length === 1 && snapshots[0].exists ? snapshots[0].data() : undefined;
         const nextState = validatedWrites.length === 1 && validatedWrites[0].operation === "set" ? { ...validatedWrites[0].data, id: validatedWrites[0].id } : undefined;
@@ -175,13 +197,13 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           timestamp: new Date().toISOString(),
           userId: actor.uid,
           userName: actor.name,
-          action: audit.action,
-          entityType: audit.entityType,
-          entityId: audit.entityId,
-          entityName: audit.entityName,
+          action: storedAudit.action,
+          entityType: storedAudit.entityType,
+          entityId: storedAudit.entityId,
+          entityName: storedAudit.entityName,
           details: acknowledgedInboxConflicts.length > 0
-            ? `${audit.details} Acknowledged shared location inbox duplicate(s): ${acknowledgedInboxConflicts.join(', ')}.`
-            : audit.details,
+            ? `${storedAudit.details} Acknowledged shared location inbox duplicate(s): ${acknowledgedInboxConflicts.join(', ')}.`
+            : storedAudit.details,
           ...(previousState ? { previousState } : {}),
           ...(nextState ? { newState: nextState } : {}),
           previousStates,
@@ -191,6 +213,31 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
       }
       return { records: committedRecords };
+    });
+  }
+
+  /** Seal an unresolved operation before permitting an edited/new submission. Reads conflict with late commits. */
+  async cancelRequestSubmission(write: DirectoryWrite, actor: Account): Promise<DirectoryCommitResult & { cancelled: boolean }> {
+    if (write.collection !== 'requests' || write.operation !== 'set' || write.data?.status !== 'Pending') throw new DirectoryValidationError('A pending submission envelope is required.');
+    const digest = submissionDigest(write.data);
+    return this.firestore.runTransaction(async transaction => {
+      const ref = this.firestore.collection('requests').doc(write.id);
+      const seal = this.firestore.collection('request_submission_receipts').doc(write.id);
+      const [saved, receipt] = await Promise.all([transaction.get(ref), transaction.get(seal)]);
+      if (saved.exists) {
+        const data = saved.data()!;
+        if (data.submissionActor !== actor.uid || data.submissionDigest !== digest) throw new DirectoryConflict('Submission belongs to different content or another actor.');
+        return { records: [{ collection: 'requests', id: write.id, operation: 'set', data: { ...data, id: write.id } }], replayed: true, cancelled: false };
+      }
+      if (receipt.exists) {
+        if (receipt.data()?.actorId !== actor.uid || receipt.data()?.digest !== digest) throw new DirectoryConflict('Submission belongs to different content or another actor.');
+        return { records: [], cancelled: true, replayed: true };
+      }
+      const timestamp = new Date().toISOString();
+      transaction.set(seal, { id: write.id, actorId: actor.uid, digest, cancelledAt: timestamp });
+      const auditId = `aud-${randomUUID()}`;
+      transaction.set(this.firestore.collection('audit_logs').doc(auditId), { id: auditId, timestamp, userId: actor.uid, userName: actor.name, action: 'Request Submission Cancelled', entityType: 'Request', entityId: write.id, entityName: 'Unconfirmed submission', details: 'Uncommitted submission sealed against late arrival before replacement.' });
+      return { records: [], cancelled: true };
     });
   }
 
@@ -350,6 +397,7 @@ export function validateMetadataWrites(
   hierarchyRegistry?: HierarchyRegistry,
 ): DirectoryWrite[] {
   if (new Set(writes.map(write => `${write.collection}/${write.id}`)).size !== writes.length) throw new DirectoryValidationError('Duplicate writes are not allowed.');
+  if (writes.filter(write => write.collection === 'requests').length > 1) throw new DirectoryValidationError('Submit or review one correction request at a time.');
   if (writes.some(write => write.collection === 'custom_field_definitions') && writes.length !== 1) throw new DirectoryValidationError('Save one custom field definition at a time.');
 
   const peopleMap = new Map<string, RelationshipPerson>(people.map(person => [person.id, { ...person }]));
@@ -509,6 +557,10 @@ export function validateMetadataWrites(
           throw new DirectoryWriteDenied('Only a steward or administrator can review correction requests.');
         }
         if (!current || current.status !== 'Pending') throw new DirectoryConflict('Only pending requests can be reviewed. Reload the directory.');
+        data.reviewedBy = actor.name;
+        data.reviewedAt = new Date().toISOString();
+        data.reviewerId = actor.uid;
+        if (data.reviewerNotes != null && (typeof data.reviewerNotes !== 'string' || data.reviewerNotes.length > 2000)) throw new DirectoryValidationError('Reviewer notes must be plain text of at most 2,000 characters.');
       }
       if (!current && data.changeType === 'Standard Hours Adjustment') {
         if (data.status !== 'Pending' || data.targetType !== 'Location') throw new DirectoryValidationError('Hours corrections must be submitted as pending Location requests.');
@@ -539,6 +591,37 @@ export function validateMetadataWrites(
         }
         const targetPrevious = previous[writes.indexOf(targetWrite)];
         assertApprovalTargetAppliesPersistedChanges(current, targetWrite, targetPrevious);
+        const checked = validateRequestProposal(current, targetPrevious || {});
+        if (checked.error) throw new DirectoryValidationError(checked.error);
+        // Historical proposals that need normalization must be replaced, never rewritten during review.
+        if (!isDeepStrictEqual(checked.changes, current.requestedChanges)) throw new DirectoryValidationError('This historical proposal needs normalized values. Reject it and submit a replacement.');
+      }
+      if (!current) {
+        if (Object.hasOwn(data, 'submissionDigest') || Object.hasOwn(data, 'submissionActor')) throw new DirectoryValidationError('Submission receipt fields are server owned.');
+        const target = data.targetType === 'Person' ? combinedPeople.find(person => person.id === data.targetId) as unknown as Record<string, unknown> : locations.find(location => location.id === data.targetId);
+        if (!target) throw new DirectoryValidationError('Choose an existing correction target.');
+        const collection = data.targetType === 'Person' ? 'people' : 'locations';
+        if (writes.some(candidate => candidate.collection === collection && candidate.id === target.id)) throw new DirectoryConflict('Submit a correction separately from changes to its target.');
+        const checked = validateRequestProposal(data, target);
+        if (checked.error) throw new DirectoryValidationError(checked.error);
+        data.requestedChanges = checked.changes;
+        if (data.targetType === 'Person') {
+          const primaryTouched = Object.hasOwn(checked.changes, 'primaryLocationId');
+          const supportsTouched = Object.hasOwn(checked.changes, 'supportedLocationIds');
+          const supports = (supportsTouched ? checked.changes.supportedLocationIds : target.supportedLocationIds) as string[] | undefined;
+          const primary = primaryTouched ? checked.changes.primaryLocationId : target.primaryLocationId;
+          const proposedReferences = [...(supportsTouched ? supports || [] : []), ...(primaryTouched && typeof primary === 'string' ? [primary] : [])];
+          for (const id of proposedReferences) if (!locations.some(location => location.id === id && location.recordStatus === 'Active')) throw new DirectoryValidationError('Employment proposals must reference active Locations.');
+          if ((primaryTouched || supportsTouched) && Array.isArray(supports) && typeof primary === 'string' && supports.includes(primary)) throw new DirectoryValidationError('Works at and Supports must be separate relationships.');
+        }
+        data.targetName = target.fullName || target.name || target.id;
+        if (data.targetType === 'Location') data.targetStoreNumber = target.storeNumber;
+        else delete data.targetStoreNumber;
+        data.version = 1;
+        data.requestedBy = { id: actor.uid, name: actor.name, email: actor.email || '', role: actor.role };
+        data.requestedAt = new Date().toISOString();
+        data.updatedAt = data.requestedAt;
+        for (const key of ['reviewedBy', 'reviewedAt', 'reviewerId', 'reviewerNotes']) delete data[key];
       }
       return { ...write, data };
     }
@@ -691,6 +774,13 @@ export function validateMetadataWrites(
   validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry, previous);
   validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry, previous);
   return validatedWrites;
+}
+
+/** Stable JSON digest binds a retry to the exact original submission, independent of object key ordering. */
+function submissionDigest(data: Record<string, unknown>): string {
+  const canonical = (v: unknown): unknown => Array.isArray(v) ? v.map(canonical) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical(Reflect.get(v, k))])) : v;
+  return createHash('sha256').update(JSON.stringify(canonical(data))).digest('hex');
 }
 
 function validateEmploymentRelationshipState(

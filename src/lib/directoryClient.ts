@@ -6,7 +6,7 @@ export type DirectoryCollection = 'locations' | 'people' | 'users' | 'hours_temp
 export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data?: Record<string, unknown>; expectedDefinition?: import('./customFields').CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment; districtLeadershipMembers?: import('./districtLeadership').DistrictLeadershipMember[] }
 export interface DirectoryAudit { action: string; entityType: 'Location' | 'Person' | 'User' | 'Setting' | 'Request' | 'Communication'; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data: Record<string, unknown> | null }
-export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
+export interface DirectoryCommitResult { records: DirectoryCommittedRecord[]; replayed?: boolean }
 export interface DirectoryDependency { type: 'Location' | 'District'; id: string; name: string; storeNumber?: string; href?: string }
 export type RegistrySaveIntent = { create: true } | { create: false; expectedVersion: number };
 export interface HierarchyRegistrySnapshot { regions: RegionRecord[]; districts: DistrictRecord[] }
@@ -14,6 +14,21 @@ export class DirectoryCommitError extends Error {
   constructor(message: string, public readonly code?: string, public readonly details?: { dependencies?: DirectoryDependency[]; correction?: string }) {
     super(message);
   }
+}
+
+/** Reconcile-or-seal an uncertain submission; never discard a potentially in-flight write. */
+export async function cancelDirectorySubmission(user: SessionUser, write: DirectoryWrite): Promise<DirectoryCommitResult & { cancelled: boolean }> {
+  const response = await fetch('/api/directory/submissions/cancel', { method: 'POST', headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' }, cache: 'no-store', redirect: 'error', body: JSON.stringify({ write }) });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result || typeof result.cancelled !== 'boolean' || !Array.isArray(result.records)
+    || (result.cancelled ? result.records.length !== 0 : !validSubmissionResult(result, write.id))) throw new DirectoryCommitError(result?.error?.message || 'Submission recovery could not be confirmed. Keep this operation and try again.', result?.error?.code);
+  return result;
+}
+
+function validSubmissionResult(result: DirectoryCommitResult, id: string): boolean {
+  const record = result?.records?.[0];
+  return Array.isArray(result?.records) && result.records.length === 1 && record?.collection === 'requests' && record.id === id && record.operation === 'set'
+    && record.data?.id === id && ['Pending', 'Approved', 'Rejected'].includes(String(record.data?.status)) && (result.replayed === undefined || typeof result.replayed === 'boolean');
 }
 
 export function buildRegistryWrite(
@@ -53,7 +68,13 @@ export async function commitDirectory(user: SessionUser, writes: DirectoryWrite[
     redirect: 'error',
     body: JSON.stringify({ writes, audit }),
   });
-  if (response.ok) return await response.json() as DirectoryCommitResult;
+  if (response.ok) {
+    const result = await response.json().catch(() => null) as DirectoryCommitResult | null;
+    if (!result || !Array.isArray(result.records) || (writes.length === 1 && writes[0].collection === 'requests' && writes[0].data?.status === 'Pending' && !validSubmissionResult(result, writes[0].id))) {
+      throw new DirectoryCommitError('The save response could not be confirmed. Recover the original submission before creating another.');
+    }
+    return result;
+  }
   const body = await response.json().catch(() => null) as { error?: { code?: string; message?: string; details?: { dependencies?: DirectoryDependency[]; correction?: string } } } | null;
   throw new DirectoryCommitError(
     body?.error?.message || (response.status === 403 ? 'Your role cannot make this directory change.' : 'The directory database could not save this change.'),

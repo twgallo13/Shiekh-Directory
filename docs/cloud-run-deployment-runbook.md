@@ -11,7 +11,27 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision (verified 2026-10-04)
+## Current live revision (verified 2026-10-21 America/Los_Angeles)
+
+- Application source: merged PR #23, `26dab971c080963ba0d17afb4a38ec42e598d9d6`. Its tree exactly matches tested review head `84dacaae4171e7aba031ba13b68d9625ded11622`; no redundant test rerun was needed for the squash merge.
+- Serving revision: `shiekh-location-company-directory-pr23-26dab97`, Ready and sole 100% in desired and observed traffic. Cloud Build `f3129321-8945-4c2b-b1be-23714bf55c04` completed `SUCCESS`; image digest `sha256:6336695df6432d84a7c2531c5b92578a399ac7c23b9556e465ab523e3b356454`.
+- Rollback: `shiekh-location-company-directory-hours-0171bd0`, the actual sole 100% serving revision captured immediately before staging. This supersedes older rollback targets below.
+- The source deployment reused the existing build environment and runtime settings. Comparison found only revision/image and deployment CLI-version provenance changes. Service identity, runtime settings, build-environment values, security/network/scaling fields and 26 historical tag mappings were preserved. Temporary `p23-26dab97` candidate tag was removed after verification.
+- Both default and branded URLs passed HTML/cache guards, structured unauthenticated auth/v1/v2 denial checks, unknown-route denial, unchanged schema/guide hashes, and matching hashes for all 84 discovered JavaScript/CSS assets. Production HTML SHA-256: `7be2619f08449b02c6158f3a8d560281cae31a16a23e270ddf3cb2bf5e0851b5`. The branded mapping is Ready and DomainRoutable. A fresh browser rendered the production sign-in screen without initiating sign-in.
+- Compiled Firebase fingerprint remains `440f6973f893ca7adcfe0dc36a93208fe1164193753e884a5a6716630243fd5a`; API schema and personnel guide remain unchanged. Existing Codespace ADC was used without creating credentials or printing tokens.
+- Validation: 383 API/unit tests, TypeScript check and build passed; prior applicable browser results were reused. CodeRabbit reviewed the final source without actionable findings; its docstring-coverage warning remains advisory. The extra Codex review of `84dacaa` still reported running when the release was verified; do not describe it as completed approval. Codex's prior review of `30a8519` completed without findings.
+- No personnel/account changes, migrations, correction submissions/reviews, credential issuance, private API sampling or notification sends were used as live probes. Real authenticated workflow acceptance remains separate. Full evidence and next work: [Dispatch 16](dispatches/dispatch-16-leadership-request-repair.md) and the [consistency plan](plans/directory-consistency-plan.md).
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-hours-0171bd0=100
+```
+
+Documentation-only follow-ups do not change the deployed application source or require another build. The earlier inbox and hours release records remain historical evidence.
+
+## Historical inbox live revision (verified 2026-10-04)
 
 - Application commit: `fa08cc18406efc60757605b193b8ccfcdb23c932`; tree: `9e463886fa0664db9ec86f78718308b78482c0dd`. PRs #14–#16 add shared Location inboxes, workflow corrections, and reliable browser HTML refresh across deployments.
 - Revision: `shiekh-location-company-directory-inbox-fa08cc1`, tagged `inbox-fa08cc1`, Ready and the sole 100% revision in both desired and observed Cloud Run v2 traffic. All other revisions have zero percentage traffic; historical tags are preserved.

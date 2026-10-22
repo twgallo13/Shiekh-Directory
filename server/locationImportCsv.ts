@@ -1,5 +1,6 @@
 import { stringify } from 'csv-stringify/sync';
 import type { DirectorySeed } from '../src/lib/directorySeed';
+import { OPTIONAL_ADDRESS_COLUMNS } from '../src/lib/locationAddress';
 import {
   LOCATION_IMPORT_COLUMNS,
   LOCATION_IMPORT_FIELDS,
@@ -29,7 +30,9 @@ export function buildLocationImportFieldDictionary(): string {
           ? 'Blank action + blank value preserves. Use action clear with a blank value to remove.'
           : field.column === 'LocationInboxEmailAction'
             ? 'Blank value and blank action preserves; see Format for the complete action matrix.'
-        : 'Preserves an existing value; explicit clearing is not supported',
+        : Object.keys(OPTIONAL_ADDRESS_COLUMNS).some(column => field.column === column || field.column === `${column}Action`)
+          ? 'Blank value and blank action preserves; action clear with a blank value explicitly clears to null. See Format.'
+          : 'Preserves an existing value; explicit clearing is not supported',
     Example: field.example,
   }));
   return stringify(rows, { header: true, record_delimiter: '\r\n', bom: true });

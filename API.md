@@ -300,6 +300,10 @@ It adds explicit `personnel:read` and `staffing:read` grants and coherent full
 snapshots. Existing v1 response fields, location-only grants and sync behavior
 are unchanged. This feature requires review/deployment before live use.
 
+# Address and wayfinding additions
+
+Address/wayfinding additive fields in v1 list/detail: `suite` (string/null, 100 chars) and `wayfindingDirections` (string/null, 1,000 chars), separate from required street/city/state/ZIP and existing optional mall name. Plain customer-facing text, escaped by consumers, not internal notes. A normalized unusable/missing value is null; older revisions may omit new keys. Full reconciliation is required when adopting the new fields. See [dispatch 23](docs/dispatches/dispatch-23-address-wayfinding.md) before assuming publication or populated production values.
+
 # Current operating state (separate from synchronization)
 
 `GET /api/v1/locations/{storeNumber}/operating-state` requires the existing managed Bearer credential with `locations:read`. Keep exact leading zeroes. No query parameters. Response is `Cache-Control: no-store`; never treat this as a paginated snapshot or wait for `updatedSince` to learn time-driven expiry.

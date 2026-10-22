@@ -109,7 +109,9 @@ export interface LocationRecord {
   storeNumber: string;
   name: string;
   type: LocationType;
-  mallOrCenterName?: string;
+  mallOrCenterName?: string | null;
+  suite?: string | null;
+  wayfindingDirections?: string | null;
   address: string;
   city: string;
   state: string;

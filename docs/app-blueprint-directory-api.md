@@ -29,6 +29,8 @@ All endpoints require the same credential. The API is not an anonymous public da
 
 ## Fields on each store
 
+Address/wayfinding follow-on adds `suite` and `wayfindingDirections`, each a customer-facing string or explicit null on current v1 list/detail responses. Suite is separate from street address; directions might say “second floor, next to Macy’s.” `mallOrCenterName` retains its existing optional string field. Do not put internal notes or personnel information in these fields. On adoption, perform a full reconciliation; older server revisions can omit new keys, which is not itself a confirmed clear. Check [dispatch 23](dispatches/dispatch-23-address-wayfinding.md) for actual publication and acceptance limits.
+
 The list endpoint returns store objects inside `data`. The detail endpoint wraps its one store in `data`. “Always included” below means the property is present in the JSON store object; some always-included hierarchy properties can have a `null` value. “Can be absent” means the property is left out when there is no acceptable value or it is not allowed to be shared.
 
 Examples in the table are illustrative only.

@@ -3,6 +3,7 @@ import type { DirectorySeed } from '../src/lib/directorySeed';
 import type { LocationEditingExportDiagnostic, LocationEditingExportManifest } from '../src/lib/locationEditingExport';
 import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
 import { resolveLocationHierarchy } from '../src/lib/hierarchyResolution';
+import { OPTIONAL_ADDRESS_COLUMNS } from '../src/lib/locationAddress';
 import {
   LOCATION_IMPORT_COLUMNS,
   LOCATION_IMPORT_FIELDS,
@@ -19,7 +20,6 @@ type ExportLocation = LocationEditingExportSnapshot['locations'][number] & Recor
 type ExportRow = Record<string, string>;
 
 const UNREPRESENTABLE_LOCATION_FIELDS = [
-  'mallOrCenterName',
   'phonePrivacy',
   'district',
   'districtManagerName',
@@ -191,6 +191,9 @@ function toEditingRow(location: ExportLocation, snapshot: LocationEditingExportS
     if (field.column === 'DistrictName') return [field.column, hierarchy.districtName || ''];
     if (field.column === 'AssistantStoreManagerIds') return [field.column, serializeIdList(location.assistantStoreManagerIds)];
     if (field.column === 'KeyHolderIds') return [field.column, serializeIdList(location.keyHolderIds)];
+    for (const [column, property] of Object.entries(OPTIONAL_ADDRESS_COLUMNS)) {
+      if (field.column === `${column}Action`) return [field.column, location[property] === null ? 'clear' : textValue(location[property]) ? 'set' : 'keep'];
+    }
     return [field.column, field.field ? textValue(location[field.field]) : ''];
   }));
 }

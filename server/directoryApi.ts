@@ -9,6 +9,7 @@ import type { ApiClientAuthenticator, ManagedApiCredential } from "./apiClientAp
 import { normalizeLocationInboxEmail } from "../src/lib/locationInboxEmail";
 import type { ApiScope } from "../src/lib/apiScopes";
 import { resolveOperatingState } from "../src/lib/operatingState";
+import { publicAddressText } from '../src/lib/locationAddress';
 
 export const LOCATION_READ_SCOPE = "locations:read" as const;
 
@@ -375,6 +376,8 @@ function mapPublicLocation(record: LocationDocument, definitions: CustomFieldDef
     id: record.id,
     storeNumber: getStoreNumber(record),
     recordStatus: "Active",
+      suite: publicAddressText('suite', source.suite),
+      wayfindingDirections: publicAddressText('wayfindingDirections', source.wayfindingDirections),
     updatedAt: record.updatedAt.toISOString(),
     locationInboxEmail: normalizeLocationInboxEmail(source.locationInboxEmail)?.value ?? null,
     customMetadata: publicCustomMetadata(source.customMetadata, definitions),

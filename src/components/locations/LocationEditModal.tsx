@@ -7,6 +7,7 @@ import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
+import { normalizeAddressValues } from '../../lib/locationAddress';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
@@ -192,6 +193,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     if (!isCreating) sanitizedData = preserveUnchangedStaffing(formData, baseline, sanitizedData);
     sanitizedData = inheritDistrictLeader(sanitizedData, districts, people);
     if (isCreating) sanitizedData.id = createId;
+    const normalizedAddress = normalizeAddressValues(sanitizedData as unknown as Record<string, unknown>, isCreating ? undefined : baseline as unknown as Record<string, unknown>);
+    if (normalizedAddress.issues.length) { setSaveError(normalizedAddress.issues.map(issue => issue.message).join(' ')); return; }
+    sanitizedData = normalizedAddress.values as unknown as LocationRecord;
     if (sanitizedData.locationInboxEmail !== undefined && sanitizedData.locationInboxEmail !== null
       && sanitizedData.locationInboxEmail !== baseline.locationInboxEmail && !normalizeLocationInboxEmail(sanitizedData.locationInboxEmail)) {
       setContactErrors(errors => ({ ...errors, locationInboxEmail: 'Enter one valid email address, or use Clear to remove it.' }));
@@ -721,6 +725,12 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                     />
+                  </div>
+
+                  <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 space-y-3">
+                    <label className="block text-xs font-medium text-neutral-700">Suite / space (optional)<input aria-label="Suite / space" value={formData.suite || ''} maxLength={100} onChange={e => setFormData({ ...formData, suite: e.target.value || null })} className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2" /></label>
+                    <label className="block text-xs font-medium text-neutral-700">Finding the store<textarea aria-label="Finding the store" rows={3} maxLength={1000} value={formData.wayfindingDirections || ''} onChange={e => setFormData({ ...formData, wayfindingDirections: e.target.value || null })} placeholder="Second floor, next to Macy’s; north entrance." className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2" /></label>
+                    <p className="text-[11px] text-neutral-600">Customer-facing Location information shared through the API. No personal information or internal notes. Empty an optional field to clear it; street address remains separate.</p>
                   </div>
 
                   <div>

@@ -182,7 +182,8 @@ describe('Location editing export', () => {
     assert.ok(conformance?.fields.includes('Phone'));
     assert.ok(conformance?.fields.includes('StoreManagerId'));
     const unsupported = result.diagnostics.find(item => item.code === 'unrepresentable_fields');
-    assert.ok(unsupported?.fields.includes('mallOrCenterName'));
+    assert.ok(!unsupported?.fields.includes('mallOrCenterName'));
+    assert.equal(row.MallOrCenterName, 'Legacy Center');
     assert.ok(unsupported?.fields.includes('customMetadata'));
     assert.ok(unsupported?.fields.includes('futureUnsupportedField'));
     assert.ok(unsupported?.fields.includes('standardHours'));

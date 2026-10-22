@@ -1,0 +1,29 @@
+# Dispatch 23 — Address corrections and finding the store
+
+## Scope / release state
+
+Owner-approved continuation after request validation/recovery and the immediate status slice. Work on `codex/address-wayfinding`, initially based on PR #33; not yet merged/deployed. Existing Location IDs, store numbers, canonical staffing and Region/District ownership remain unchanged. No parsing/backfill of legacy addresses, restore, geocoding, external app changes or new API credentials.
+
+## Data and validation
+
+- Location-owned `address` (street, 300 chars), `city` (100), `state` (two-letter uppercase), `zipCode` (five digits or ZIP+4, string preserving zeros) remain required when proposed. Optional `suite` (100), `mallOrCenterName` (200), `wayfindingDirections` (1,000) accept explicit null to clear. Text is trimmed and disallowed control characters rejected. Customer directions are plain text, not HTML, internal notes, personnel or incident information.
+- A legacy street may already include a suite. Nothing extracts/moves/deletes that text; an owner can intentionally separate it. Unchanged historic nonconforming fields are preserved during unrelated direct edits. Changed fields must conform. Omission of new optional fields in an older editor preserves them under the new server; explicit null clears.
+- `Address Update` is a real correction category. Only those seven fields are permitted, with current baselines for every proposed field, normalized no-op/stale checks and normal admin/steward review. No store identity, staffing, sign-in or permission fields. The form preloads current values, resets across targets/categories, detects address changes during drafting and sends only meaningful differences. Required postal fields cannot be cleared. Optional clears are visible as null in review.
+- Existing PR #32 immutable history, versioned approval, requester/reviewer attribution, uncertain-save replay/cancellation and tab storage protections apply. A confirmed cancellation restores the address draft, including optional clears; replacement uses a new ID. Original requests are never rewritten as recovery.
+
+## Read surfaces / compatibility
+
+- Main editor, customer-service detail, copied summary, location/global search and print support suite/directions. Display is escaped text; long directions wrap. Address, mall, directions and internal request notes remain distinct. Map links retain the postal address rather than sending internal notes or treating directions as geocoded coordinates.
+- Existing v1 list/detail adds `suite` and `wayfindingDirections` as string or explicit null, with bounded allowlisted shaping and matching fields in the Firestore public projection. Existing `mallOrCenterName` keeps its optional string behavior. No personnel contact fields, scopes or frozen v2 snapshot meanings change. Consumers should tolerate additive properties and perform a full reconciliation on adopting the fields; missing older-revision keys are not evidence of a new explicit clear. Production authenticated payload/data completeness still requires authorized acceptance, not inferred from code/tests.
+- Reporting CSV appends Suite/MallOrCenterName/WayfindingDirections after existing columns. Editing CSV adds those values and explicit companion Action columns using the same locations-v2 additive contract. Blank value+blank action/keep+blank preserves. Blank action+value or set+value sets. clear+blank clears to null. Other combinations block. Dictionary, template, preview/diffs and protected CSV export use the same definitions. Leading formula characters retain reversible protection; quoted commas, line breaks and Unicode round-trip.
+- Editing CSV is not a full backup or incident writer. Temporary closures and computed status are not writable there. Reporting status columns are informational only. Older writers do not know these preservation rules; prefer forward repair or restrict affected writers before rollback.
+
+## Evidence / release gates
+
+Three synthetic browser cases passed: exact changed-field/baseline submission, unknown-response reload/cancellation/restored optional clears with a new operation ID, and separate editor/detail fields plus a 390px request layout with no horizontal overflow. Mobile screenshot visually inspected; content scrolls within the dialog. Initial type check required a CSV-test result type annotation, then passed. Final affected API/import/export/validation, production build, review and release checkpoint remain required. No real request, staffing, credential or notification probes.
+
+## Remaining boundaries
+
+Integrated checkpoint: TypeScript and production build passed (existing bundle-size advisory only). Full serial API/unit suite **493/493 passed**. Prior affected address API/import/export run **79/79**, editing-export **12/12**. Four distinct synthetic address browser cases passed incrementally, including a background address refresh blocking a stale draft. The first combined export run stopped reporting progress and only its owned test processes were stopped; no pass is claimed for that run. Isolated normal/oversized boundary cases passed, the obsolete test assertion that mall name remained unrepresentable was corrected, and all 12 editing-export cases plus the final 493-case integrated run passed. No root cause for the initial runner stall is claimed. CSV preview now also rejects new indefinite emergency values consistently with the status writer, while unchanged legacy values remain reviewable.
+
+DM work-email API P6.9 remains unimplemented/low priority. This slice does not complete broader controlled job-position catalogs, RM ownership/offboarding, all authorization audits, holiday exception request design or owner data restoration. Keep historic dispatch evidence and update the plan/runbook only with actual merged/deployed source.

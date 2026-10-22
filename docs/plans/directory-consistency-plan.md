@@ -1,13 +1,13 @@
 # Directory hierarchy and operating workflows implementation plan
 
-Approved direction recorded October 21, 2026. Implementation has not started under this plan.
+Approved direction recorded October 21, 2026. The owner subsequently approved recording the review refinements and proceeding with baseline inspection and implementation. Initial implementation is in progress; no production release or data cutover is claimed.
 
 The Directory will provide consistent organizational assignments and store information across its own screens and all consuming applications. This work repairs leadership changes and corrections, adds a practical leadership handover, and separates immediate temporary operating events from permanent store information. The first deliverable is this documented checklist; it does not represent a production change or completed migration.
 
 ## Scope and working agreement
 
 - Repository: `twgallo13/Shiekh-Directory`. Source audit baseline: `baa2b937f4d79ddb8be24434b5176e6f2e98a690` on `main`. Recheck the baseline before implementation and account for intervening work.
-- Theo approved the audit recommendations and requested a documented plan. Complete this planning change without application edits, personnel changes, credential creation, imports, merge, or deployment. Future execution must follow the user's current authorization and the release gates below; historical deployment approvals are not a substitute for an exact data cutover review.
+- Theo approved the audit recommendations, the documented plan, and proceeding with implementation after recording the review refinements. Keep the planning PR documentation-only and place application repairs in separate reviewable PRs. Personnel changes, credential creation, imports, merges, production deployment, and exact data cutover remain subject to the user's current authorization and the release gates below; this execution step does not perform them.
 - Work in small reviewable branches and PRs. Preserve unrelated changes and historical evidence. Use the existing project, named database, identities, and deployment process; do not change Dynamic-Qr, ROPI, or other applications as part of this plan.
 - Reuse existing canonical IDs, validators, transaction/audit mechanisms, and successful validation where applicable. Do not rewrite the application or run every test repeatedly between documentation edits.
 - Never infer a replacement manager, district, or identity from a person's name, typed title, email, or historical PDF. Keep private contact data, credentials, full backups, and real personnel inventories out of this public repository.
@@ -54,6 +54,52 @@ Provide corrections for street address, suite, city, state, ZIP, mall/center, an
 - I01: API serializers expose stored hours and operational fields rather than a shared, verified effective operating-state contract. Registry inheritance and time-driven expiry introduce synchronization requirements beyond Location `updatedAt`.
 
 Source findings are not a live personnel inventory, authenticated production API acceptance, or today's Cloud Run verification. Record those independently.
+
+## Relationship coverage required before cutover
+
+This is the minimum dependency inventory for P0.5, not a claim that every production reference has been inventoried. For each row record exact persisted fields, authoritative owner, forward and reverse readers, allowed writers, reference validation, effective dates where relevant, and inactive/missing/delete/reassignment behavior. Include source paths and tests; every discovered reader or writer must be covered or explicitly marked Not verified.
+
+| Relationship or reference | Current authority | Required transition and acceptance |
+| --- | --- | --- |
+| Location identity and Store Number | Location document ID and exact business number | Preserve IDs and leading zeroes. Join API datasets by document identity; never merge Locations by manager/name/email. |
+| District to Region and Location to District/Region | Registry IDs and saved Location hierarchy IDs | Validate parent consistency and non-retail applicability; define the authoritative versus derived Region reference after cutover. |
+| District Manager and Regional Manager | Location `districtManagerId` and `regionalManagerId` | Move to reviewed territory ownership with explicit inheritance/exceptions; retain compatible outputs without two writable authorities. |
+| Store Manager and assistant/key-holder slots | Location `storeManagerId`, `assistantStoreManagerIds`, `keyHolderIds` | Shared eligibility/lifecycle rules; preserve approved multi-store relationships, vacancies and explicit clears. |
+| Person workplace and support | Person `primaryLocationId`, `supportedLocationIds` | Keep separate from leadership. Define retirement/reassignment and reverse navigation without copying authority. |
+| Person identity and lifecycle aliases | Person canonical ID plus `fullName`, `status`, `activeStatus` | Preserve alias conflicts for review; define inactive/unknown behavior consistently across writes, selectors and APIs. |
+| Person position and descriptive title | Existing free-text `role`, `jobTitle`, department | Add controlled eligibility without turning descriptive titles into access grants; review old aliases and mappings. |
+| User to Person and Firebase identity | User `personId`, `firebaseUid`, application role/status/scope | Check uniqueness and current authority; offboarding explicitly handles sessions/access as well as assignments. |
+| Pending correction target, baselines and actor | Persisted request target IDs, versions, snapshots and requester/reviewer identity | Preserve historic attribution; target ownership changes require a reviewed adapter or explicit replacement, never retarget by name. |
+| Hours template and embedded schedule | Location `hoursTemplateId`, `hoursMode`, `standardHours` | Identify template authority; ensure template changes cannot overwrite approved custom hours or revive expired incidents. |
+| Holiday, special-hours and corporate broadcast references | Saved dated overrides and corporate holiday/template IDs | Handle overlap, effective dates, removal and future edits without replacing unrelated exceptions silently. |
+| Temporary incident and notice references | Existing `activeNotice`; proposed server-owned event IDs and history | Distinguish display notices from operating overrides; constrain actor/location links, expiry and audit retention. |
+| Custom values and definition catalog | `customMetadata` keys and published custom-field definitions | Validate retired/internal/invalid keys, version changes and complete-object replacement; directions must have one owned field. |
+| Shared inbox and personal contact aliases | Location-owned inbox versus Person contact fields | Preserve explicit null/absence and duplicate acknowledgement; never equate shared contact with account identity or permissions. |
+| Audit, mail rules/templates and delivery records | Server-owned audit events and persisted communication references | Preserve historic actor/target display, use current authorized recipients after handover, and keep notification failure separate from commit. |
+| API clients, grants, token versions and snapshot/cursor bindings | Managed client and server authentication state | Maintain separate v1/v2 scopes; changing leadership must not create credentials, expand grants or leak private contacts. |
+| CSV import manifests, receipts, exports, print and external references | Stable Location/Person/registry IDs and signed operation contracts | Test round trips, stale confirmation, lifecycle removal and recovery; direct scripts/jobs/readers need an explicit compatibility classification. |
+
+The inventory must include deletion/recreation, retirement/reactivation, movement between Districts/Regions, out-of-scope references, duplicate links, and sequential/concurrent edits. A valid UI display alone is not reference integrity evidence. A production scan must use restricted storage; publish only synthetic fixtures, aggregate findings and approved reference-free evidence.
+
+## District Manager API contract and joins
+
+The existing v1 Location API intentionally excludes personnel assignments. The v2 staffing API already returns the following fields under `staffing:read`; the new hierarchy work must preserve a documented compatible route to the same effective manager identity.
+
+- Endpoint: `GET /api/v2/location-staffing` or `GET /api/v2/location-staffing/{locationId}`, using a snapshot obtained from `GET /api/v2/snapshot`.
+- Canonical assignment field: `districtManagerId`, string or null.
+- Resolved fields: `staffing.districtManager.personId`, `.fullName`, `.lifecycle`, and `.issues`. The entire `staffing.districtManager` is null when no canonical assignment exists. Missing/invalid referenced People have explicit diagnostics; do not mislabel them as an ordinary vacancy.
+- `districtName` in v1 and `hierarchy.districtName` in v2 are territory names, not the manager's name. A stored legacy `districtManagerName` is not the published v2 field.
+- Join v1 Location `id` to v2 staffing `locationId`; join `districtManagerId` to Person `id`. Preserve Store Numbers as text but do not use them as a substitute for cross-dataset document identity.
+- Minimal manager identity/name/lifecycle is included with `staffing:read`; a separate `personnel:read` grant is needed only for the personnel endpoint. Email, phone, login identity and account permissions remain excluded.
+- P6.4 must publish exact before/after payload examples for direct, inherited, acting, excepted, vacant, missing, inactive and unknown assignments. Effective and stored/primary assignments need distinct documented meanings; never silently change an existing field's semantics. Backward-incompatible changes require a versioned contract.
+
+No new field or personnel grant is added by this documentation amendment. An authenticated production response remains a separate acceptance check.
+
+## Snapshot time and effective state rules
+
+P4.2 and P6.5 must distinguish a frozen synchronization snapshot from a current operating-state read. Freeze effective assignment evaluation to the declared snapshot time so a multi-page read cannot mix leaders or override states. Preserve the existing v2 pinned Firestore read time, client/grant bindings and expiration behavior. Ordinary later data changes must not rewrite a previously issued snapshot; new runs observe the new state. Security grant/token changes continue to invalidate access as the existing contract requires.
+
+Do not present a historical snapshot's status as current after its known next transition. A current-status contract must evaluate with server time, declare evaluation and next-transition/expiry timestamps, and bound cache/refetch lifetime accordingly. If the current contract cannot express this distinction, introduce an explicit version or separate read rather than silently changing existing v2 payloads. Consumers must handle expired cursors, restart incomplete runs, and not combine independently timed v1/v2 runs while claiming one atomic snapshot. Test manager handover, acting-assignment expiry, store-local midnight and DST transitions during pagination and caching.
 
 ## Phase 0 Establish the current baseline
 
@@ -168,7 +214,7 @@ Exit evidence: implementation, deployment, data cutover, live acceptance, and ex
 
 For each task, maintain its ID, owner, status, PR/source SHA, tests or review evidence, deployment evidence if applicable, remaining gap, and next action. Use Not started, In progress, Blocked, Ready for review, or Complete. Only check a task after its exit evidence exists. Keep implementation, migration, deployment, and live acceptance as distinct records.
 
-Current status: plan prepared; all implementation tasks Not started. No production data inventory, person-specific repair, authenticated payload sample, new test execution, or deployment is claimed by this planning document. Documentation validation consists of coverage, links, scope, and readback checks.
+Current status: review refinements recorded; Phase 0 baseline work In progress. All implementation acceptance checkboxes remain unchecked until evidence exists. No production data inventory, person-specific repair, authenticated payload sample, passing implementation tests, or deployment is claimed by this planning amendment. Documentation validation consists of coverage, links, scope, and readback checks.
 
 Routine engineering choices should be resolved by the implementing agent within this contract. Escalate only real business ambiguity, conflicting current assignments, unavailable access, or a breaking change beyond the approved direction. No decision is needed merely to start baseline inspection and synthetic defect reproduction. A replacement or an explicit vacancy must be selected before a real handover is applied.
 

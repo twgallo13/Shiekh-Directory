@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [Hierarchy UX refinement](docs/dispatches/dispatch-19-hierarchy-registry-ux.md): Region means Territory; District-owned DM settings, browse-first registry and read-only retail store DM. See the record for review/release state and remaining legacy cutover boundary.
+- [Published hierarchy UX and release record](docs/dispatches/dispatch-19-hierarchy-registry-ux.md): PR #28 is live. Region means Territory; District-owned DM settings, browse-first registry and read-only retail store DM. Existing assignments remain unchanged by the release; legacy District setup and broader migration remain separate.
 
 - [Current implementation plan and AI handoff](docs/plans/directory-consistency-plan.md): current deployed source, completed slices, remaining tasks and decision boundaries. [Dispatch 18](docs/dispatches/dispatch-18-district-dm-handover.md) records the opt-in District-wide DM release. Current data is owner-reported test-affected; leave the testing DM unchanged and do not infer a restore source or run historical destructive loaders. Next work is P1.2/P1.3/P1.4 request validation, immutability and save feedback; broader hierarchy/offboarding/status work is not complete.
 - [API reference](API.md): endpoints, authentication, filters, pagination, and responses.

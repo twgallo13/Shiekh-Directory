@@ -11,7 +11,15 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #26
+## Current live revision — PR #28
+
+- Source `444351f8913db5fcfb94691a729d9dcfbe84e34c`, identical tree to final tested/reviewed `224e3efcc2d374d00b86eac35ef229f92263a7a0`. Cloud Build `0670e49c-8b5d-452f-bbf9-19d8af2a90ae` succeeded; immutable image reference is retained in revision/restricted release metadata.
+- Revision `shiekh-location-company-directory-pr28-444351f` is Ready and sole 100% desired/observed traffic. Both hosts match the accepted zero-traffic candidate's HTML and 82 discovered JS/CSS assets. HTML SHA-256 `9c82213979a0ec2a1be4e9904b6787ce400f5571b8a79415c8faaab5287d1201`. Cache, API-denial/unknown-route guards pass; Firebase configuration, schema and personnel guide are unchanged.
+- Build/runtime environment, build/service identity and security/network/scaling configuration were preserved. All 26 historical tags remain; temporary `p28-444351f` was removed. Branded domain Ready/DomainRoutable verified. No new credentials, permissions, token files, data migration or business-record release probes.
+- Immediately preceding compatible code rollback is `shiekh-location-company-directory-pr26-ddacd6e`, which retains District ownership guards. Older pre-ownership revisions remain subject to the restriction below; do not assume no Districts have been activated. Traffic rollback does not restore data.
+- [Dispatch 19](dispatches/dispatch-19-hierarchy-registry-ux.md) records tests, valid/rejected review findings, final CodeRabbit review, separate unfinished original-head Codex review, read-only live UX inspection and remaining work. Docs-only follow-ups need no rebuild.
+
+## Historical PR #26 live revision
 
 - Source `ddacd6efd20fcba07d82d40ab29435840b4c68b5`, identical tree to final tested/reviewed `35a5a43267d75b014923345c9b576c0142c96a8e`. Cloud Build `af028d32-8c39-42a9-9ce2-fd6e1c012a05` succeeded; immutable image reference is retained in the revision/restricted release metadata.
 - Revision `shiekh-location-company-directory-pr26-ddacd6e` is Ready and sole 100% desired/observed traffic. Both hosts passed HTML/cache/API-denial guards and matched 82 discovered JS/CSS assets. HTML SHA-256 `d3255357f91d574e44ecc5c145a77f8db2162d541c802f3fc3808493f2473490`; Firebase fingerprint remains `440f6973f893ca7adcfe0dc36a93208fe1164193753e884a5a6716630243fd5a`. Schema unchanged; intentionally revised guide hash `ba1dd7aff2c96321e76e0f42a2d7ecd4071a01aa388129f742ce51643944834a` matches reviewed Git source.

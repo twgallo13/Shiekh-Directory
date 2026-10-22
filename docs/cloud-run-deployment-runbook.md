@@ -13,6 +13,23 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 
 ## Current live revision (verified 2026-10-21 America/Los_Angeles)
 
+- Application source: [PR #24](https://github.com/twgallo13/Shiekh-Directory/pull/24), `31bf9d39db85e5b71281451072b105af3faee02d`, identical tree to tested final review head `8b6eebfa058acbd9915f0f7e1f639cb607a8b983`.
+- Revision: `shiekh-location-company-directory-pr24-31bf9d3`, Ready and sole 100% desired/observed traffic. Cloud Build `a86320ae-fa1c-4fba-8a5f-9608844e43d3` succeeded; image digest `sha256:51bd71bdb304a00eaf9ac1ba1002b134d79cbb2f03c31cb4730aa34636b44014`.
+- Rollback: `shiekh-location-company-directory-pr23-26dab97`, captured as sole 100% immediately before staging. Older rollback commands below are historical, not current instructions.
+- Runtime/build environment, identity and security/network/scaling settings were preserved. All 26 historical tags remain; temporary `p24-31bf9d3` was removed. Branded domain Ready/DomainRoutable verified.
+- Both hosts passed HTML/cache, unauthenticated auth/v1/v2 and unknown-route guards; all 86 discovered JavaScript/CSS assets match. HTML SHA-256: `dd75ddf803eb0230175ea628fa966e80d27c5965681aff9575d7efbc8f31a81a`. Compiled Firebase fingerprint remains `440f6973f893ca7adcfe0dc36a93208fe1164193753e884a5a6716630243fd5a`; API schema/personnel guide unchanged.
+- 393 API/unit tests and four applicable synthetic browser cases passed; the fallback-label review amendment passed all 10 affected tests plus final TypeScript/build checks. Codex reviewed initial source without findings; CodeRabbit's final amended review had no actionable comments. Read-only authenticated live editor inspection confirmed all five role-filtered selectors, unchecked show-all and unchanged assignments. No live write, account change, credential issuance or data migration was performed.
+- Full evidence and limits: [Dispatch 17](dispatches/dispatch-17-leadership-picker-discovery.md). This is a discovery repair, not controlled eligibility or completed offboarding. Documentation-only follow-ups need no rebuild.
+
+```bash
+gcloud run services update-traffic shiekh-location-company-directory \
+  --project gen-lang-client-0801664258 \
+  --region us-west1 \
+  --to-revisions=shiekh-location-company-directory-pr23-26dab97=100
+```
+
+## Historical PR #23 live revision (verified 2026-10-21 America/Los_Angeles)
+
 - Application source: merged PR #23, `26dab971c080963ba0d17afb4a38ec42e598d9d6`. Its tree exactly matches tested review head `84dacaae4171e7aba031ba13b68d9625ded11622`; no redundant test rerun was needed for the squash merge.
 - Serving revision: `shiekh-location-company-directory-pr23-26dab97`, Ready and sole 100% in desired and observed traffic. Cloud Build `f3129321-8945-4c2b-b1be-23714bf55c04` completed `SUCCESS`; image digest `sha256:6336695df6432d84a7c2531c5b92578a399ac7c23b9556e465ab523e3b356454`.
 - Rollback: `shiekh-location-company-directory-hours-0171bd0`, the actual sole 100% serving revision captured immediately before staging. This supersedes older rollback targets below.

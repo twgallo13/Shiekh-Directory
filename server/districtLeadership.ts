@@ -15,6 +15,9 @@ export function validateDistrictLeadershipState(writes: DirectoryWrite[], previo
     if (write.collection !== 'districts' || write.operation !== 'set') continue;
     const before = previous[index];
     const data = write.data!;
+    if (data.status === 'Retired' && data.districtManagerId) {
+      throw new DirectoryValidationError('Vacate District leadership before retiring the District.');
+    }
     if (!Object.hasOwn(data, 'districtManagerId')) continue;
     const id = data.districtManagerId;
     if (id !== null && (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id))) {
@@ -84,4 +87,16 @@ export function validateDistrictLeadershipState(writes: DirectoryWrite[], previo
       if ((location.districtManagerId || null) !== managerId) throw new DirectoryValidationError('District-owned DM cannot be overridden on a store. Refresh or use District leadership settings.');
     }
   }
+}
+
+/** Conservatively bound the single audit document, including all before/after fields and UTF-8. */
+export function assertDistrictHandoverAuditSize(record: Record<string, unknown>): void {
+  const upperBound = (value: unknown): number => {
+    if (typeof value === 'string') return Buffer.byteLength(value, 'utf8') + 32;
+    if (!value || typeof value !== 'object') return 32;
+    if (Array.isArray(value)) return 32 + value.reduce((size, item) => size + 32 + upperBound(item), 0);
+    return 32 + Object.entries(value).reduce((size, [key, item]) => size + Buffer.byteLength(key, 'utf8') + 32 + upperBound(item), 0);
+  };
+  // Leave headroom for the document name, protobuf framing and SDK representation.
+  if (upperBound(record) > 900_000) throw new DirectoryValidationError('District handover audit exceeds the safe single-document size limit. No changes were saved; use a reviewed larger-scope workflow.');
 }

@@ -11,7 +11,7 @@ import { locationInboxConflictDigest, normalizeLocationInboxEmail, normalizePers
 import { isDeepStrictEqual } from "node:util";
 import { applyCorrection } from '../src/lib/correctionRequest';
 import { personLifecycle } from '../src/lib/personLifecycle';
-import { validateDistrictLeadershipState } from './districtLeadership';
+import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -170,7 +170,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           data: snapshot.exists ? snapshot.data() : null,
         }));
         const newStates = committedRecords;
-        transaction.set(this.firestore.collection("audit_logs").doc(id), {
+        const auditRecord = {
           id,
           timestamp: new Date().toISOString(),
           userId: actor.uid,
@@ -186,7 +186,9 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           ...(nextState ? { newState: nextState } : {}),
           previousStates,
           newStates,
-        });
+        };
+        if (writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
+        transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
       }
       return { records: committedRecords };
     });

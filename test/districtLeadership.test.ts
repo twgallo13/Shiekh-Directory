@@ -9,7 +9,7 @@ import type { Account } from '../server/authAuthority';
 import { districtLeadershipWrites, hasDistrictLeadership, inheritDistrictLeader, previewDistrictLeadership } from '../src/lib/districtLeadership';
 import type { DistrictRecord, LocationRecord, Person, RegionRecord } from '../src/types';
 import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
-import { previewLocationImport } from '../src/lib/locationImportPreview';
+import { buildLocationImportPlan, previewLocationImport } from '../src/lib/locationImportPreview';
 import type { LocationImportManifest } from '../server/locationImportConfirmation';
 
 /** Detached synthetic storage commits only after the entire callback succeeds. */
@@ -135,6 +135,46 @@ test('CSV preview blocks District override and signed-import confirmation indepe
     writes: [{ rowNumber: 2, action: 'update', id: 'loc-1', expectedVersion: Number(loc.version), data: { ...loc, districtManagerId: 'p-old' } }] };
   const before = structuredClone([...f.records]);
   await assert.rejects(f.store.confirmLocationImport(manifest, f.actor), /District-owned DM cannot be overridden/);
+  assert.deepEqual([...f.records], before);
+});
+
+for (const managerId of ['p-new', null]) {
+  test(`CSV move derives both District DM copies for ${managerId || 'vacancy'} and commits the reviewed proposal`, async () => {
+    const f = fixture(); const destination = { ...f.district, id: 'd-2', name: 'Destination', districtManagerId: managerId };
+    f.records.set('districts/d-2', destination);
+    const plan = buildLocationImportPlan('SchemaVersion,LocationId,DistrictId,DistrictManagerId\r\nlocations-v1,loc-1,d-2,\r\n', { locations: f.locations, people: f.people, regions: f.regions, districts: [f.district, destination] });
+    assert.equal(plan.preview.rows[0].action, 'update');
+    assert.equal(plan.writes[0].data.districtManagerId, managerId);
+    assert.equal(plan.writes[0].data.districtManagerName, managerId ? 'Next DM' : '');
+    assert(plan.preview.rows[0].changes.some(c => c.field === 'districtManagerId'));
+    assert(plan.preview.rows[0].changes.some(c => c.field === 'districtManagerName'));
+    await f.commit(plan.writes.map(w => ({ collection: 'locations', id: w.id, operation: 'set', data: w.data, expectedVersion: w.expectedVersion })));
+    assert.equal(f.records.get('locations/loc-1')?.districtManagerId ?? null, managerId);
+    assert.equal(f.records.get('locations/loc-1')?.districtManagerName, managerId ? 'Next DM' : '');
+  });
+}
+
+test('Retirement requires District vacancy first, so no retired ownership can strand a Person', async () => {
+  const f = fixture(); await f.commit();
+  for (const l of f.all) f.records.delete(`locations/${l.id}`);
+  const current = f.records.get('districts/d-1')!;
+  await assert.rejects(f.commit([{ collection: 'districts', id: 'd-1', operation: 'set', expectedVersion: Number(current.version), data: { ...current, status: 'Retired' } }]), /Vacate District leadership before retiring/);
+  const p = previewDistrictLeadership(current as unknown as DistrictRecord, null, 'Synthetic vacancy', [], f.people, f.regions);
+  await f.commit(districtLeadershipWrites(p));
+  const vacant = f.records.get('districts/d-1')!;
+  await f.commit([{ collection: 'districts', id: 'd-1', operation: 'set', expectedVersion: Number(vacant.version), data: { ...vacant, status: 'Retired' } }]);
+  await f.commit([{ collection: 'people', id: 'p-new', operation: 'set', expectedVersion: 0, data: { ...f.people[1], status: 'Inactive', activeStatus: false } }]);
+});
+
+test('Large generated before/after audit fails before any transaction record persists', async () => {
+  const f = fixture();
+  // Each Location remains below the existing per-write bound; their combined audit exceeds one document.
+  for (let n = 3; n <= 6; n++) {
+    const l = { ...f.locations[0], id: `large-${n}`, storeNumber: `large-${n}`, notes: 'é'.repeat(90_000) };
+    f.all.push(l); f.records.set(`locations/${l.id}`, { ...l });
+  }
+  const before = structuredClone([...f.records]);
+  await assert.rejects(f.commit(), /audit exceeds the safe single-document size limit/);
   assert.deepEqual([...f.records], before);
 });
 

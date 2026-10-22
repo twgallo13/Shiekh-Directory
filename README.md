@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [Person card and linked positions](docs/dispatches/dispatch-24-person-card-linked-positions.md): active bounded implementation and acceptance limits; explicitly selected concurrent positions, dependency preview and changed-field-only saves. Not published until its release checkpoint is recorded. DM API business contacts are separate issue 36/P6.9.
+- [Person card and linked positions](docs/dispatches/dispatch-24-person-card-linked-positions.md): PR #37 is published; explicitly selected concurrent positions, dependency preview, changed-field-only saves and consistent District-owned DM displays. Live promotion/offboarding acceptance and broader migration remain separate. DM API business contacts are open issue 36/P6.9.
 
 - [Request validation and submission recovery](docs/dispatches/dispatch-21-request-validation-recovery.md): PR #32 is live; exact validation/replay/cancellation contract and acceptance limits.
 - [Immediate operating state](docs/dispatches/dispatch-22-immediate-operating-state.md): PR #33 is published with PR #34; temporary closures, local expiry, shared current-state display/API and recoverable commands. Authenticated live acceptance remains separate.

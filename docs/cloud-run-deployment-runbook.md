@@ -14,7 +14,7 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 ## Current live revision (verified 2026-10-21 America/Los_Angeles)
 
 - Application source: [PR #24](https://github.com/twgallo13/Shiekh-Directory/pull/24), `31bf9d39db85e5b71281451072b105af3faee02d`, identical tree to tested final review head `8b6eebfa058acbd9915f0f7e1f639cb607a8b983`.
-- Revision: `shiekh-location-company-directory-pr24-31bf9d3`, Ready and sole 100% desired/observed traffic. Cloud Build `a86320ae-fa1c-4fba-8a5f-9608844e43d3` succeeded; image digest `sha256:51bd71bdb304a00eaf9ac1ba1002b134d79cbb2f03c31cb4730aa34636b44014`.
+- Revision: `shiekh-location-company-directory-pr24-31bf9d3`, Ready and sole 100% desired/observed traffic. Cloud Build `a86320ae-fa1c-4fba-8a5f-9608844e43d3` succeeded. The immutable image reference is retained in the revision and restricted release metadata.
 - Rollback: `shiekh-location-company-directory-pr23-26dab97`, captured as sole 100% immediately before staging. Older rollback commands below are historical, not current instructions.
 - Runtime/build environment, identity and security/network/scaling settings were preserved. All 26 historical tags remain; temporary `p24-31bf9d3` was removed. Branded domain Ready/DomainRoutable verified.
 - Both hosts passed HTML/cache, unauthenticated auth/v1/v2 and unknown-route guards; all 86 discovered JavaScript/CSS assets match. HTML SHA-256: `dd75ddf803eb0230175ea628fa966e80d27c5965681aff9575d7efbc8f31a81a`. Compiled Firebase fingerprint remains `440f6973f893ca7adcfe0dc36a93208fe1164193753e884a5a6716630243fd5a`; API schema/personnel guide unchanged.

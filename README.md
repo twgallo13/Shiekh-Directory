@@ -5,8 +5,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 ## Documentation
 
 - [Request validation and submission recovery](docs/dispatches/dispatch-21-request-validation-recovery.md): PR #32 is live; exact validation/replay/cancellation contract and acceptance limits.
-- [Immediate operating state](docs/dispatches/dispatch-22-immediate-operating-state.md): current implementation and release gates; address/wayfinding follows this slice. Do not assume publication until its release checkpoint is recorded.
-- [Address corrections and wayfinding](docs/dispatches/dispatch-23-address-wayfinding.md): controlled postal/suite changes, public customer directions, explicit optional clears and matching API/import/export behavior. Check its release checkpoint.
+- [Immediate operating state](docs/dispatches/dispatch-22-immediate-operating-state.md): PR #33 is published with PR #34; temporary closures, local expiry, shared current-state display/API and recoverable commands. Authenticated live acceptance remains separate.
+- [Address corrections and wayfinding](docs/dispatches/dispatch-23-address-wayfinding.md): PR #34 is published; controlled postal/suite changes, public customer directions, explicit optional clears and matching API/import/export behavior. Settings → Directory API includes clickable documentation.
 
 - [Published request review safeguards](docs/dispatches/dispatch-20-request-review-integrity.md): PR #30 is live. Submitted history is protected, review success waits for confirmation, failed/uncertain review requires saved-state reload, and changing request target/category resets its draft. Lower-priority District Manager work-email API planning is P6.9; email is not part of the current API contract.
 
@@ -21,6 +21,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 - [Deployment and rollback runbook](docs/cloud-run-deployment-runbook.md).
 
 A **schema** describes the available fields and their types. An **API endpoint** is an address an app calls to read or change information. `locationInboxEmail` is an optional shared contact address for a Location; it is separate from a Person's work email and a User's sign-in email. The read API returns an address or `null` when there is no usable inbox.
+
+Current application release: `27c3536`, Ready revision `shiekh-location-company-directory-pr34-27c3536` at 100%; [exact source/build/validation evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-33-and-pr-34). Next unfinished priority: full Person-card audit, controlled linked positions and guided promotion responsibilities (plan P2.7–P2.9/P3.7–P3.8). A descriptive title is not a canonical District assignment or account permission. No live staffing/data restoration was performed; DM work-email API access remains lower priority/planned.
 
 ## Development
 

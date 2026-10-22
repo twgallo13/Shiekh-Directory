@@ -1,5 +1,11 @@
 # Dispatch 23 — Address corrections and finding the store
 
+## Publication checkpoint — 2026-10-22 UTC
+
+PR #34 merged as `27c3536f476314fb715b591f55df82bc7d8a7837`, matching final tested/reviewed runtime plus documentation-only head `e54496a` (tree `a8f79a8b7fcebe878dd12f18a54e4954954ae06c`). Published with PR #33 in build `15963d9e-1a4c-4acb-97e9-1a8f7c5f8c31`, revision `shiekh-location-company-directory-pr34-27c3536`, Ready/sole 100% desired/observed. Both hosts match 46 MIME-validated assets and pass public/cache/authentication/docs/Firebase checks. Existing configuration/identities and 26 historical tags preserved; only temporary candidate tag removed. Codex code/security review of final runtime `3270cca` completed without findings; CodeRabbit acknowledged the shared address repair, all findings resolved (final full review skipped). Final affected ten browser cases and type/build passed; earlier applicable full 493-case API/unit results reused, not rerun after every amendment. No live business record, authenticated consumer payload or notification acceptance probe. [Runbook](../cloud-run-deployment-runbook.md) records exact evidence/rollback restrictions.
+
+Settings → Directory API now includes clickable documentation links. Full Person-card linked-position and promotion UX remains the next planned slice (P2.7–P2.9, P3.7–P3.8), not implemented here. No live promotion or staffing change. Earlier implementation/release-gate notes below are historical and superseded by this checkpoint.
+
 ## Scope / release state
 
 Owner-approved continuation after request validation/recovery and the immediate status slice. Work on `codex/address-wayfinding`, initially based on PR #33; not yet merged/deployed. Existing Location IDs, store numbers, canonical staffing and Region/District ownership remain unchanged. No parsing/backfill of legacy addresses, restore, geocoding, external app changes or new API credentials.

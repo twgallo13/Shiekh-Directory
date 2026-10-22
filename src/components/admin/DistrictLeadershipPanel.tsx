@@ -4,9 +4,8 @@ import { hasDistrictLeadership, previewDistrictLeadership, type DistrictLeadersh
 import { leadershipPickerOptions } from '../../lib/leadershipPicker';
 
 /** Explicit preview/confirmation for one atomic retail District DM handover; no automatic cutover. */
-export function DistrictLeadershipPanel() {
+export function DistrictLeadershipPanel({ districtId, onBusyChange }: { districtId: string; onBusyChange: (busy: boolean) => void }) {
   const { currentUser, districts, regions, people, locations, saveDistrictLeadership } = useDirectory();
-  const [districtId, setDistrictId] = useState('');
   const [managerId, setManagerId] = useState('');
   const [reason, setReason] = useState('');
   const [showAll, setShowAll] = useState(false);
@@ -26,7 +25,7 @@ export function DistrictLeadershipPanel() {
   };
   const confirm = async () => {
     if (!preview || !acknowledged || busy) return;
-    setBusy(true); setFeedback('Saving the District and all previewed stores together…');
+    setBusy(true); onBusyChange(true); setFeedback('Saving the District and all previewed stores together…');
     try {
       await saveDistrictLeadership(preview);
       setFeedback(`Saved: ${preview.managerName} is the District DM for all ${preview.locations.length} previewed retail stores. No employment or account status changed.`);
@@ -34,12 +33,11 @@ export function DistrictLeadershipPanel() {
     } catch (error) {
       setPreview(null); setAcknowledged(false);
       setFeedback(`${error instanceof Error ? error.message : 'The save could not be confirmed.'} Do not assume it failed or retry blindly. Reload this page, check the saved District/stores, then build a fresh preview if needed.`);
-    } finally { setBusy(false); }
+    } finally { setBusy(false); onBusyChange(false); }
   };
   return <section aria-label="District leadership handover" className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
-    <h3 className="font-semibold">District Manager — all district stores</h3>
-    <p className="text-xs text-neutral-600">Choose once here to update the District and its linked retail stores together, including retired stores. New retail stores added to a managed District inherit its DM. Corporate/other non-retail locations are excluded. This does not inactivate anyone or change sign-in access.</p>
-    <label className="block text-sm">Leadership District<select disabled={busy} value={districtId} onChange={e => { invalidate(); setDistrictId(e.target.value); setManagerId(''); }} className="mt-1 w-full rounded border p-2"><option value="">Choose District</option>{districts.filter(d => d.status === 'Active').map(d => <option key={d.id} value={d.id}>{d.name} ({d.id})</option>)}</select></label>
+    <h4 className="font-semibold">District Manager · {district?.name || districtId}</h4>
+    <p className="text-sm text-neutral-600">Set the manager once for this District. Its retail stores inherit the assignment, including retired stores. Non-retail locations, employment and sign-in access are unchanged.</p>
     {district && <p className="text-xs">Current authority: {hasDistrictLeadership(district) ? `District-owned — ${district.districtManagerId ? people.find(p => p.id === district.districtManagerId)?.fullName || `Unresolved person [${district.districtManagerId}]` : 'Vacant'}` : 'Legacy per-store assignments; activating District ownership requires confirmation below.'}</p>}
     <label className="block text-sm">New District Manager<select aria-label="New District Manager" disabled={busy} value={managerId} onChange={e => { invalidate(); setManagerId(e.target.value); }} className="mt-1 w-full rounded border p-2"><option value="">Choose intentionally…</option><option value="__vacant__">Vacant — no District Manager</option>{leadershipPickerOptions(people, 'District Manager', showAll).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label>
     <label className="flex gap-2 text-xs"><input type="checkbox" checked={showAll} disabled={busy} onChange={e => { invalidate(); setShowAll(e.target.checked); setManagerId(''); }} />Show all active people (unusual titles or cross-role coverage)</label>

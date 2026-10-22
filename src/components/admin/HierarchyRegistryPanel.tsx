@@ -5,12 +5,16 @@ import { DirectoryCommitError, type DirectoryDependency } from '../../lib/direct
 import { beginDistrictEdit, beginRegionEdit, discardRegistryDraft, reapplyRegistryDraft, registryEditRecord, reviewRegistryConflict, type RegistryEditState } from '../../lib/hierarchyRegistryEditing';
 import type { DistrictRecord, RegionRecord } from '../../types';
 import { DistrictLeadershipPanel } from './DistrictLeadershipPanel';
+import { hasDistrictLeadership, isDistrictLeadershipMember } from '../../lib/districtLeadership';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 type Feedback = { tone: 'pending' | 'success' | 'error'; message: string; dependencies?: DirectoryDependency[]; correction?: string; refresh?: boolean };
 
 export function HierarchyRegistryPanel() {
-  const { currentUser, regions, districts, saveRegion, saveDistrict, refreshHierarchyRegistry } = useDirectory();
+  const { currentUser, regions, districts, people, locations, saveRegion, saveDistrict, refreshHierarchyRegistry } = useDirectory();
+  const [regionFilter, setRegionFilter] = useState('');
+  const [leadershipId, setLeadershipId] = useState<string | null>(null);
+  const [leadershipBusy, setLeadershipBusy] = useState(false);
   const [regionId, setRegionId] = useState('');
   const [regionName, setRegionName] = useState('');
   const [districtId, setDistrictId] = useState('');
@@ -23,6 +27,8 @@ export function HierarchyRegistryPanel() {
   const activeRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort(compareRegistryRecords), [regions]);
   const sortedRegions = useMemo(() => [...regions].sort(compareRegistryRecords), [regions]);
   const sortedDistricts = useMemo(() => [...districts].sort(compareRegistryRecords), [districts]);
+  const visibleDistricts = sortedDistricts.filter(district => !regionFilter || district.regionId === regionFilter);
+  const busy = Boolean(pending) || leadershipBusy;
 
   if (currentUser.role !== 'System Administrator') {
     return <p className="text-sm text-neutral-600">Only System Administrators can manage Regions and Districts.</p>;
@@ -153,40 +159,52 @@ export function HierarchyRegistryPanel() {
   return <section className="space-y-5" aria-label="Region and District registry">
     <div className="flex items-start gap-3 border-b border-neutral-200 pb-4">
       <Building2 className="h-5 w-5 text-red-700" aria-hidden="true" />
-      <div><h2 className="text-base font-semibold text-neutral-900">Region & District Registry</h2><p className="mt-1 text-xs text-neutral-600">IDs are permanent references used by this directory and other applications. Names and a District&apos;s parent Region may be updated; assigned Locations are never moved automatically.</p></div>
+      <div><h2 className="text-lg font-semibold text-neutral-900">Regions & Districts</h2><p className="mt-1 text-sm text-neutral-600">Region → District → Store. Manage the District Manager on the District; stores inherit that assignment.</p><p className="mt-2 text-xs text-neutral-500">Permanent IDs keep this directory and connected applications linked. Changing a District&apos;s parent does not move its stores.</p></div>
     </div>
     {feedback && <FeedbackMessage feedback={feedback} onRefresh={() => void refreshConflict()} />}
-    <DistrictLeadershipPanel />
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(240px,1fr)_minmax(0,2fr)]">
       <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-neutral-900">Regions</h3>
+        <h3 className="text-base font-semibold text-neutral-900">Regions <span className="text-sm font-normal text-neutral-500">({regions.length})</span></h3>
+        <details className="rounded-lg bg-neutral-50 p-3"><summary className="cursor-pointer text-sm font-semibold text-neutral-700">Add Region</summary><fieldset disabled={busy || Boolean(leadershipId)} className="mt-3 space-y-3">
         <label className="block text-xs font-medium text-neutral-700">Region ID<input value={regionId} disabled={Boolean(pending)} onChange={event => setRegionId(event.target.value)} placeholder="e.g. region-west" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 font-mono text-sm" /></label>
         <label className="block text-xs font-medium text-neutral-700">Region Name<input value={regionName} disabled={Boolean(pending)} onChange={event => setRegionName(event.target.value)} placeholder="Enter approved Region name" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" /></label>
         <button type="button" disabled={Boolean(pending)} onClick={() => void saveNewRegion()} className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"><Plus className="h-3.5 w-3.5" />Add Region</button>
+        </fieldset></details>
         <div className="divide-y divide-neutral-100 border-t border-neutral-200 pt-2">{sortedRegions.length === 0 ? <EmptyRegistry /> : sortedRegions.map(region => {
           const isEditing = editing?.kind === 'region' && editing.id === region.id;
           return <div key={region.id} className="space-y-2 py-3 text-xs">
             {isEditing ? <RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /> : <>
               <RegistryIdentity id={region.id} name={region.name} status={region.status} />
-              <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`region-${region.id}`, element); else editButtonRefs.current.delete(`region-${region.id}`); }} busy={Boolean(pending)} status={region.status} onEdit={() => setEditing(beginRegionEdit(region))} onStatus={status => void setRegionStatus(region, status)} />
+              <p className="text-neutral-500">{districts.filter(district => district.regionId === region.id).length} districts</p>
+              <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`region-${region.id}`, element); else editButtonRefs.current.delete(`region-${region.id}`); }} busy={busy || Boolean(leadershipId) || Boolean(editing)} status={region.status} onEdit={() => setEditing(beginRegionEdit(region))} onStatus={status => void setRegionStatus(region, status)} />
             </>}
           </div>;
         })}{editing?.kind === 'region' && editing.review?.latest === null && !regions.some(region => region.id === editing.id) && <div className="py-3 text-xs"><RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /></div>}</div>
       </div>
       <div className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-neutral-900">Districts</h3>
+        <h3 className="text-base font-semibold text-neutral-900">Districts <span className="text-sm font-normal text-neutral-500">({visibleDistricts.length})</span></h3>
+        <label className="block text-sm font-medium text-neutral-700">Filter by Region<select disabled={busy || Boolean(editing) || Boolean(leadershipId)} value={regionFilter} onChange={event => setRegionFilter(event.target.value)} className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2.5"><option value="">All Regions</option>{sortedRegions.map(region => <option key={region.id} value={region.id}>{region.name}{region.status === 'Retired' ? ' · Retired' : ''}</option>)}</select></label>
+        <details className="rounded-lg bg-neutral-50 p-3"><summary className="cursor-pointer text-sm font-semibold text-neutral-700">Add District</summary><fieldset disabled={busy || Boolean(leadershipId)} className="mt-3 space-y-3">
         <label className="block text-xs font-medium text-neutral-700">District ID<input value={districtId} disabled={Boolean(pending)} onChange={event => setDistrictId(event.target.value)} placeholder="e.g. 01" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 font-mono text-sm" /></label>
         <label className="block text-xs font-medium text-neutral-700">District Name<input value={districtName} disabled={Boolean(pending)} onChange={event => setDistrictName(event.target.value)} placeholder="Enter approved District name" className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" /></label>
         <label className="block text-xs font-medium text-neutral-700">Parent Region<select value={districtRegionId} disabled={Boolean(pending)} onChange={event => setDistrictRegionId(event.target.value)} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm"><option value="">Select Region</option>{activeRegions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id})</option>)}</select></label>
         <button type="button" disabled={Boolean(pending)} onClick={() => void saveNewDistrict()} className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"><Plus className="h-3.5 w-3.5" />Add District</button>
-        <div className="divide-y divide-neutral-100 border-t border-neutral-200 pt-2">{sortedDistricts.length === 0 ? <EmptyRegistry /> : sortedDistricts.map(district => {
+        </fieldset></details>
+        <div className="divide-y divide-neutral-100 border-t border-neutral-200 pt-2">{visibleDistricts.length === 0 ? <p className="py-4 text-sm text-neutral-500">No Districts in this view. Choose another Region or add a District.</p> : visibleDistricts.map(district => {
           const parent = regions.find(region => region.id === district.regionId);
           const isEditing = editing?.kind === 'district' && editing.id === district.id;
-          return <div key={district.id} className="space-y-2 py-3 text-xs">
+          const owned = hasDistrictLeadership(district);
+          const manager = people.find(person => person.id === district.districtManagerId);
+          return <div key={district.id} role="group" aria-label={`District ${district.name}`} className="space-y-3 py-5 text-sm">
             {isEditing ? <RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /> : <>
               <RegistryIdentity id={district.id} name={district.name} status={district.status} />
               <dl className="grid grid-cols-[auto_1fr] gap-x-2 text-neutral-600"><dt>Region ID</dt><dd className="font-mono text-neutral-900">{district.regionId}</dd><dt>Region Name</dt><dd>{parent ? `${parent.name}${parent.status === 'Retired' ? ' - Retired/unavailable' : ''}` : 'Missing registry record - Unavailable'}</dd></dl>
-              <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`district-${district.id}`, element); else editButtonRefs.current.delete(`district-${district.id}`); }} busy={Boolean(pending)} status={district.status} onEdit={() => setEditing(beginDistrictEdit(district))} onStatus={status => void setDistrictStatus(district, status)} />
+              <div className={`rounded-lg px-3 py-2 ${owned ? 'bg-neutral-50' : 'bg-amber-50'}`}><p className="text-xs font-medium text-neutral-500">District Manager</p><p className="mt-1 font-medium text-neutral-900">{owned ? (district.districtManagerId ? manager?.fullName || `Unresolved person [${district.districtManagerId}]` : 'Vacant') : 'District assignment needs setup'}</p><p className="mt-1 text-xs text-neutral-600">{locations.filter(location => isDistrictLeadershipMember(location, district.id)).length} linked retail stores · {owned ? 'Inherited by stores' : 'Existing store assignments preserved until reviewed'}</p></div>
+              <div className="flex flex-wrap items-center gap-4">
+                <button type="button" aria-expanded={leadershipId === district.id} disabled={busy || Boolean(editing) || Boolean(leadershipId && leadershipId !== district.id) || district.status !== 'Active' || parent?.status !== 'Active'} onClick={() => setLeadershipId(leadershipId === district.id ? null : district.id)} className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50">{leadershipId === district.id ? 'Close manager settings' : owned ? 'Change District Manager' : 'Set up District Manager'}</button>
+                <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`district-${district.id}`, element); else editButtonRefs.current.delete(`district-${district.id}`); }} busy={busy || Boolean(leadershipId) || Boolean(editing)} status={district.status} onEdit={() => setEditing(beginDistrictEdit(district))} onStatus={status => void setDistrictStatus(district, status)} />
+              </div>
+              {leadershipId === district.id && <DistrictLeadershipPanel key={district.id} districtId={district.id} onBusyChange={setLeadershipBusy} />}
             </>}
           </div>;
         })}{editing?.kind === 'district' && editing.review?.latest === null && !districts.some(district => district.id === editing.id) && <div className="py-3 text-xs"><RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /></div>}</div>
@@ -205,7 +223,7 @@ function FeedbackMessage({ feedback, onRefresh }: { feedback: Feedback; onRefres
 }
 
 function RegistryIdentity({ id, name, status }: { id: string; name: string; status: 'Active' | 'Retired' }) {
-  return <div className="flex flex-wrap items-start justify-between gap-2"><dl className="grid grid-cols-[auto_1fr] gap-x-2"><dt className="text-neutral-500">ID</dt><dd className="font-mono font-semibold text-neutral-900">{id}</dd><dt className="text-neutral-500">Name</dt><dd className="font-semibold text-neutral-900">{name}</dd><dt className="text-neutral-500">Status</dt><dd>{status}</dd></dl></div>;
+  return <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-base font-semibold text-neutral-900">{name}</p><p className="mt-1 text-xs text-neutral-500">ID <span className="font-mono">{id}</span></p></div><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${status === 'Active' ? 'bg-emerald-50 text-emerald-800' : 'bg-neutral-100 text-neutral-600'}`}>{status}</span></div>;
 }
 
 function RegistryActions({ editButtonRef, busy, status, onEdit, onStatus }: { editButtonRef: React.Ref<HTMLButtonElement>; busy: boolean; status: 'Active' | 'Retired'; onEdit: () => void; onStatus: (status: 'Active' | 'Retired') => void }) {

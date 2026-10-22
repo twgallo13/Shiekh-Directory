@@ -1382,7 +1382,7 @@ test('Request submission safe cancellation restores the draft before a replaceme
   await page.route('**/api/directory/submissions/cancel', route => { sealed = route.request().postDataJSON().write; return route.fulfill({ json: { records: [], cancelled: true } }); });
   await page.goto(`${origin}/requests/new`); await restore(page, true);
   const dialog = page.getByRole('dialog');
-  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102'); await dialog.locator('textarea').fill('Keep this draft');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102 ext. 23'); await dialog.locator('textarea').fill('Keep this draft');
   await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
   await expect(dialog.getByRole('alert')).toContainText('Recover this exact submission');
   await dialog.getByRole('button', { name: 'Check saved state / cancel if not saved' }).click();
@@ -1390,9 +1390,10 @@ test('Request submission safe cancellation restores the draft before a replaceme
   expect(sealed).toEqual(f.commits[0].writes[0]);
   await expect(dialog.getByLabel('Target Location')).toBeEnabled();
   await expect(dialog.locator('textarea')).toHaveValue('Keep this draft');
-  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550103');
+  await expect(dialog.getByPlaceholder('(555) 000-0000')).toHaveValue('(213) 555-0102 ext. 23');
   await dialog.getByRole('button', { name: 'Submit for Approval' }).click(); await expect(dialog).toHaveCount(0);
   expect(f.commits[1].writes[0].id).not.toBe(f.commits[0].writes[0].id);
+  expect(f.commits[1].writes[0].data.requestedChanges).toEqual(f.commits[0].writes[0].data.requestedChanges);
 });
 
 test('Request submission validates normalized phone no-ops before sending', async ({ page }) => {

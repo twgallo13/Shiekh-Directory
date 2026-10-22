@@ -16,6 +16,7 @@ import { personLifecycle } from '../../lib/personLifecycle';
 import { validateRequestProposal } from '../../lib/requestValidation';
 import { loadSubmission, submissionStorageKey } from '../../lib/requestSubmission';
 import { DirectoryCommitError } from '../../lib/directoryClient';
+import { formatUsPhone } from '../../lib/contactNormalization';
 
 interface NewRequestModalProps {
   location: LocationRecord | null;
@@ -78,7 +79,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       if (!cancelled) { setPendingSubmission(null); onClose(); return; }
       const p = pendingSubmission;
       setSelectedLocId(p.targetId); setChangeType(p.changeType); setReason(p.reason || '');
-      setNewPhone(p.requestedChanges.phone || '');
+      setNewPhone(formatUsPhone(p.requestedChanges.phone || '', p.requestedChanges.phoneExtension));
       setNewManager(people.find(person => person.id === p.requestedChanges.storeManagerId) || null);
       setNewStatus(p.requestedChanges.operationalStatus || 'Open — Normal Operations');
       setNoticeText(p.requestedChanges.activeNotice?.shortDescription || '');

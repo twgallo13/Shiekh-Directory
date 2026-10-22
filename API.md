@@ -1,6 +1,6 @@
 # Store Directory API v1
 
-Release checkpoint (2026-10-22 UTC): status/address additions are published at source `27c3536` / revision `shiekh-location-company-directory-pr34-27c3536`. See the [release evidence and limits](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-33-and-pr-34). Public denial/docs checks passed; successful authenticated production payload/data completeness is not claimed. Settings → Directory API links this reference, the consumer guide/schema and deployed staffing references. Future contract changes must update affected documentation in their implementation PR.
+Release checkpoint (2026-10-22 UTC): the Person-card upgrade is published and includes the earlier status/address additions at source `6614ac0` / revision `shiekh-location-company-directory-pr37-6614ac0`. See the [release evidence and limits](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-37). Public denial/docs checks passed; successful authenticated production payload/data completeness is not claimed. Settings → Directory API links this reference, the consumer guide/schema and deployed staffing references. Future contract changes must update affected documentation in their implementation PR.
 
 The Directory API is a read-only, server-authenticated view of active location records in the named Firestore database. Reads never mutate location or personnel data; successful authentication may update redacted client/token last-used metadata at most once per 15 minutes.
 

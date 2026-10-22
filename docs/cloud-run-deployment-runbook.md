@@ -21,6 +21,8 @@ The no-traffic candidate passed before etag-guarded promotion. Runtime/build/sec
 
 **Rollback gate:** prefer forward repair. Earlier writers do not enforce controlled position eligibility and may overwrite title aliases or create inconsistent staffing. Restrict affected People/staffing writes and reconcile in-flight saves before an older-code rollback. Traffic rollback does not restore People, assignments or accounts. The status/address/request safeguards below also remain relevant.
 
+<a id="current-live-revision--pr-33-and-pr-34"></a>
+
 ## Previous live revision — PR #33 and PR #34
 
 Historical checkpoint, superseded by PR #37 above; its next-task statements describe the prior release, not current priority.

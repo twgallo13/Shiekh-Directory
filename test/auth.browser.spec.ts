@@ -230,8 +230,8 @@ for (const fail of [false, true]) {
     if (fail) await page.route('**/api/directory/commit', route => { f.commits.push(route.request().postDataJSON()); return route.fulfill({ status: 409, json: { error: { message: 'District membership changed. Refresh the preview.' } } }); });
     await page.goto(`${origin}/admin`); await restore(page, true);
     await page.getByRole('button', { name: 'Region & Districts', exact: true }).click();
+    await page.getByRole('group', { name: 'District Renamed North', exact: true }).getByRole('button', { name: 'Set up District Manager' }).click();
     const panel = page.getByRole('region', { name: 'District leadership handover' });
-    await panel.getByLabel('Leadership District').selectOption('01');
     await panel.getByLabel('New District Manager', { exact: true }).selectOption('person-next');
     await panel.getByLabel('Reason for District handover').fill('Synthetic coverage handover');
     await panel.getByRole('button', { name: 'Preview district-wide change' }).click();
@@ -258,6 +258,84 @@ for (const fail of [false, true]) {
     }
   });
 }
+
+test('Registry refresh cannot overlap a pending District manager save', async ({ page }) => {
+  const f = await prepareHierarchyBrowser(page);
+  f.seed.locations = f.seed.locations.filter((location: any) => location.id !== 'loc-unclassified');
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); f.commits.push(body);
+    if (f.commits.length === 1) return route.fulfill({ status: 409, json: { error: { code: 'directory_conflict', message: 'Registry changed. Refresh saved values.' } } });
+    await gate;
+    return route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Region & Districts', exact: true }).click();
+  const district = page.getByRole('group', { name: 'District Renamed North', exact: true });
+  await district.getByRole('button', { name: 'Retire', exact: true }).click();
+  const refresh = page.getByRole('button', { name: 'Refresh saved values and review' });
+  await expect(refresh).toBeEnabled();
+  await district.getByRole('button', { name: 'Set up District Manager' }).click();
+  const panel = district.getByRole('region', { name: 'District leadership handover' });
+  await panel.getByLabel('New District Manager', { exact: true }).selectOption('person-dm');
+  await panel.getByLabel('Reason for District handover').fill('Synthetic reviewed District setup');
+  await panel.getByRole('button', { name: 'Preview district-wide change' }).click();
+  await panel.getByRole('checkbox', { name: /I reviewed every affected store/ }).check();
+  await panel.getByRole('button', { name: 'Confirm District DM assignment' }).click();
+  try {
+    await expect.poll(() => f.commits.length).toBe(2);
+    await expect(refresh).toBeDisabled();
+    await expect(district.getByRole('button', { name: 'Close manager settings' })).toBeDisabled();
+  } finally { release(); }
+  await expect(panel.getByRole('status')).toContainText('Saved: District Manager');
+  await expect(refresh).toBeEnabled();
+  await expect(district.getByText('Inherited by stores', { exact: false })).toBeVisible();
+});
+
+test('Registry is browse-first, filters Districts by Region and opens leadership in its District', async ({ page }) => {
+  const f = await prepareHierarchyBrowser(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${origin}/admin`); await restore(page, true);
+  await page.getByRole('button', { name: 'Region & Districts', exact: true }).click();
+  const registry = page.getByRole('region', { name: 'Region and District registry', exact: true });
+  await expect(registry.getByLabel('Region ID')).not.toBeVisible();
+  await expect(registry.getByRole('region', { name: 'District leadership handover' })).toHaveCount(0);
+  await registry.getByLabel('Filter by Region').selectOption('reg-west');
+  const district = registry.getByRole('group', { name: 'District Renamed North', exact: true });
+  await expect(district).toBeVisible();
+  await expect(registry.getByRole('group', { name: 'District East District', exact: true })).toHaveCount(0);
+  await district.getByRole('button', { name: 'Set up District Manager' }).click();
+  await expect(district.getByRole('region', { name: 'District leadership handover' })).toBeVisible();
+  await expect(registry.getByLabel('Filter by Region')).toBeDisabled();
+  await district.getByRole('button', { name: 'Close manager settings' }).click();
+  await expect(registry.getByLabel('Filter by Region')).toBeEnabled();
+  await registry.screenshot({ path: 'test-results/registry-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await registry.screenshot({ path: 'test-results/registry-desktop.png' });
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Store hierarchy filters Districts and inherits their DM without a store-level override', async ({ page }) => {
+  const f = await prepareHierarchyBrowser(page);
+  delete f.seed.locations[0].districtManagerId;
+  f.seed.locations[0].districtManagerName = 'Synthetic legacy DM';
+  Object.assign(f.seed.districts[1], { districtManagerId: null });
+  await page.goto(`${origin}/locations/loc-retail/edit`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  const dm = dialog.getByRole('combobox', { name: 'District Manager', exact: true });
+  await expect(dm).toBeDisabled();
+  await expect(dm.locator('option:checked')).toHaveText('Synthetic legacy DM (Unresolved legacy assignment — needs review)');
+  await expect(dialog.getByText(/District Manager setup is required/)).toBeVisible();
+  await dialog.getByLabel('Region Name', { exact: true }).selectOption('reg-east');
+  const districts = dialog.getByLabel('District Name', { exact: true });
+  await expect(districts.locator('option[value="01"]')).toHaveCount(0);
+  await districts.selectOption('02');
+  await expect(dm).toBeDisabled(); await expect(dm).toHaveValue('');
+  await expect(dm.locator('option:checked')).toHaveText('-- Unassigned / Vacant --');
+  await expect(dialog.getByText(/Inherited from District settings/)).toBeVisible();
+  expect(f.commits).toHaveLength(0);
+});
 
 test('Leadership pickers default to their listed positions and preserve unmatched current assignments', async ({ page }) => {
   const f = await prepareHierarchyBrowser(page);

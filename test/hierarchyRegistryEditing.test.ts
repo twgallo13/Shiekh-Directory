@@ -61,7 +61,11 @@ describe('hierarchy registry edit sessions', () => {
       requestInit = init;
       return Response.json({
         regions: [{ id: 'west', name: 'West', status: 'Active', version: 3 }],
-        districts: [{ id: '01', name: 'District One', regionId: 'west', status: 'Active', version: 4 }],
+        districts: [
+          { id: '01', name: 'District One', regionId: 'west', status: 'Active', version: 4, districtManagerId: 'dm-1' },
+          { id: '02', name: 'Vacant District', regionId: 'west', status: 'Active', districtManagerId: null },
+          { id: '03', name: 'Legacy District', regionId: 'west', status: 'Active' },
+        ],
       });
     };
 
@@ -71,5 +75,8 @@ describe('hierarchy registry edit sessions', () => {
     assert.equal(requestInit?.method, undefined);
     assert.deepEqual(requestInit?.headers, { Authorization: 'Bearer test-token' });
     assert.equal(registry.districts[0].id, '01');
+    assert.equal(registry.districts[0].districtManagerId, 'dm-1');
+    assert.equal(registry.districts[1].districtManagerId, null);
+    assert.equal(Object.hasOwn(registry.districts[2], 'districtManagerId'), false);
   });
 });

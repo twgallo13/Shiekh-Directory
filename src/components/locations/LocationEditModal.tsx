@@ -11,7 +11,7 @@ import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts'
 import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
 import { hasDistrictLeadership, inheritDistrictLeader, isDistrictLeadershipMember } from '../../lib/districtLeadership';
-import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, isRetailHierarchyType, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
 import { 
   X, 
@@ -444,7 +444,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   // Currently assigned manager IDs are canonical; no legacy name-based fallback matching.
   const leadershipDistrict = districts.find(d => isDistrictLeadershipMember(formData, d.id));
   const districtOwnsDm = hasDistrictLeadership(leadershipDistrict);
+  const retailDistrictDm = isRetailHierarchyType(formData.type);
   const currentDmId = districtOwnsDm ? leadershipDistrict?.districtManagerId || '' : formData.districtManagerId || '';
+  const unresolvedLegacyDmName = !districtOwnsDm && !currentDmId ? formData.districtManagerName?.trim() : '';
   const currentSmId = formData.storeManagerId || '';
   const currentRmId = formData.regionalManagerId || '';
   const currentStoreManager = people.find(person => person.id === currentSmId);
@@ -910,7 +912,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="District Manager"
-                      disabled={districtOwnsDm}
+                      disabled={retailDistrictDm || districtOwnsDm}
                       value={currentDmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -931,10 +933,11 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       }}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
-                      <option value="">-- Unassigned / Vacant --</option>
+                      <option value="">{unresolvedLegacyDmName ? `${unresolvedLegacyDmName} (Unresolved legacy assignment — needs review)` : '-- Unassigned / Vacant --'}</option>
                       {leadershipOptions('District Manager', currentDmId, formData.districtManagerName)}
                     </select>
                     {districtOwnsDm && <p className="mt-1 text-xs text-neutral-600">Inherited from District settings. Change the District DM there to update every linked retail store.</p>}
+                    {retailDistrictDm && !districtOwnsDm && <p className="mt-1 text-xs text-amber-800">{leadershipDistrict ? 'District Manager setup is required in Admin → Region & Districts. The existing store assignment is preserved until that District is reviewed.' : 'Select a Region and District. The DM is assigned in District settings, not on individual stores.'}</p>}
                   </div>
 
                   <div>
@@ -942,6 +945,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       Region Name
                     </label>
                     <select
+                      aria-label="Region Name"
                       value={formData.regionId || ''}
                       onChange={(e) => setFormData(applyLocationRegionSelection(formData, e.target.value))}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
@@ -960,6 +964,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       District Name
                     </label>
                     <select
+                      aria-label="District Name"
                       value={formData.districtId || ''}
                       disabled={!formData.regionId}
                       onChange={(e) => {

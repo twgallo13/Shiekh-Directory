@@ -4,6 +4,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
+- [Hierarchy UX refinement](docs/dispatches/dispatch-19-hierarchy-registry-ux.md): Region means Territory; District-owned DM settings, browse-first registry and read-only retail store DM. See the record for review/release state and remaining legacy cutover boundary.
+
 - [Current implementation plan and AI handoff](docs/plans/directory-consistency-plan.md): current deployed source, completed slices, remaining tasks and decision boundaries. [Dispatch 18](docs/dispatches/dispatch-18-district-dm-handover.md) records the opt-in District-wide DM release. Current data is owner-reported test-affected; leave the testing DM unchanged and do not infer a restore source or run historical destructive loaders. Next work is P1.2/P1.3/P1.4 request validation, immutability and save feedback; broader hierarchy/offboarding/status work is not complete.
 - [API reference](API.md): endpoints, authentication, filters, pagination, and responses.
 - [Personnel/staffing v2 guide](docs/personnel-staffing-api.md) and [shareable OpenAPI](docs/personnel-staffing-openapi.json): scoped, contact-free full snapshots of persisted assignments. First-release review status: [dispatch 14](docs/dispatches/dispatch-14-personnel-staffing-api.md).

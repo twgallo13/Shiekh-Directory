@@ -6,6 +6,8 @@ The Directory will provide consistent organizational assignments and store infor
 
 ## Scope and working agreement
 
+Owner clarification (October 22): **Territory means the existing Region**, not another hierarchy level. Use Region → District → Store. District Manager assignment belongs inside the existing District settings, not a separate top-level handover form. The store editor selects Region, filters Districts to that Region, and shows the inherited DM without a retail store-level override. Registry UX must be browse-first, readable on mobile, and expose creation/edit/leadership forms only on demand. [Dispatch 19](../dispatches/dispatch-19-hierarchy-registry-ux.md) records this refinement. Preserve legacy assignments with explicit setup warnings until reviewed District-by-District; no inferred manager, automatic data migration or extra hierarchy level is approved by this clarification.
+
 Latest owner direction (October 21): continue autonomously with District-wide DM administration, leave the reported departed DM unchanged for testing, and regard current data as test-affected. A later restore is intended but no restore source, destructive reset or replacement selection has been approved. [Dispatch 18](../dispatches/dispatch-18-district-dm-handover.md) records the opt-in District ownership slice, compatible store copies, validation and restore/rollback boundaries. This focused user priority does not mark the earlier request-save prerequisites or all Phase 2/3 work complete; broader hierarchy cutover remains gated on their evidence.
 
 - Repository: `twgallo13/Shiekh-Directory`. Source audit baseline: `baa2b937f4d79ddb8be24434b5176e6f2e98a690` on `main`. Recheck the baseline before implementation and account for intervening work.

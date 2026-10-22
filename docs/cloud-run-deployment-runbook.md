@@ -11,7 +11,16 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision (verified 2026-10-21 America/Los_Angeles)
+## Current live revision — PR #26
+
+- Source `ddacd6efd20fcba07d82d40ab29435840b4c68b5`, identical tree to final tested/reviewed `35a5a43267d75b014923345c9b576c0142c96a8e`. Cloud Build `af028d32-8c39-42a9-9ce2-fd6e1c012a05` succeeded; immutable image reference is retained in the revision/restricted release metadata.
+- Revision `shiekh-location-company-directory-pr26-ddacd6e` is Ready and sole 100% desired/observed traffic. Both hosts passed HTML/cache/API-denial guards and matched 82 discovered JS/CSS assets. HTML SHA-256 `d3255357f91d574e44ecc5c145a77f8db2162d541c802f3fc3808493f2473490`; Firebase fingerprint remains `440f6973f893ca7adcfe0dc36a93208fe1164193753e884a5a6716630243fd5a`. Schema unchanged; intentionally revised guide hash `ba1dd7aff2c96321e76e0f42a2d7ecd4071a01aa388129f742ce51643944834a` matches reviewed Git source.
+- Runtime/build environment, service identity and security/network/scaling settings unchanged. All 26 historical tags preserved; temporary `p26-ddacd6e` removed. Branded domain Ready/DomainRoutable verified. No new credentials or permissions were created.
+- Initial 414-test full suite, subsequent affected tests/corrections, two applicable synthetic browser cases, final TypeScript/build and final CodeRabbit no-actionable review are recorded separately in [Dispatch 18](dispatches/dispatch-18-district-dm-handover.md). All review threads resolved. Authenticated live admin controls inspected read-only; no District activation, employment/account change, consumer credential, migration or restore was performed during release. Legacy District ownership is unchanged until an explicit admin confirmation.
+- **Rollback gate:** prior serving code is `shiekh-location-company-directory-pr24-31bf9d3`. It is safe only if an operator verifies no District has opted into ownership, or writes are restricted through coordinated recovery. After any activation, prefer a compatible rebuild retaining the new ownership guards; pre-feature writers can otherwise create competing store assignments. Do not execute historical traffic commands below as current instructions. Traffic rollback never restores District/Location data. See Dispatch 18 for restore and compensating-transaction safeguards.
+- Documentation-only follow-ups do not change the deployed source and need no rebuild. Broader controlled positions, RM ownership, acting exceptions, offboarding/access and request/status repairs remain unfinished.
+
+## Historical PR #24 live revision (verified 2026-10-21 America/Los_Angeles)
 
 - Application source: [PR #24](https://github.com/twgallo13/Shiekh-Directory/pull/24), `31bf9d39db85e5b71281451072b105af3faee02d`, identical tree to tested final review head `8b6eebfa058acbd9915f0f7e1f639cb607a8b983`.
 - Revision: `shiekh-location-company-directory-pr24-31bf9d3`, Ready and sole 100% desired/observed traffic. Cloud Build `a86320ae-fa1c-4fba-8a5f-9608844e43d3` succeeded. The immutable image reference is retained in the revision and restricted release metadata.

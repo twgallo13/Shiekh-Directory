@@ -10,6 +10,7 @@ import { normalizeLocationWriteValues } from "../src/lib/locationWriteContract";
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, normalizePersonEmail, type LocationInboxAcknowledgment, type LocationInboxConflictMember } from "../src/lib/locationInboxEmail";
 import { isDeepStrictEqual } from "node:util";
 import { applyCorrection } from '../src/lib/correctionRequest';
+import { personLifecycle } from '../src/lib/personLifecycle';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -62,6 +63,8 @@ type RelationshipPerson = {
   fullName: string;
   status?: string;
   activeStatus?: boolean;
+  phone?: string;
+  workPhone?: string;
   primaryLocationId?: unknown;
   supportedLocationIds?: unknown;
 };
@@ -440,6 +443,35 @@ export function validateMetadataWrites(
     }
 
     if (write.collection === 'requests') {
+      if (!current && data.changeType === 'Store Manager Change') {
+        if (data.status !== 'Pending' || data.targetType !== 'Location') {
+          throw new DirectoryValidationError('Leadership corrections must be submitted as pending Location requests.');
+        }
+        const target = locations.find(location => location.id === data.targetId);
+        if (!target) throw new DirectoryConflict('The selected Location no longer exists. Reload before submitting.');
+        const changes = isPlainRecord(data.requestedChanges) ? data.requestedChanges : {};
+        const fields = ['storeManagerId', 'storeManagerName', 'storeManagerPhone'];
+        if (Object.keys(changes).length !== fields.length || fields.some(field => !Object.hasOwn(changes, field))) {
+          throw new DirectoryValidationError('Choose an active Store Manager; leadership corrections may change only the manager identity, name and phone.');
+        }
+        const manager = people.find(person => person.id === changes.storeManagerId);
+        if (!manager || personLifecycle(manager) !== 'active') {
+          throw new DirectoryValidationError('Choose an active Store Manager before submitting this request.');
+        }
+        if (changes.storeManagerId === target.storeManagerId) {
+          throw new DirectoryValidationError('Choose a different Store Manager. This request would not change the assignment.');
+        }
+        if (changes.storeManagerName !== manager.fullName || changes.storeManagerPhone !== (manager.workPhone || manager.phone || '')) {
+          throw new DirectoryValidationError('The selected manager details changed. Reload and select the manager again.');
+        }
+        const baseline = isPlainRecord(data.currentSnapshot) ? data.currentSnapshot : {};
+        if (fields.some(field => !Object.hasOwn(baseline, field))) {
+          throw new DirectoryValidationError('The manager submission baseline is missing. Reload and submit a replacement request.');
+        }
+        if (fields.some(field => !isDeepStrictEqual(baseline[field] ?? null, target[field] ?? null))) {
+          throw new DirectoryConflict('The store leadership changed while drafting. Reload and submit a replacement request.');
+        }
+      }
       if (data.status === 'Approved' || data.status === 'Rejected') {
         if (!['System Administrator', 'Directory Data Steward'].includes(actor.role)) {
           throw new DirectoryWriteDenied('Only a steward or administrator can review correction requests.');

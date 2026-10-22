@@ -36,6 +36,62 @@ async function prepareHoursCorrection(page: Page, options: { role?: string; requ
   });
   return { commits, locations, requests, mailEvents: () => mailEvents };
 }
+
+async function prepareLeadershipRequest(page: Page, fail = false) {
+  await prepare(page, 'Viewer');
+  const seed = seedDirectory(2);
+  const people = [
+    { id: 'person-new', fullName: 'Synthetic New Manager', jobTitle: 'Store Manager', status: 'Active', activeStatus: true, workPhone: '+12135550102' },
+    { id: 'person-inactive', fullName: 'Synthetic Inactive Manager', jobTitle: 'Store Manager', status: 'Inactive', activeStatus: false },
+  ];
+  const commits: any[] = [];
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: { ...seed, people } }));
+  await page.route('**/api/directory/commit', route => {
+    const body = route.request().postDataJSON(); commits.push(body);
+    if (fail) return route.fulfill({ status: 409, json: { error: { message: 'The selected manager changed. Review your draft.' } } });
+    return route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
+  await page.getByLabel('Change Category').selectOption('Store Manager Change');
+  return { commits };
+}
+
+test('Leadership request displays and submits the chosen manager using the keyboard', async ({ page }) => {
+  const f = await prepareLeadershipRequest(page);
+  const selector = page.getByRole('button', { name: 'New Store Manager' });
+  await selector.focus(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: /Synthetic Inactive Manager/ })).toHaveCount(0);
+  await page.getByRole('button', { name: /Synthetic New Manager/ }).click();
+  await expect(page.getByRole('dialog').getByText('Synthetic New Manager', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes[0].data.requestedChanges.storeManagerId).toBe('person-new');
+  expect(f.commits[0].writes[0].data.currentSnapshot).toMatchObject({ storeManagerId: null, storeManagerName: null, storeManagerPhone: null });
+});
+
+test('Leadership request cannot submit without a manager and resets selection when changing stores', async ({ page }) => {
+  const f = await prepareLeadershipRequest(page);
+  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Choose an active Store Manager');
+  expect(f.commits).toHaveLength(0);
+  await page.getByRole('button', { name: 'New Store Manager' }).click();
+  await page.getByRole('button', { name: /Synthetic New Manager/ }).click();
+  await page.getByLabel('Target Location').selectOption('loc-2');
+  await expect(page.getByRole('button', { name: 'New Store Manager' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Clear New Store Manager' })).toHaveCount(0);
+});
+
+test('Leadership request retains its selected manager after a failed save and allows explicit clearing', async ({ page }) => {
+  const f = await prepareLeadershipRequest(page, true);
+  await page.getByRole('button', { name: 'New Store Manager' }).click();
+  await page.getByRole('button', { name: /Synthetic New Manager/ }).click();
+  await page.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('The selected manager changed');
+  await expect(page.getByRole('dialog').getByText('Synthetic New Manager', { exact: true })).toBeVisible();
+  expect(f.commits).toHaveLength(1);
+  await page.getByRole('button', { name: 'Clear New Store Manager' }).click();
+  await expect(page.getByRole('button', { name: 'New Store Manager' })).toBeVisible();
+});
 const sdk = `
 export const browserPopupRedirectResolver = {};
 export const browserSessionPersistence = 'session';

@@ -2,7 +2,7 @@
 
 ## Scope and source baseline
 
-This is the first bounded implementation slice of the [Directory consistency plan](../plans/directory-consistency-plan.md), tracked separately from the documentation-only planning PR #22. The plan is currently on `docs/directory-consistency-plan`; until merged, use [that branch copy](https://github.com/twgallo13/Shiekh-Directory/blob/docs/directory-consistency-plan/docs/plans/directory-consistency-plan.md).
+This is the first bounded implementation slice of the [Directory consistency plan](../plans/directory-consistency-plan.md), tracked separately from the documentation-only planning PR #22. The chronological pre-release notes below are historical; the final merge/deployment section records the current release.
 
 Base application/source: `baa2b937f4d79ddb8be24434b5176e6f2e98a690` on `main`. An isolated local clone started clean; no project AGENTS.md files were found. The implementation branch is `fix/leadership-request-selection`. No production records or application credentials were read or changed.
 
@@ -95,3 +95,25 @@ Person contacts now preserve an omitted extension only when its associated phone
 - The scanner's prototype-pollution warning on the preservation loop is not applicable: its property keys are a fixed code-owned allowlist, not keys enumerated from user input. No security configuration was changed to suppress checks.
 
 Fresh review is required for this amendment. No merge, deployment, personnel update or other production write was performed.
+
+## Final merge and production release — October 21, 2026 (America/Los_Angeles)
+
+The owner explicitly authorized autonomous completion, merge and publication. PR #23 was squash-merged at `26dab971c080963ba0d17afb4a38ec42e598d9d6`; its tree exactly matches validated review head `84dacaa`. CodeRabbit's final review generated no actionable comments and rated merge risk minimal; all inline threads were resolved and the required status check passed. Its 62.50% docstring-coverage warning was advisory, not a failing GitHub status. The additional Codex review of `84dacaa` still reported running when release verification finished; it is not claimed as approval. No review or security check was disabled.
+
+The existing Codespace was restarted. Its clean `main` was fast-forwarded to the exact merged source. Google Cloud CLI was downloaded from Google's official distribution into a task-owned temporary directory because the previous installation was absent. Existing ADC supplied short-lived in-memory authentication to the deployment process; no credential was created, exported to a file or logged.
+
+Cloud Build `f3129321-8945-4c2b-b1be-23714bf55c04` succeeded and produced revision `shiekh-location-company-directory-pr23-26dab97`. Staging used no production traffic and reused all existing build environment values. The runtime comparison first stopped on a changed deployment CLI version; inspection established that the only template differences were revision, image and `clientVersion`. After excluding these verified provenance fields, runtime comparison passed. Build environment, service identity, security/network/scaling settings and 26 historical tag mappings were unchanged.
+
+Candidate checks passed before explicit, etag-guarded traffic promotion through the Cloud Run v2 API. The service and revision are Ready; desired and observed traffic identify the new revision as the sole 100% entry. The branded mapping is Ready and DomainRoutable. The temporary candidate tag was removed without changing the 26 historical mappings.
+
+Post-promotion verification passed on both default and branded hosts:
+
+- Root, `/index.html` and a deep application route return current HTML with `no-store`, no ETag/Last-Modified, including requests carrying historical validators.
+- All 84 discovered JavaScript/CSS assets are nonempty and hash-identical across both hosts. HTML SHA-256 is `7be2619f08449b02c6158f3a8d560281cae31a16a23e270ddf3cb2bf5e0851b5`.
+- Compiled public Firebase settings match the previous production release (fingerprint `440f6973f893ca7adcfe0dc36a93208fe1164193753e884a5a6716630243fd5a`). The verifier was corrected to read the actual compiled Vite environment object rather than assume literal Firebase property values; that verifier-only failure did not indicate an application defect or cause traffic changes.
+- Public API schema and personnel guide remain byte-identical. Unauthenticated auth, v1 locations and v2 snapshot/personnel/staffing routes return structured 401 `invalid_token`; unknown API routes return structured 404 `api_route_not_found`.
+- A fresh browser rendered the candidate and then branded production sign-in screen without starting authentication. Synthetic keyboard/request tests remain the workflow evidence; no real correction or Person record was saved as a release probe.
+
+Rollback remains `shiekh-location-company-directory-hours-0171bd0`, captured as the pre-release sole 100% revision. See the updated [runbook](../cloud-run-deployment-runbook.md) for source/image evidence and rollback command. No data migration or reversal is required for this bounded repair.
+
+Next: pending-request immutability/per-type validation, safe request-review save feedback, and category/target draft reset. Broad hierarchy ownership, eligibility/offboarding, address/directions, emergency status and API evolution remain unfinished plan work. Do not interpret this deployment as a completed hierarchy migration or a repair of the unverified real Person inactivation error. Dynamic-Qr, ROPI and other applications were not changed.

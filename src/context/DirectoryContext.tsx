@@ -21,6 +21,8 @@ import {
 import type { DirectorySeed } from '../lib/directorySeed';
 import type { LocationInboxAcknowledgment } from '../lib/locationInboxEmail';
 import { canonicalDirectoryBootstrap } from '../lib/canonicalDirectoryBootstrap';
+import { validPersonCommit } from '../lib/personCommit';
+import { DirectoryCommitError } from '../lib/directoryClient';
 import { applyCorrection, correctionReview } from '../lib/correctionRequest';
 import { buildRegistryWrite, commitDirectory, fetchHierarchyRegistry, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult, type HierarchyRegistrySnapshot, type RegistrySaveIntent } from '../lib/directoryClient';
 import { createInvitationLink, mailRequest, sendInvitationEmail, sendMailEvent } from '../lib/mailClient';
@@ -244,6 +246,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     writeFence.current.epoch++; writeFence.current.pending++;
     setPersistenceError(null);
     const operation = commitDirectory(user, writes, audit).then(result => {
+      if (writes.some(write => write.collection === 'people') && !validPersonCommit(result, writes)) throw new DirectoryCommitError('The Person save response was incomplete or invalid. Check the saved record before starting another change.');
       reconcileCommittedRecords(result);
       return result;
     });
@@ -419,11 +422,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const addPerson = async (personData: Omit<Person, 'id'>): Promise<Person> => {
     const newPerson: Person = {
       ...personData,
-      id: `per-${Date.now()}`,
+      id: `per-${crypto.randomUUID()}`,
     };
     setPeople(prev => [...prev, newPerson]);
     try {
-      await persist([{ collection: 'people', id: newPerson.id, operation: 'set', data: newPerson as unknown as Record<string, unknown> }], { action: 'Person Created', entityType: 'Person', entityId: newPerson.id, entityName: newPerson.fullName, details: `Added person record for ${newPerson.fullName}` });
+      await persist([{ collection: 'people', id: newPerson.id, operation: 'set', data: newPerson as unknown as Record<string, unknown>, expectedVersion: null }], { action: 'Person Created', entityType: 'Person', entityId: newPerson.id, entityName: newPerson.fullName, details: `Added person record for ${newPerson.fullName}` });
       addAuditLog('Person Created', 'Person', newPerson.id, newPerson.fullName, `Added person record for ${newPerson.fullName}`, undefined, newPerson);
     } catch (error) {
       setPeople(previous => previous.filter(person => person.id !== newPerson.id));
@@ -434,7 +437,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
 
   const updatePerson = async (id: string, updates: PersonUpdate, expectedVersion?: number): Promise<void> => {
     const currentPerson = people.find(person => person.id === id);
-    if (!currentPerson) return;
+    if (!currentPerson) throw new DirectoryCommitError('This Person is no longer in the loaded directory. Reopen the current record before saving.', 'directory_conflict');
 
     const { person: updatedPerson, data: serializedPerson } = serializePersonUpdate(currentPerson, updates);
     const personById = (personId: string) => personId === id

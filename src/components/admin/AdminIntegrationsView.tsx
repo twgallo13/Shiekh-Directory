@@ -115,7 +115,7 @@ export const AdminIntegrationsView: React.FC = () => {
 
   const requestedAdminTab = new URLSearchParams(window.location.search).get('tab');
   const selectedUserId = new URLSearchParams(window.location.search).get('userId');
-  const [activeTab, setActiveTab] = useState<AdminTab>(requestedAdminTab === 'rbac' ? 'rbac' : 'hours');
+  const [activeTab, setActiveTab] = useState<AdminTab>(requestedAdminTab === 'rbac' ? 'rbac' : requestedAdminTab === 'hierarchy-registry' ? 'hierarchy-registry' : 'hours');
   const [rollbackAlert, setRollbackAlert] = useState<{ success: boolean; message: string } | null>(null);
   const [pendingAdminAction, setPendingAdminAction] = useState<PendingAdminAction | null>(null);
 

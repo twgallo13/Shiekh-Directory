@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import type { LocationRecord } from '../../types';
 import { FormLabel } from '../common/FormLabel';
 
@@ -23,6 +23,8 @@ export function PersonLocationRelationshipFields({
   onPrimaryLocationChange,
   onSupportedLocationIdsChange,
 }: PersonLocationRelationshipFieldsProps) {
+  const fieldId = useId();
+  const [search, setSearch] = useState('');
   const eligibleLocations = useMemo(() => locations
     .filter(location => location.recordStatus !== 'Retired')
     .sort((left, right) => left.storeNumber.localeCompare(right.storeNumber, undefined, { numeric: true })), [locations]);
@@ -31,6 +33,7 @@ export function PersonLocationRelationshipFields({
     ? locations.find(location => location.id === primaryLocationId)
     : undefined;
   const unavailableSupportIds = supportedLocationIds.filter(locationId => !eligibleIds.has(locationId));
+  const matchingLocations = eligibleLocations.filter(location => location.id !== primaryLocationId && locationLabel(location).toLowerCase().includes(search.trim().toLowerCase()));
 
   const setPrimaryLocation = (locationId?: string) => {
     onPrimaryLocationChange(locationId);
@@ -46,10 +49,12 @@ export function PersonLocationRelationshipFields({
 
   return (
     <fieldset className="space-y-3 border-t border-neutral-200 pt-3">
-      <legend className="px-1 text-xs font-semibold text-neutral-900">Employment Locations</legend>
+      <legend className="px-1 text-sm font-semibold text-neutral-900">Work locations</legend>
+      <p className="text-xs text-neutral-600">Workplace and support links are separate from management responsibilities.</p>
       <div>
-        <FormLabel>Works at</FormLabel>
+        <FormLabel htmlFor={`${fieldId}-primary`}>Works at</FormLabel>
         <select
+          id={`${fieldId}-primary`}
           value={primaryLocationId || ''}
           onChange={event => setPrimaryLocation(event.target.value || undefined)}
           className="w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2 text-xs text-neutral-900 focus:border-red-500 focus:bg-white focus:outline-none"
@@ -66,9 +71,12 @@ export function PersonLocationRelationshipFields({
       </div>
 
       <div className="space-y-2">
-        <FormLabel>Supports</FormLabel>
+        <FormLabel htmlFor={`${fieldId}-search`}>Find support locations</FormLabel>
+        <input id={`${fieldId}-search`} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search store number or location name" className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs" />
+        <div className="flex flex-wrap gap-2" aria-label="Selected support locations">{supportedLocationIds.map(locationId => <button key={locationId} type="button" onClick={() => toggleSupportLocation(locationId, false)} className="max-w-full break-words rounded-full border border-red-200 bg-red-50 px-3 py-1 text-left text-xs text-red-800" aria-label={`Remove support ${locations.find(l => l.id === locationId)?.name || locationId}`}>{locations.find(l => l.id === locationId)?.name || locationId} ×</button>)}</div>
+        <p className="text-xs text-neutral-600">Supports · {supportedLocationIds.length} selected. Search narrows results without clearing selections.</p>
         <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 bg-neutral-50 p-2">
-          {eligibleLocations.filter(location => location.id !== primaryLocationId).map(location => (
+          {matchingLocations.map(location => (
             <label key={location.id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 hover:bg-white">
               <input
                 type="checkbox"
@@ -93,8 +101,8 @@ export function PersonLocationRelationshipFields({
               </label>
             );
           })}
-          {eligibleLocations.filter(location => location.id !== primaryLocationId).length === 0 && unavailableSupportIds.length === 0 && (
-            <p className="px-2 py-1 text-xs text-neutral-500">No additional eligible Locations.</p>
+          {matchingLocations.length === 0 && unavailableSupportIds.length === 0 && (
+            <p className="px-2 py-1 text-xs text-neutral-500">{search.trim() ? 'No matching locations. Selected links are retained above.' : 'No additional eligible Locations.'}</p>
           )}
         </div>
       </div>

@@ -2,6 +2,8 @@
 
 This reference documents the JSON properties emitted by the Directory API serializer. It is intentionally an allowlist: a field is not part of the public contract just because it exists on a Firestore document or in the application.
 
+Internal Person `positionIds` and descriptive title/department edits do not add public personnel/contact fields. DM email/sign-in matching remains a separate planned contract ([issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36), P6.9); no existing contact-free scope silently gains email. Persisted staffing snapshots must not be treated as a new effective-District resolver or as automatic permission to sign in.
+
 ## Live verification status
 
 Latest release (2026-10-22 UTC): source `27c3536` / revision `shiekh-location-company-directory-pr34-27c3536` publishes additive `suite`/`wayfindingDirections` and the separate current operating-state endpoint. Both hosts and unauthenticated API guards were checked, not successful authenticated payloads or populated data. [Current release evidence](cloud-run-deployment-runbook.md#current-live-revision--pr-33-and-pr-34) supersedes historical deployment statements below. V1/v2 snapshot semantics, staffing contact exclusions and credential scopes are unchanged.

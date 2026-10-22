@@ -3,6 +3,8 @@ import type { LocationRecord } from '../types';
 import type { DirectorySeed } from './directorySeed';
 import { validateLocationHierarchyFields, type HierarchyFieldContract, type HierarchyRegistry } from './hierarchyAssignmentContract';
 import { hasDistrictLeadership, isDistrictLeadershipMember } from './districtLeadership';
+import { allowsLeadershipPosition, LEADERSHIP_POSITION_FIELDS } from './personPositions';
+import { personLifecycle } from './personLifecycle';
 import {
   LOCATION_HIERARCHY_APPLICABILITY,
   LOCATION_IMPORT_COLUMNS,
@@ -417,6 +419,8 @@ export function buildLocationImportPlan(
           issues.push(issue('error', 'missing_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'No Person has this canonical ID.', 'Correct the ID or create the real Person separately, then preview again.', undefined, proposed[field]));
         } else if (matches.length > 1) {
           issues.push(issue('error', 'ambiguous_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'Multiple People have this canonical ID.', 'Repair the duplicate Person identities and explicitly correct the CSV before previewing again.', matches.map(person => `${person.id} — ${person.fullName} (${personStatus(person)})`), proposed[field]));
+        } else if (!allowsLeadershipPosition(matches[0], LEADERSHIP_POSITION_FIELDS[field as keyof typeof LEADERSHIP_POSITION_FIELDS])) {
+          issues.push(issue('error', 'invalid_attribute', column, personId, existing?.[field as keyof typeof existing] ?? null, 'This Person does not hold the required linked position.', 'Map the additional position explicitly on the Person, or choose another eligible Person, then preview again.'));
         } else if (!isActivePerson(matches[0])) {
           issues.push(issue('error', 'inactive_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, `The referenced Person is ${personStatus(matches[0])}.`, 'Choose an Active Person ID, or intentionally correct the Person lifecycle separately, then preview again.', [`${matches[0].id} — ${matches[0].fullName}`], proposed[field]));
         }
@@ -735,6 +739,7 @@ function locationCandidate(location: PreviewSnapshot['locations'][number]): stri
 }
 
 function isActivePerson(person: PreviewSnapshot['people'][number]): boolean {
+  if (Object.hasOwn(person, 'positionIds')) return personLifecycle(person) === 'active';
   return (!person.status || person.status === 'Active') && person.activeStatus !== false;
 }
 

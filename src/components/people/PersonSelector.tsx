@@ -117,6 +117,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
                   <input type="checkbox" checked={showAll} onChange={event => setShowAll(event.target.checked)} />
                   Show all active people (unusual titles or cross-role coverage)
                 </label>}
+                {roleFilter && <p className="mb-2 text-[10px] text-neutral-500">Explicit linked-position requirements still apply. Map an additional position on the Person before assigning a different responsibility.</p>}
                 <input
                   type="text"
                   autoFocus

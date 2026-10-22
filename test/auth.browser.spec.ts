@@ -5,6 +5,171 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' = 'normal') {
+  await prepare(page, 'System Administrator');
+  const seed: any = seedDirectory(2);
+  const person = { id: 'person-profile', version: 2, fullName: 'Synthetic Profile Manager', jobTitle: ' SM ', role: 'Historical separate alias', department: '  Historic department  ', district: 'Legacy territory note', status: 'Active', activeStatus: true, workEmail: 'profile@example.test' };
+  seed.people = [person];
+  seed.locations[0] = { ...seed.locations[0], storeManagerId: person.id, storeManagerName: person.fullName, regionId: 'west', districtId: 'north' };
+  seed.regions = [{ id: 'west', name: 'West', status: 'Active' }];
+  seed.districts = [{ id: 'north', name: 'North District', regionId: 'west', status: 'Active', districtManagerId: person.id }];
+  seed.users = [{ id: 'linked-account', name: 'Synthetic linked account', personId: person.id, role: 'Viewer', status: 'Active' }];
+  const commits: any[] = [];
+  let release: () => void = () => {};
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); commits.push(body);
+    if (mode === 'hold') await new Promise<void>(resolve => { release = resolve; });
+    if (mode === 'unknown') return route.fulfill({ status: 502, contentType: 'text/html', body: 'Unknown save result' });
+    if (mode === 'empty') return route.fulfill({ json: { records: [] } });
+    if (mode === 'reject') return route.fulfill({ status: 409, json: { error: { code: 'directory_conflict', message: 'Synthetic saved version changed.' } } });
+    return route.fulfill({ json: commitResponseFor(body) });
+  });
+  return { seed, commits, release: () => release() };
+}
+
+test('Person card links concurrent positions only after review and preserves titles assignments and account access', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByRole('checkbox', { name: 'District Manager', exact: true }).check();
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect(page.getByRole('alert')).toContainText('Review and acknowledge');
+  await expect(page.getByRole('alert')).toBeFocused();
+  expect(f.commits).toHaveLength(0);
+  await page.getByRole('checkbox', { name: /I reviewed the responsibilities/ }).check();
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes.map((w: any) => w.collection)).toEqual(['people']);
+  const saved = f.commits[0].writes[0].data;
+  expect(saved.positionIds).toEqual(['store-manager', 'district-manager']);
+  expect(saved.jobTitle).toBe(' SM '); expect(saved.role).toBe('Historical separate alias');
+  expect(saved.department).toBe('  Historic department  '); expect(saved.district).toBe('Legacy territory note');
+});
+
+test('Person card blocks silent loss of SM responsibility and zero-store District inactivation', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByRole('checkbox', { name: 'Store Manager', exact: true }).uncheck();
+  await page.getByRole('checkbox', { name: 'District Manager', exact: true }).check();
+  await expect(page.getByText(/Retain Store Manager or reassign\/vacate/)).toBeVisible();
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  expect(f.commits).toHaveLength(0);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Leave draft' }).click();
+  f.seed.locations = []; f.seed.users = [];
+  await page.reload(); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await expect(page.getByRole('link', { name: /North District.*0 linked stores/ })).toBeVisible();
+  await page.getByLabel('Active Status', { exact: true }).selectOption('Inactive');
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect(page.getByRole('alert')).toContainText('Reassign/vacate management responsibilities');
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Person card requires resolved Active lifecycle before mapping existing responsibilities', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.people[0].activeStatus = false;
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByRole('checkbox', { name: 'District Manager', exact: true }).check();
+  await page.getByRole('checkbox', { name: /I reviewed the responsibilities/ }).check();
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect(page.getByRole('alert')).toContainText('Resolve Active Status');
+  await expect(page.getByRole('alert')).toBeFocused();
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Person card keeps legacy aliases untouched on unrelated edit and title edits do not rewrite role', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByLabel('Department', { exact: true }).fill('New descriptive department');
+  await page.getByLabel('Display title (optional)', { exact: true }).fill('Descriptive operations title');
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  const saved = f.commits[0].writes[0].data;
+  expect(saved.jobTitle).toBe('Descriptive operations title'); expect(saved.role).toBe('Historical separate alias');
+  expect(saved).not.toHaveProperty('positionIds'); expect(saved.district).toBe('Legacy territory note');
+  expect(f.commits[0].writes).toHaveLength(1);
+});
+
+test('Person card preserves draft on close and locks closing and duplicate submissions during save', async ({ page }) => {
+  const f = await preparePersonCard(page, 'hold');
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByLabel('Department', { exact: true }).fill('Retained draft');
+  await page.getByRole('button', { name: 'Close Synthetic Profile Manager' }).click();
+  await expect(page.getByRole('alertdialog', { name: 'Leave this Person draft?' })).toBeVisible();
+  await page.getByRole('alertdialog', { name: 'Leave this Person draft?' }).getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByLabel('Department', { exact: true })).toHaveValue('Retained draft');
+  await page.getByRole('button', { name: 'Save Person' }).dblclick();
+  await expect.poll(() => f.commits.length).toBe(1);
+  await page.getByRole('button', { name: 'Close Synthetic Profile Manager' }).click();
+  await expect(page.getByLabel('Department', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save Person' })).toBeDisabled();
+  f.release();
+  await expect(page.getByRole('button', { name: 'Edit Person' })).toBeVisible();
+  expect(f.commits).toHaveLength(1);
+});
+
+for (const mode of ['unknown', 'empty', 'reject'] as const) test('Person card retains failed draft with ' + mode + ' save semantics', async ({ page }) => {
+  const f = await preparePersonCard(page, mode);
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByLabel('Department', { exact: true }).fill('Retained after failure');
+  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText(mode !== 'reject' ? 'Outcome unknown' : 'draft is retained');
+  await expect(page.getByLabel('Department', { exact: true })).toHaveValue('Retained after failure');
+  if (mode !== 'reject') await expect(page.getByRole('button', { name: 'Save Person' })).toBeDisabled();
+  else await expect(page.getByRole('button', { name: 'Save Person' })).toBeEnabled();
+  expect(f.commits).toHaveLength(1);
+});
+
+test('Person card is readable on mobile and support search preserves selected locations', async ({ page }, testInfo) => {
+  const f = await preparePersonCard(page);
+  f.seed.people[0].supportedLocationIds = ['loc-2'];
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person' }).click();
+  await expect(page.getByRole('textbox', { name: 'Full Name', exact: true })).toBeVisible();
+  for (const name of ['Display title (optional)', 'Work Phone', 'Extension', 'Work Email', 'Phone visibility', 'Works at', 'Active Status']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
+  await page.getByLabel('Find support locations', { exact: true }).fill('nothing matches');
+  await expect(page.getByRole('button', { name: /Remove support/ })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('heading', { name: 'Profile & positions' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('person-card-mobile.png'), fullPage: true });
+  await page.getByRole('checkbox', { name: 'District Manager', exact: true }).check();
+  await page.getByRole('heading', { name: 'Management responsibilities', exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('person-card-management-mobile.png'), fullPage: true });
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Person card creates one versioned canonical record without creating an account', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  await page.goto(origin + '/people'); await restore(page, true);
+  await page.getByRole('button', { name: 'Add Person', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Full Name', exact: true }).fill('Synthetic New Corporate Person');
+  await page.getByRole('checkbox', { name: 'Other / corporate position', exact: true }).check();
+  await page.getByRole('checkbox', { name: /I reviewed the responsibilities/ }).check();
+  await page.getByRole('button', { name: 'Save Record' }).click();
+  await expect(page.getByRole('dialog', { name: 'Add Person', exact: true })).toHaveCount(0);
+  expect(f.commits).toHaveLength(1);
+  expect(f.commits[0].writes).toHaveLength(1);
+  const write = f.commits[0].writes[0];
+  expect(write.id).toMatch(/^per-[0-9a-f-]{36}$/); expect(write.expectedVersion).toBeNull();
+  expect(write.data.positionIds).toEqual(['other']); expect(write.collection).toBe('people');
+  expect(write.data.phonePrivacy).toBe('Internal'); expect(write.data).not.toHaveProperty('role');
+});
+
+test('Person card Organization link opens the actual hierarchy tab without a write', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  await page.goto(origin + '/admin?tab=hierarchy-registry'); await restore(page, true);
+  await expect(page.getByRole('region', { name: 'Region and District registry', exact: true })).toBeVisible();
+  expect(f.commits).toHaveLength(0);
+});
+
 test('API documentation links are discoverable and keyboard-accessible without credential changes', async ({ page }, testInfo) => {
   await prepare(page, 'System Administrator');
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1319,16 +1484,15 @@ test('PrintSheetView groups canonical and exceptional hierarchies by stable IDs 
   await expect(page.getByText(/Location type is 'Unsupported Type', not a recognized business type/)).toBeVisible();
 });
 
-test('Person territory edit does not rewrite the linked Location legacy District', async ({ page }) => {
+test('Person legacy territory is reference-only and unrelated edits preserve linked Location District', async ({ page }) => {
   const fixture = await prepareHierarchyBrowser(page);
   await page.goto(`${origin}/people`); await restore(page, true);
   await page.getByRole('button', { name: /District Manager/ }).click();
   await page.getByRole('button', { name: 'Edit Person' }).click();
-  const territory = page.getByRole('dialog').getByRole('textbox').nth(6);
-  await territory.fill('Updated Manager Territory');
-  await expect(territory).toHaveValue('Updated Manager Territory');
+  await expect(page.getByText(/Legacy territory\/district text \(reference only\)/)).toBeVisible();
+  await expect(page.getByLabel('Assigned Territory / District (Compatibility)')).toHaveCount(0);
+  await page.getByLabel('Department', { exact: true }).fill('Synthetic department');
   await page.getByRole('button', { name: 'Save Person' }).click();
-  await expect(page.getByText('Updated Manager Territory', { exact: true })).toHaveCount(2);
   expect(fixture.commits).toHaveLength(1);
   expect(fixture.commits[0].writes.map((write: { collection: string }) => write.collection)).toEqual(['people']);
   expect(fixture.seed.locations[0].district).toBe('Legacy Location District');

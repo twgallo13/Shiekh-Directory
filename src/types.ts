@@ -158,6 +158,8 @@ export interface LocationRecord {
 }
 
 export interface Person {
+  /** Omitted means legacy title discovery; explicit IDs support concurrent positions. */
+  positionIds?: import('./lib/personPositions').PersonPositionId[];
   id: string;
   version?: number;
   firstName?: string;

@@ -1,19 +1,12 @@
 import { personLifecycle } from './personLifecycle';
 
-export type LeadershipRole = 'District Manager' | 'Regional Manager' | 'Store Manager' | 'Assistant Store Manager' | 'Key Holder';
-type PickerPerson = { id: string; fullName: string; jobTitle?: string; role?: string; status?: unknown; activeStatus?: unknown };
-const aliases: Record<LeadershipRole, readonly string[]> = {
-  'District Manager': ['district manager', 'dm'],
-  'Regional Manager': ['regional manager', 'rm'],
-  'Store Manager': ['store manager', 'sm'],
-  'Assistant Store Manager': ['assistant store manager', 'assistant manager', 'asm', 'am'],
-  'Key Holder': ['key holder', 'keyholder', 'kh'],
-};
+import { allowsLeadershipPosition, listedPosition, type LeadershipRole } from './personPositions';
+export type { LeadershipRole } from './personPositions';
+type PickerPerson = { id: string; fullName: string; jobTitle?: string; role?: string; positionIds?: unknown; status?: unknown; activeStatus?: unknown };
 
 /** Match a descriptive position for discovery only; never use this filter to grant authority or infer assignments. */
 export function matchesListedLeadershipRole(person: PickerPerson, role: LeadershipRole): boolean {
-  const title = (person.jobTitle?.trim() || person.role?.trim() || '').toLowerCase().replace(/\s+/g, ' ');
-  return aliases[role].includes(title);
+  return listedPosition(person, role);
 }
 
 /** Offer unique active IDs matching the listed position, or all unique active people after an explicit opt-in. */
@@ -21,7 +14,7 @@ export function leadershipCandidates<T extends PickerPerson>(people: T[], role?:
   const counts = new Map<string, number>();
   for (const person of people) counts.set(person.id, (counts.get(person.id) || 0) + 1);
   return people.filter(person => counts.get(person.id) === 1 && personLifecycle(person) === 'active'
-    && (!role || showAll || matchesListedLeadershipRole(person, role)))
+    && (!role || (allowsLeadershipPosition(person, role) && (showAll || matchesListedLeadershipRole(person, role)))))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 

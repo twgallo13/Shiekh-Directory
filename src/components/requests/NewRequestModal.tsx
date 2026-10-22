@@ -19,6 +19,7 @@ interface NewRequestModalProps {
   onClose: () => void;
 }
 
+/** Submit proposed Location corrections with selected-person identity and saved-value baselines. */
 export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onClose }) => {
   const { locations, currentUser, submitRequest } = useDirectory();
   

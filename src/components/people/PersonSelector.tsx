@@ -1,4 +1,4 @@
-import React, { useId, useState, useMemo } from 'react';
+import React, { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
 import { Search, User, X } from 'lucide-react';
@@ -14,6 +14,7 @@ export interface PersonSelectorProps {
   required?: boolean;
 }
 
+/** Select a canonical active Person and retain keyboard focus across controlled-value changes. */
 export const PersonSelector: React.FC<PersonSelectorProps> = ({
   label,
   value,
@@ -26,6 +27,9 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
   const fieldId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const clearRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
 
   const filteredPeople = useMemo(() => {
     return people.filter(p => {
@@ -51,6 +55,12 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
     return people.find(p => p.id === value) || null;
   }, [people, value]);
 
+  useLayoutEffect(() => {
+    if (!restoreFocus.current) return;
+    restoreFocus.current = false;
+    (selectedPerson ? clearRef.current : triggerRef.current)?.focus();
+  }, [selectedPerson, value]);
+
   return (
     <div className="relative">
       {label && (
@@ -71,9 +81,10 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
             </div>
           </div>
           <button
+            ref={clearRef}
             type="button"
             aria-label={`Clear ${label || 'person selection'}`}
-            onClick={() => onChange(null)}
+            onClick={() => { restoreFocus.current = true; onChange(null); }}
             className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer rounded hover:bg-neutral-200 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
@@ -82,6 +93,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
       ) : (
         <div>
           <button
+            ref={triggerRef}
             id={`${fieldId}-trigger`}
             type="button"
             aria-label={label || 'Select person'}
@@ -100,7 +112,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
                 event.preventDefault();
                 event.stopPropagation();
                 setIsOpen(false);
-                document.getElementById(`${fieldId}-trigger`)?.focus();
+                triggerRef.current?.focus();
               }
             }} className="absolute left-0 right-0 top-full mt-1 bg-white border border-neutral-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
               <div className="p-2 border-b border-neutral-200 sticky top-0 bg-white">
@@ -121,6 +133,7 @@ export const PersonSelector: React.FC<PersonSelectorProps> = ({
                     key={p.id}
                     type="button"
                     onClick={() => {
+                      restoreFocus.current = true;
                       onChange(p);
                       setIsOpen(false);
                       setSearchTerm('');

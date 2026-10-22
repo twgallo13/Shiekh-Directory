@@ -52,3 +52,19 @@ P0.1/P0.2 are partially evidenced; exact Cloud Run state, the restricted live de
 Next: review this slice, then complete pending-request immutability/per-type rules, safe request-review save feedback and target/category draft reset before moving to the additive hierarchy contract. Confirm current deployment and authorized restricted inventory when access is available. A real replacement/vacancy decision is required before any personnel handover. Keep the existing v1/v2 manager field and scope contract intact.
 
 This branch has not been merged or deployed. Application changes are review-ready, not live; plan ownership migration and data cutover have not begun.
+
+## Review corrections after 045ec41
+
+Both external findings were reproduced before correction:
+
+- Codex P2: after keyboard selection, the newly rendered clear button was present but not focused. The new browser assertion failed at `toBeFocused`. The selector now tracks explicit selection/clear actions and transfers focus during the layout effect to the replacement clear/trigger button. An ordinary external value update does not request focus transfer. The regression also verifies that Tab continues to the following textarea and that keyboard clearing returns focus to the trigger after a failed save.
+- CodeRabbit: ten synthetic batch cases failed before correction. The manager lookup now uses `combinedPeople`, the transaction's final Person state. Tests cover inactivation, deletion, rename, phone changes, and matching final details in both Person-first and request-first write order. Stale details and inactive/deleted references are rejected; matching final details are accepted.
+
+Validation for this amendment:
+
+- **71 focused API/unit tests passed**, covering all leadership request cases plus transaction persistence and directory-write authorization regressions. Command: `node --import tsx --test test/leadershipRequest.test.ts test/customFieldPersistence.test.ts test/directoryDataApi.test.ts`.
+- **3 leadership browser tests passed** with selection-focus and Tab-order assertions. After making the clear interaction explicitly keyboard-driven, its focused case passed again. This supersedes the weaker focus coverage of the original browser cases; the prior unrelated hours/inbox browser results remain applicable.
+- TypeScript check, production build and whitespace check passed. Existing bundle-size warning remains. The earlier full 345-test suite was not redundantly rerun; changed-validator paths were covered by the 71-test focused run. Ten new batch cases bring the leadership test file to 22 cases; no full-suite result at a new aggregate count is claimed.
+- Added concise function documentation for the touched production components, validator and synthetic fixture helpers in response to the review warning. External docstring scoring must be confirmed by a fresh review rather than assumed.
+
+No merge, deployment, live application write, credential change or notification was performed. Fresh automated review status must be checked against the amended commit; reviews of 045ec41 alone do not approve these corrections.

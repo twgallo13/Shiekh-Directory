@@ -37,6 +37,7 @@ async function prepareHoursCorrection(page: Page, options: { role?: string; requ
   return { commits, locations, requests, mailEvents: () => mailEvents };
 }
 
+/** Open a leadership request using synthetic auth, records and save outcomes only. */
 async function prepareLeadershipRequest(page: Page, fail = false) {
   await prepare(page, 'Viewer');
   const seed = seedDirectory(2);
@@ -61,8 +62,12 @@ test('Leadership request displays and submits the chosen manager using the keybo
   const selector = page.getByRole('button', { name: 'New Store Manager' });
   await selector.focus(); await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: /Synthetic Inactive Manager/ })).toHaveCount(0);
-  await page.getByRole('button', { name: /Synthetic New Manager/ }).click();
+  const option = page.getByRole('button', { name: /Synthetic New Manager/ });
+  await option.focus(); await option.press('Enter');
   await expect(page.getByRole('dialog').getByText('Synthetic New Manager', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Clear New Store Manager' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('dialog').locator('textarea')).toBeFocused();
   await page.getByRole('button', { name: 'Submit for Approval' }).click();
   await expect.poll(() => f.commits.length).toBe(1);
   expect(f.commits[0].writes[0].data.requestedChanges.storeManagerId).toBe('person-new');
@@ -89,8 +94,10 @@ test('Leadership request retains its selected manager after a failed save and al
   await expect(page.getByRole('dialog').getByRole('alert')).toContainText('The selected manager changed');
   await expect(page.getByRole('dialog').getByText('Synthetic New Manager', { exact: true })).toBeVisible();
   expect(f.commits).toHaveLength(1);
-  await page.getByRole('button', { name: 'Clear New Store Manager' }).click();
+  const clearSelection = page.getByRole('button', { name: 'Clear New Store Manager' });
+  await clearSelection.focus(); await clearSelection.press('Enter');
   await expect(page.getByRole('button', { name: 'New Store Manager' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New Store Manager' })).toBeFocused();
 });
 const sdk = `
 export const browserPopupRedirectResolver = {};

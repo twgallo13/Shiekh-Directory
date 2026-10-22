@@ -5,12 +5,42 @@ import { DirectoryConflict, DirectoryValidationError, validateMetadataWrites, ty
 
 const actor: Account = { uid: 'synthetic-viewer', email: 'viewer@example.test', emailVerified: true, name: 'Synthetic Viewer', role: 'Viewer', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
 
+/** Build detached synthetic Location, Person and request records for submission validation. */
 function fixture() {
   const target = { id: 'loc-synthetic', storeNumber: '007', storeManagerId: 'person-old', storeManagerName: 'Previous Manager', storeManagerPhone: '+12135550101' };
   const people = [{ id: 'person-new', fullName: 'New Manager', status: 'Active', activeStatus: true, workPhone: '+12135550102' }];
   const request = { targetType: 'Location', targetId: target.id, changeType: 'Store Manager Change', status: 'Pending', requestedChanges: { storeManagerId: people[0].id, storeManagerName: people[0].fullName, storeManagerPhone: people[0].workPhone }, currentSnapshot: { storeManagerId: target.storeManagerId, storeManagerName: target.storeManagerName, storeManagerPhone: target.storeManagerPhone } };
   const validate = (data: Record<string, unknown> = request, roster = people) => validateMetadataWrites([{ collection: 'requests', id: 'req-synthetic', operation: 'set', data } satisfies DirectoryWrite], [undefined], [], actor, roster, [target]);
   return { target, people, request, validate };
+}
+
+for (const order of ['person-first', 'request-first'] as const) {
+  for (const scenario of ['inactive', 'deleted', 'renamed', 'phone-changed', 'matching-final-details'] as const) {
+    test(`leadership request checks final batched Person state for ${scenario} in ${order} order`, () => {
+      const f = fixture();
+      const person = f.people[0];
+      const proposedPerson = { ...person };
+      if (scenario === 'inactive') { proposedPerson.status = 'Inactive'; proposedPerson.activeStatus = false; }
+      if (scenario === 'renamed' || scenario === 'matching-final-details') proposedPerson.fullName = 'Renamed Manager';
+      if (scenario === 'phone-changed' || scenario === 'matching-final-details') proposedPerson.workPhone = '+12135550103';
+      const request = structuredClone(f.request);
+      if (scenario === 'matching-final-details') {
+        request.requestedChanges.storeManagerName = proposedPerson.fullName;
+        request.requestedChanges.storeManagerPhone = proposedPerson.workPhone;
+      }
+      const personWrite: DirectoryWrite = { collection: 'people', id: person.id, operation: scenario === 'deleted' ? 'delete' : 'set', expectedVersion: 0, ...(scenario !== 'deleted' ? { data: proposedPerson } : {}) };
+      const requestWrite: DirectoryWrite = { collection: 'requests', id: 'req-synthetic', operation: 'set', data: request };
+      const writes = order === 'person-first' ? [personWrite, requestWrite] : [requestWrite, personWrite];
+      const previous = order === 'person-first' ? [person, undefined] : [undefined, person];
+      const validate = () => validateMetadataWrites(writes, previous, [], { ...actor, role: 'System Administrator' }, f.people, [f.target]);
+      if (scenario === 'matching-final-details') {
+        const result = validate();
+        assert.equal(result.find(write => write.collection === 'requests')?.data?.status, 'Pending');
+      } else {
+        assert.throws(validate, DirectoryValidationError);
+      }
+    });
+  }
 }
 
 test('leadership request accepts a changed canonical active manager without mutating its target', () => {

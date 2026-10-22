@@ -335,6 +335,7 @@ function toLocationImportReceipt(receipt: LocationImportReceipt, replayed: boole
   };
 }
 
+/** Validate transaction writes and their final relationships without persisting any records. */
 export function validateMetadataWrites(
   writes: DirectoryWrite[],
   previous: (Record<string, unknown> | undefined)[],
@@ -454,7 +455,7 @@ export function validateMetadataWrites(
         if (Object.keys(changes).length !== fields.length || fields.some(field => !Object.hasOwn(changes, field))) {
           throw new DirectoryValidationError('Choose an active Store Manager; leadership corrections may change only the manager identity, name and phone.');
         }
-        const manager = people.find(person => person.id === changes.storeManagerId);
+        const manager = combinedPeople.find(person => person.id === changes.storeManagerId);
         if (!manager || personLifecycle(manager) !== 'active') {
           throw new DirectoryValidationError('Choose an active Store Manager before submitting this request.');
         }

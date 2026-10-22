@@ -26,6 +26,8 @@ Preserve multi-store management and a person managing multiple territories. Star
 
 Use controlled operational position or eligibility values for assignment rules. A descriptive job title and department may remain editable display information. Do not use exact free-text titles to decide who appears in assignment selectors. Keep Works at, Supports, Manages, and territory leadership distinct. Changing a display title must not silently reassign stores or grant application permissions.
 
+Owner-requested interim discovery refinement after PR #23: selectors should default to the matching listed position rather than every active employee. [Dispatch 17](../dispatches/dispatch-17-leadership-picker-discovery.md) records the bounded transitional filter: normalized explicit title aliases, visible preservation of existing assignments, and explicit show-all for unusual titles/cross-role coverage. This intentionally refines discovery before controlled positions exist; it is not hard eligibility, does not change server permissions, and does not complete P2.1/P2.3. The end-state requirement above still applies to the later controlled-position rollout.
+
 Person lifecycle, organizational assignments, and application-account access are separate states. Offboarding must guide an authorized administrator through all three. Preserve the Person ID and history; prefer inactivation over deletion. A vacant position is valid and must never be filled by guessing.
 
 ### Two different change paths

@@ -8,7 +8,7 @@ import { CustomMetadataFields } from './CustomMetadataFields';
 import { validateCustomMetadata } from '../../lib/customFields';
 import { formatUsPhone, normalizeUsPhone, normalizeWebUrl } from '../../lib/contactNormalization';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
-import { resolveActivePerson } from '../../lib/readProjectionContract';
+import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
 import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
@@ -59,6 +59,7 @@ const normalizeLocation = (location: LocationRecord): LocationRecord => ({
   holidayHours: location.holidayHours || [],
 });
 
+/** Edit a Location draft while preserving untouched canonical staffing and awaiting committed saves. */
 export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   location,
   mode = 'edit',
@@ -118,12 +119,12 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
   useDialogFocus(Boolean(location) && confirmation === null, requestClose, dialogRef);
 
-  // Eligibility is Active status only; job title/department/role are descriptive, not an eligibility filter.
-  const activePersonnel = useMemo(() => {
-    return people
-      .filter(person => resolveActivePerson(person.id, people) !== undefined)
-      .sort((left, right) => left.fullName.localeCompare(right.fullName));
-  }, [people]);
+  const [showAllLeadershipPeople, setShowAllLeadershipPeople] = useState(false);
+  useEffect(() => { setShowAllLeadershipPeople(false); }, [location?.id]);
+  /** Render role-focused discovery options without changing server policy or application permissions. */
+  const leadershipOptions = (role: LeadershipRole, id?: string, name?: string) =>
+    leadershipPickerOptions(people, role, showAllLeadershipPeople, id, name).map(option =>
+      <option key={option.id} value={option.id} disabled={option.currentOnly}>{option.label}</option>);
   const activeRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort((left, right) => left.name.localeCompare(right.name)), [regions]);
   const activeDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === formData?.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, formData?.regionId]);
   const currentRegion = regions.find(region => region.id === formData?.regionId);
@@ -893,12 +894,18 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                 </div>
 
                 {/* Primary Management Grid */}
+                <p className="mb-2 text-xs text-neutral-500">Lists default to each recorded position. Existing assignments are preserved; listed titles do not grant permissions.</p>
+                <label className="mb-4 flex items-start gap-2 text-xs text-neutral-600">
+                  <input type="checkbox" checked={showAllLeadershipPeople} onChange={event => setShowAllLeadershipPeople(event.target.checked)} />
+                  Show all active people (unusual titles or cross-role coverage)
+                </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">
                       District Manager
                     </label>
                     <select
+                      aria-label="District Manager"
                       value={currentDmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -920,16 +927,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
                       <option value="">-- Unassigned / Vacant --</option>
-                      {activePersonnel.map(dm => (
-                        <option key={dm.id} value={dm.id}>
-                          {dm.fullName} {dm.district ? `(${dm.district})` : ''}
-                        </option>
-                      ))}
-                      {currentDmId && formData.districtManagerName && !activePersonnel.some(d => d.id === currentDmId) && (
-                        <option value={currentDmId || 'custom_dm'}>
-                          {formData.districtManagerName} (Current Assignment)
-                        </option>
-                      )}
+                      {leadershipOptions('District Manager', currentDmId, formData.districtManagerName)}
                     </select>
                   </div>
 
@@ -1007,6 +1005,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       Regional Manager
                     </label>
                     <select
+                      aria-label="Regional Manager"
                       value={currentRmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -1020,10 +1019,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
                       <option value="">-- Unassigned / Vacant --</option>
-                      {activePersonnel.map(person => <option key={person.id} value={person.id}>{person.fullName}</option>)}
-                      {currentRmId && formData.regionalManagerName && !activePersonnel.some(person => person.id === currentRmId) && (
-                        <option value={currentRmId}>{formData.regionalManagerName} (Current Assignment)</option>
-                      )}
+                      {leadershipOptions('Regional Manager', currentRmId, formData.regionalManagerName)}
                     </select>
                   </div>
 
@@ -1032,6 +1028,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       Store Manager
                     </label>
                     <select
+                      aria-label="Store Manager"
                       value={currentSmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -1056,16 +1053,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
                       <option value="">-- Vacant / In Transition --</option>
-                      {activePersonnel.map(sm => (
-                        <option key={sm.id} value={sm.id}>
-                          {sm.fullName}
-                        </option>
-                      ))}
-                      {currentSmId && formData.storeManagerName && !activePersonnel.some(s => s.id === currentSmId) && (
-                        <option value={currentSmId || 'custom_sm'}>
-                          {formData.storeManagerName} (Current Assignment)
-                        </option>
-                      )}
+                      {leadershipOptions('Store Manager', currentSmId, formData.storeManagerName)}
                     </select>
                   </div>
 
@@ -1112,16 +1100,13 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       {(formData.assistantStoreManagerIds || []).map((assistantId, idx) => (
                         <div key={idx} className="flex items-center gap-2">
                           <select
+                            aria-label={`Assistant Manager ${idx + 1}`}
                             value={assistantId}
                             onChange={(e) => handleUpdateAssistantManager(idx, e.target.value)}
                             className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
                           >
                             <option value="">Select a person from the directory...</option>
-                            {activePersonnel.map(person => (
-                              <option key={person.id} value={person.id}>
-                                {person.fullName} ({person.jobTitle || person.role || 'Staff'})
-                              </option>
-                            ))}
+                            {leadershipOptions('Assistant Store Manager', assistantId, formData.assistantStoreManagerNames?.[idx])}
                           </select>
                           <button
                             type="button"
@@ -1167,16 +1152,13 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       {(formData.keyHolderIds || []).map((keyHolderId, idx) => (
                         <div key={idx} className="flex items-center gap-2">
                           <select
+                            aria-label={`Key Holder ${idx + 1}`}
                             value={keyHolderId}
                             onChange={(e) => handleUpdateKeyHolder(idx, e.target.value)}
                             className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
                           >
                             <option value="">Select a person from the directory...</option>
-                            {activePersonnel.map(person => (
-                              <option key={person.id} value={person.id}>
-                                {person.fullName} ({person.jobTitle || person.role || 'Staff'})
-                              </option>
-                            ))}
+                            {leadershipOptions('Key Holder', keyHolderId, formData.keyHolderNames?.[idx])}
                           </select>
                           <button
                             type="button"

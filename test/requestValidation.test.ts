@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { validateRequestProposal } from '../src/lib/requestValidation';
 import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 import { loadSubmission, submissionStorageKey } from '../src/lib/requestSubmission';
+import { validateMetadataWrites } from '../server/firestoreDirectory';
+import type { Account } from '../server/authAuthority';
 
 const target = { phone: '(213) 555-0101', phoneExtension: '12', standardHours: DEFAULT_WEEKLY_HOURS, hoursMode: 'template', hoursTemplateId: 'template-1', operationalStatus: 'Open — Normal Operations', locationInboxEmail: 'store@example.test' };
 const proposal = { changeType: 'Phone Number Correction', targetType: 'Location', requestedChanges: { phone: '(213) 555-0102', phoneExtension: null }, currentSnapshot: { phone: target.phone, phoneExtension: '12' } };
@@ -42,4 +44,13 @@ test('recovery is account-bound and malformed stored operations fail closed', ()
   assert.equal(loadSubmission(storage, 'actor-2'), null);
   values.set(submissionStorageKey('actor-1'), '{broken');
   assert.throws(() => loadSubmission(storage, 'actor-1'));
+});
+
+test('Person proposal checks unchanged Supports and respects explicit Works at clearing', () => {
+  const actor: Account = { uid: 'test', email: null, name: 'Synthetic', emailVerified: true, role: 'Viewer', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
+  const person = { id: 'person', fullName: 'Synthetic', status: 'Active', primaryLocationId: 'loc-old', supportedLocationIds: ['loc-support'] };
+  const locations = ['loc-old', 'loc-support'].map(id => ({ id, recordStatus: 'Active' }));
+  const validate = (requestedChanges: Record<string, unknown>, currentSnapshot: Record<string, unknown>) => validateMetadataWrites([{ collection: 'requests', id: 'req-person', operation: 'set', data: { status: 'Pending', targetType: 'Person', targetId: person.id, changeType: 'Other Store Info Update', requestedChanges, currentSnapshot } }], [undefined], [], actor, [person], locations);
+  assert.throws(() => validate({ primaryLocationId: 'loc-support' }, { primaryLocationId: 'loc-old' }), /Works at|Supports/);
+  assert.doesNotThrow(() => validate({ primaryLocationId: null, supportedLocationIds: ['loc-old'] }, { primaryLocationId: 'loc-old', supportedLocationIds: ['loc-support'] }));
 });

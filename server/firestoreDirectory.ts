@@ -606,10 +606,13 @@ export function validateMetadataWrites(
         if (checked.error) throw new DirectoryValidationError(checked.error);
         data.requestedChanges = checked.changes;
         if (data.targetType === 'Person') {
-          const supports = checked.changes.supportedLocationIds as string[] | undefined;
-          const primary = checked.changes.primaryLocationId;
-          for (const id of [...(supports || []), ...(typeof primary === 'string' ? [primary] : [])]) if (!locations.some(location => location.id === id && location.recordStatus === 'Active')) throw new DirectoryValidationError('Employment proposals must reference active Locations.');
-          if (supports?.includes(String(primary ?? target.primaryLocationId ?? ''))) throw new DirectoryValidationError('Works at and Supports must be separate relationships.');
+          const primaryTouched = Object.hasOwn(checked.changes, 'primaryLocationId');
+          const supportsTouched = Object.hasOwn(checked.changes, 'supportedLocationIds');
+          const supports = (supportsTouched ? checked.changes.supportedLocationIds : target.supportedLocationIds) as string[] | undefined;
+          const primary = primaryTouched ? checked.changes.primaryLocationId : target.primaryLocationId;
+          const proposedReferences = [...(supportsTouched ? supports || [] : []), ...(primaryTouched && typeof primary === 'string' ? [primary] : [])];
+          for (const id of proposedReferences) if (!locations.some(location => location.id === id && location.recordStatus === 'Active')) throw new DirectoryValidationError('Employment proposals must reference active Locations.');
+          if ((primaryTouched || supportsTouched) && Array.isArray(supports) && typeof primary === 'string' && supports.includes(primary)) throw new DirectoryValidationError('Works at and Supports must be separate relationships.');
         }
         data.targetName = target.fullName || target.name || target.id;
         if (data.targetType === 'Location') data.targetStoreNumber = target.storeNumber;

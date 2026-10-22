@@ -214,7 +214,20 @@ Exit evidence: implementation, deployment, data cutover, live acceptance, and ex
 
 For each task, maintain its ID, owner, status, PR/source SHA, tests or review evidence, deployment evidence if applicable, remaining gap, and next action. Use Not started, In progress, Blocked, Ready for review, or Complete. Only check a task after its exit evidence exists. Keep implementation, migration, deployment, and live acceptance as distinct records.
 
-Current status: review refinements recorded; Phase 0 baseline work In progress. All implementation acceptance checkboxes remain unchecked until evidence exists. No production data inventory, person-specific repair, authenticated payload sample, passing implementation tests, or deployment is claimed by this planning amendment. Documentation validation consists of coverage, links, scope, and readback checks.
+Current status: review refinements recorded; Phase 0 and the first bounded Phase 1 slice are In progress. The first repair is review-ready in [PR 23](https://github.com/twgallo13/Shiekh-Directory/pull/23), source `045ec4167da761ab10f15c33b7bdbea7cee10c9c`. Its [evidence record](https://github.com/twgallo13/Shiekh-Directory/blob/fix/leadership-request-selection/docs/dispatches/dispatch-16-leadership-request-repair.md) records reproduction, tests, production availability checks and remaining limits. Whole-task checkboxes stay unchecked where broader acceptance remains incomplete.
+
+| Task or work item | Status | Evidence and remaining work |
+| --- | --- | --- |
+| Plan refinements | Complete | Relationship coverage inventory, exact current DM wire fields/joins and frozen-versus-current snapshot rules recorded. Production reference inventory is still a separate task. |
+| P0.1 baseline | In progress | Clean isolated clone at audited main; public HTML/schema/guide match documented hours-release hashes and API denial checks pass. Current Cloud Run traffic/image metadata has not been independently inspected. |
+| P0.2 reproduction | In progress | Pre-fix 11 new server-rejection cases failed and keyboard selector case failed. The reported real Person edit/inactivation failure remains unverified. |
+| P0.3 and P0.4 live inventory and drift | Not started | No authenticated business records were read; restricted inventory and a fresh comparison with historical approved mappings are still required before cutover. |
+| P0.5 linked-data inventory | In progress | Minimum relationship checklist is recorded; exact per-reader/writer source classification and production-reference evidence remain to be completed. |
+| P1.1 P1.2 P1.3 P1.5 first slice | In progress | PR 23 fixes selected-manager display/keyboard controls, empty/unchanged checks, manager reset on store change and server submission validation. Broad per-type validation, category/target draft reset, vacancies and remaining acceptance are not complete. |
+| PR 23 validation | Complete for reviewed slice | 345 API/unit tests, 14 focused synthetic browser cases, TypeScript check, build and whitespace check passed. Evidence applies to product source at 045ec41; later documentation-only changes need no redundant reruns. |
+| Production release and data changes | Not started | No merge/deployment, personnel or account updates, imports, credential creation, authenticated payload sampling or ownership migration performed. |
+
+The local implementation checkout is clean and the task-owned synthetic Vite server is stopped. The next implementation slice is pending-request immutability/per-type validation and safe request-review save feedback, with draft reset behavior covered before hierarchy migration begins. Continue unaffected synthetic implementation without inventing live inventory or deployment evidence.
 
 Routine engineering choices should be resolved by the implementing agent within this contract. Escalate only real business ambiguity, conflicting current assignments, unavailable access, or a breaking change beyond the approved direction. No decision is needed merely to start baseline inspection and synthetic defect reproduction. A replacement or an explicit vacancy must be selected before a real handover is applied.
 

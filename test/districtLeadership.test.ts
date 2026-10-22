@@ -46,7 +46,7 @@ function fixture() {
   const store = new FirestoreDirectoryStore(db as unknown as Firestore);
   const preview = (id: string | null = 'p-new') => previewDistrictLeadership(district, id, 'Synthetic handover test', all, people, regions);
   const audit = { action: 'District Leadership Changed', entityType: 'Setting', entityId: district.id, entityName: district.name, details: 'Synthetic handover test' };
-  const commit = (writes = districtLeadershipWrites(preview()), account = actor) => store.commit(writes as DirectoryWrite[], audit, account);
+  const commit = (writes: DirectoryWrite[] = districtLeadershipWrites(preview()), account = actor) => store.commit(writes, audit, account);
   return { records, actor, district, regions, people, locations, all, store, audit, preview, commit };
 }
 
@@ -102,6 +102,22 @@ test('An opted-in District prevents store-level override, including a legacy imp
   await assert.rejects(f.commit([{ collection: 'locations', id: 'loc-1', operation: 'set', expectedVersion: Number(saved.version), data: { ...saved, districtManagerId: 'p-old' } }]), /District-owned DM cannot be overridden/);
   await f.commit([{ collection: 'locations', id: 'loc-1', operation: 'set', expectedVersion: Number(saved.version), data: { ...saved, name: 'Safe unrelated edit' } }]);
 });
+
+for (const managerId of ['p-new', null]) {
+  for (const mode of ['existing', 'create', 'move'] as const) {
+    test(`Managed District ${mode} rejects wrong copied DM name for ${managerId || 'vacancy'}`, async () => {
+      const f = fixture(); await f.commit(districtLeadershipWrites(f.preview(managerId)));
+      const original = f.records.get('locations/loc-1')!;
+      if (mode === 'move') f.records.set('locations/loc-1', { ...original, districtId: undefined, districtManagerId: 'p-old', districtManagerName: 'Previous DM' });
+      const id = mode === 'create' ? 'loc-created' : 'loc-1';
+      const data = { ...original, id, districtManagerId: managerId, ...(mode === 'create' ? { storeNumber: '009' } : {}), districtManagerName: 'Wrong or leftover name' };
+      const write: DirectoryWrite = { collection: 'locations', id, operation: 'set', data, ...(mode === 'create' ? {} : { expectedVersion: Number(original.version) }) };
+      const before = structuredClone([...f.records]);
+      await assert.rejects(f.commit([write], { ...f.actor, role: 'Editor' }), /copied name is invalid/);
+      assert.deepEqual([...f.records], before);
+    });
+  }
+}
 
 test('District-owned leader is protected from deletion/inactivation even with zero retail stores', async () => {
   const f = fixture(); f.records.set('districts/d-1', { ...f.district, districtManagerId: 'p-new' });

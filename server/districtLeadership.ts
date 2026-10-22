@@ -85,6 +85,11 @@ export function validateDistrictLeadershipState(writes: DirectoryWrite[], previo
       if (!isDistrictLeadershipMember(location, district.id)) continue;
       if (!changedDistricts.has(district.id) && !writes.some(w => w.collection === 'locations' && w.id === locationId)) continue;
       if ((location.districtManagerId || null) !== managerId) throw new DirectoryValidationError('District-owned DM cannot be overridden on a store. Refresh or use District leadership settings.');
+      const manager = managerId ? people.find(p => p.id === managerId) : undefined;
+      if (managerId && !manager) throw new DirectoryValidationError('The District leader references a missing Person. Repair District leadership before saving its stores.');
+      if ((location.districtManagerName ?? '') !== (managerId ? manager!.fullName : '')) {
+        throw new DirectoryConflict('The District DM name changed or the copied name is invalid. Refresh the District and Person records before saving.');
+      }
     }
   }
 }

@@ -36,6 +36,18 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
     }
     next();
   }));
+  router.post('/submissions/cancel', async (request, response) => {
+    const token = request.get('authorization')?.match(/^Bearer ([^\s]+)$/i)?.[1];
+    if (!token || token.length > 8192) return response.status(401).json({ error: { code: 'invalid_token' } });
+    if (!authenticate || !store.cancelRequestSubmission) return response.status(503).json({ error: { code: 'directory_unavailable' } });
+    let actor: Account;
+    try { actor = await authenticate(token); }
+    catch (e) { return response.status(e instanceof AccessDenied ? 403 : e instanceof AuthenticationUnavailable ? 503 : 401).json({ error: { code: 'access_denied' } }); }
+    const writes = parseWrites([request.body?.write]);
+    if (!writes || !COLLECTION_ROLES.requests.includes(actor.role) || writes[0].collection !== 'requests') return response.status(400).json({ error: { code: 'invalid_submission' } });
+    try { return response.json(await store.cancelRequestSubmission(writes[0], actor)); }
+    catch (e) { return response.status(e instanceof DirectoryConflict ? 409 : e instanceof DirectoryValidationError ? 400 : 503).json({ error: { code: 'submission_recovery_failed', message: e instanceof DirectoryConflict || e instanceof DirectoryValidationError ? e.message : 'Recovery could not be confirmed. Keep this submission and try recovery again.' } }); }
+  });
   router.post("/commit", async (request, response) => {
     const token = request.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1];
     if (!token || token.length > 8192) return response.status(401).json({ error: { code: "invalid_token" } });

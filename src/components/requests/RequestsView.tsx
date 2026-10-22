@@ -7,6 +7,7 @@ import { EmptyState } from '../common/EmptyState';
 import { PageHeader } from '../common/PageHeader';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
 import { correctionReview } from '../../lib/correctionRequest';
+import { validateRequestProposal } from '../../lib/requestValidation';
 
 interface RequestsViewProps {
   onOpenNewRequest: () => void;
@@ -190,6 +191,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
           const targetLocation = req.targetType === 'Location' ? locations.find(location => location.id === req.targetId) : undefined;
           const target = req.targetType === 'Location' ? targetLocation : req.targetType === 'Person' ? people.find(person => person.id === req.targetId) : undefined;
           const review = correctionReview(req, target);
+          if (!review.blockedReason && target) review.blockedReason = validateRequestProposal(req as unknown as Record<string, unknown>, target as unknown as Record<string, unknown>).error || null;
           const proposedInbox = req.changeType === 'Other Store Info Update' ? req.requestedChanges.locationInboxEmail : undefined;
           const normalizedInbox = typeof proposedInbox === 'string' ? normalizeLocationInboxEmail(proposedInbox) : null;
           const inboxConflicts = normalizedInbox

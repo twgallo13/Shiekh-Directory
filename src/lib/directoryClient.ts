@@ -6,7 +6,7 @@ export type DirectoryCollection = 'locations' | 'people' | 'users' | 'hours_temp
 export interface DirectoryWrite { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data?: Record<string, unknown>; expectedDefinition?: import('./customFields').CustomFieldDefinition | null; expectedCustomMetadata?: Record<string, unknown>; expectedVersion?: number | null; locationInboxAcknowledgment?: LocationInboxAcknowledgment; districtLeadershipMembers?: import('./districtLeadership').DistrictLeadershipMember[] }
 export interface DirectoryAudit { action: string; entityType: 'Location' | 'Person' | 'User' | 'Setting' | 'Request' | 'Communication'; entityId: string; entityName: string; details: string }
 export interface DirectoryCommittedRecord { collection: DirectoryCollection; id: string; operation: 'set' | 'delete'; data: Record<string, unknown> | null }
-export interface DirectoryCommitResult { records: DirectoryCommittedRecord[] }
+export interface DirectoryCommitResult { records: DirectoryCommittedRecord[]; replayed?: boolean }
 export interface DirectoryDependency { type: 'Location' | 'District'; id: string; name: string; storeNumber?: string; href?: string }
 export type RegistrySaveIntent = { create: true } | { create: false; expectedVersion: number };
 export interface HierarchyRegistrySnapshot { regions: RegionRecord[]; districts: DistrictRecord[] }
@@ -14,6 +14,14 @@ export class DirectoryCommitError extends Error {
   constructor(message: string, public readonly code?: string, public readonly details?: { dependencies?: DirectoryDependency[]; correction?: string }) {
     super(message);
   }
+}
+
+/** Reconcile-or-seal an uncertain submission; never discard a potentially in-flight write. */
+export async function cancelDirectorySubmission(user: SessionUser, write: DirectoryWrite): Promise<DirectoryCommitResult & { cancelled: boolean }> {
+  const response = await fetch('/api/directory/submissions/cancel', { method: 'POST', headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/json' }, cache: 'no-store', redirect: 'error', body: JSON.stringify({ write }) });
+  const result = await response.json();
+  if (!response.ok) throw new DirectoryCommitError(result.error?.message || 'Submission recovery could not be confirmed. Keep this operation and try again.', result.error?.code);
+  return result;
 }
 
 export function buildRegistryWrite(

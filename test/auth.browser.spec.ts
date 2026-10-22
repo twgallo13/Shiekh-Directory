@@ -21,11 +21,11 @@ async function prepareHoursCorrection(page: Page, options: { role?: string; requ
     targetName: 'Synthetic Hours Store', targetStoreNumber: '001', changeType: 'Standard Hours Adjustment',
     requestedBy: { id: 'synthetic-user', name: 'Synthetic Requester', email: 'requester@example.test', role: 'Viewer' },
     requestedAt: '2026-10-04T12:00:00.000Z', status: 'Pending',
-    currentSnapshot: { standardHours: options.request === 'noop' || options.request === 'stale' ? { ...current, monday: { ...current.monday, open: '07:00' } } : current },
+    currentSnapshot: { standardHours: options.request === 'noop' || options.request === 'stale' ? { ...current, monday: { ...current.monday, open: '07:00' } } : current, hoursMode: locations[0].hoursMode ?? null, hoursTemplateId: locations[0].hoursTemplateId ?? null },
     requestedChanges: { standardHours: options.request === 'noop' ? Object.fromEntries(Object.entries(current).reverse()) as LocationRecord['standardHours'] : proposed },
   }] : [];
   const seed = { ...seedDirectory(0), locations, requests, hoursTemplates: [{ id: 'synthetic-template', name: 'Synthetic template', description: '', schedule: current }] };
-  const commits: { writes: { collection: string; data: Record<string, unknown>; expectedVersion?: number }[] }[] = [];
+  const commits: { writes: { collection: string; id: string; data: Record<string, unknown>; expectedVersion?: number }[] }[] = [];
   let mailEvents = 0;
   await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: seed }));
   await page.route('**/api/mail/event', route => { mailEvents++; return route.fulfill({ json: { success: true } }); });
@@ -50,7 +50,7 @@ async function prepareLeadershipRequest(page: Page, fail = false) {
   await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: { ...seed, people } }));
   await page.route('**/api/directory/commit', route => {
     const body = route.request().postDataJSON(); commits.push(body);
-    if (fail) return route.fulfill({ status: 409, json: { error: { message: 'The selected manager changed. Review your draft.' } } });
+    if (fail) return route.fulfill({ status: 409, json: { error: { code: 'directory_conflict', message: 'The selected manager changed. Review your draft.' } } });
     return route.fulfill({ json: commitResponseFor(body) });
   });
   await page.goto(`${origin}/requests/new?locationId=loc-1`); await restore(page, true);
@@ -1256,7 +1256,7 @@ test('Hours correction selected-store initialization/reset prevents unchanged su
   expect(f.commits).toHaveLength(1);
   const data = f.commits[0].writes[0].data;
   expect(data.targetId).toBe('loc-1');
-  expect(data.currentSnapshot).toEqual({ standardHours: f.locations[0].standardHours });
+  expect(data.currentSnapshot).toEqual({ standardHours: f.locations[0].standardHours, hoursMode: f.locations[0].hoursMode, hoursTemplateId: f.locations[0].hoursTemplateId });
   expect(data.requestedChanges).toEqual({ standardHours: { ...f.locations[0].standardHours, monday: { ...f.locations[0].standardHours!.monday, open: '09:00' } } });
 });
 
@@ -1339,6 +1339,70 @@ test('Request review lost response requires reload and reconciles the saved requ
   await expect(page.locator('span').filter({ hasText: /^\s*Approved\s*$/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve & Apply' })).toHaveCount(0);
   expect(f.commits).toHaveLength(1);
+});
+
+test('Request submission recovery survives reload and reconciles an already reviewed record without duplicate side effects', async ({ page }) => {
+  const f = await prepareHoursCorrection(page);
+  let original: any;
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); f.commits.push(body);
+    if (!original) { original = body; f.requests.push({ ...body.writes[0].data, status: 'Rejected', version: 2 }); return route.abort('failed'); }
+    expect(body).toEqual(original);
+    return route.fulfill({ json: { replayed: true, records: [{ collection: 'requests', id: original.writes[0].id, operation: 'set', data: f.requests[0] }] } });
+  });
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  let dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102');
+  await dialog.locator('textarea').fill('Preserve this original note');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Recover this exact submission');
+  await expect(dialog.getByLabel('Target Location')).toBeDisabled();
+  await page.reload(); await restore(page, true); dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('Preserve this original note');
+  await page.screenshot({ path: 'test-results/request-submission-recovery.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'test-results/request-submission-recovery-mobile.png', fullPage: true });
+  await dialog.getByRole('button', { name: 'Close Submit Store Correction Request' }).click();
+  await page.getByRole('button', { name: 'Submit New Request' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Preserve this original note');
+  await dialog.getByRole('button', { name: 'Recover saved submission' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('span').filter({ hasText: /^\s*Rejected\s*$/ })).toBeVisible();
+  expect(f.commits).toHaveLength(2); expect(f.mailEvents()).toBe(0);
+  await page.getByRole('button', { name: 'Submit New Request' }).click();
+  await expect(page.getByRole('button', { name: 'Recover saved submission' })).toHaveCount(0);
+});
+
+test('Request submission safe cancellation restores the draft before a replacement gets a new identity', async ({ page }) => {
+  const f = await prepareHoursCorrection(page); let sealed: any;
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); f.commits.push(body);
+    return f.commits.length === 1 ? route.abort('failed') : route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.route('**/api/directory/submissions/cancel', route => { sealed = route.request().postDataJSON().write; return route.fulfill({ json: { records: [], cancelled: true } }); });
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102'); await dialog.locator('textarea').fill('Keep this draft');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Recover this exact submission');
+  await dialog.getByRole('button', { name: 'Check saved state / cancel if not saved' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('safely cancelled');
+  expect(sealed).toEqual(f.commits[0].writes[0]);
+  await expect(dialog.getByLabel('Target Location')).toBeEnabled();
+  await expect(dialog.locator('textarea')).toHaveValue('Keep this draft');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550103');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click(); await expect(dialog).toHaveCount(0);
+  expect(f.commits[1].writes[0].id).not.toBe(f.commits[0].writes[0].id);
+});
+
+test('Request submission validates normalized phone no-ops before sending', async ({ page }) => {
+  const f = await prepareHoursCorrection(page);
+  f.locations[0].phone = '+12135550101';
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('(555) 000-0000').fill(f.locations[0].phone);
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('No change'); expect(f.commits).toHaveLength(0);
 });
 
 test('Request submission holds its draft and close controls until persistence finishes', async ({ page }) => {

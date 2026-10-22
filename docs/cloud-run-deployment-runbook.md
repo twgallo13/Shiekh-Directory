@@ -11,7 +11,21 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #37
+## Current live revision — PR #39
+
+Later access checkpoint: the owner explicitly approved the exact Shiekh-Intel target and two new v3 grants; Settings confirmed them while preserving its old three grants and single token version. No token secret was read or rotated; Dynamic QR/account permissions are unchanged. Initial publication's no-new-grant statement below is historical. Authenticated consumer acceptance remains pending. See Dispatch 25 for the latest email-policy follow-on work.
+
+Released October 22, 2026: source `238d46f695d70e9a6ae8f90169283ff2ad7458f3`, tree `2d008962e35e44bc8d2cccb704892529479484f0`, identical to reviewed/tested `71bc32f`. Cloud Build `56e63628-890b-4c39-9a0b-8b3ea0661c5c` succeeded with unchanged build identity. Revision `shiekh-location-company-directory-pr39-238d46f` is Ready at sole 100% desired/observed traffic. Both hosts match HTML `3a80fefcb01a6450809e72d9df12da317bf7fa5adab66f3157405f0c98dfaa00` and 46 MIME-validated assets. V1/v2/v3/operating denial guards, unknown routes, no-store and exact served documentation checks passed. Firebase/settings/identities and 26 historical routing tags are unchanged; the temporary preview tag was removed. Branded routing remains Ready/DomainRoutable.
+
+[Dispatch 25](dispatches/dispatch-25-district-leadership-api.md#publication-checkpoint--october-22-2026) records tests, reviews, read-cost limits and hashes. V3 District leadership/work-contact capability is published, not automatically granted. Next: explicitly approved exact-client scopes, an authorized authenticated payload and consumer acceptance; do not close issue #36 on deployment alone. No new grant, token rotation, staffing/account mutation or external application change occurred.
+
+**Rollback gate:** prefer forward repair. Before reverting to code without the new scope catalog, separately authorize and concurrency-guard removal of only new grants, preserving old grants/tokens and coordinating consumer restart. Older parsers can reject an entire client containing new scopes, including old location access. Traffic rollback does not undo grant writes. Preserve all prior request/status/address/Person-card safeguards too. Documentation-only publication records need no application rebuild.
+
+## Historical live revision — PR #37
+
+<a id="current-live-revision--pr-37"></a>
+
+Superseded by PR #39 above; next-task statements in this historical checkpoint are not the current status.
 
 Released 2026-10-22 UTC: merged source `6614ac09487437bb84c12e411b87f0c58efc6bfd`, tree `ed010e7edcbb9c324ee33a38648be00065e286a9`, identical to final tested/reviewed `a5a669578cb39bf099c1fe763eb6ba272f4021c5`. Cloud Build `ff2e3e80-92aa-4f39-9cbb-3537ce2e7f88` succeeded with unchanged build identity. Revision `shiekh-location-company-directory-pr37-6614ac0` is Ready and sole 100% desired/observed production traffic.
 

@@ -1,12 +1,22 @@
 # Directory hierarchy and operating workflows implementation plan
 
-**Current handoff:** PR #37 Person-card improvements are published at `6614ac0`. Start with [Latest handoff](#latest-handoff--person-card-published-issue-36-next) and [Dispatch 24](../dispatches/dispatch-24-person-card-linked-positions.md#publication-checkpoint--october-22-2026). Next is issue #36/P6.9, not another Person-card rebuild. Original audit findings and prior checkpoints below are retained as historical evidence; the latest handoff governs current release/next-task wording. The owner approved intentionally selected concurrent positions; live staffing/identity/client grants remain separate decisions.
+**Current handoff:** PR #39 capability is published at `238d46f`, Ready revision `shiekh-location-company-directory-pr39-238d46f` at sole 100%. See [Dispatch 25](../dispatches/dispatch-25-district-leadership-api.md) for release/review evidence and the later confirmed owner-approved Shiekh-Intel grants. Authorized consumer payload and acceptance remain pending. Next implementation is the shared-store-mailbox contact safeguard, followed by the email/responsibility checklist below. Original audits/prior handoffs are historical. Concurrent positions remain approved; real staffing/identity decisions, broader acting/Region/offboarding/migration and account access remain separate and incomplete.
 
 Approved direction recorded October 21, 2026 and refined October 22. The owner approved implementation and autonomous merge/publication of bounded repairs. PRs #23, #24, #26, #28 and #30 are merged and deployed; the broader plan remains in progress. PR #26 adds explicit opt-in District DM ownership; PR #28 integrates it into the existing hierarchy registry and makes retail store DM fields read-only. PR #30 protects request history, confirms review saves and isolates proposal drafts. No automated personnel/hierarchy cutover or restoration was performed by these releases.
 
 The Directory will provide consistent organizational assignments and store information across its own screens and all consuming applications. This work repairs leadership changes and corrections, adds a practical leadership handover, and separates immediate temporary operating events from permanent store information. The first deliverable is this documented checklist; it does not represent a production change or completed migration.
 
 ## Scope and working agreement
+
+### Owner clarification — store inboxes and optional individual email (October 22)
+
+Shiekh-Intel's exact new grants were explicitly approved and confirmed in Settings after PR #39 publication; old grants/token and Dynamic QR remain unchanged. Authentication/payload/consumer acceptance are still pending. The following app-neutral email work is approved implementation, not data restoration or mailbox/account administration:
+
+1. Harden v3 contact eligibility first: withhold conventional store-number mailbox addresses as shared inboxes even when Location inbox data is missing. Keep the existing response field/status enum, separate grants and v1/v2 exclusions; add regression tests for legacy zero-padded addresses, unpopulated Location inboxes and ordinary individual company addresses.
+2. Keep `Location.locationInboxEmail` as the sole store inbox. Keep `Person.workEmail` optional and label it clearly as an individually assigned company address, not the store mailbox. Rare SMs may have both that individual contact and responsibility for one or more store inboxes; do not invent a competing personal `storeEmail` or blindly migrate legacy values.
+3. Audit Person-card, validation, imports/exports and request/admin write paths before changing them. Display read-only store inbox responsibilities from canonical Location `storeManagerId` / `assistantStoreManagerIds` assignments with stable IDs, roles, source links and missing-data diagnostics. Supporting/working-at a Location alone is not evidence of SM/AM ownership. Multi-position/multi-store staffing must remain explicit.
+4. API consumers use Location ID/store inbox and scoped staffing Person IDs; optional individual DM contacts remain v3-only. Any further personnel-contact projection requires an explicit field allowlist/grant review, not silent widening of v2. Preserve null/clearing semantics and avoid inferring email identity, verified mailbox access or login permissions.
+5. Update user-facing help, technical/schema/import-export documentation and SOP handoff together; test SM+AM sharing, optional individual SM contact, dual positions, transfers/vacancy/inactive/missing links and consumer synchronization. Do not edit the private Notion matrix, create mailbox aliases, change sign-in providers or grant real human access. The owner's latest rare-SM exception governs over older general wording.
 
 Owner clarification (October 22): **Territory means the existing Region**, not another hierarchy level. Use Region → District → Store. District Manager assignment belongs inside the existing District settings, not a separate top-level handover form. The store editor selects Region, filters Districts to that Region, and shows the inherited DM without a retail store-level override. Registry UX must be browse-first, readable on mobile, and expose creation/edit/leadership forms only on demand. [Dispatch 19](../dispatches/dispatch-19-hierarchy-registry-ux.md) records this refinement. Preserve legacy assignments with explicit setup warnings until reviewed District-by-District; no inferred manager, automatic data migration or extra hierarchy level is approved by this clarification.
 
@@ -288,7 +298,11 @@ This plan lives at `docs/plans/directory-consistency-plan.md`. Relative links ab
 
 # October 22 continuation checkpoint
 
-## Latest handoff — Person card published, issue 36 next
+<a id="latest-handoff--person-card-published-issue-36-next"></a>
+
+## Historical handoff — Person card published, issue 36 next
+
+Superseded by PR #39's current handoff at the top and Dispatch 25. All baseline and next-task statements in this PR #37 section describe that historical checkpoint only.
 
 This checkpoint supersedes earlier current-release/next-task notes. PR #37 is published at source `6614ac09487437bb84c12e411b87f0c58efc6bfd`, tree `ed010e7edcbb9c324ee33a38648be00065e286a9`, Ready revision `shiekh-location-company-directory-pr37-6614ac0`, sole 100% desired/observed traffic. Build `ff2e3e80-92aa-4f39-9cbb-3537ce2e7f88` succeeded. Both hosts match 46 MIME-validated assets; configuration, identities, historical tags, domain and public access protections were preserved. [Dispatch 24](../dispatches/dispatch-24-person-card-linked-positions.md#publication-checkpoint--october-22-2026) and the [current runbook](../cloud-run-deployment-runbook.md#current-live-revision--pr-37) are the release evidence. Earlier PR #32 request and PR #33/#34 status/address behavior remains included. No authenticated production payload/business-write/mail acceptance was performed.
 
@@ -318,7 +332,7 @@ For every subsequent API contract/field/scope or relevant behavior change, the i
 
 ### Issue 36 — DM data for an authorized API consumer
 
-Active implementation is recorded in [Dispatch 25](../dispatches/dispatch-25-district-leadership-api.md), branch `codex/district-leadership-api`; not published/authorized until its checkpoints. The owner selected Directory work email as contact only and explicit account-to-Person-ID linking, not verified company sign-in email. New v3 District leadership/membership snapshots and separate minimal read/contact grants preserve existing v1/v2 contracts and default grants. Company-domain/lifecycle/shared-inbox eligibility is conservative; no automatic contact backfill or other-app/account edit. Exact-client live authorization and consumer acceptance remain separate gates.
+Published implementation: PR #39, source `238d46f`, recorded in [Dispatch 25](../dispatches/dispatch-25-district-leadership-api.md). The owner selected Directory work email as contact only and explicit account-to-Person-ID linking, not verified company sign-in email. V3 District leadership/membership snapshots and separate minimal read/contact grants preserve existing v1/v2 contracts and defaults. Company-domain/lifecycle/shared-inbox eligibility is conservative; no automatic contact backfill or other-app/account edit. Exact-client live authorization and consumer acceptance remain pending separate gates; leave issue #36 open.
 
 [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) is within **P6.9**, not an unrelated app-specific feature. Deliver after the current Person-card review/release as separate reviewed API/access work; do not silently add email to existing contact-free grants or mix live credential changes into the Person-card PR.
 

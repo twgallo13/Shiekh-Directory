@@ -1,6 +1,6 @@
 import { personLifecycle } from './personLifecycle';
 
-import { allowsLeadershipPosition, listedPosition, type LeadershipRole } from './personPositions';
+import { allowsLeadershipPosition, listedPosition, personPositionLabel, type LeadershipRole } from './personPositions';
 export type { LeadershipRole } from './personPositions';
 type PickerPerson = { id: string; fullName: string; jobTitle?: string; role?: string; positionIds?: unknown; status?: unknown; activeStatus?: unknown };
 
@@ -20,7 +20,7 @@ export function leadershipCandidates<T extends PickerPerson>(people: T[], role?:
 
 /** Retain an unmatched current canonical ID visibly without making it a selectable new assignment. */
 export function leadershipPickerOptions(people: PickerPerson[], role: LeadershipRole, showAll: boolean, currentId?: string, currentName?: string) {
-  const options = leadershipCandidates(people, role, showAll).map(person => ({ id: person.id, label: `${person.fullName} (${person.jobTitle || person.role || 'Staff'})`, currentOnly: false }));
+  const options = leadershipCandidates(people, role, showAll).map(person => ({ id: person.id, label: `${person.fullName} (${personPositionLabel(person)})`, currentOnly: false }));
   if (currentId && !options.some(option => option.id === currentId)) {
     const current = people.filter(person => person.id === currentId);
     options.push({ id: currentId, label: `${current.length === 1 ? current[0].fullName : currentName || `Unresolved person [${currentId}]`} (Current assignment — review position/status)`, currentOnly: true });

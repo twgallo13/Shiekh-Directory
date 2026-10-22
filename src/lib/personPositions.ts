@@ -28,6 +28,14 @@ export function listedPosition(person: PositionPerson, role: LeadershipRole) {
   return personPositions(person).ids.includes(PERSON_POSITIONS.find(p => p.label === role)!.id);
 }
 
+/** Display controlled positions without presenting a legacy title as mapped authority. */
+export function personPositionLabel(person: PositionPerson): string {
+  const state = personPositions(person);
+  if (state.source === 'invalid') return 'Positions need review';
+  if (state.source === 'controlled') return PERSON_POSITIONS.filter(p => state.ids.includes(p.id)).map(p => p.label).join(' · ') || 'No linked positions';
+  return (typeof person.jobTitle === 'string' && person.jobTitle.trim()) || (typeof person.role === 'string' && person.role.trim()) || 'Team Member';
+}
+
 /** Keep legacy cross-role coverage until the owner explicitly maps the Person. */
 export function allowsLeadershipPosition(person: PositionPerson, role: LeadershipRole) {
   const state = personPositions(person);

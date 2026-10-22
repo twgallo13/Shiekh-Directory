@@ -12,7 +12,7 @@ import { buildPersonLocationRelationships, getPersonDeletionBlockers } from '../
 import { PersonEditorForm } from './PersonEditorForm';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { personLifecycle } from '../../lib/personLifecycle';
-import { PERSON_POSITIONS, personPositions } from '../../lib/personPositions';
+import { personPositionLabel } from '../../lib/personPositions';
 import { personProfileImpact } from '../../lib/personProfileImpact';
 
 interface PersonDetailModalProps {
@@ -110,7 +110,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
     <Modal
       isOpen
       title={person.fullName}
-      description={personPositions(person).source === 'controlled' ? PERSON_POSITIONS.filter(p => personPositions(person).ids.includes(p.id)).map(p => p.label).join(' · ') || 'No linked positions' : person.jobTitle || person.role || 'Team Member'}
+      description={personPositionLabel(person)}
       size={isEditing ? 'lg' : 'md'}
       onClose={() => isEditing ? editorClose.current?.() : onClose()}
       icon={(

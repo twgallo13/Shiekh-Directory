@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { personPositions, allowsLeadershipPosition, validPositionIds } from '../src/lib/personPositions';
+import { personPositions, allowsLeadershipPosition, validPositionIds, personPositionLabel } from '../src/lib/personPositions';
 import { leadershipCandidates } from '../src/lib/leadershipPicker';
 import { personProfileImpact } from '../src/lib/personProfileImpact';
 import { buildPersonLocationRelationships } from '../src/lib/personLocationRelationships';
@@ -36,6 +36,13 @@ test('invalid and explicitly empty mappings never fall back to a legacy title', 
     assert(!allowsLeadershipPosition({ ...person, positionIds }, 'Store Manager'));
   }
   assert(validPositionIds([])); assert(!allowsLeadershipPosition({ ...person, positionIds: [] }, 'Store Manager'));
+});
+
+test('controlled display labels never hide concurrent positions or fall back from invalid mappings', () => {
+  assert.equal(personPositionLabel({ ...person, positionIds: ['store-manager', 'district-manager'] }), 'Store Manager · District Manager');
+  assert.equal(personPositionLabel({ ...person, positionIds: [] }), 'No linked positions');
+  assert.equal(personPositionLabel({ ...person, positionIds: ['invented'] }), 'Positions need review');
+  assert.equal(personPositionLabel(person), 'SM');
 });
 
 test('preview includes District ownership even with no stores; copied DMs are not authority', () => {

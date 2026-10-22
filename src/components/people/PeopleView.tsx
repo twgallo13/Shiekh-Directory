@@ -9,7 +9,7 @@ import { PageHeader } from '../common/PageHeader';
 import { Modal } from '../common/Modal';
 import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
 import { PersonEditorForm } from './PersonEditorForm';
-import { listedPosition, personPositions, PERSON_POSITIONS } from '../../lib/personPositions';
+import { listedPosition, personPositions, PERSON_POSITIONS, personPositionLabel } from '../../lib/personPositions';
 
 interface PeopleViewProps {
   onSelectPerson: (person: Person) => void;
@@ -98,7 +98,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
                 </div>
                 <div>
                   <h3 className="font-bold text-neutral-900 text-sm">{person.fullName}</h3>
-                  <p className="text-xs text-neutral-500">{personPositions(person).source === 'controlled' ? PERSON_POSITIONS.filter(p => personPositions(person).ids.includes(p.id)).map(p => p.label).join(' · ') || 'No linked positions' : person.jobTitle || person.role || 'Team Member'}</p>
+                  <p className="text-xs text-neutral-500">{personPositionLabel(person)}</p>
                 </div>
               </div>
               <PrivacyBadge level={person.phonePrivacy} />

@@ -170,6 +170,25 @@ test('Person card Organization link opens the actual hierarchy tab without a wri
   expect(f.commits).toHaveLength(0);
 });
 
+test('Person and store read displays use controlled positions and District ownership without writes', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.people[0].positionIds = ['store-manager', 'district-manager'];
+  f.seed.people.push({ id: 'old-dm', fullName: 'Historical Copied DM', status: 'Active' });
+  f.seed.locations[0].districtManagerId = 'old-dm';
+  await page.goto(origin + '/'); await restore(page, true);
+  await expect(page.getByText('(DM: Synthetic Profile Manager)', { exact: true })).toBeVisible();
+  await expect(page.getByText('(DM: Historical Copied DM)', { exact: true })).toHaveCount(0);
+  await page.goto(origin + '/locations/loc-1'); await restore(page, true);
+  await expect(page.getByText('Synthetic Profile Manager', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Historical Copied DM', { exact: true })).toHaveCount(0);
+  await page.goto(origin + '/people'); await restore(page, true);
+  await expect(page.getByRole('button', { name: /Synthetic Profile Manager/ })).toContainText('Store Manager · District Manager');
+  f.seed.people[0].positionIds = ['invalid'];
+  await page.reload(); await restore(page, true);
+  await expect(page.getByRole('button', { name: /Synthetic Profile Manager/ })).toContainText('Positions need review');
+  expect(f.commits).toHaveLength(0);
+});
+
 test('API documentation links are discoverable and keyboard-accessible without credential changes', async ({ page }, testInfo) => {
   await prepare(page, 'System Administrator');
   await page.setViewportSize({ width: 390, height: 844 });

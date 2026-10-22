@@ -62,8 +62,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   ])), [locations, regions, districts]);
   const leadershipByLocationId = useMemo(() => new Map(locations.map(location => [
     location.id,
-    resolveActiveLocationManagers(location, people),
-  ])), [locations, people]);
+    resolveActiveLocationManagers(location, people, districts),
+  ])), [locations, people, districts]);
 
   // Group all locations by stable hierarchy group for Quick Reference Roster
   const districtMap = useMemo(() => {

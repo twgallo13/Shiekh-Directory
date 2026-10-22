@@ -8,6 +8,16 @@ The Directory will provide consistent organizational assignments and store infor
 
 ## Scope and working agreement
 
+### Owner clarification — store inboxes and optional individual email (October 22)
+
+Shiekh-Intel's exact new grants were explicitly approved and confirmed in Settings after PR #39 publication; old grants/token and Dynamic QR remain unchanged. Authentication/payload/consumer acceptance are still pending. The following app-neutral email work is approved implementation, not data restoration or mailbox/account administration:
+
+1. Harden v3 contact eligibility first: withhold conventional store-number mailbox addresses as shared inboxes even when Location inbox data is missing. Keep the existing response field/status enum, separate grants and v1/v2 exclusions; add regression tests for legacy zero-padded addresses, unpopulated Location inboxes and ordinary individual company addresses.
+2. Keep `Location.locationInboxEmail` as the sole store inbox. Keep `Person.workEmail` optional and label it clearly as an individually assigned company address, not the store mailbox. Rare SMs may have both that individual contact and responsibility for one or more store inboxes; do not invent a competing personal `storeEmail` or blindly migrate legacy values.
+3. Audit Person-card, validation, imports/exports and request/admin write paths before changing them. Display read-only store inbox responsibilities from canonical Location `storeManagerId` / `assistantStoreManagerIds` assignments with stable IDs, roles, source links and missing-data diagnostics. Supporting/working-at a Location alone is not evidence of SM/AM ownership. Multi-position/multi-store staffing must remain explicit.
+4. API consumers use Location ID/store inbox and scoped staffing Person IDs; optional individual DM contacts remain v3-only. Any further personnel-contact projection requires an explicit field allowlist/grant review, not silent widening of v2. Preserve null/clearing semantics and avoid inferring email identity, verified mailbox access or login permissions.
+5. Update user-facing help, technical/schema/import-export documentation and SOP handoff together; test SM+AM sharing, optional individual SM contact, dual positions, transfers/vacancy/inactive/missing links and consumer synchronization. Do not edit the private Notion matrix, create mailbox aliases, change sign-in providers or grant real human access. The owner's latest rare-SM exception governs over older general wording.
+
 Owner clarification (October 22): **Territory means the existing Region**, not another hierarchy level. Use Region → District → Store. District Manager assignment belongs inside the existing District settings, not a separate top-level handover form. The store editor selects Region, filters Districts to that Region, and shows the inherited DM without a retail store-level override. Registry UX must be browse-first, readable on mobile, and expose creation/edit/leadership forms only on demand. [Dispatch 19](../dispatches/dispatch-19-hierarchy-registry-ux.md) records this refinement. Preserve legacy assignments with explicit setup warnings until reviewed District-by-District; no inferred manager, automatic data migration or extra hierarchy level is approved by this clarification.
 
 Earlier owner direction (October 21), still applicable to data safety: leave the reported departed DM unchanged for testing and regard current data as test-affected. A later restore is intended but no restore source, destructive reset or replacement selection has been approved. [Dispatch 18](../dispatches/dispatch-18-district-dm-handover.md) records the opt-in District ownership slice, compatible store copies, validation and restore/rollback boundaries. Later implementation/publication approval and explicit multiple-position approval do not authorize selecting real staffing assignments, account access or data restoration.
@@ -288,7 +298,11 @@ This plan lives at `docs/plans/directory-consistency-plan.md`. Relative links ab
 
 # October 22 continuation checkpoint
 
-## Latest handoff — Person card published, issue 36 next
+<a id="latest-handoff--person-card-published-issue-36-next"></a>
+
+## Historical handoff — Person card published, issue 36 next
+
+Superseded by PR #39's current handoff at the top and Dispatch 25. All baseline and next-task statements in this PR #37 section describe that historical checkpoint only.
 
 This checkpoint supersedes earlier current-release/next-task notes. PR #37 is published at source `6614ac09487437bb84c12e411b87f0c58efc6bfd`, tree `ed010e7edcbb9c324ee33a38648be00065e286a9`, Ready revision `shiekh-location-company-directory-pr37-6614ac0`, sole 100% desired/observed traffic. Build `ff2e3e80-92aa-4f39-9cbb-3537ce2e7f88` succeeded. Both hosts match 46 MIME-validated assets; configuration, identities, historical tags, domain and public access protections were preserved. [Dispatch 24](../dispatches/dispatch-24-person-card-linked-positions.md#publication-checkpoint--october-22-2026) and the [current runbook](../cloud-run-deployment-runbook.md#current-live-revision--pr-37) are the release evidence. Earlier PR #32 request and PR #33/#34 status/address behavior remains included. No authenticated production payload/business-write/mail acceptance was performed.
 

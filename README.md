@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [District leadership API release](docs/dispatches/dispatch-25-district-leadership-api.md): PR #39 is published, with a separately versioned District roster/store-membership snapshot and separately granted DM work contact. Work email is not a verified sign-in identity. Exact-client grants and consumer acceptance remain pending; issue #36 stays open.
+- [District leadership API release](docs/dispatches/dispatch-25-district-leadership-api.md): PR #39 is published, with a separately versioned District roster/store-membership snapshot; DM work contact requires a separate grant. The owner-approved Shiekh-Intel grant update is confirmed; authenticated consumer acceptance remains pending and issue #36 stays open. Work email is not a verified sign-in identity.
 
 - [Person card and linked positions](docs/dispatches/dispatch-24-person-card-linked-positions.md): PR #37 is published; explicitly selected concurrent positions, dependency preview, changed-field-only saves and consistent District-owned DM displays. Live promotion/offboarding acceptance and broader migration remain separate. DM API business contacts are open issue 36/P6.9.
 
@@ -12,7 +12,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 - [Immediate operating state](docs/dispatches/dispatch-22-immediate-operating-state.md): PR #33 is published with PR #34; temporary closures, local expiry, shared current-state display/API and recoverable commands. Authenticated live acceptance remains separate.
 - [Address corrections and wayfinding](docs/dispatches/dispatch-23-address-wayfinding.md): PR #34 is published; controlled postal/suite changes, public customer directions, explicit optional clears and matching API/import/export behavior. Settings → Directory API includes clickable documentation.
 
-- [Published request review safeguards](docs/dispatches/dispatch-20-request-review-integrity.md): PR #30 is live. Submitted history is protected, review success waits for confirmation, failed/uncertain review requires saved-state reload, and changing request target/category resets its draft. District Manager work contact is the separately granted v3 contract in Dispatch 25, not a v1/v2 field.
+- [Published request review safeguards](docs/dispatches/dispatch-20-request-review-integrity.md): PR #30 is live. Submitted history is protected, review success waits for confirmation, failed/uncertain review requires saved-state reload, and changing request target/category resets its draft. District Manager work contact requires a separate v3 grant as documented in Dispatch 25; it is not a v1/v2 field.
 
 - [Published hierarchy UX and release record](docs/dispatches/dispatch-19-hierarchy-registry-ux.md): PR #28 is live. Region means Territory; District-owned DM settings, browse-first registry and read-only retail store DM. Existing assignments remain unchanged by the release; legacy District setup and broader migration remain separate.
 

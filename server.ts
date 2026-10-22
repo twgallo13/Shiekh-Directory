@@ -20,6 +20,8 @@ import { createFirestoreApiClientStore } from "./server/firestoreApiClients";
 import { createBrowserApp } from "./server/browserApp";
 import { createPersonnelApiRouter } from "./server/personnelApi";
 import { createFirestorePersonnelRepository } from "./server/firestorePersonnel";
+import { createLeadershipApiRouter } from "./server/leadershipApi";
+import { createFirestoreLeadershipRepository } from "./server/firestoreLeadership";
 import { createApiDocumentationRouter } from "./server/apiDocumentation";
 
 // Attempt to load .env file if present in Node 20.6+
@@ -70,6 +72,7 @@ async function startServer() {
     locations: createFirestoreLocationRepository(),
   }));
   app.use("/api/v2", createPersonnelApiRouter({ authenticator: apiClients, repository: createFirestorePersonnelRepository() }));
+  app.use("/api/v3", createLeadershipApiRouter({ authenticator: apiClients, repository: createFirestoreLeadershipRepository() }));
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {

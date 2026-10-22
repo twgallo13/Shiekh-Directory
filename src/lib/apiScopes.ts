@@ -1,4 +1,4 @@
-export const API_SCOPES = ['locations:read', 'personnel:read', 'staffing:read'] as const;
+export const API_SCOPES = ['locations:read', 'personnel:read', 'staffing:read', 'district-leadership:read', 'district-leadership:contacts:read'] as const;
 export type ApiScope = typeof API_SCOPES[number];
 
 export function parseApiScopes(value: unknown, legacyMissing = false): ApiScope[] | null {
@@ -9,5 +9,6 @@ export function parseApiScopes(value: unknown, legacyMissing = false): ApiScope[
     if (!API_SCOPES.some(scope => scope === entry) || scopes.includes(entry)) return null;
     scopes.push(entry);
   }
+  if (scopes.includes('district-leadership:contacts:read') && !scopes.includes('district-leadership:read')) return null;
   return API_SCOPES.filter(scope => scopes.includes(scope));
 }

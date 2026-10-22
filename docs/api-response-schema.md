@@ -1,8 +1,10 @@
 # Directory API v1: emitted response fields
 
+Separate v3 contract: [District leadership fields and synchronization](district-leadership-api.md), [strict emitted schema](district-leadership-openapi.json). V3 returns a canonical District roster plus Location membership under one snapshot; `districtManager.workEmail` requires an additional explicit contact grant and never confers sign-in/access. This does not add email to the v1/v2 allowlists below. See [Dispatch 25](dispatches/dispatch-25-district-leadership-api.md) for actual release/authorization status.
+
 This reference documents the JSON properties emitted by the Directory API serializer. It is intentionally an allowlist: a field is not part of the public contract just because it exists on a Firestore document or in the application.
 
-Internal Person `positionIds` and descriptive title/department edits do not add public personnel/contact fields. DM email/sign-in matching remains a separate planned contract ([issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36), P6.9); no existing contact-free scope silently gains email. Persisted staffing snapshots must not be treated as a new effective-District resolver or as automatic permission to sign in.
+Internal Person `positionIds` and descriptive title/department edits do not add fields to the v1/v2 contract. DM work contact is a separate v3 contract ([issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36), P6.9), not verified sign-in email; no existing contact-free scope gains email. Persisted v2 staffing snapshots are not a new effective-District resolver. See Dispatch 25 for actual publication and exact-client authorization.
 
 ## Live verification status
 

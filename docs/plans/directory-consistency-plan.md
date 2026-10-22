@@ -318,6 +318,8 @@ For every subsequent API contract/field/scope or relevant behavior change, the i
 
 ### Issue 36 — DM data for an authorized API consumer
 
+Active implementation is recorded in [Dispatch 25](../dispatches/dispatch-25-district-leadership-api.md), branch `codex/district-leadership-api`; not published/authorized until its checkpoints. The owner selected Directory work email as contact only and explicit account-to-Person-ID linking, not verified company sign-in email. New v3 District leadership/membership snapshots and separate minimal read/contact grants preserve existing v1/v2 contracts and default grants. Company-domain/lifecycle/shared-inbox eligibility is conservative; no automatic contact backfill or other-app/account edit. Exact-client live authorization and consumer acceptance remain separate gates.
+
 [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) is within **P6.9**, not an unrelated app-specific feature. Deliver after the current Person-card review/release as separate reviewed API/access work; do not silently add email to existing contact-free grants or mix live credential changes into the Person-card PR.
 
 1. Verify the exact existing LP & Revenue Intelligence client and its current grants/status before any live grant change. Existing scope-update code preserves token secrets and increments `grantsVersion`; active tokens use new grants, but in-flight staffing snapshots must restart because their grant digest changes. Do not rotate/reveal tokens or claim live access has been granted. Capture required explicit owner approval for the exact live permission/contact exposure before applying it.

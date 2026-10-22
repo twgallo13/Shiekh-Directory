@@ -4,6 +4,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
+- [District leadership API work](docs/dispatches/dispatch-25-district-leadership-api.md): active issue #36/P6.9 slice, with a separately versioned District roster/store-membership snapshot and separately granted DM work contact. Work email is not a verified sign-in identity. Publication and exact-client authorization remain separate; use the checkpoint, not a schema alone, as evidence of availability.
+
 - [Person card and linked positions](docs/dispatches/dispatch-24-person-card-linked-positions.md): PR #37 is published; explicitly selected concurrent positions, dependency preview, changed-field-only saves and consistent District-owned DM displays. Live promotion/offboarding acceptance and broader migration remain separate. DM API business contacts are open issue 36/P6.9.
 
 - [Request validation and submission recovery](docs/dispatches/dispatch-21-request-validation-recovery.md): PR #32 is live; exact validation/replay/cancellation contract and acceptance limits.

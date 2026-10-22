@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [District leadership API work](docs/dispatches/dispatch-25-district-leadership-api.md): active issue #36/P6.9 slice, with a separately versioned District roster/store-membership snapshot and separately granted DM work contact. Work email is not a verified sign-in identity. Publication and exact-client authorization remain separate; use the checkpoint, not a schema alone, as evidence of availability.
+- [District leadership API release](docs/dispatches/dispatch-25-district-leadership-api.md): PR #39 is published, with a separately versioned District roster/store-membership snapshot and separately granted DM work contact. Work email is not a verified sign-in identity. Exact-client grants and consumer acceptance remain pending; issue #36 stays open.
 
 - [Person card and linked positions](docs/dispatches/dispatch-24-person-card-linked-positions.md): PR #37 is published; explicitly selected concurrent positions, dependency preview, changed-field-only saves and consistent District-owned DM displays. Live promotion/offboarding acceptance and broader migration remain separate. DM API business contacts are open issue 36/P6.9.
 
@@ -12,7 +12,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 - [Immediate operating state](docs/dispatches/dispatch-22-immediate-operating-state.md): PR #33 is published with PR #34; temporary closures, local expiry, shared current-state display/API and recoverable commands. Authenticated live acceptance remains separate.
 - [Address corrections and wayfinding](docs/dispatches/dispatch-23-address-wayfinding.md): PR #34 is published; controlled postal/suite changes, public customer directions, explicit optional clears and matching API/import/export behavior. Settings → Directory API includes clickable documentation.
 
-- [Published request review safeguards](docs/dispatches/dispatch-20-request-review-integrity.md): PR #30 is live. Submitted history is protected, review success waits for confirmation, failed/uncertain review requires saved-state reload, and changing request target/category resets its draft. Lower-priority District Manager work-email API planning is P6.9; email is not part of the current API contract.
+- [Published request review safeguards](docs/dispatches/dispatch-20-request-review-integrity.md): PR #30 is live. Submitted history is protected, review success waits for confirmation, failed/uncertain review requires saved-state reload, and changing request target/category resets its draft. District Manager work contact is the separately granted v3 contract in Dispatch 25, not a v1/v2 field.
 
 - [Published hierarchy UX and release record](docs/dispatches/dispatch-19-hierarchy-registry-ux.md): PR #28 is live. Region means Territory; District-owned DM settings, browse-first registry and read-only retail store DM. Existing assignments remain unchanged by the release; legacy District setup and broader migration remain separate.
 
@@ -26,7 +26,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 A **schema** describes the available fields and their types. An **API endpoint** is an address an app calls to read or change information. `locationInboxEmail` is an optional shared contact address for a Location; it is separate from a Person's work email and a User's sign-in email. The read API returns an address or `null` when there is no usable inbox.
 
-Current application release: `6614ac0`, Ready revision `shiekh-location-company-directory-pr37-6614ac0` at sole 100%; [exact source/build/validation evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-37). The bounded Person-card/linked-position and District-owned DM display improvements are published. Next: issue #36/P6.9, an app-neutral effective-DM business-contact API and separately authorized exact-client acceptance. Broader taxonomy migration, acting/Region ownership and full handover/offboarding remain unfinished. A descriptive title is not a District assignment or account permission. No live staffing/data restoration or API contact grant was performed.
+Current application release: `238d46f`, Ready revision `shiekh-location-company-directory-pr39-238d46f` at sole 100%; [exact source/build/validation evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-39). District-owned leadership and separately scoped work-contact API capability is published alongside the prior Person-card/status/address improvements. Next: issue #36/P6.9 exact-client grant approval, authenticated payload and consumer acceptance. Broader taxonomy migration, acting/Region ownership and full handover/offboarding remain unfinished. A descriptive title or work email is not an account permission. No live staffing/data restoration or new API contact grant was performed.
 
 ## Development
 

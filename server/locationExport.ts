@@ -9,6 +9,7 @@ import { LOCATION_IMPORT_SPREADSHEET_ENCODING, LOCATION_IMPORT_SPREADSHEET_ENCOD
 import { buildLocationReadProjection, type ReadProjectionPerson } from "../src/lib/readProjectionContract";
 import { resolveLocationHierarchy } from "../src/lib/hierarchyResolution";
 import type { HierarchyRegistry } from "../src/lib/hierarchyAssignmentContract";
+import { resolveOperatingState } from '../src/lib/operatingState';
 import { DEFAULT_FIRESTORE_DATABASE, DEFAULT_GOOGLE_CLOUD_PROJECT } from "./firestoreLocations";
 
 export type LocationExportMode = "all-stores";
@@ -80,6 +81,7 @@ const LOCATION_EXPORT_COLUMNS = [
   "GoogleReviewUrl",
   "StorePageUrl",
   "HierarchyApplicability",
+  "CurrentOperatingState", "OperatingReason", "OperatingEvaluatedAt", "OperatingNextTransitionAt", "TemporaryClosureExpiresAt",
 ] as const;
 
 const EXPORT_TOKEN_TTL_MS = 2 * 60_000;
@@ -165,7 +167,7 @@ export async function prepareLocationExport(account: Account, store: LocationExp
   const sortedLocations = [...authorizedLocations].sort(compareLocations);
   const storeNumbers = sortedLocations.map(location => stringField(location.storeNumber));
   const missingReferences = new Set<string>();
-  const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences, people, hierarchy));
+  const rows = sortedLocations.map(location => toCsvRow(location, peopleById, missingReferences, people, hierarchy, generatedAt));
   const safeRows = rows.map(row => Object.fromEntries(Object.entries(row).map(([column, value]) => [column, spreadsheetSafeCsvValue(value)])));
   const csv = stringify(safeRows, { header: true, columns: [...LOCATION_EXPORT_COLUMNS], record_delimiter: "\r\n", bom: true });
   const generatedIso = generatedAt.toISOString();
@@ -256,7 +258,9 @@ function toCsvRow(
   missingReferences: Set<string>,
   people: ReadProjectionPerson[] = [],
   hierarchyRegistry: HierarchyRegistry = { regions: [], districts: [] },
+  evaluatedAt = new Date(),
 ): Record<typeof LOCATION_EXPORT_COLUMNS[number], string> {
+  const operating = resolveOperatingState(location, evaluatedAt);
   const hierarchy = resolveLocationHierarchy(
     { regionId: location.regionId, districtId: location.districtId, type: location.type, hierarchyApplicability: location.hierarchyApplicability },
     hierarchyRegistry,
@@ -328,6 +332,11 @@ function toCsvRow(
     GoogleReviewUrl: stringField(location.googleReviewUrl),
     StorePageUrl: stringField(location.storePageUrl),
     HierarchyApplicability: hierarchy.hierarchyApplicability,
+    CurrentOperatingState: operating.state,
+    OperatingReason: operating.reason,
+    OperatingEvaluatedAt: operating.evaluatedAt,
+    OperatingNextTransitionAt: operating.nextTransitionAt || '',
+    TemporaryClosureExpiresAt: operating.temporaryClosure?.expiresAt || '',
   };
 }
 

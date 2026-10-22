@@ -5,6 +5,71 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+async function prepareOperating(page: Page, uncertain = false) {
+  await page.clock.install({ time: new Date('2026-10-22T18:00:00Z') });
+  await prepare(page, 'System Administrator');
+  const seed = seedDirectory(1) as any;
+  seed.locations[0].version = 3;
+  const calls: any[] = [], mail: any[] = [];
+  let previews = 0;
+  await page.route('**/api/auth/bootstrap', route => route.fulfill({ json: { ...seed, serverNow: new Date('2026-10-22T18:00:00Z').toISOString() } }));
+  await page.route('**/api/directory/operating/preview', route => {
+    previews++;
+    return route.fulfill({ json: { locationId: 'loc-1', locationName: seed.locations[0].name, storeNumber: '001', timeZone: 'America/Los_Angeles', action: route.request().postDataJSON().action, expectedVersion: seed.locations[0].version, expectedClosureId: seed.locations[0].temporaryClosure?.id ?? null, expectedExpiresAt: '2026-10-23T07:00:00Z', evaluatedAt: '2026-10-22T18:00:00Z', state: { state: 'Open' } } });
+  });
+  await page.route('**/api/directory/operating/commit', route => {
+    const command = route.request().postDataJSON(); calls.push(command);
+    if (uncertain && calls.length === 1) return route.fulfill({ status: 502, contentType: 'text/html', body: 'Lost reply' });
+    seed.locations[0] = { ...seed.locations[0], version: 4, temporaryClosure: { id: command.operationId, reason: command.reason, startsAt: '2026-10-22T18:00:00Z', expiresAt: command.expectedExpiresAt, timeZone: 'America/Los_Angeles' } };
+    return route.fulfill({ json: { operationId: command.operationId, records: [{ collection: 'locations', operation: 'set', id: 'loc-1', data: seed.locations[0] }], state: { state: 'Closed', reason: command.reason, evaluatedAt: '2026-10-22T18:00:00Z' } } });
+  });
+  await page.route('**/api/mail/event', route => { mail.push(route.request().postDataJSON()); return route.fulfill({ json: { success: true } }); });
+  await page.goto(`${origin}/locations/loc-1`); await restore(page, true);
+  return { seed, calls, mail, previews: () => previews };
+}
+
+test('Operating closure previews without writes, confirms immediately and publishes its exact expiry', async ({ page }) => {
+  const f = await prepareOperating(page);
+  await page.getByRole('button', { name: 'Report temporary closure' }).click();
+  const dialog = page.getByRole('dialog').filter({ has: page.getByLabel('Reason for operating update') });
+  await expect(dialog).toContainText('Store #001');
+  await expect(dialog.getByRole('button', { name: 'Confirm closure', exact: true })).toBeDisabled();
+  expect(f.calls).toHaveLength(0); expect(f.mail).toHaveLength(0);
+  await dialog.getByLabel('Reason for operating update').fill('Power outage');
+  await dialog.getByRole('button', { name: 'Confirm closure', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Temporary closure automatically ends');
+  expect(f.calls).toHaveLength(1); expect(f.calls[0].expectedExpiresAt).toBe('2026-10-23T07:00:00Z');
+  await expect.poll(() => f.mail.length).toBe(1);
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(f.calls[0]).not.toHaveProperty('actorId');
+});
+
+test('Operating uncertain save survives reload and retries only the same immutable command', async ({ page }) => {
+  const f = await prepareOperating(page, true);
+  await page.getByRole('button', { name: 'Report temporary closure' }).click();
+  await page.getByLabel('Reason for operating update').fill('Power outage');
+  await page.getByRole('button', { name: 'Confirm closure', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Recover operating update' })).toBeVisible();
+  expect(f.mail).toHaveLength(0);
+  await page.reload(); await restore(page, true);
+  await page.getByRole('button', { name: 'Recover operating update' }).click();
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  expect(f.calls).toHaveLength(2); expect(f.calls[1]).toEqual(f.calls[0]);
+});
+
+test('Operating expiry returns to schedule on the store clock without requiring a cleanup write', async ({ page }) => {
+  const f = await prepareOperating(page);
+  f.seed.locations[0].temporaryClosure = { id: 'event', reason: 'Power outage', startsAt: '2026-10-22T17:00:00Z', expiresAt: '2026-10-23T07:00:00Z', timeZone: 'America/Los_Angeles' };
+  await page.reload(); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  // An offline screen still expires its locally retained closure; no stale fixture clock reset.
+  await page.route('**/api/auth/bootstrap', route => route.abort());
+  await page.clock.fastForward(14 * 3600000);
+  await expect(page.getByRole('button', { name: 'Confirm closure for today' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Current operating state' })).toContainText('Outside scheduled hours');
+  expect(f.calls).toHaveLength(0); expect(f.previews()).toBe(0); expect(f.mail).toHaveLength(0);
+});
+
 async function prepareHoursCorrection(page: Page, options: { role?: string; request?: 'changed' | 'noop' | 'stale' | 'missing'; conflict?: boolean } = {}) {
   await prepare(page, options.role || 'Directory Data Steward');
   const locations: LocationRecord[] = seedDirectory(3).locations.map((loc, index) => ({
@@ -145,6 +210,7 @@ async function prepare(page: Page, role = "Viewer") {
 function seedDirectory(locationCount: number) {
   const standardHours = Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => [day, { open: '10:00', close: '20:00', isClosed: false }]));
   return {
+    serverNow: new Date().toISOString(),
     locations: Array.from({ length: locationCount }, (_value, index) => ({
       id: `loc-${index + 1}`,
       storeNumber: String(index + 1).padStart(3, '0'),

@@ -11,7 +11,11 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #30
+## Current live revision — PR #32
+
+Source `ea53efb1124f1db82f73908f4d0b0f2f66a00414`, revision `shiekh-location-company-directory-pr32-ea53efb`, 100% Ready on both hosts. Build `2575582c-ba38-484b-822a-8bc40a8dc0ec` succeeded. Matching 86 assets, HTML SHA-256 `647a465eb8532cdbea86ea606914fd4ea58dbc85171470d0b85bb5911b3fb0ca`. Runtime/build environment, identities, security/network/scaling, 26 historical tags and branded routing preserved; temporary p32 tag removed. Auth guards/served documents/Firebase unchanged. No authenticated live request or notification probe. [Dispatch 21](dispatches/dispatch-21-request-validation-recovery.md) records incremental validation and recovery/rollback restrictions. Status/address follow-on code is not deployed until a later explicit checkpoint.
+
+## Previous revision — PR #30
 
 - Source `5e3363e82bdc909bc8021a8693c96d8f7d251544`, identical tree to tested/reviewed `7118b35f4e52ea1b568a27e8c1f010988f9e92c6`. Both Codex and CodeRabbit completed without actionable findings. Cloud Build `aa3b50f6-f3a7-450d-b23d-25e49ddff265` succeeded; immutable image reference remains in revision/restricted release metadata.
 - Revision `shiekh-location-company-directory-pr30-5e3363e` is Ready and sole 100% desired/observed traffic. Both hosts match accepted candidate HTML and all 82 discovered JS/CSS assets; HTML SHA-256 `2a6540863457b7b20057e801d75b34713253229496e9b1a2277251c336acdfb6`. Cache/API-denial/unknown-route guards pass; Firebase, OpenAPI and personnel guide remain unchanged.

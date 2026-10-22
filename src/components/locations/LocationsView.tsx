@@ -4,6 +4,7 @@ import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '.
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { resolveOperatingState } from '../../lib/operatingState';
 import { OperationalStatusBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
@@ -61,6 +62,8 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 }) => {
   const { 
     locations, 
+    operatingNow,
+    operatingRefreshError,
     people, 
     regions,
     districts: registryDistricts,
@@ -146,7 +149,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
       const hierarchy = hierarchyByLocationId.get(loc.id);
       if (districtFilter !== 'all' && hierarchyGroupId(resolveHierarchyGroupKey(hierarchy, loc.type)) !== districtFilter) return false;
       if (stateFilter !== 'all' && loc.state !== stateFilter) return false;
-      if (statusFilter !== 'all' && loc.operationalStatus !== statusFilter) return false;
+      if (statusFilter !== 'all' && resolveOperatingState(loc, operatingNow).state !== statusFilter) return false;
       if (typeFilter !== 'all' && loc.type !== typeFilter) return false;
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
@@ -165,7 +168,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
         hierarchy?.regionId?.toLowerCase().includes(term)
       );
     });
-  }, [locations, includeRetired, districtFilter, stateFilter, statusFilter, typeFilter, searchTerm, leadershipByLocationId, hierarchyByLocationId]);
+  }, [locations, operatingNow, includeRetired, districtFilter, stateFilter, statusFilter, typeFilter, searchTerm, leadershipByLocationId, hierarchyByLocationId]);
 
   // District Groups calculation
   const districtGroups = useMemo(() => {
@@ -304,6 +307,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
   return (
     <div className="space-y-4">
+      {operatingRefreshError && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-amber-900">{operatingRefreshError}</p>}
       <PageHeader
         title="Store Locations Directory"
         description={`${activeCount} active location${activeCount === 1 ? '' : 's'}${states.length > 0 ? ` across ${states.join(', ')}` : ''}${retiredCount > 0 ? ` (${retiredCount} retired in archive)` : ''}`}
@@ -382,12 +386,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
           {/* All Statuses Dropdown */}
           <select
             value={statusFilter}
+            aria-label="Current operating status"
             onChange={(e) => setStatusFilter(e.target.value)}
             className="bg-neutral-50 hover:bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5 text-xs text-neutral-800 focus:outline-none focus:border-red-500 cursor-pointer shadow-2xs"
           >
             <option value="all">All Statuses</option>
-            {operationalStatuses.map(st => (
-              <option key={st} value={st}>{st}</option>
+            {['Open', 'Closed', 'Unknown'].map(st => (
+              <option key={st} value={st}>{st === 'Unknown' ? 'Needs verification' : st}</option>
             ))}
           </select>
 
@@ -556,7 +561,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                   </tr>
                 ) : (
                   filtered.map(loc => {
-                    const todayHours = getTodayHoursForLocation(loc);
+                    const todayHours = getTodayHoursForLocation(loc, operatingNow);
                     const isRetired = loc.recordStatus === 'Retired';
                     const isSelected = selectedStoreIds.includes(loc.id);
 
@@ -609,7 +614,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                         </td>
 
                         <td className="py-3 px-4">
-                          <OperationalStatusBadge status={loc.operationalStatus} />
+                          <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                         </td>
 
                         <td className="py-3 px-4">
@@ -714,7 +719,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                     <table className="w-full text-left text-xs text-neutral-700">
                       <tbody className="divide-y divide-neutral-100">
                         {distLocs.map(loc => {
-                          const todayHours = getTodayHoursForLocation(loc);
+                          const todayHours = getTodayHoursForLocation(loc, operatingNow);
                           const isSelected = selectedStoreIds.includes(loc.id);
 
                           return (
@@ -748,7 +753,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                                 <span className="font-medium text-neutral-700">{todayHours.hoursString}</span>
                               </td>
                               <td className="py-2.5 px-4">
-                                <OperationalStatusBadge status={loc.operationalStatus} />
+                                <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                               </td>
                               <td className="py-2.5 px-4">
                                 <span className="text-neutral-600">{leadershipByLocationId.get(loc.id)?.storeManager?.fullName || 'Vacant'}</span>
@@ -780,7 +785,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(loc => {
                 const isSelected = selectedStoreIds.includes(loc.id);
-                const todayHours = getTodayHoursForLocation(loc);
+                const todayHours = getTodayHoursForLocation(loc, operatingNow);
                 const isRetired = loc.recordStatus === 'Retired';
 
                 return (
@@ -815,7 +820,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                           <span className="text-[10px] text-neutral-400">{loc.type}</span>
                         </div>
                       </div>
-                      <OperationalStatusBadge status={loc.operationalStatus} />
+                      <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
                     </div>
 
                     {/* Card Details */}

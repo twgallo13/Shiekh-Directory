@@ -4,7 +4,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [Request validation and submission recovery](docs/dispatches/dispatch-21-request-validation-recovery.md): current next release; exact validation/replay/cancellation contract, acceptance limits and status/address follow-through. Check its release state before assuming publication.
+- [Request validation and submission recovery](docs/dispatches/dispatch-21-request-validation-recovery.md): PR #32 is live; exact validation/replay/cancellation contract and acceptance limits.
+- [Immediate operating state](docs/dispatches/dispatch-22-immediate-operating-state.md): current implementation and release gates; address/wayfinding follows this slice. Do not assume publication until its release checkpoint is recorded.
 
 - [Published request review safeguards](docs/dispatches/dispatch-20-request-review-integrity.md): PR #30 is live. Submitted history is protected, review success waits for confirmation, failed/uncertain review requires saved-state reload, and changing request target/category resets its draft. Lower-priority District Manager work-email API planning is P6.9; email is not part of the current API contract.
 

@@ -7,6 +7,14 @@ import type { CustomFieldDefinition } from '../src/lib/customFields';
 const actor: Account = { uid: 'admin', email: 'admin@example.test', emailVerified: true, name: 'Admin', role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
 const urlField: CustomFieldDefinition = { id: 'yelpUrl', label: 'Yelp', type: 'url', helpText: '', options: [], order: 0, apiVisible: false, retired: false };
 
+test('ordinary Location writers cannot forge or clear closures and preserve omitted server fields', () => {
+  const current = { storeNumber: '007', version: 0, temporaryClosure: { id: 'closure' } };
+  const write: DirectoryWrite = { collection: 'locations', id: 'loc-007', operation: 'set', expectedVersion: 0, data: { storeNumber: '007', name: 'Unrelated rename' } };
+  assert.deepEqual(validateMetadataWrites([write], [current], [], actor)[0].data?.temporaryClosure, current.temporaryClosure);
+  for (const temporaryClosure of [null, { id: 'forged' }]) assert.throws(() => validateMetadataWrites([{ ...write, data: { ...write.data, temporaryClosure } }], [current], [], actor), /dedicated temporary/);
+  for (const accessScope of ['Store 7', 'Store 008', 'Unknown']) assert.throws(() => validateMetadataWrites([write], [current], [], { ...actor, accessScope }), /access scope/);
+});
+
 for (const [phone, extension] of [['phone', 'phoneExtension'], ['workPhone', 'workPhoneExtension']] as const) {
   for (const scenario of ['omitted', 'unchanged', 'changed', 'cleared', 'explicit-extension', 'inline-extension'] as const) {
     test(`Person ${phone} preserves extensions only for the appropriate number: ${scenario}`, () => {

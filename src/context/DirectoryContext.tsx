@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   LocationRecord, 
   Person, 
@@ -31,8 +31,18 @@ import { PERSON_LEADERSHIP_NAME_FIELDS, reconcileLocationLeadershipCopy } from '
 import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
 import { districtLeadershipWrites, inheritDistrictLeader, type DistrictLeadershipPreview } from '../lib/districtLeadership';
 import { cancelDirectorySubmission } from '../lib/directoryClient';
+import { fetchOperatingPreview, saveOperatingCommand, cancelOperatingCommand } from '../lib/operatingClient';
+import type { OperatingCommand } from '../../server/operatingCommand';
+import type { OperatingPreview } from '../../server/firestoreOperating';
+import type { OperatingState } from '../lib/operatingState';
 
 interface DirectoryContextType {
+  operatingNow: Date;
+  operatingRefreshError: string | null;
+  refreshOperatingDirectory: () => Promise<void>;
+  previewOperatingUpdate: (locationId: string, action: OperatingCommand['action']) => Promise<OperatingPreview>;
+  saveOperatingUpdate: (command: OperatingCommand) => Promise<{ replayed: boolean; state: OperatingState }>;
+  cancelOperatingUpdate: (command: OperatingCommand) => Promise<boolean>;
   locations: LocationRecord[];
   people: Person[];
   users: UserProfile[];
@@ -122,6 +132,51 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const [requests, setRequests] = useState<UpdateRequest[]>(seed.requests);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => seed.auditLogs.map(scrubLegacyApiKeyAuditEntry));
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const anchor = useRef({ server: seed.serverNow && Number.isFinite(Date.parse(seed.serverNow)) ? Date.parse(seed.serverNow) : Date.now(), monotonic: performance.now() });
+  const [operatingNow, setOperatingNow] = useState(() => new Date(anchor.current.server));
+  const [operatingRefreshError, setOperatingRefreshError] = useState<string | null>(null);
+  const writeFence = useRef({ epoch: 0, pending: 0 });
+  const polling = useRef(false);
+
+  const refreshOperatingDirectory = async () => {
+    if (polling.current || writeFence.current.pending) return;
+    polling.current = true;
+    const epoch = writeFence.current.epoch;
+    try {
+      const response = await fetch('/api/auth/bootstrap', { headers: { Authorization: `Bearer ${await user.getIdToken()}` }, cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(15000) });
+      const body = await response.json().catch(() => null) as DirectorySeed | null;
+      if (!response.ok || !body || !Array.isArray(body.locations) || !Array.isArray(body.people) || !Array.isArray(body.hoursTemplates) || !body.serverNow || !Number.isFinite(Date.parse(body.serverNow))) throw new Error('Status refresh is unavailable. Information may be outdated; reconnect and refresh before operating updates.');
+      if (epoch !== writeFence.current.epoch || writeFence.current.pending) return;
+      const canonical = canonicalDirectoryBootstrap(body.locations, body.people, body.hoursTemplates);
+      setLocations(canonical.locations); setPeople(canonical.people); setHoursTemplates(body.hoursTemplates);
+      setDistricts(body.districts || []); setRegions(body.regions || []);
+      if (Array.isArray(body.auditLogs)) setAuditLogs(body.auditLogs.map(scrubLegacyApiKeyAuditEntry));
+      anchor.current = { server: Date.parse(body.serverNow), monotonic: performance.now() };
+      setOperatingNow(new Date(anchor.current.server)); setOperatingRefreshError(null);
+    } catch (error) { setOperatingRefreshError(error instanceof Error ? error.message : 'Status refresh is unavailable. Information may be outdated.'); }
+    finally { polling.current = false; }
+  };
+  useEffect(() => {
+    const tick = () => setOperatingNow(new Date(anchor.current.server + performance.now() - anchor.current.monotonic));
+    const refresh = () => { tick(); if (document.visibilityState === 'visible') void refreshOperatingDirectory(); };
+    const timer = window.setInterval(tick, 15000), poll = window.setInterval(refresh, 30000);
+    window.addEventListener('online', refresh); document.addEventListener('visibilitychange', refresh);
+    return () => { clearInterval(timer); clearInterval(poll); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [user]);
+
+  const previewOperatingUpdate = (locationId: string, action: OperatingCommand['action']) => fetchOperatingPreview(user, locationId, action);
+  const cancelOperatingUpdate = (command: OperatingCommand) => cancelOperatingCommand(user, command);
+  const saveOperatingUpdate = async (command: OperatingCommand) => {
+    writeFence.current.epoch++; writeFence.current.pending++;
+    try {
+      const result = await saveOperatingCommand(user, command);
+      reconcileCommittedRecords(result);
+      anchor.current = { server: Date.parse(result.state.evaluatedAt), monotonic: performance.now() };
+      setOperatingNow(new Date(anchor.current.server));
+      if (!result.replayed) void sendMailEvent('operating-updated', command.operationId).catch(error => setPersistenceError(`Operating update saved. Notification could not be sent: ${error instanceof Error ? error.message : 'relay unavailable'}`));
+      return { replayed: Boolean(result.replayed), state: result.state };
+    } finally { writeFence.current.pending--; }
+  };
 
   useEffect(() => {
     for (const key of Object.keys(localStorage)) if (key.startsWith('shiekh_') && key !== 'shiekh_theme_preference') localStorage.removeItem(key);
@@ -171,6 +226,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   const reconcileConfirmedLocations = (records: LocationRecord[]) => {
+    writeFence.current.epoch++;
     setLocations(previous => {
       const confirmedById = new Map(records.map(record => [record.id, record]));
       const reconciled = previous.map(record => confirmedById.get(record.id) || record);
@@ -180,6 +236,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   const persist = (writes: DirectoryWrite[], audit: DirectoryAudit, reportGlobalError = true) => {
+    writeFence.current.epoch++; writeFence.current.pending++;
     setPersistenceError(null);
     const operation = commitDirectory(user, writes, audit).then(result => {
       reconcileCommittedRecords(result);
@@ -188,6 +245,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     void operation.catch(error => {
       if (reportGlobalError) setPersistenceError(error instanceof Error ? error.message : 'The directory database could not save this change.');
     });
+    void operation.then(() => { writeFence.current.pending--; }, () => { writeFence.current.pending--; });
     return operation;
   };
 
@@ -910,6 +968,12 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   return (
     <DirectoryContext.Provider
       value={{
+        operatingNow,
+        operatingRefreshError,
+        refreshOperatingDirectory,
+        previewOperatingUpdate,
+        saveOperatingUpdate,
+        cancelOperatingUpdate,
         locations,
         people,
         users,

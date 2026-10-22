@@ -26,7 +26,7 @@ export async function mailRequest(route: "status" | "dispatch", recipient?: stri
   return body;
 }
 
-export async function sendMailEvent(event: "request-submitted" | "request-approved" | "request-rejected", entityId: string) {
+export async function sendMailEvent(event: "request-submitted" | "request-approved" | "request-rejected" | "operating-updated", entityId: string) {
   const auth = getSharedAuth();
   if (!auth.currentUser) throw new Error("Sign in with your authorized directory account to use mail.");
   const response = await fetch('/api/mail/event', {

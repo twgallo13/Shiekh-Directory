@@ -44,6 +44,7 @@ export function validateRequestProposal(request: Record<string, unknown>, target
     })) return fail('Provide all seven days with valid opening/closing times or an explicit closed day. Equal opening/closing times are ambiguous.');
   }
   if (request.changeType === 'Operational Status Change') {
+    if (changes.operationalStatus === 'Temporarily Closed — Emergency') return fail('Use Report temporary closure on the Location detail screen for immediate, automatically expiring closure. Do not submit an indefinite emergency correction.');
     if (!LOCATION_OPERATIONAL_STATUSES.includes(changes.operationalStatus as never)) return fail('Choose a supported operational status.');
     if (Object.hasOwn(changes, 'activeNotice')) {
       const notice = changes.activeNotice;

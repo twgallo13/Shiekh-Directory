@@ -13,6 +13,7 @@ import { applyCorrection } from '../src/lib/correctionRequest';
 import { validateRequestProposal } from '../src/lib/requestValidation';
 import { personLifecycle } from '../src/lib/personLifecycle';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
+import { previewOperating, commitOperating, cancelOperating, type OperatingPreview } from './firestoreOperating';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -78,6 +79,9 @@ export interface DirectoryReader {
 export interface DirectoryWriter {
   commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult>;
   cancelRequestSubmission?(write: DirectoryWrite, actor: Account): Promise<DirectoryCommitResult & { cancelled: boolean }>;
+  previewOperating?(locationId: string, action: string, actor: Account): Promise<OperatingPreview>;
+  commitOperating?(input: unknown, actor: Account): ReturnType<typeof commitOperating>;
+  cancelOperating?(input: unknown, actor: Account): ReturnType<typeof cancelOperating>;
 }
 
 export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter {
@@ -88,8 +92,12 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const snapshot = await this.firestore.collection(collection).get();
       return [field, snapshot.docs.map(document => toRecord(document, collection))] as const;
     }));
-    return Object.fromEntries(entries) as unknown as DirectorySeed;
+    return { ...Object.fromEntries(entries), serverNow: new Date().toISOString() } as unknown as DirectorySeed;
   }
+
+  previewOperating(locationId: string, action: string, actor: Account) { return previewOperating(this.firestore, locationId, action, actor); }
+  commitOperating(input: unknown, actor: Account) { return commitOperating(this.firestore, input, actor); }
+  cancelOperating(input: unknown, actor: Account) { return cancelOperating(this.firestore, input, actor); }
 
   async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult> {
     return this.firestore.runTransaction(async transaction => {
@@ -495,6 +503,8 @@ export function validateMetadataWrites(
     if (write.collection === 'requests' && write.operation === 'delete') {
       throw new DirectoryValidationError('Correction requests are retained as history. Reject a pending request instead of deleting it.');
     }
+    if (write.collection === 'locations' && write.operation === 'delete' && !['Company', 'Company-wide'].includes(actor.accessScope)
+      && actor.accessScope !== `Store ${String(current?.storeNumber)}`) throw new DirectoryWriteDenied('Your access scope does not permit deletion of this Location.');
     if (write.operation !== 'set' || !['locations', 'people', 'users', 'requests'].includes(write.collection)) return write;
     let data = { ...(write.collection === 'people' ? normalizedPersonWrites.get(write.id) : write.data) };
 
@@ -629,6 +639,13 @@ export function validateMetadataWrites(
     if (write.collection !== 'locations' && write.collection !== 'people') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
 
     if (write.collection === 'locations') {
+      if (data.operationalStatus === 'Temporarily Closed — Emergency' && current?.operationalStatus !== data.operationalStatus) throw new DirectoryValidationError('Use Report temporary closure on the Location detail screen; new indefinite emergency statuses are not supported.');
+      // The immediate command is the only writer of this server-owned override. Older editors/imports preserve it.
+      if (Object.hasOwn(data, 'temporaryClosure') && !isDeepStrictEqual(data.temporaryClosure ?? null, current?.temporaryClosure ?? null)) throw new DirectoryWriteDenied('Use the dedicated temporary operating update command to change closures.');
+      if (current && Object.hasOwn(current, 'temporaryClosure')) data.temporaryClosure = current.temporaryClosure;
+      const companyScope = ['Company', 'Company-wide'].includes(actor.accessScope);
+      const scopedStore = actor.accessScope.match(/^Store ([0-9]+)$/)?.[1];
+      if (!companyScope && (!scopedStore || scopedStore !== data.storeNumber || (current && scopedStore !== current.storeNumber))) throw new DirectoryWriteDenied('Your access scope does not permit direct changes to this Location.');
       if (!Object.hasOwn(data, 'locationInboxEmail') && current && Object.hasOwn(current, 'locationInboxEmail')) {
         data.locationInboxEmail = current.locationInboxEmail;
       }

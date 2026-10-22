@@ -601,6 +601,29 @@ function managedCredential(id: string): ManagedApiCredential {
   return { clientId: id, tokenVersionId: `${id}-token`, cursorSigningKey: `${id}-cursor-signing-key`, scopes: ["locations:read"] };
 }
 
+it('current operating endpoint is authenticated, scope checked, fresh and explicitly projected', async () => {
+  const closure = { id: 'event', reason: 'Power outage', startsAt: '2026-09-08T11:00:00Z', expiresAt: '2026-09-09T07:00:00Z', timeZone: 'America/Los_Angeles', actorId: 'private-actor' };
+  const fresh = await startTestServer({ authenticator, rateLimit: false, now: () => NOW, locations: {
+    ...repository,
+    async findOperatingByStoreNumber(number) { return number === '007' ? { id: 'location-007', updatedAt: NOW, data: { ...records[0].data, storeNumber: number, temporaryClosure: closure } } : null; },
+  } });
+  try {
+    const path = '/api/v1/locations/007/operating-state';
+    assert.equal((await fetch(fresh.baseUrl + path)).status, 401);
+    assert.equal((await apiFetch(fresh.baseUrl, path, NO_SCOPE_TOKEN)).status, 403);
+    const response = await apiFetch(fresh.baseUrl, path, READ_TOKEN, { 'If-None-Match': '*' });
+    assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
+    const body = await response.json();
+    assert.equal(body.data.storeNumber, '007'); assert.equal(body.data.state, 'Closed');
+    assert.equal(body.data.evaluatedAt, NOW.toISOString());
+    assert.equal(body.data.temporaryClosure.expiresAt, closure.expiresAt);
+    for (const privateValue of ['private-actor', 'Private Manager', 'private@example.test']) assert.ok(!JSON.stringify(body).includes(privateValue));
+    assert.equal((await apiFetch(fresh.baseUrl, path + '?cursor=old', READ_TOKEN)).status, 400);
+    assert.equal((await apiFetch(fresh.baseUrl, '/api/v1/locations/7/operating-state', READ_TOKEN)).status, 404);
+    assert.equal((await apiFetch(baseUrl, path, READ_TOKEN)).status, 503);
+  } finally { await closeServer(fresh.server); }
+});
+
 function fixturePage(source: LocationDocument[], { limit, afterId }: LocationPageOptions) {
   if (!afterId) assertUniqueStoreNumbers(source);
   const ordered = [...source].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);

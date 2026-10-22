@@ -12,6 +12,8 @@ import { Mail } from 'lucide-react';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { buildLocationReadProjection, resolveActivePerson, resolveActivePersonList } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
+import { OperatingStatusPanel } from './OperatingStatusPanel';
+import { effectiveNotice } from '../../lib/operatingState';
 import { 
   X, 
   MapPin, 
@@ -49,7 +51,7 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   onRequestCorrection,
   onSelectPerson,
 }) => {
-  const { currentUser, people, regions, districts, hoursTemplates, verifyLocation, auditLogs, customFieldDefinitions } = useDirectory();
+  const { currentUser, people, regions, districts, hoursTemplates, verifyLocation, auditLogs, customFieldDefinitions, operatingNow } = useDirectory();
 
   // Tabbed Navigation State
   const [activeTab, setActiveTab] = useState<LocationDetailTab>('overview');
@@ -73,7 +75,8 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
 
   if (!location) return null;
 
-  const todayStatus = getTodayHoursForLocation(location);
+  const todayStatus = getTodayHoursForLocation(location, operatingNow);
+  const visibleNotice = effectiveNotice(location, operatingNow);
   const normalizedLocationInbox = normalizeLocationInboxEmail(location.locationInboxEmail);
   const canEditDirectly = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const storeManager = resolveActivePerson(location.storeManagerId, people);
@@ -106,7 +109,8 @@ Address: ${location.address}, ${location.city}, ${location.state} ${location.zip
 Phone: ${formatUsPhone(location.phone, location.phoneExtension)}
 Location inbox: ${location.locationInboxEmail || 'None recorded'}
 Hours (Today): ${todayStatus.hoursString}
-Operating Status: ${location.operationalStatus}`;
+Operating Status: ${todayStatus.state} — ${todayStatus.reason}
+Operational lifecycle: ${location.operationalStatus}`;
     try {
       await navigator.clipboard.writeText(summary);
       setCopied(true);
@@ -140,31 +144,13 @@ Operating Status: ${location.operationalStatus}`;
   ] as const;
 
   // Determine current day of week (lowercase)
-  const currentDayKey = new Intl.DateTimeFormat('en-US', {
-    weekday: 'long',
-    timeZone: location.timeZone || 'America/Los_Angeles',
-  }).format(new Date()).toLowerCase();
+  const currentDayKey = todayStatus.dayName.toLowerCase();
 
   const isNonRetail = location.type === 'Corporate Office' || location.type === 'Warehouse / Distribution Center' || location.type === 'Other Company Location';
   const classification = isNonRetail ? 'Non-Retail / Corporate' : 'Retail Store';
 
   const getCurrentStatusDisplay = () => {
-    const currentDayHours = location.standardHours?.[currentDayKey as keyof typeof location.standardHours];
-    if (todayStatus.isOpenNow) {
-      if (currentDayHours && !currentDayHours.isClosed && currentDayHours.close) {
-        const [hStr, mStr] = currentDayHours.close.split(':');
-        const h = parseInt(hStr, 10);
-        const m = mStr || '00';
-        const period = h >= 12 ? 'PM' : 'AM';
-        const displayH = h % 12 === 0 ? 12 : h % 12;
-        return `Open - Closes ${displayH}:${m.padStart(2, '0')} ${period}`;
-      }
-      return 'Open - Closes 10:00 PM';
-    }
-    if (location.operationalStatus?.includes('Closed') || todayStatus.hoursString.includes('Closed')) {
-      return todayStatus.hoursString || 'Closed Today';
-    }
-    return todayStatus.hoursString || 'Open - Closes 10:00 PM';
+    return `${todayStatus.state === 'Unknown' ? 'Needs verification' : todayStatus.state} — ${todayStatus.reason}`;
   };
 
   return (
@@ -195,7 +181,7 @@ Operating Status: ${location.operationalStatus}`;
                 <span className="text-xs text-neutral-400 font-medium">
                   {location.type}
                 </span>
-                <OperationalStatusBadge status={location.operationalStatus} surface="dark" />
+                <OperationalStatusBadge status={location.operationalStatus} location={location} surface="dark" />
               </div>
 
               {/* Title: Bold white text */}
@@ -302,6 +288,7 @@ Operating Status: ${location.operationalStatus}`;
           {/* TAB 1: OVERVIEW & CONTACTS */}
           {activeTab === 'overview' && (
             <div className="space-y-5 animate-in fade-in duration-150">
+              <OperatingStatusPanel location={location} />
               
               {/* 1. Property & Hours Columns - Two-Column Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -481,10 +468,10 @@ Operating Status: ${location.operationalStatus}`;
                         <span>Today ({todayStatus.dayName}):</span>
                         <span className="font-mono font-bold text-neutral-900">{todayStatus.hoursString}</span>
                       </div>
-                      {location.activeNotice && (
+                      {visibleNotice && (
                         <div className="pt-1.5 border-t border-neutral-100 text-[10px] text-amber-700 flex items-center gap-1 font-medium">
                           <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
-                          <span className="truncate">{location.activeNotice.shortDescription}</span>
+                          <span className="truncate">{visibleNotice.shortDescription}</span>
                         </div>
                       )}
                     </div>
@@ -725,7 +712,7 @@ Operating Status: ${location.operationalStatus}`;
             <div className="space-y-5 animate-in fade-in duration-150">
               
               {/* Notice alert if active */}
-              {location.activeNotice ? (
+              {visibleNotice ? (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-xs text-amber-900 shadow-xs">
                   <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
                   <div className="space-y-1 flex-1">

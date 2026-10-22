@@ -299,3 +299,11 @@ The reusable contact-free API contract is in
 It adds explicit `personnel:read` and `staffing:read` grants and coherent full
 snapshots. Existing v1 response fields, location-only grants and sync behavior
 are unchanged. This feature requires review/deployment before live use.
+
+# Current operating state (separate from synchronization)
+
+`GET /api/v1/locations/{storeNumber}/operating-state` requires the existing managed Bearer credential with `locations:read`. Keep exact leading zeroes. No query parameters. Response is `Cache-Control: no-store`; never treat this as a paginated snapshot or wait for `updatedSince` to learn time-driven expiry.
+
+Response: `{ contract: "location-operating-state-v1", data: { locationId, storeNumber, state, reason, scheduleSource, hours, localDate, timeZone, evaluatedAt, nextTransitionAt, temporaryClosure, issues } }`. `state` is `Open|Closed|Unknown`; hours is `{open,close,isClosed}` or null. Closure is `{id,reason,startsAt,expiresAt,timeZone}` or null. Date/time/transition fields may be null when unknown. Issues is a string array. No actors, personnel contacts or app permissions. Treat Unknown explicitly, not Open. Re-read at transitions and periodically (recommended 30 seconds while showing live status); show staleness during outages. The next transition is a known re-evaluation boundary, not a guarantee against an intervening operator update.
+
+Raw synchronization `operationalStatus` remains the persisted lifecycle/modifier, not current Open/Closed. Existing snapshot semantics are unchanged. Temporary closures expire at the confirmed store-local midnight and then schedule/lifecycle applies. Closure reasons are customer-facing; consumers must escape plain text. See [dispatch 22](docs/dispatches/dispatch-22-immediate-operating-state.md) for implementation/release state and acceptance limits.

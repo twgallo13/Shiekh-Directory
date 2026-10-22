@@ -8,6 +8,15 @@ import { INITIAL_EMAIL_TEMPLATES } from "../src/data/initialData";
 
 const configuration = { host: "smtp.test", port: 587, user: "user", password: "password", from: "sender@example.test", recipients: ["sender@example.test"] } as MailConfiguration;
 
+test('operating notification reads a committed event, escapes text and keeps the configured steward recipient', async () => {
+  const event = { actorId: 'operator', storeNumber: '007', locationName: '<Synthetic>', locationId: 'loc-007', action: 'close', reason: '<Power outage>', timestamp: '2026-10-22T18:00:00Z', closure: { expiresAt: '2026-10-23T07:00:00Z', timeZone: 'America/Los_Angeles' } };
+  const database = { collection: (name: string) => ({ doc: () => ({ get: async () => ({ exists: name === 'operating_events', data: () => event }) }) }) } as unknown as Firestore;
+  const message = await resolveEvent(database, 'operating-updated', 'event', { uid: 'operator', role: 'Viewer' }, { ...configuration, steward: 'steward@example.test' });
+  assert.equal(message.to, 'steward@example.test'); assert.match(message.html || '', /&lt;Power outage&gt;/);
+  assert.match(message.text || '', /2026-10-23T07:00:00Z/);
+  await assert.rejects(resolveEvent(database, 'operating-updated', 'event', { uid: 'other', role: 'Viewer' }, { ...configuration, steward: 'steward@example.test' }));
+});
+
 test("Firebase action links become direct app links without a fragile continueUrl", () => {
   const action = "https://gen-lang-client-0801664258.firebaseapp.com/__/auth/action?apiKey=test-key&mode=signIn&oobCode=synthetic-code&continueUrl=&lang=en";
   const direct = directEmailSignInLink(action, "https://shiekh-dir.ai.studio");

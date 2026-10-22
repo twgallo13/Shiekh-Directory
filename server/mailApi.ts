@@ -53,7 +53,7 @@ export interface MailMessage {
   disableFileAccess: true;
   disableUrlAccess: true;
 }
-export type MailEvent = "request-submitted" | "request-approved" | "request-rejected";
+export type MailEvent = "request-submitted" | "request-approved" | "request-rejected" | "operating-updated";
 export type ResolveMailEvent = (event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) => Promise<Omit<MailMessage, "from" | "replyTo" | "disableFileAccess" | "disableUrlAccess">>;
 export type ResolveDiagnosticTemplate = (configuration: MailConfiguration) => Promise<Pick<MailMessage, "subject" | "text" | "html">>;
 export type ResolveInvitationLink = (entityId: string, identity: MailIdentity) => Promise<string>;
@@ -272,7 +272,7 @@ export function createMailRouter(options: MailApiOptions): Router {
     json({ limit: "2kb", strict: true, inflate: false }),
     async (request, response) => {
       const body = request.body;
-      const events: MailEvent[] = ["request-submitted", "request-approved", "request-rejected"];
+      const events: MailEvent[] = ["request-submitted", "request-approved", "request-rejected", "operating-updated"];
       if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(field => field !== "event" && field !== "entityId")
         || !events.includes(body.event) || typeof body.entityId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.entityId)) {
         return mailError(response, 400, "invalid_mail_event", "A supported mail event and entityId are required.");

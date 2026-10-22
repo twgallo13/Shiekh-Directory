@@ -142,6 +142,14 @@ export function createFirestoreMailSettingsStore(): MailSettingsStore {
 }
 
 export async function resolveEvent(firestore: Firestore, event: MailEvent, entityId: string, identity: MailIdentity, configuration: MailConfiguration) {
+  if (event === 'operating-updated') {
+    const snapshot = await firestore.collection('operating_events').doc(entityId).get();
+    const saved = snapshot.data();
+    if (!snapshot.exists || !saved || (saved.actorId !== identity.uid && !['System Administrator', 'Directory Data Steward'].includes(String(identity.role)))) throw new AccessDenied();
+    if (!mailbox(configuration.steward)) throw new Error('Directory steward email is unavailable.');
+    const text = `Store #${safeText(saved.storeNumber)} — ${safeText(saved.locationName)}\nOperating update: ${safeText(saved.action)}\nReason: ${safeText(saved.reason)}\nSaved: ${safeText(saved.timestamp)}\n${saved.closure ? `Expires: ${safeText(saved.closure.expiresAt)} (${safeText(saved.closure.timeZone)})` : 'Temporary closure ended; applicable schedule/lifecycle now applies.'}\n\nReview current Directory state: https://shiekh-dir.ai.studio/locations/${encodeURIComponent(String(saved.locationId))}`;
+    return { to: configuration.steward.toLowerCase(), subject: `Store #${safeText(saved.storeNumber)} operating update`.replace(/[\r\n]+/g, ' '), text, html: `<div style="font-family:Arial,sans-serif;white-space:pre-wrap">${escapeHtml(text)}</div>` };
+  }
   const snapshot = await firestore.collection("requests").doc(entityId).get();
   const request = snapshot.data();
   if (!snapshot.exists || !request) throw new AccessDenied();

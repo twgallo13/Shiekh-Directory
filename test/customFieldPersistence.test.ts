@@ -77,6 +77,34 @@ function hoursCorrectionFixture() {
   return { ...fixture, actor, target, request, proposed, writes, audit };
 }
 
+test('request history tampering cannot partially update its target or append an audit', async () => {
+  for (const mode of ['rewrite-changes', 'rewrite-baseline', 'pending-edit', 'delete'] as const) {
+    const f = hoursCorrectionFixture();
+    const before = structuredClone([...f.records]);
+    const writes: import('../server/firestoreDirectory').DirectoryWrite[] = structuredClone(f.writes);
+    if (mode === 'rewrite-changes') writes[0].data!.requestedChanges = { standardHours: DEFAULT_WEEKLY_HOURS };
+    if (mode === 'rewrite-baseline') writes[0].data!.currentSnapshot = {};
+    if (mode === 'pending-edit') Object.assign(writes[0].data!, { status: 'Pending', reason: 'Rewritten after submission' });
+    if (mode === 'delete') writes[0] = { collection: 'requests', id: f.request.id, operation: 'delete', expectedVersion: 2 };
+    await assert.rejects(f.store.commit(writes, f.audit, f.actor));
+    assert.deepEqual([...f.records], before);
+  }
+});
+
+test('concurrent review attempts produce one decision and one audit without a second target write', async () => {
+  const f = hoursCorrectionFixture();
+  const outcomes = await Promise.allSettled([
+    f.store.commit(f.writes, f.audit, f.actor),
+    f.store.commit([{ ...f.writes[0], data: { ...f.request, status: 'Rejected' } }], { ...f.audit, action: 'Request Rejected' }, f.actor),
+  ]);
+  assert.equal(outcomes.filter(outcome => outcome.status === 'fulfilled').length, 1);
+  const failed = outcomes.find(outcome => outcome.status === 'rejected') as PromiseRejectedResult;
+  assert.ok(failed.reason instanceof DirectoryConflict);
+  assert.equal(f.records.get('requests/req-hours')?.status, 'Approved');
+  assert.equal(f.records.get('locations/loc-hours')?.version, 4);
+  assert.equal([...f.records.keys()].filter(key => key.startsWith('audit_logs/')).length, 1);
+});
+
 test('hours correction HTTP approval applies actual hours atomically, switches to custom and preserves broken staffing', async () => {
   const f = hoursCorrectionFixture();
   const app = express(); app.use(express.json()); app.use('/api/directory', createDirectoryDataRouter(async () => f.actor, f.store));
@@ -99,7 +127,7 @@ test('historical no-op hours approvals cannot bypass safeguard through key order
   const f = hoursCorrectionFixture();
   const reversed = Object.fromEntries(Object.entries(f.target.standardHours).reverse().map(([day, hours]) => [day, Object.fromEntries(Object.entries(hours).reverse())]));
   f.records.set('requests/req-hours', { ...f.request, requestedChanges: { standardHours: reversed, hoursMode: 'custom' } });
-  const writes = [f.writes[0], { ...f.writes[1], data: { ...f.target, standardHours: reversed, hoursMode: 'custom' } }];
+  const writes = [{ ...f.writes[0], data: { ...f.records.get('requests/req-hours'), status: 'Approved' } }, { ...f.writes[1], data: { ...f.target, standardHours: reversed, hoursMode: 'custom' } }];
   await assert.rejects(f.store.commit(writes, f.audit, f.actor), /does not change the target/);
   assert.deepEqual(f.records.get('locations/loc-hours'), f.target);
   assert.equal(f.records.get('requests/req-hours')?.status, 'Pending');
@@ -115,6 +143,7 @@ test('hours approval rejects stale/missing baselines, missing target and stale v
     if (scenario === 'version') f.records.set('locations/loc-hours', { ...f.target, version: 4 });
     if (scenario === 'request-version') f.records.set('requests/req-hours', { ...f.request, version: 3 });
     if (scenario === 'requested-field') f.records.set('requests/req-hours', { ...f.request, requestedChanges: { standardHours: f.proposed, name: 'Requested Name' } });
+    f.writes[0].data = { ...f.records.get('requests/req-hours'), status: 'Approved' } as typeof f.writes[0]['data'];
     const before = structuredClone([...f.records]);
     await assert.rejects(f.store.commit(f.writes, f.audit, f.actor), scenario === 'requested-field' ? DirectoryValidationError : DirectoryConflict);
     assert.deepEqual([...f.records], before, scenario);
@@ -138,7 +167,7 @@ test('hours approval checks every recorded requested-field baseline but permits 
     ...stale.request, requestedChanges: { standardHours: stale.proposed, name: 'Proposed Name' },
     currentSnapshot: { standardHours: stale.target.standardHours, name: 'Old Submission Name' },
   });
-  const writes = [stale.writes[0], { ...stale.writes[1], data: { ...stale.writes[1].data, name: 'Proposed Name' } }];
+  const writes = [{ ...stale.writes[0], data: { ...stale.records.get('requests/req-hours'), status: 'Approved' } }, { ...stale.writes[1], data: { ...stale.writes[1].data, name: 'Proposed Name' } }];
   await assert.rejects(stale.store.commit(writes, stale.audit, stale.actor), /name changed since submission/);
   assert.equal(stale.records.get('requests/req-hours')?.status, 'Pending');
   assert.deepEqual(stale.records.get('locations/loc-hours'), stale.target);

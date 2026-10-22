@@ -41,6 +41,11 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
   const [submitting, setSubmitting] = useState(false);
 
   const targetLoc = locations.find(l => l.id === selectedLocId);
+  const resetProposal = (target: LocationRecord | undefined) => {
+    setNewPhone(''); setNewManager(null); setNewStatus('Open — Normal Operations');
+    setNoticeText(''); setReason(''); setNewLocationInboxEmail(''); setClearLocationInboxEmail(false);
+    setNewHours(hoursDraft(target, DEFAULT_WEEKLY_HOURS)); setHoursBaseline(structuredClone(target)); setFormError('');
+  };
   const initialLocationId = location?.id || locations[0]?.id || '';
   const hasRequestDraft = Boolean(
     selectedLocId !== initialLocationId ||
@@ -56,6 +61,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
 
   /** Confirm before discarding an edited draft; close an untouched form immediately. */
   const requestClose = () => {
+    if (submitting) return;
     if (hasRequestDraft) {
       setIsDiscardConfirmOpen(true);
       return;
@@ -171,6 +177,9 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
       >
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
             {formError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800">{formError}</p>}
+          {submitting && <p role="status" className="text-neutral-600">Submitting this request. Please wait for confirmation before closing.</p>}
+          <fieldset disabled={submitting} className="space-y-3.5">
+          <p className="text-neutral-600">Changing the location or category resets proposed values and notes so one store&apos;s details are not carried into another request.</p>
           <div>
             <FormLabel>Target Location</FormLabel>
             <select
@@ -179,11 +188,8 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
               onChange={(e) => {
                 const newId = e.target.value;
                 setSelectedLocId(newId);
-                setNewManager(null);
                 const loc = locations.find(l => l.id === newId);
-                setNewHours(hoursDraft(loc, DEFAULT_WEEKLY_HOURS));
-                setHoursBaseline(structuredClone(loc));
-                setFormError('');
+                resetProposal(loc);
               }}
               className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500 cursor-pointer"
             >
@@ -200,7 +206,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
             <select
               value={changeType}
               aria-label="Change Category"
-              onChange={(e) => setChangeType(e.target.value as RequestChangeType)}
+              onChange={(e) => { setChangeType(e.target.value as RequestChangeType); resetProposal(targetLoc); }}
               className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500 cursor-pointer"
             >
               <option value="Phone Number Correction">Phone Number Correction</option>
@@ -323,9 +329,10 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
               disabled={submitting}
             >
               <Send className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>Submit for Approval</span>
+              <span>{submitting ? 'Submitting…' : 'Submit for Approval'}</span>
             </Button>
           </div>
+          </fieldset>
         </form>
       </Modal>
 

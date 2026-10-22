@@ -1289,6 +1289,100 @@ test('Hours correction historical no-op has distinct live/baseline labels and ca
   expect(f.commits[0].writes[0].data.status).toBe('Rejected');
 });
 
+for (const action of ['Approve & Apply', 'Reject'] as const) {
+  test(`Request review ${action} waits for commit, locks duplicate actions and retains notes`, async ({ page }) => {
+    const f = await prepareHoursCorrection(page, { request: 'changed' });
+    if (action === 'Approve & Apply') await page.setViewportSize({ width: 390, height: 844 });
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/directory/commit', async route => {
+      const body = route.request().postDataJSON(); f.commits.push(body);
+      await gate; return route.fulfill({ json: commitResponseFor(body) });
+    });
+    await page.goto(`${origin}/requests`); await restore(page, true);
+    const notes = page.getByPlaceholder('Optional reviewer notes...');
+    await notes.fill('Synthetic reviewer context');
+    await page.getByRole('button', { name: action, exact: true }).dblclick();
+    try {
+      await expect.poll(() => f.commits.length).toBe(1);
+      await expect(page.getByText('Pending Review', { exact: true })).toBeVisible();
+      for (const name of ['Approve & Apply', 'Reject']) await expect(page.getByRole('button', { name, exact: true })).toBeDisabled();
+      await expect(notes).toHaveValue('Synthetic reviewer context'); await expect(notes).toBeDisabled();
+      expect(f.mailEvents()).toBe(0);
+      await expect(page.getByText('08:00 - 20:00', { exact: true })).toHaveCount(2);
+      if (action === 'Approve & Apply') await page.screenshot({ path: 'test-results/request-review-mobile.png', fullPage: true });
+    } finally { release(); }
+    await expect(page.getByRole('button', { name: 'Approve & Apply' })).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: /saved for/ }).first()).toBeVisible();
+    expect(f.commits).toHaveLength(1);
+    await expect.poll(() => f.mailEvents()).toBe(1);
+  });
+}
+
+test('Request review lost response requires reload and reconciles the saved request without retry', async ({ page }) => {
+  const f = await prepareHoursCorrection(page, { request: 'changed' });
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); f.commits.push(body);
+    Object.assign(f.requests[0], body.writes.find((write: any) => write.collection === 'requests').data, { version: 4 });
+    Object.assign(f.locations[0], body.writes.find((write: any) => write.collection === 'locations').data, { version: 5 });
+    return route.abort('failed');
+  });
+  await page.goto(`${origin}/requests`); await restore(page, true);
+  await page.getByPlaceholder('Optional reviewer notes...').fill('Preserved until explicit reload');
+  await page.getByRole('button', { name: 'Approve & Apply' }).click();
+  await expect(page.getByRole('alert')).toContainText('do not retry blindly');
+  await expect(page.getByPlaceholder('Optional reviewer notes...')).toHaveValue('Preserved until explicit reload');
+  await expect(page.getByRole('button', { name: 'Approve & Apply' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Reject', exact: true })).toBeDisabled();
+  expect(f.commits).toHaveLength(1); expect(f.mailEvents()).toBe(0);
+  await page.getByRole('button', { name: 'Reload saved requests' }).click(); await restore(page, true);
+  await expect(page.locator('span').filter({ hasText: /^\s*Approved\s*$/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve & Apply' })).toHaveCount(0);
+  expect(f.commits).toHaveLength(1);
+});
+
+test('Request submission holds its draft and close controls until persistence finishes', async ({ page }) => {
+  const f = await prepareHoursCorrection(page);
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/directory/commit', async route => {
+    const body = route.request().postDataJSON(); f.commits.push(body);
+    await gate; return route.fulfill({ json: commitResponseFor(body) });
+  });
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102');
+  await dialog.getByRole('button', { name: 'Submit for Approval' }).click();
+  try {
+    await expect.poll(() => f.commits.length).toBe(1);
+    await expect(dialog.getByLabel('Target Location')).toBeDisabled();
+    await expect(dialog.getByLabel('Change Category')).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+    await page.keyboard.press('Escape'); await expect(dialog).toBeVisible();
+    expect(f.mailEvents()).toBe(0);
+  } finally { release(); }
+  await expect(dialog).toHaveCount(0); expect(f.commits).toHaveLength(1);
+});
+
+test('Request proposals reset all fields and notes when the target or category changes', async ({ page }) => {
+  await prepareHoursCorrection(page);
+  await page.goto(`${origin}/requests/new`); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByPlaceholder('(555) 000-0000').fill('2135550102');
+  await dialog.locator('textarea').fill('Notes for the first store only');
+  await dialog.getByLabel('Target Location').selectOption('loc-2');
+  await expect(dialog.getByPlaceholder('(555) 000-0000')).toHaveValue('');
+  await expect(dialog.locator('textarea')).toHaveValue('');
+  await dialog.getByLabel('Change Category').selectOption('Other Store Info Update');
+  await dialog.getByRole('button', { name: 'Clear inbox', exact: true }).click();
+  await dialog.locator('textarea').fill('Inbox-specific note');
+  await dialog.getByLabel('Change Category').selectOption('Phone Number Correction');
+  await dialog.getByLabel('Change Category').selectOption('Other Store Info Update');
+  await expect(dialog.getByRole('button', { name: 'Undo clear' })).toHaveCount(0);
+  await expect(dialog.locator('input[type=email]')).toHaveValue('');
+  await expect(dialog.locator('textarea')).toHaveValue('');
+});
+
 test('Hours correction changed-hours approval uses custom mode and retains staffing IDs and versions', async ({ page }) => {
   const f = await prepareHoursCorrection(page, { request: 'changed' });
   await page.goto(`${origin}/requests`); await restore(page, true);

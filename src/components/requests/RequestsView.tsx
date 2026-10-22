@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { UpdateRequest } from '../../types';
 import { GitPullRequest, Check, X, Clock, Plus } from 'lucide-react';
@@ -124,6 +124,25 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
   const [filter, setFilter] = useState<'All' | 'Pending' | 'Approved' | 'Rejected'>('All');
   const [reviewerNotes, setReviewerNotes] = useState<{ [id: string]: string }>({});
   const [inboxConflictAcknowledged, setInboxConflictAcknowledged] = useState<Record<string, string>>({});
+  const pendingReviews = useRef(new Set<string>());
+  const [reviewFeedback, setReviewFeedback] = useState<Record<string, { pending?: boolean; needsReload?: boolean; message: string }>>({});
+  const [announcement, setAnnouncement] = useState('');
+
+  const reviewRequest = async (request: UpdateRequest, action: 'Approved' | 'Rejected', acknowledgment?: import('../../lib/locationInboxEmail').LocationInboxAcknowledgment) => {
+    if (pendingReviews.current.has(request.id) || reviewFeedback[request.id]?.needsReload) return;
+    pendingReviews.current.add(request.id);
+    setAnnouncement('');
+    setReviewFeedback(previous => ({ ...previous, [request.id]: { pending: true, message: action === 'Approved' ? 'Saving approval and target changes together…' : 'Saving rejection…' } }));
+    try {
+      if (action === 'Approved') await approveRequest(request.id, reviewerNotes[request.id], acknowledgment);
+      else await rejectRequest(request.id, reviewerNotes[request.id]);
+      const message = `${action === 'Approved' ? 'Approval' : 'Rejection'} saved for ${request.targetName}.`;
+      setReviewFeedback(previous => ({ ...previous, [request.id]: { message } }));
+      setAnnouncement(message);
+    } catch (error) {
+      setReviewFeedback(previous => ({ ...previous, [request.id]: { needsReload: true, message: `${error instanceof Error ? error.message : 'The review save could not be confirmed.'} Check saved requests before another review; do not retry blindly. Your notes remain here until you reload.` } }));
+    } finally { pendingReviews.current.delete(request.id); }
+  };
 
   const canReview = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
 
@@ -134,6 +153,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
 
   return (
     <div className="space-y-4">
+      {announcement && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{announcement}</p>}
       <PageHeader
         title="Store Change & Correction Requests"
         description="Governance workflow for phone numbers, manager changes, and operating status"
@@ -165,6 +185,8 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
       <div className="space-y-3">
         {filtered.map(req => {
           const isPending = req.status === 'Pending';
+          const feedback = reviewFeedback[req.id];
+          const reviewLocked = Boolean(feedback?.pending || feedback?.needsReload);
           const targetLocation = req.targetType === 'Location' ? locations.find(location => location.id === req.targetId) : undefined;
           const target = req.targetType === 'Location' ? targetLocation : req.targetType === 'Person' ? people.find(person => person.id === req.targetId) : undefined;
           const review = correctionReview(req, target);
@@ -301,35 +323,41 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
                 )}
               </div>
 
+              {feedback && <div role={feedback.needsReload ? 'alert' : 'status'} className={`rounded-lg border p-3 text-sm ${feedback.needsReload ? 'border-red-200 bg-red-50 text-red-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+                <p>{feedback.message}</p>
+                {feedback.needsReload && <><p className="mt-1 text-xs">Reloading clears unsaved reviewer notes and loads the server&apos;s saved request status.</p><button type="button" onClick={() => window.location.reload()} className="mt-2 font-semibold underline">Reload saved requests</button></>}
+              </div>}
               {/* Reviewer Action Bar */}
               {isPending && canReview && (
-                <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-3">
+                <div className="pt-2 border-t border-neutral-100 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
                   {inboxConflicts.length > 0 && (
                     <label className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-950">
-                      <input type="checkbox" checked={Boolean(currentInboxDigest) && inboxConflictAcknowledged[req.id] === currentInboxDigest} onChange={event => setInboxConflictAcknowledged(previous => ({ ...previous, [req.id]: event.target.checked ? currentInboxDigest : '' }))} className="mt-0.5" />
+                      <input type="checkbox" disabled={reviewLocked} checked={Boolean(currentInboxDigest) && inboxConflictAcknowledged[req.id] === currentInboxDigest} onChange={event => setInboxConflictAcknowledged(previous => ({ ...previous, [req.id]: event.target.checked ? currentInboxDigest : '' }))} className="mt-0.5" />
                       <span>This inbox is also assigned to {inboxConflicts.map(location => `Store #${location.storeNumber}`).join(', ')}. I reviewed and acknowledge the shared inbox locations.</span>
                     </label>
                   )}
                   <input
                     type="text"
                     placeholder="Optional reviewer notes..."
+                    disabled={reviewLocked}
                     value={reviewerNotes[req.id] || ''}
                     onChange={(e) => setReviewerNotes({ ...reviewerNotes, [req.id]: e.target.value })}
-                    className="flex-1 px-3 py-1.5 bg-neutral-50 border border-neutral-300 rounded-lg text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-red-500 focus:bg-white"
+                    className="min-w-0 flex-1 px-3 py-1.5 bg-neutral-50 border border-neutral-300 rounded-lg text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-red-500 focus:bg-white disabled:opacity-60"
                   />
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                     <button
                       type="button"
-                      onClick={() => rejectRequest(req.id, reviewerNotes[req.id])}
-                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                      disabled={reviewLocked}
+                      onClick={() => void reviewRequest(req, 'Rejected')}
+                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Reject
                     </button>
                     <button
                       type="button"
-                      disabled={Boolean(review.blockedReason) || (inboxConflicts.length > 0 && !inboxAcknowledgment)}
-                      onClick={() => approveRequest(req.id, reviewerNotes[req.id], inboxAcknowledgment)}
-                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors"
+                      disabled={reviewLocked || Boolean(review.blockedReason) || (inboxConflicts.length > 0 && !inboxAcknowledgment)}
+                      onClick={() => void reviewRequest(req, 'Approved', inboxAcknowledgment)}
+                      className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>Approve & Apply</span>

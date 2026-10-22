@@ -24,7 +24,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 A **schema** describes the available fields and their types. An **API endpoint** is an address an app calls to read or change information. `locationInboxEmail` is an optional shared contact address for a Location; it is separate from a Person's work email and a User's sign-in email. The read API returns an address or `null` when there is no usable inbox.
 
-Current application release: `27c3536`, Ready revision `shiekh-location-company-directory-pr34-27c3536` at 100%; [exact source/build/validation evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-33-and-pr-34). Next unfinished priority: full Person-card audit, controlled linked positions and guided promotion responsibilities (plan P2.7–P2.9/P3.7–P3.8). A descriptive title is not a canonical District assignment or account permission. No live staffing/data restoration was performed; DM work-email API access remains lower priority/planned.
+Current application release: `6614ac0`, Ready revision `shiekh-location-company-directory-pr37-6614ac0` at sole 100%; [exact source/build/validation evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-37). The bounded Person-card/linked-position and District-owned DM display improvements are published. Next: issue #36/P6.9, an app-neutral effective-DM business-contact API and separately authorized exact-client acceptance. Broader taxonomy migration, acting/Region ownership and full handover/offboarding remain unfinished. A descriptive title is not a District assignment or account permission. No live staffing/data restoration or API contact grant was performed.
 
 ## Development
 

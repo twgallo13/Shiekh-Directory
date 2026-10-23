@@ -121,11 +121,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
   useDialogFocus(Boolean(location) && confirmation === null, requestClose, dialogRef);
 
-  const [showAllLeadershipPeople, setShowAllLeadershipPeople] = useState(false);
-  useEffect(() => { setShowAllLeadershipPeople(false); }, [location?.id]);
-  /** Render role-focused discovery options without changing server policy or application permissions. */
+  /** Offer explicit position eligibility; retain unmatched current IDs without remapping them. */
   const leadershipOptions = (role: LeadershipRole, id?: string, name?: string) =>
-    leadershipPickerOptions(people, role, showAllLeadershipPeople, id, name).map(option =>
+    leadershipPickerOptions(people, role, false, id, name).map(option =>
       <option key={option.id} value={option.id} disabled={option.currentOnly}>{option.label}</option>);
   const activeRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort((left, right) => left.name.localeCompare(right.name)), [regions]);
   const activeDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === formData?.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, formData?.regionId]);
@@ -910,11 +908,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                 </div>
 
                 {/* Primary Management Grid */}
-                <p className="mb-2 text-xs text-neutral-500">Lists default to each recorded position. Existing assignments are preserved; listed titles do not grant permissions.</p>
-                <label className="mb-4 flex items-start gap-2 text-xs text-neutral-600">
-                  <input type="checkbox" checked={showAllLeadershipPeople} onChange={event => setShowAllLeadershipPeople(event.target.checked)} />
-                  Show all active people (unusual titles or cross-role coverage)
-                </label>
+                <p className="mb-4 text-xs text-neutral-500">New assignments require an Active person with the matching position explicitly selected. Existing assignments are preserved for review. Positions do not grant account permissions.</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
                   <div>
                     <label className="block text-xs font-medium text-neutral-700 mb-1.5">

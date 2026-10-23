@@ -36,10 +36,13 @@ export function personPositionLabel(person: PositionPerson): string {
   return (typeof person.jobTitle === 'string' && person.jobTitle.trim()) || (typeof person.role === 'string' && person.role.trim()) || 'Team Member';
 }
 
-/** Keep legacy cross-role coverage until the owner explicitly maps the Person. */
+/** New assignment eligibility requires an explicit mapping; titles are display/discovery only.
+ * Retaining an unchanged historical assignment is handled by each writer's before/after comparison.
+ * Lifecycle and unique identity must also be checked by the caller.
+ */
 export function allowsLeadershipPosition(person: PositionPerson, role: LeadershipRole) {
   const state = personPositions(person);
-  return state.source === 'legacy' || (state.source === 'controlled' && listedPosition(person, role));
+  return state.source === 'controlled' && listedPosition(person, role);
 }
 
 export const LEADERSHIP_POSITION_FIELDS = {

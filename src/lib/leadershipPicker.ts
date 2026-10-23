@@ -9,12 +9,14 @@ export function matchesListedLeadershipRole(person: PickerPerson, role: Leadersh
   return listedPosition(person, role);
 }
 
-/** Offer unique active IDs matching the listed position, or all unique active people after an explicit opt-in. */
-export function leadershipCandidates<T extends PickerPerson>(people: T[], role?: LeadershipRole, showAll = false): T[] {
+/** Only explicitly mapped, unique, Active people are eligible for a management slot.
+ * The compatibility parameter cannot widen eligibility, including in older callers.
+ */
+export function leadershipCandidates<T extends PickerPerson>(people: T[], role?: LeadershipRole, _showAll = false): T[] {
   const counts = new Map<string, number>();
   for (const person of people) counts.set(person.id, (counts.get(person.id) || 0) + 1);
   return people.filter(person => counts.get(person.id) === 1 && personLifecycle(person) === 'active'
-    && (!role || (allowsLeadershipPosition(person, role) && (showAll || matchesListedLeadershipRole(person, role)))))
+    && (!role || allowsLeadershipPosition(person, role)))
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 

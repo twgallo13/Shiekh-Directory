@@ -1,5 +1,7 @@
 # Person transition command — implementation contract v1
 
+Owner UX clarification, October 23: follow the [simple positions/assignments rules](positions-and-assignments-rules.md). Routine position additions stay ordinary Person edits, with separate District/Store assignment. Reuse this guarded command foundation for consequential removal/replacement/vacancy; a mandatory all-purpose promotion wizard is not the intended UX. Data restore remains deferred. This clarification does not relax atomicity, authority or recovery requirements below.
+
 Status: October 22, 2026 Pacific. The first internal pure-planner slice is implemented in [Dispatch 31](../dispatches/dispatch-31-person-transition-dry-run-planner.md); review/merge evidence belongs on its PR. No command routes, signing key, receipts, writer or new UI below exist yet. [PR #49](../dispatches/dispatch-29-server-transition-preview.md) remains the published read-only dependency review. This contract narrows the first coordinated writer; it does not complete [Phase 3](directory-consistency-plan.md#phase-3-add-leadership-handover-and-offboarding).
 
 ## 1. Business outcome and explicit limits

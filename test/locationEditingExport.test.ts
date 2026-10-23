@@ -11,13 +11,13 @@ type Snapshot = Pick<DirectorySeed, 'locations' | 'people' | 'regions' | 'distri
 
 const snapshotReadAt = '2026-09-13T12:00:00.000Z';
 const people = [
-  { id: 'person-manager', fullName: 'Manager', status: 'Active' },
-  { id: 'person-assistant-1', fullName: 'Assistant One', status: 'Active' },
-  { id: 'person-assistant-2', fullName: 'Assistant Two', status: 'Active' },
-  { id: 'person-key-1', fullName: 'Key One', status: 'Active' },
-  { id: 'person-key-2', fullName: 'Key Two', status: 'Active' },
-  { id: 'person-district', fullName: 'District Manager', status: 'Active' },
-  { id: 'person-regional', fullName: 'Regional Manager', status: 'Active' },
+  { id: 'person-manager', fullName: 'Manager', status: 'Active', positionIds: ['store-manager'] },
+  { id: 'person-assistant-1', fullName: 'Assistant One', status: 'Active', positionIds: ['assistant-store-manager'] },
+  { id: 'person-assistant-2', fullName: 'Assistant Two', status: 'Active', positionIds: ['assistant-store-manager'] },
+  { id: 'person-key-1', fullName: 'Key One', status: 'Active', positionIds: ['key-holder'] },
+  { id: 'person-key-2', fullName: 'Key Two', status: 'Active', positionIds: ['key-holder'] },
+  { id: 'person-district', fullName: 'District Manager', status: 'Active', positionIds: ['district-manager'] },
+  { id: 'person-regional', fullName: 'Regional Manager', status: 'Active', positionIds: ['regional-manager'] },
 ] as Snapshot['people'];
 
 function location(overrides: Partial<LocationRecord> = {}): LocationRecord {

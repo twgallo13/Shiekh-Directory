@@ -416,12 +416,14 @@ export function buildLocationImportPlan(
       if (existing && sameValue(existing[field as keyof typeof existing], proposed[field])) continue;
       const ids = Array.isArray(proposed[field]) ? proposed[field] as string[] : proposed[field] ? [String(proposed[field])] : [];
       for (const personId of ids) {
+        // Preserve position mappings for retained members; existing identity/lifecycle guards still apply.
+        const retainedArrayMember = existing && Array.isArray(existing[field as keyof typeof existing]) && (existing[field as keyof typeof existing] as string[]).includes(personId);
         const matches = peopleById.get(personId) || [];
         if (matches.length === 0) {
           issues.push(issue('error', 'missing_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'No Person has this canonical ID.', 'Correct the ID or create the real Person separately, then preview again.', undefined, proposed[field]));
         } else if (matches.length > 1) {
           issues.push(issue('error', 'ambiguous_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, 'Multiple People have this canonical ID.', 'Repair the duplicate Person identities and explicitly correct the CSV before previewing again.', matches.map(person => `${person.id} — ${person.fullName} (${personStatus(person)})`), proposed[field]));
-        } else if (!allowsLeadershipPosition(matches[0], LEADERSHIP_POSITION_FIELDS[field as keyof typeof LEADERSHIP_POSITION_FIELDS])) {
+        } else if (!retainedArrayMember && !allowsLeadershipPosition(matches[0], LEADERSHIP_POSITION_FIELDS[field as keyof typeof LEADERSHIP_POSITION_FIELDS])) {
           issues.push(issue('error', 'invalid_attribute', column, personId, existing?.[field as keyof typeof existing] ?? null, 'This Person does not hold the required linked position.', 'Map the additional position explicitly on the Person, or choose another eligible Person, then preview again.'));
         } else if (!isActivePerson(matches[0])) {
           issues.push(issue('error', 'inactive_person_reference', column, personId, existing?.[field as keyof typeof existing] ?? null, `The referenced Person is ${personStatus(matches[0])}.`, 'Choose an Active Person ID, or intentionally correct the Person lifecycle separately, then preview again.', [`${matches[0].id} — ${matches[0].fullName}`], proposed[field]));

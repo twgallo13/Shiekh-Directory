@@ -34,7 +34,7 @@ function fixture() {
   const actor: Account = { uid: 'synthetic-admin', name: 'Synthetic Admin', email: 'admin@example.test', emailVerified: true, role: 'System Administrator', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' };
   const district: DistrictRecord = { id: 'd-1', name: 'Synthetic District', regionId: 'r-1', status: 'Active', version: 2 };
   const regions: RegionRecord[] = [{ id: 'r-1', name: 'Synthetic Region', status: 'Active' }];
-  const people = [{ id: 'p-old', fullName: 'Previous DM', jobTitle: 'District Manager', status: 'Active', activeStatus: true }, { id: 'p-new', fullName: 'Next DM', jobTitle: 'DM', status: 'Active', activeStatus: true }] as Person[];
+  const people = [{ id: 'p-old', fullName: 'Previous DM', jobTitle: 'District Manager', status: 'Active', activeStatus: true }, { id: 'p-new', fullName: 'Next DM', jobTitle: 'DM', positionIds: ['district-manager'], status: 'Active', activeStatus: true }] as Person[];
   const locations = [1, 2].map((n): LocationRecord => ({ id: `loc-${n}`, storeNumber: `00${n}`, name: `Synthetic Store ${n}`, type: 'Enclosed Mall', districtId: district.id, regionId: district.regionId,
     hierarchyApplicability: 'Applicable', version: n, recordStatus: n === 2 ? 'Retired' : 'Active', districtManagerId: 'p-old', districtManagerName: 'Previous DM', operationalStatus: 'Open — Normal Operations', standardHours: structuredClone(DEFAULT_WEEKLY_HOURS), phone: '+12135550100', address: 'Synthetic address', city: 'Test', state: 'CA', zipCode: '90000', timeZone: 'America/Los_Angeles' }));
   const center = { ...locations[0], id: 'center', storeNumber: '000', type: 'Corporate Office' as const };
@@ -231,7 +231,7 @@ test('Preview blocks ambiguous scope, absent/unknown people, no-op and oversized
   const f = fixture();
   assert.throws(() => previewDistrictLeadership(f.district, 'missing', 'test reason', f.all, f.people, f.regions));
   assert.throws(() => previewDistrictLeadership(f.district, 'p-new', 'x', f.all, f.people, f.regions));
-  assert.throws(() => previewDistrictLeadership({ ...f.district, districtManagerId: 'p-old' }, 'p-old', 'test reason', f.all, f.people, f.regions), /already/);
+  assert.throws(() => previewDistrictLeadership({ ...f.district, districtManagerId: 'p-new' }, 'p-new', 'test reason', f.all.map(l => ({ ...l, districtManagerId: 'p-new' })), f.people, f.regions), /already/);
   assert.throws(() => previewDistrictLeadership(f.district, 'p-new', 'test reason', [...f.all, { ...f.locations[0], id: 'unknown', type: '' } as unknown as LocationRecord], f.people, f.regions), /unknown type/);
   assert.throws(() => previewDistrictLeadership(f.district, 'p-new', 'test reason', Array.from({ length: 100 }, (_, n) => ({ ...f.locations[0], id: `many-${n}` })), f.people, f.regions), /99-store/);
 });

@@ -87,9 +87,10 @@ test('malformed projected relationships or metadata fail closed instead of certi
     ['people/person', 'primaryLocationId', 12], ['people/person', 'activeStatus', 'false'], ['people/person', 'positionIds', 'district-manager'],
     ['locations/store', 'assistantStoreManagerIds', 'person'], ['locations/store', 'keyHolderIds', [42]],
     ['locations/store', 'districtManagerId', ['person']], ['locations/store', 'storeNumber', 7], ['locations/store', 'districtId', {}],
-    ['districts/owned', 'districtManagerId', ['person']], ['districts/owned', 'regionId', {}],
-    ['regions/west', 'name', {}], ['users/linked', 'personId', ['person']], ['users/linked', 'role', {}],
-    ['requests/pending', 'targetId', {}], ['requests/pending', 'targetType', 'Unknown'],
+    ['locations/store', 'type', 'Enclosed Mal'], ['locations/store', 'type', ''], ['locations/store', 'recordStatus', 'Unknown'],
+    ['districts/owned', 'districtManagerId', ['person']], ['districts/owned', 'districtManagerId', ''], ['districts/owned', 'regionId', {}],
+    ['regions/west', 'name', {}], ['regions/west', 'status', 'Unknown'], ['districts/owned', 'status', 'Unknown'], ['users/linked', 'personId', ['person']], ['users/linked', 'role', {}],
+    ['requests/pending', 'targetId', {}], ['requests/pending', 'targetType', 'Unknown'], ['requests/pending', 'targetType', ['Person']], ['regions/west', 'status', ['Active']],
     ['requests/pending', 'requestedChanges', { assistantStoreManagerIds: 'person' }],
     ['requests/pending', 'currentSnapshot', { districtManagerId: ['person'] }], ['people/person', 'version', -1],
   ];
@@ -97,6 +98,17 @@ test('malformed projected relationships or metadata fail closed instead of certi
     const f = fixture(); f.records.get(path)![key] = value; const before = structuredClone([...f.records]);
     await assert.rejects(previewPersonTransition(f.firestore, 'person', actor, clock), /invalid projected fields/, `${path}.${key}`);
     assert.deepEqual([...f.records], before);
+  }
+});
+
+test('only recognized retail types inherit District DM while recognized non-retail remains Location-owned', async () => {
+  const retail = ['Enclosed Mall', 'Strip Center / Shopping Center', 'Street / Standalone Location'];
+  const other = ['Corporate Office', 'Warehouse / Distribution Center', 'Other Company Location'];
+  for (const type of [...retail, ...other]) {
+    const f = fixture(); Object.assign(f.records.get('locations/store')!, { type, districtManagerId: 'person' });
+    const p = await previewPersonTransition(f.firestore, 'person', actor, clock);
+    assert.equal(p.review.inheritedStores.some(row => row.locationId === 'store'), retail.includes(type), type);
+    assert.equal(p.review.responsibilities.some(row => row.key === 'store:districtManagerId'), other.includes(type), type);
   }
 });
 

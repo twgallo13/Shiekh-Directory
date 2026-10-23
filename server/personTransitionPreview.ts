@@ -4,6 +4,7 @@ import type { Account } from './authAuthority';
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied } from './firestoreDirectory';
 import { personTransitionReview } from '../src/lib/personTransitionReview';
 import { LEADERSHIP_POSITION_FIELDS } from '../src/lib/personPositions';
+import { classifyHierarchyLocationType } from '../src/lib/hierarchyResolution';
 import type { DistrictRecord, LocationRecord, PersonRecord, RegionRecord, UpdateRequest, UserProfile } from '../src/types';
 
 export const TRANSITION_PREVIEW_LIMITS = { locations: 1000, districts: 500, regions: 100, users: 5000, requests: 1000 } as const;
@@ -29,11 +30,12 @@ function validateProjected(collection: string, row: Record<string, unknown>) {
   if (collection === 'people') valid &&= optional('status', text) && optional('activeStatus', value => typeof value === 'boolean')
     && optional('jobTitle', text) && optional('positionIds', references) && optional('primaryLocationId', reference) && optional('supportedLocationIds', references);
   if (collection === 'locations') valid &&= ['storeNumber', 'name', 'type', 'recordStatus'].every(key => text(row[key]))
+    && classifyHierarchyLocationType(row.type) !== 'unclassified' && ['Active', 'Retired', 'Draft'].includes(String(row.recordStatus))
     && optional('districtId', reference) && optional('regionId', reference) && leadershipShape(row);
-  if (collection === 'districts') valid &&= ['name', 'regionId', 'status'].every(key => text(row[key])) && optional('districtManagerId', reference);
-  if (collection === 'regions') valid &&= ['name', 'status'].every(key => text(row[key]));
+  if (collection === 'districts') valid &&= ['name', 'regionId', 'status'].every(key => text(row[key])) && ['Active', 'Retired'].includes(String(row.status)) && optional('districtManagerId', value => value === null || validId(value));
+  if (collection === 'regions') valid &&= text(row.name) && (row.status === 'Active' || row.status === 'Retired');
   if (collection === 'users') valid &&= text(row.role) && optional('personId', reference) && optional('status', text);
-  if (collection === 'requests') valid &&= row.status === 'Pending' && ['Person', 'Location'].includes(String(row.targetType)) && validId(row.targetId) && text(row.changeType)
+  if (collection === 'requests') valid &&= row.status === 'Pending' && (row.targetType === 'Person' || row.targetType === 'Location') && validId(row.targetId) && text(row.changeType)
     && optional('requestedChanges', leadershipShape) && optional('currentSnapshot', leadershipShape);
   if (!valid) throw new Error('Transition inventory contains invalid projected fields.');
 }

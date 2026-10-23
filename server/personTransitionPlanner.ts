@@ -33,6 +33,8 @@ function canonical(v: unknown): string {
   throw new Error('Snapshot must contain detached JSON values only.');
 }
 const digest = (v: unknown) => createHash('sha256').update(canonical(v)).digest('hex');
+/** Same normalized intent identity used by previews and internal recovery preparation. */
+export const personTransitionIntentHash = (raw: unknown) => digest(normalizePersonTransitionIntent(raw));
 function validateSnapshot(s: TransitionPlannerSnapshot) {
   if (!object(s) || s.complete !== true || typeof s.coherentReadId !== 'string' || !s.coherentReadId.trim()) throw new Error('Complete coherent adapter snapshot required.');
   for (const [collection, maximum] of Object.entries(limits) as [Collection, number][]) {

@@ -1,6 +1,6 @@
 # Dispatch 33 — signed read-only transition preview
 
-October 23, 2026 Pacific. Source implementation only: not published, not configured, and not a completed removal workflow. Current production remains PR #53, source `62acacb`, as recorded in [Dispatch 32](dispatch-32-explicit-assignment-rules.md). Follow the [agreed rules](../plans/positions-and-assignments-rules.md) and [command contract](../plans/person-transition-command-contract.md).
+October 23, 2026 Pacific. PR #55 merged as source `8ebcb92a7c114f76c848d2ef4522db08bf8b52ea`: not published, not configured, and not a completed removal workflow. Current production remains PR #53, source `62acacb`, as recorded in [Dispatch 32](dispatch-32-explicit-assignment-rules.md). Follow the [agreed rules](../plans/positions-and-assignments-rules.md) and [command contract](../plans/person-transition-command-contract.md).
 
 ## Delivered foundation
 
@@ -29,3 +29,7 @@ No new user-visible screen is included in this slice. Existing visible eligibili
 ## Validation checkpoint
 
 The full synthetic API suite passed 586/586 tests. Type checking and production build passed (existing bundle-size warning). The build initially hit a Windows sandbox configuration-path denial; the authorized retry succeeded without code changes. An initial new-test failure was a fixture that skipped overflow simulation for the Pending-request filtered query; correcting that fixture exercised the existing production overflow guard successfully. No live account or staffing data was used. PR-review evidence will be recorded separately when complete; no deployment is implied by these results.
+
+Final reviewed head `f51ceac56b16480663ebebb919c917059956aab5` repaired the valid Pending-request projection finding with nested field masks. The affected nine tests, types, build and whitespace passed; the separate recovery branch subsequently passed 596 tests including this fix. Codex's final code review completed without unresolved findings. CodeRabbit completed the original head without actionable comments but was rate-limited on the repair head; do not call that latter green rate-limit status an actual review. Separate security-review requests registered code-review runs, so no separate automated security approval is claimed. Manual security/diff review covered the narrowed projection repair. No failed CI or unresolved thread remained; owner-authorized exact-head merge did not deploy/configure this foundation.
+
+The next [recovery foundation](dispatch-34-person-transition-recovery.md) is a separate source-only slice; it does not add a staffing writer or register the missing routes above.

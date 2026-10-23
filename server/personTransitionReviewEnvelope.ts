@@ -50,8 +50,9 @@ export class PersonTransitionReviewSigner {
     const signature = createHmac('sha256', this.#keys.get(this.#active)!).update(`${AUDIENCE}.${payload}`).digest('base64url');
     return `ptv1.${payload}.${signature}`;
   }
-  verify(token: unknown, expected: Pick<TransitionReviewClaims, 'actorUid' | 'personId' | 'intentHash'>, now: number): TransitionReviewClaims {
-    if (typeof token !== 'string' || token.length > 4096 || !Number.isSafeInteger(now)) invalid();
+  /** Cryptographic binding only, never admission to prepare or write. Terminal replay may outlive expiry. */
+  verifySignature(token: unknown, expected: Pick<TransitionReviewClaims, 'actorUid' | 'personId' | 'intentHash'>): TransitionReviewClaims {
+    if (typeof token !== 'string' || token.length > 4096) invalid();
     const parts = token.split('.');
     if (parts.length !== 3 || parts[0] !== 'ptv1') invalid();
     let claims: unknown;
@@ -61,9 +62,13 @@ export class PersonTransitionReviewSigner {
     const signature = decode(parts[2], 43);
     const calculated = createHmac('sha256', this.#keys.get(claims.keyId)!).update(`${AUDIENCE}.${parts[1]}`).digest();
     if (signature.length !== calculated.length || !timingSafeEqual(signature, calculated)
-      || claims.actorUid !== expected.actorUid || claims.personId !== expected.personId || claims.intentHash !== expected.intentHash
-      || now < claims.issuedAt || now >= claims.expiresAt) invalid();
+      || claims.actorUid !== expected.actorUid || claims.personId !== expected.personId || claims.intentHash !== expected.intentHash) invalid();
     return { ...claims };
+  }
+  verify(token: unknown, expected: Pick<TransitionReviewClaims, 'actorUid' | 'personId' | 'intentHash'>, now: number): TransitionReviewClaims {
+    const claims = this.verifySignature(token, expected);
+    if (!Number.isSafeInteger(now) || now < claims.issuedAt || now >= claims.expiresAt) invalid();
+    return claims;
   }
 }
 

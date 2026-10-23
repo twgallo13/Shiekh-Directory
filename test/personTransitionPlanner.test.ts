@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planPersonTransition, type TransitionPlannerSnapshot, type TransitionSourceDocument } from '../server/personTransitionPlanner';
 import { normalizePersonTransitionIntent, type PersonTransitionIntent } from '../server/personTransitionIntent';
+import { conservativeDocumentBytes } from '../server/conservativeDocumentSize';
+import { assertDistrictHandoverAuditSize } from '../server/districtLeadership';
 
 const doc = (id: string, data: Record<string, any> | null): TransitionSourceDocument => ({ id, data, updateTime: data === null ? null : { seconds: '100', nanoseconds: 12 } });
 function fixture() {
@@ -216,5 +218,38 @@ test('non-retail new grants validate hierarchy; valid Not Applicable and valid e
     if (!applicable) { delete l.regionId; delete l.districtId; }
     f.intent.responsibilities[0] = { ...f.intent.responsibilities[0], action: 'replace', replacementId: 'replacement' };
     assert.equal(planPersonTransition(f.intent, f.snapshot).ready, true);
+  }
+});
+
+test('District removal clears derived copies despite inconsistent members, but a replacement grant is blocked', () => {
+  for (const conflict of ['mismatch', 'unknown', 'not-applicable']) {
+    const f = fixture(); const l = row(f.snapshot, 'locations', 'store'); const d = row(f.snapshot, 'districts', 'district');
+    d.districtManagerId = 'subject'; d.status = 'Retired'; d.regionId = 'missing-parent';
+    l.recordStatus = 'Retired'; l.districtManagerId = 'subject'; l.districtManagerName = 'Synthetic Subject';
+    if (conflict === 'mismatch') l.regionId = 'other';
+    else { l.regionId = d.regionId; l.hierarchyApplicability = conflict === 'unknown' ? 'Unknown' : 'Not Applicable'; }
+    f.intent.responsibilities.push({ owner: 'districts', id: 'district', field: 'districtManagerId', action: 'vacate' });
+    const before = JSON.stringify(f.snapshot); const r = planPersonTransition(f.intent, f.snapshot);
+    assert.equal(r.ready, true); assert.equal(JSON.stringify(f.snapshot), before);
+    assert.match(r.review.warnings.join(), /Removal-only vacancy preserves/);
+    const set = r.internal!.patches.find(p => p.collection === 'locations')!.set;
+    assert.deepEqual(set, { districtManagerId: '', districtManagerName: '' });
+    assert.deepEqual(r.internal!.patches.find(p => p.collection === 'districts')!.set, { districtManagerId: null });
+    f.intent.responsibilities[1] = { ...f.intent.responsibilities[1], action: 'replace', replacementId: 'replacement' };
+    blocked(f, /hierarchy|Active District/);
+  }
+});
+test('compact preserved arrays cannot pass conservative audit capacity merely because JSON is small', () => {
+  const f = fixture(); row(f.snapshot, 'people', 'subject').preservedList = Array(8000).fill('x');
+  const r = blocked(f, /capacity/); assert.ok(r.review.counts.auditBytesEstimate >= 900000);
+});
+test('SDK-free recursive estimator matches the existing District guard policy, including UTF-8 and per-item overhead', () => {
+  assert.equal(conservativeDocumentBytes({ key: '' }), 99);
+  assert.equal(conservativeDocumentBytes(['x']), 97);
+  assert.equal(conservativeDocumentBytes('é'), 34);
+  for (const count of [0, 100, 13000, 14000]) {
+    const record = { list: Array(count).fill('x') };
+    if (conservativeDocumentBytes(record) > 900000) assert.throws(() => assertDistrictHandoverAuditSize(record));
+    else assert.doesNotThrow(() => assertDistrictHandoverAuditSize(record));
   }
 });

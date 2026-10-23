@@ -6,6 +6,7 @@ import { LEADERSHIP_POSITION_FIELDS, listedPosition, personPositions, validPosit
 import { formatPersonPhone } from '../src/lib/personContacts';
 import type { PersonRecord } from '../src/types';
 import { canonicalTransitionId as id, normalizePersonTransitionIntent, object, type LeadershipField } from './personTransitionIntent';
+import { conservativeDocumentBytes } from './conservativeDocumentSize';
 
 type Row = Record<string, any>;
 export type TransitionSourceDocument = { id: string; data: Row | null; updateTime: { seconds: string; nanoseconds: number } | null };
@@ -194,7 +195,10 @@ export function planPersonTransition(rawIntent: unknown, snapshot: TransitionPla
       patch('districts', r, { districtManagerId: next });
       for (const l of data.locations.values()) if (l.districtId === r.id && isRetailHierarchyType(l.type)) {
         associated.add(l.id);
-        if (l.regionId !== r.regionId || own(l, 'hierarchyApplicability') && l.hierarchyApplicability !== 'Applicable') block(`Resolve District member hierarchy conflict: ${l.id}.`);
+        if (l.regionId !== r.regionId || own(l, 'hierarchyApplicability') && l.hierarchyApplicability !== 'Applicable') {
+          if (decision.action === 'vacate') warnings.add(`Removal-only vacancy preserves District member hierarchy conflict: ${l.id}.`);
+          else block(`Resolve District member hierarchy conflict: ${l.id}.`);
+        }
         copies.push({ locationId: l.id, districtId: r.id, recordStatus: l.recordStatus, storeNumber: l.storeNumber, before: l.districtManagerId ?? null, after: next });
         locationCopy(l, 'districtManagerId', next || '');
       }
@@ -229,8 +233,8 @@ export function planPersonTransition(rawIntent: unknown, snapshot: TransitionPla
   const internalPatches = [...patches.values()].sort((a, b) => compare(`${a.collection}/${a.id}`, `${b.collection}/${b.id}`));
   if (!internalPatches.length) block('The selected intent makes no business change.');
   // Conservative source+patch estimates deliberately overcount; the SDK remains authoritative.
-  const businessBytes = Buffer.byteLength(canonical(internalPatches.map(p => ({ ...data[p.collection].get(p.id), ...p.set })))) * 2 + internalPatches.length * 1024;
-  const auditBytes = Buffer.byteLength(canonical(internalPatches.map(p => ({ before: data[p.collection].get(p.id), after: { ...data[p.collection].get(p.id), ...p.set } })))) * 2 + 4096;
+  const businessBytes = internalPatches.reduce((size, p) => size + conservativeDocumentBytes({ ...data[p.collection].get(p.id), ...p.set }) + 1024, 0);
+  const auditBytes = conservativeDocumentBytes({ intent, changes: internalPatches.map(p => ({ ...p, before: data[p.collection].get(p.id), after: { ...data[p.collection].get(p.id), ...p.set } })) }) + 4096;
   if (internalPatches.length > 90 || businessBytes > 4 * 1024 * 1024 || auditBytes >= 900000) block('Transition exceeds conservative atomic capacity; no partial plan is available.');
   const preconditions = Object.fromEntries((Object.keys(limits) as Collection[]).map(c => [c, [...snapshot[c]].sort((a, b) => compare(a.id, b.id))]));
   const intentHash = digest(intent); const stateHash = digest(preconditions);

@@ -134,6 +134,16 @@ test('work email is an explicit contact allowlist: never aliases, personal domai
     [{ activeStatus: false }, 'withheld_unknown_lifecycle'],
   ] as const) { const p = project({ ...active, ...overrides }); assert.equal(p.workEmail, null); assert.equal(p.workEmailStatus, expected); }
   assert.equal(project(active, true, new Set(['manager@shiekhshoes.org'])).workEmailStatus, 'shared_location_inbox');
+  // A Location need not have its inbox populated to recognize a conventional shared mailbox.
+  for (const workEmail of ['store7@shiekhshoes.com', 'STORE007@SHIEKHSHOES.COM', ' store105@shiekhshoes.com ']) {
+    assert.equal(project({ ...active, workEmail }).workEmail, null);
+    assert.equal(project({ ...active, workEmail }).workEmailStatus, 'shared_location_inbox');
+    assert.equal(project({ ...active, workEmail }, false).workEmailStatus, 'not_granted');
+  }
+  for (const workEmail of ['manager@shiekhshoes.com', 'store.operations@shiekhshoes.com']) {
+    assert.equal(project({ ...active, workEmail }).workEmail, workEmail);
+    assert.equal(project({ ...active, workEmail }).workEmailStatus, 'available');
+  }
   assert.deepEqual(Object.keys(project(active)).sort(), ['personId', 'fullName', 'lifecycle', 'workEmail', 'workEmailStatus', 'issues'].sort());
   assert.equal(projectDistrictLeadership(districts[0], [], regions, { granted: true, sharedInboxKeys: new Set() }).districtManager?.workEmailStatus, 'unresolved_person');
 });

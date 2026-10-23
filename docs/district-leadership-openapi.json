@@ -372,7 +372,7 @@
               "string",
               "null"
             ],
-            "description": "Contact only, never a sign-in or authorization identifier; requires both leadership grants and eligible source."
+            "description": "Contact only, never a sign-in or authorization identifier; requires both leadership grants and eligible source. Conventional store-number mailboxes at shiekhshoes.com and saved Location inbox matches are withheld as shared_location_inbox, including when Location inbox data is missing."
           },
           "workEmailStatus": {
             "enum": [

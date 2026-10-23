@@ -11,7 +11,19 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #45
+## Current live revision — PR #47
+
+Released October 22, 2026 (Pacific): source `360d8a3a1e0870c3c7ef82887c2de49f5924d6c3`, tree `9f79c2525a88aaa98414a38cad3096afc7a5827b`, identical to reviewed `9f83556`. Build `642dbdd3-8446-4310-a1dd-2fa419277324` succeeded; revision `shiekh-location-company-directory-pr47-360d8a3` is Ready at sole 100% desired/observed traffic. No-traffic candidate, concurrency-guarded promotion and final both-host checks passed. Configuration, identities, Firebase, 26 historical tags and branded Ready/DomainRoutable routing are preserved; only temporary `p47-360d8a3` removed. Both hosts match HTML `488eed4b9a7082228f6d315f8a3e1d2ca207164baed18ce5b2d939fff1dce782`, 45 MIME-validated assets and all four unchanged served API documents. API/operating denial, unknown-route and cache protections passed.
+
+[Dispatch 28](dispatches/dispatch-28-person-transition-preflight.md#publication-checkpoint--october-22-2026-pacific) records 24 affected units, six synthetic browser cases, types/build/mobile QA, clean Codex code/security and completed CodeRabbit review, SDK restoration after Codespace idle stop, and authenticated read-only live inspection. The administrator/steward-only disclosure is published, not a coordinated handover or clearance to inactivate. No personnel/contact/account/mailbox/provider/grant/token/Notion/consumer-app mutation. Consumer acceptance remains pending. Next: fresh server-backed transition-preview contract before coordinated writers.
+
+**Rollback gate:** prefer forward repair. PR #45 retains guards but lacks the disclosure. Rollback does not restore data or revoke access; never reset collections/grants for this display. Retain all prior hierarchy/position/request/status/address/contact safeguards. Documentation-only checkpoint commits need no rebuild.
+
+## Historical live revision — PR #45
+
+<a id="current-live-revision--pr-45"></a>
+
+Superseded by PR #47 above; original checkpoint retained below.
 
 Released October 22, 2026 (Pacific): source `1b122fe9234b58c081655472e95fe0f4b4c3ab51`, tree `1ddf782ce662ea5f993ff55b724352c7f13c330b`, identical to reviewed `975fa42`. Build `5a8f752b-1ef3-4c16-820e-cf245eb270a4` succeeded; revision `shiekh-location-company-directory-pr45-1b122fe` is Ready at sole 100% desired/observed traffic. No-traffic candidate, concurrency-guarded promotion and final both-host checks passed. Configuration, identities, Firebase and 26 historical tags are preserved; only temporary `p45-1b122fe` was removed. Branded routing remains Ready/DomainRoutable. Both hosts match HTML `276bf60e704cc618df73962d3e8a67bcb45234250e87b11f5612f5d30dbe1bca`, 45 MIME-validated assets and all four unchanged served API documents. API/operating denial, unknown-route and cache protections passed.
 

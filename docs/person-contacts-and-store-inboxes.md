@@ -1,6 +1,6 @@
 # Person work contact and shared store inboxes
 
-This is app-neutral Directory guidance, not an account or mailbox permission policy. The owner-approved model allows a Person to hold multiple explicitly selected positions, including the rare Store Manager who has an individual company address as well as store inbox responsibility. The [current release record](dispatches/dispatch-27-explicit-legacy-email-mapping.md) publishes PR #45's explicit mapping alongside PR #43's contact/responsibility guards; no live staff contact migration was performed.
+This is app-neutral Directory guidance, not an account/mailbox permission policy. The owner-approved model permits explicitly selected concurrent positions, including the rare SM with an individual company address and store inbox responsibility. The [current release record](dispatches/dispatch-28-person-transition-preflight.md) publishes PR #47's read-only transition preflight, retaining PR #45's explicit email mapping and PR #43's contact/responsibility guards. No live staff/contact/access migration was performed.
 
 ## Where each value belongs
 
@@ -32,7 +32,7 @@ To replace a legacy shared Person contact, intentionally enter the individual's 
 
 ## Imports, requests and consumer APIs
 
-Before promotion/offboarding, administrators/stewards can use the read-only **Review promotion / offboarding** disclosure on the Person detail card when [Dispatch 28](dispatches/dispatch-28-person-transition-preflight.md) records publication. Review canonical responsibilities versus copied DM discrepancies, workplace/support, linked account states and matching Pending corrections. Links open the existing settings/records separately. This does not change assignments, unlink/revoke access or certify inactivation readiness; empty loaded data is not a complete inventory. Existing server guards still decide later writes. Actual mailbox, provider and other-app access must be verified separately.
+Before promotion/offboarding, administrators/stewards can open the published **Review promotion / offboarding** disclosure on the Person detail card. [Dispatch 28](dispatches/dispatch-28-person-transition-preflight.md) records release evidence. Review canonical responsibilities versus copied DM discrepancies, workplace/support, all linked account states and exact-ID Pending corrections. Links open existing screens separately. This does not reassign staff, unlink/revoke access or certify inactivation readiness; empty loaded data is not a complete inventory. Existing server guards decide later writes; mailbox/provider/other-app access remains independently unverified.
 
 - Fleet CSV/import/export uses the **Location** `locationInboxEmail` column, not a Person contact. Suggestions remove leading zeroes from the mailbox number only; preserve the actual Store Number/Location ID. Suggestions do not prove a mailbox exists and are not automatic backfill. Existing duplicate-inbox acknowledgment and explicit null-clearing rules remain. See [CSV dictionary](location-csv-export.md).
 - Location correction requests for a shared inbox remain `Other Store Info Update`; approved changes affect the Location. Current Person correction categories do not introduce email changes. Direct Directory Person edits still use the shared server validation above.

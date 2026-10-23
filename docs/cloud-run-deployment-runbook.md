@@ -11,7 +11,19 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #41
+## Current live revision — PR #43
+
+Released October 22, 2026 (Pacific): source `2f94e444e44aa4594ba460bf35b771e6762ef238`, tree `ef574a7025f3a0cce1ae0b526b6a9d3a11b8daa4`, identical to reviewed `378ba8e265`. Build `30fe8b44-88f3-456b-8b49-ee8e4e0dc34b` succeeded; revision `shiekh-location-company-directory-pr43-2f94e44` is Ready at sole 100% desired/observed traffic. No-traffic candidate, concurrency-guarded promotion and final both-host checks passed. Configuration, identities, Firebase and 26 historical tag mappings are unchanged; only temporary `p43-2f94e44` was removed. Branded routing is Ready/DomainRoutable. Both hosts match HTML `959db7899bbfba5c08e5f6e4aee95c889f93158aa772ec410c4339f8d7933cd6`, 45 MIME-validated assets and all four unchanged served API documents. Authentication denial/cache/unknown-route guards remain intact.
+
+[Dispatch 26](dispatches/dispatch-26-person-inbox-responsibilities.md#publication-checkpoint--october-22-2026-pacific) records tests, resolved save-undo review repair, latest clean Codex code/security reviews, read-only authenticated UI inspection and limits. CodeRabbit was rate-limited, not reviewed or paid. Optional Person work contact and canonical SM/AM inbox-responsibility UI/write guards are published; no staff data, account/mailbox access, grants/tokens or other-app changes. Authenticated consumer payload/acceptance remains pending. Next is explicit legacy-individual mapping, not data backfill; broader hierarchy/offboarding is incomplete.
+
+**Rollback gate:** prefer forward repair. Older writers can reintroduce shared store inboxes as Person contacts; retain the PR #41 API withholding safeguard and all hierarchy/position/request/status/address protections. A code rollback does not reverse legitimate contact/assignment writes or grant updates. Do not restore collections as rollback. Documentation-only release records need no rebuild.
+
+## Historical live revision — PR #41
+
+<a id="current-live-revision--pr-41"></a>
+
+Superseded by PR #43 above; this preserves the prior safeguard publication checkpoint.
 
 Released October 22, 2026 (Pacific): merged source `0d8055e09824380735a176a44aa1fc4b412b7117`, tree `df0cc0627fa5a631cae3bc7494e515eeb283e08b`, identical to reviewed `dad5a1f`. Ready revision `shiekh-location-company-directory-pr41-0d8055e` is the sole 100% desired/observed target. Build `5b1fa26f-cca1-4558-9a76-786ef03bf049` succeeded with unchanged principal. No-traffic preview, both-host assets/denial guards/cache/exact docs and concurrency-guarded promotion passed; all configuration/identities/Firebase and 26 historical tags are preserved. Only temporary `p41-0d8055e` was removed; branded routing remains Ready/DomainRoutable. HTML and 46 assets remain identical to PR #39; served v3 documentation intentionally changed.
 

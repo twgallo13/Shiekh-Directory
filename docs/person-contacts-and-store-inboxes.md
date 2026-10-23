@@ -18,6 +18,8 @@ Each responsibility shows the Location link, Store Number (leading zeroes preser
 
 Existing Person contacts that contain a conventional store mailbox or match a saved Location inbox are labeled as saved shared contacts requiring review. They are not moved, cleared or copied automatically. Unrelated edits preserve untouched historical values. An invalid or legacy-only address is not presented as verified individual identity.
 
+Editing and then restoring the same normalized email is also a no-op: it does not block other profile edits, rewrite stored casing, or promote a legacy-only `email` into `workEmail`.
+
 New or changed Person `email` / `workEmail` values cannot be conventional store-number mailboxes or match known Location inboxes. The server checks current and proposed Location inboxes in its existing transaction; clearing/deleting a Location in that same transaction cannot turn its old shared address into a new individual Person contact. The UI also blocks these edits. Other addresses still require human review: a syntactically valid address is not verified ownership, uniqueness, employment or company sign-in.
 
 To replace a legacy shared Person contact, intentionally enter the individual's own work address, or clear this optional field. Clearing `workEmail` uses an explicit empty string and does not fall back to the retained legacy `email`, erase the Location inbox or change assignments. Saving a contact never issues an account, invitation or permission. No real contact cleanup is performed by this release.

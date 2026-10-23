@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits, serializePersonUpdate } from '../src/lib/personContacts';
+import { personEmailEditChangesValue, resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits, serializePersonUpdate } from '../src/lib/personContacts';
 import type { PersonRecord } from '../src/types';
 
 const personWithDifferentContacts: PersonRecord = {
@@ -13,6 +13,20 @@ const personWithDifferentContacts: PersonRecord = {
   email: 'legacy@example.test',
   workEmail: 'work@example.test',
 };
+
+test('restored shared or invalid legacy contact is a no-op without promoting aliases or rewriting stored casing', () => {
+  for (const fields of [{ email: 'store7@shiekhshoes.com' }, { email: 'other@example.test', workEmail: 'STORE7@shiekhshoes.com' }, { email: 'invalid legacy' }]) {
+    const person = { id: 'roundtrip', fullName: 'Roundtrip', ...fields };
+    const saved = resolvePersonEmail(person).value;
+    assert.equal(personEmailEditChangesValue(person, saved), false);
+    assert.deepEqual(serializePersonContactEdits(person, null, saved, false, personEmailEditChangesValue(person, saved)), {});
+    assert.equal(personEmailEditChangesValue(person, 'individual@example.test'), true);
+    assert.equal(personEmailEditChangesValue(person, ''), true);
+  }
+  assert.equal(personEmailEditChangesValue({ id: 'p', fullName: 'Name', email: 'store7@shiekhshoes.com' }, ' STORE7@SHIEKHSHOES.COM '), false);
+  assert.equal(personEmailEditChangesValue(undefined, ''), true);
+  assert.equal(personEmailEditChangesValue({ id: 'p', fullName: 'Name', workEmail: '', email: 'old@example.test' }, ''), false);
+});
 
 test('Person contact display and editing consistently prefer complete work contact fields', () => {
   assert.deepEqual(resolvePersonPhone(personWithDifferentContacts), {

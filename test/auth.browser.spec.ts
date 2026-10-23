@@ -60,6 +60,8 @@ test('Person editor preserves legacy shared contact on unrelated save and blocks
   await page.goto(origin + '/people/person-profile'); await restore(page, true);
   await expect(page.getByText('Saved shared contact (legacy)', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill('temporary@shiekhshoes.com');
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill('store1@shiekhshoes.com');
   await page.getByLabel('Department', { exact: true }).fill('Synthetic changed department');
   await page.getByRole('button', { name: 'Save Person', exact: true }).click();
   await expect.poll(() => f.commits.length).toBe(1);
@@ -85,6 +87,21 @@ test('Person editor preserves legacy shared contact on unrelated save and blocks
   expect(f.commits[2].writes[0].data.workEmail).toBe('');
   await expect(page.getByText('No individual email assigned', { exact: true })).toBeVisible();
   expect(f.commits.every(c => c.writes.every((w: any) => w.collection === 'people'))).toBe(true);
+});
+
+test('Person editor undo of a legacy-only shared contact preserves its source and does not create workEmail', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  delete f.seed.people[0].workEmail;
+  f.seed.people[0].email = 'store1@shiekhshoes.com';
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill('temporary@shiekhshoes.com');
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill(' STORE1@SHIEKHSHOES.COM ');
+  await page.getByLabel('Department', { exact: true }).fill('Unrelated safe update');
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes[0].data).not.toHaveProperty('workEmail');
+  expect(f.commits[0].writes[0].data.email).toBe('store1@shiekhshoes.com');
 });
 
 test('Person card links concurrent positions only after review and preserves titles assignments and account access', async ({ page }) => {

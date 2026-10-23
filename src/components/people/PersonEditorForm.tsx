@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { ContactPrivacyLevel, LocationRecord, PersonRecord, PersonUpdate } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { formatUsPhone, normalizeUsPhone } from '../../lib/contactNormalization';
-import { resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } from '../../lib/personContacts';
+import { personEmailEditChangesValue, resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } from '../../lib/personContacts';
 import { PERSON_POSITIONS, personPositions, type PersonPositionId } from '../../lib/personPositions';
 import { personProfileImpact } from '../../lib/personProfileImpact';
 import { DirectoryCommitError } from '../../lib/directoryClient';
@@ -74,8 +74,9 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     const phoneTouched = touched.has('phone') || touched.has('extension');
     const normalizedPhone = phoneInput && (!person || phoneTouched) ? normalizeUsPhone(phoneInput) : null;
     if ((!person || phoneTouched) && ((phoneInput && !normalizedPhone) || (!draft.phone.trim() && draft.extension.trim()))) { setError('Enter a valid US phone number and numeric extension, or clear both fields.'); return; }
-    if ((!person || touched.has('email')) && draft.email.trim() && !normalizePersonEmail(draft.email.trim())) { setError('Enter one valid work email address, or leave it blank.'); return; }
-    if ((!person || touched.has('email')) && sharedPersonEmailKind(draft.email, locations)) { setError('This is a shared store inbox, not an individual work email. Leave this optional field blank or use an individually assigned work address. Store inbox responsibilities are shown separately.'); return; }
+    const emailChanged = !person || (touched.has('email') && personEmailEditChangesValue(person, draft.email));
+    if (emailChanged && draft.email.trim() && !normalizePersonEmail(draft.email.trim())) { setError('Enter one valid work email address, or leave it blank.'); return; }
+    if (emailChanged && sharedPersonEmailKind(draft.email, locations)) { setError('This is a shared store inbox, not an individual work email. Leave this optional field blank or use an individually assigned work address. Store inbox responsibilities are shown separately.'); return; }
     const updates: PersonUpdate & { fullName: string } = { fullName: touched.has('fullName') || !person ? draft.fullName.trim() : person.fullName };
     if (!person || touched.has('fullName')) updates.name = draft.fullName.trim();
     for (const field of ['jobTitle', 'department'] as const) if (!person || touched.has(field)) updates[field] = draft[field].trim();
@@ -84,7 +85,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     if (!person || touched.has('privacy')) updates.phonePrivacy = draft.privacy as ContactPrivacyLevel;
     if (!person || touched.has('primaryLocationId')) updates.primaryLocationId = draft.primaryLocationId || null;
     if (!person || touched.has('supportedLocationIds')) updates.supportedLocationIds = draft.supportedLocationIds;
-    Object.assign(updates, serializePersonContactEdits(person, normalizedPhone, draft.email.trim(), phoneTouched, touched.has('email')));
+    Object.assign(updates, serializePersonContactEdits(person, normalizedPhone, draft.email.trim(), phoneTouched, emailChanged));
     busy.current = true; setSaving(true); setError('');
     try { await onSubmit(updates, person ? expectedVersion : undefined); }
     catch (failure) {

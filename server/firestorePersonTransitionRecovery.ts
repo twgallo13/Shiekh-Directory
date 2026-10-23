@@ -44,11 +44,11 @@ export async function preparePersonTransitionRecovery(firestore: Firestore, raw:
   return firestore.runTransaction(async transaction => {
     await authority(firestore, transaction, actor);
     const { reference, current } = await receipt(firestore, transaction, command.identity);
-    const timestamp = now(clock);
-    if (timestamp < claims.issuedAt) throw new Error('Transition review is not yet valid.');
     if (current?.state === 'cancelled') throw new Error('Transition operation was cancelled.');
     if (current) assertTransitionReviewMatches(current, review);
     if (current?.state === 'committed') return transitionRecoveryOutcome(command.identity, current);
+    const timestamp = now(clock);
+    if (timestamp < claims.issuedAt) throw new Error('Transition review is not yet valid.');
     signer.verify(command.reviewEnvelope, expected, timestamp);
     if (current) return transitionRecoveryOutcome(command.identity, current);
     const prepared = newPreparedTransitionReceipt(command.identity, review, timestamp);

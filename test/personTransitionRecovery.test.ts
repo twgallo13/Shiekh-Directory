@@ -133,6 +133,10 @@ test('signature/freshness is enforced for preparations; terminal committed repla
   }
   const existing = fixture(); existing.records.set(path(), prepared()); await assert.rejects(preparePersonTransitionRecovery(existing.firestore, input(), actor, signer, () => new Date(time + TRANSITION_REVIEW_TTL_MS))); assert.equal(existing.writes.length, 0);
   const done = fixture(); done.records.set(path(), committed()); const outcome = await preparePersonTransitionRecovery(done.firestore, input(), actor, signer, () => new Date(time + 2 * TRANSITION_REVIEW_TTL_MS)); assert.equal(outcome.state, 'committed'); assert.equal(done.writes.length, 0);
+  for (const replayClock of [() => new Date(time - 10_000), () => new Date(NaN), () => { throw new Error('Clock must not be consulted for terminal replay'); }]) {
+    assert.deepEqual(await preparePersonTransitionRecovery(done.firestore, input(), actor, signer, replayClock), outcome); assert.equal(done.writes.length, 0);
+  }
+  const invalidClock = fixture(); await assert.rejects(preparePersonTransitionRecovery(invalidClock.firestore, input(), actor, signer, () => new Date(NaN)), /clock/); assert.equal(invalidClock.writes.length, 0);
   assert.throws(() => signer.verify(envelope, claims, time + TRANSITION_REVIEW_TTL_MS)); assert.equal(signer.verifySignature(envelope, claims).planHash, claims.planHash);
 });
 

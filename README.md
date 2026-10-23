@@ -4,6 +4,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
+- [Promotion/offboarding dependency preflight](docs/dispatches/dispatch-28-person-transition-preflight.md): read-only canonical/stale assignment, workplace/support, account and pending-correction review. Check publication state; it neither clears someone for inactivation nor changes staff/access.
+
 - [Published legacy individual-email mapping](docs/dispatches/dispatch-27-explicit-legacy-email-mapping.md): PR #45 adds reviewed draft opt-in, normal confirmed Save, source/clear preservation and no account/API permission changes.
 
 - [Person contacts and shared store inboxes](docs/person-contacts-and-store-inboxes.md): published optional individual email, canonical SM/AM inbox responsibility, legacy preservation and account/mailbox boundaries. [Dispatch 26](docs/dispatches/dispatch-26-person-inbox-responsibilities.md) records PR #43 validation, review and publication.

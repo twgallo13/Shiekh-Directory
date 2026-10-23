@@ -1,6 +1,6 @@
 # Person work contact and shared store inboxes
 
-This is app-neutral Directory guidance, not an account/mailbox permission policy. The owner-approved model permits explicitly selected concurrent positions, including the rare SM with an individual company address and store inbox responsibility. The [current release record](dispatches/dispatch-28-person-transition-preflight.md) publishes PR #47's read-only transition preflight, retaining PR #45's explicit email mapping and PR #43's contact/responsibility guards. No live staff/contact/access migration was performed.
+This is app-neutral Directory guidance, not an account/mailbox permission policy. Explicit concurrent positions remain supported, including a rare SM with individual work contact and separate store inbox responsibility. The [current release record](dispatches/dispatch-29-server-transition-preview.md#publication-checkpoint--october-22-2026-pacific) publishes PR #49's server-backed dependency refresh, retaining PR #47's loaded-data report and earlier contact/position guards. No live staff/contact/access migration was performed.
 
 ## Where each value belongs
 
@@ -12,7 +12,7 @@ Email domains, address matches and job titles do not grant permissions or merge 
 
 ## Reading and editing the Person card
 
-In-review continuation: [Dispatch 29](dispatches/dispatch-29-server-transition-preview.md) adds an explicit **Refresh from server** inside the dependency disclosure, separate from the loaded-data report. It checks current authority, bounded dependencies, versions/digest and expiry without saving anything. Failure/expiry never provides clearance. Review/publication are pending; see its checkpoint before expecting the control in production.
+Published continuation: [Dispatch 29](dispatches/dispatch-29-server-transition-preview.md#publication-checkpoint--october-22-2026-pacific) adds **Refresh from server** inside the dependency disclosure. A separate current-authority/bounded-dependency snapshot shows source versions/digest and expiry without saving anything. Failed reads clear previous results; expiry warns to refresh. This is not a staffing writer or offboarding/access clearance. Authorized live read/display acceptance succeeded without edits.
 
 The shared-inbox responsibility panel reads only saved Location `storeManagerId` and `assistantStoreManagerIds` references. One Person can have several Locations or both roles. A transfer/vacancy changes this projection when the canonical store assignment changes. Working at/supporting a Location, typed titles, matching emails or District leadership alone do not create an SM/AM responsibility.
 

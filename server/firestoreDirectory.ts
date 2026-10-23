@@ -19,6 +19,8 @@ import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { previewOperating, commitOperating, cancelOperating, type OperatingPreview } from './firestoreOperating';
 import { previewPersonTransition } from './personTransitionPreview';
+import { previewPersonTransitionCommand } from './personTransitionCommandPreview';
+import { loadPersonTransitionReviewSigner } from './personTransitionReviewEnvelope';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -83,6 +85,7 @@ export interface DirectoryReader {
 }
 
 export interface DirectoryWriter {
+  previewPersonTransitionCommand?(intent: unknown, actor: Account): ReturnType<typeof previewPersonTransitionCommand>;
   previewPersonTransition?(personId: string, actor: Account): ReturnType<typeof previewPersonTransition>;
   readOperatingDirectory?(): Promise<Pick<DirectorySeed, 'locations' | 'people' | 'hoursTemplates' | 'regions' | 'districts' | 'serverNow'>>;
   commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult>;
@@ -96,6 +99,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   constructor(private readonly firestore: Firestore) {}
 
   previewPersonTransition(personId: string, actor: Account) { return previewPersonTransition(this.firestore, personId, actor); }
+  previewPersonTransitionCommand(intent: unknown, actor: Account) { return previewPersonTransitionCommand(this.firestore, intent, actor, loadPersonTransitionReviewSigner()); }
 
   async read(): Promise<DirectorySeed> {
     const entries = await Promise.all(Object.entries(DIRECTORY_COLLECTIONS).map(async ([field, collection]) => {

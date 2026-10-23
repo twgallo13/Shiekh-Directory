@@ -88,9 +88,11 @@ export function assertTransitionReviewMatches(receipt: TransitionOperationReceip
 }
 export function cancelledTransitionReceipt(identity: TransitionOperationIdentity, previous: TransitionOperationReceipt | null, now: number): TransitionOperationReceipt {
   if (previous) previous = readTransitionReceipt(previous, identity);
-  if (!time(now) || previous && now < previous.updatedAt) invalid();
   if (previous?.state === 'committed' || previous?.state === 'cancelled') return readTransitionReceipt(previous, identity);
-  return readTransitionReceipt({ ...identity, audience: TRANSITION_OPERATION_AUDIENCE, state: 'cancelled', createdAt: previous?.createdAt ?? now, updatedAt: now,
+  if (!time(now)) invalid();
+  // Cancellation is recovery, not new command admission. Preserve monotonic receipt time across hosts.
+  const timestamp = Math.max(now, previous?.updatedAt ?? now);
+  return readTransitionReceipt({ ...identity, audience: TRANSITION_OPERATION_AUDIENCE, state: 'cancelled', createdAt: previous?.createdAt ?? timestamp, updatedAt: timestamp,
     preparedAt: previous?.preparedAt ?? null, review: previous?.review ?? null, auditId: transitionCancellationAuditId(identity), changes: [] }, identity);
 }
 /** No review hashes or tokens are exported. A missing receipt is UNKNOWN, never cancellation. */

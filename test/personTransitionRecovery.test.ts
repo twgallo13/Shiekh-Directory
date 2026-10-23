@@ -91,6 +91,8 @@ test('strict receipt shapes, minimal outcomes and terminal cancellation preserve
   const cancelled = cancelledTransitionReceipt(command.identity, before, time + 1); assert.equal(cancelled.state, 'cancelled'); assert.equal(cancelled.preparedAt, time); assert.deepEqual(before, frozen);
   assert.deepEqual(cancelledTransitionReceipt(command.identity, cancelled, time + 100), cancelled);
   assert.deepEqual(cancelledTransitionReceipt(command.identity, committed(), time + 100), committed());
+  assert.equal(cancelledTransitionReceipt(command.identity, before, time - 10_000).updatedAt, time);
+  assert.deepEqual(cancelledTransitionReceipt(command.identity, committed(), NaN), committed());
   assert.equal(transitionRecoveryOutcome(command.identity, null).state, 'unknown');
   for (const value of [before, cancelled, committed()]) assert.doesNotMatch(JSON.stringify(transitionRecoveryOutcome(command.identity, value)), /PRIVATE|intentHash|envelopeHash|stateHash|planHash|reviewEnvelope|actorUid/);
   for (const changes of [{ rawIntent: intent }, { preparedAt: time + 1 }, { updatedAt: time - 1 }, { review: { ...review, expiresAt: time + 1 } }, { review: { ...review, intentHash: 'f'.repeat(64) } }, { changes: [{ collection: 'users', id: 'admin', version: 1 }] }, { state: 'committed', changes: [], auditId: 'wrong' }]) assert.throws(() => readTransitionReceipt({ ...before, ...changes }, command.identity));
@@ -162,6 +164,10 @@ test('cancellation seals absent/prepared IDs; late or changed preparation cannot
     const audits = [...f.records].filter(([p]) => p.startsWith('audit_logs/')); assert.equal(audits.length, 1); assert.doesNotMatch(JSON.stringify(audits), /PRIVATE|ptv1\.|intentHash|reviewEnvelope/);
   }
   const f = fixture(); f.records.set(path(), committed()); const before = structuredClone([...f.records]); assert.equal((await cancelPersonTransitionRecovery(f.firestore, marker(), actor)).state, 'committed'); assert.deepEqual([...f.records], before); assert.equal(f.writes.length, 0);
+  const skewed = fixture(); skewed.records.set(path(), prepared());
+  const sealed = await cancelPersonTransitionRecovery(skewed.firestore, marker(), actor, () => new Date(time - 10_000));
+  assert.equal(sealed.state, 'cancelled'); assert.equal(sealed.resolvedAt, new Date(time).toISOString());
+  const audit = skewed.records.get(`audit_logs/${transitionCancellationAuditId(command.identity)}`); assert.equal(audit.timestamp, sealed.resolvedAt); assert.equal(skewed.writes.length, 2);
 });
 
 test('lost response recovers through status, failed transactions/audit collisions leave no partial receipt', async () => {

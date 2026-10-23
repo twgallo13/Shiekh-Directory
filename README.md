@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [Positions and assignments: agreed rules](docs/plans/positions-and-assignments-rules.md): organization IDs, explicit multi-position eligibility, separate assignment/access and rules-first/data-later sequence. [Dispatch 32](docs/dispatches/dispatch-32-explicit-assignment-rules.md) records the bounded eligibility repair; coordinated removal/vacancy remains next.
+- [Positions and assignments: agreed rules](docs/plans/positions-and-assignments-rules.md): organization IDs, explicit multi-position eligibility, separate assignment/access and rules-first/data-later sequence. [Dispatch 32](docs/dispatches/dispatch-32-explicit-assignment-rules.md) records PR #53, published source `62acacb` at sole 100% with completed clean reviews. Coordinated removal/replacement/vacancy remains next; data cleanup/restore is deferred.
 
 - [Published promotion/offboarding dependency preflight](docs/dispatches/dispatch-28-person-transition-preflight.md): PR #47 adds read-only canonical/stale assignment, workplace/support, account and Pending-correction review. It neither clears someone for inactivation nor changes staff/access.
 

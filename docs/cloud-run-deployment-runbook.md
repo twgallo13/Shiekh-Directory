@@ -11,7 +11,21 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #49
+## Current live revision — PR #53
+
+Released October 23, 2026 Pacific: source `62acacb42ba4590d0523f0aff78abf52630e1d46`, tree `bb4cf468f38f8649ac1be60e4267b41912cd655b`, identical to reviewed head `1f500cf`. Build `35a15d88-03ec-421e-85e1-71aa14516c5f` succeeded with unchanged principal. Ready revision `shiekh-location-company-directory-pr53-62acacb` is sole 100% desired/observed traffic. Zero-traffic candidate checks preceded etag-guarded promotion; final configuration, identities, Firebase, secret references, scaling/security/network settings and all 26 historical tags are unchanged. Only temporary `p53-62acacb` was removed; branded mapping remains Ready/DomainRoutable.
+
+Both hosts match HTML `f9f60943dc3afb14b3c7eebbbd885bdfe909f96fbd02d2c671f62be14571b510`, 45 MIME-validated assets and all four unchanged served consumer documents. Authentication/operating/internal-preview denial, unknown-route and cache checks passed. Candidate and branded browser render Sign in; no authenticated live staffing edit or consumer acceptance is implied. Existing-account cloud reauthentication was completed by the owner; no new IAM/scope/secret or business-data operation occurred.
+
+[Dispatch 32](dispatches/dispatch-32-explicit-assignment-rules.md#publication-checkpoint--october-23-2026-pacific) records validation, completed clean code/security reviews, CodeRabbit success and release evidence. New leadership grants now require explicit positions across selectors/direct saves/District previews/corrections/CSV. Historical assignments are preserved. The unreferenced PR #52 pure planner is present but no coordinated removal writer/UI is enabled. Next is the short explicit replacement-or-vacancy review, not a mandatory general promotion wizard; data restoration and issue 36 consumer acceptance remain separate.
+
+**Rollback gate:** prefer forward repair. PR #49 lacks uniform explicit eligibility and may allow legacy-title/cross-role new assignments. Restrict affected leadership writers and review in-flight changes before an older-code rollback. Traffic rollback is code-only, not a data restore or account/access reversal. Documentation-only release notes need no rebuild.
+
+## Historical live revision — PR #49
+
+<a id="current-live-revision--pr-49"></a>
+
+Superseded by PR #53 above; original checkpoint retained below.
 
 Released October 22, 2026 Pacific: source `29020a2dc8bbadf70464e5ade504ec2a6fcccc8e`, tree `cf9ccc49f626cac7d6e448db18c13cd08b7c744b`, exactly matches tested head `73ed604`. Build `c26c691e-04fa-4367-bca8-cb899a343cd0` succeeded with unchanged principal. Ready revision `shiekh-location-company-directory-pr49-29020a2` is sole 100% desired/observed traffic. Zero-traffic candidate passed before concurrency-guarded promotion. Configuration, identities, Firebase, 26 historical tags and branded Ready/DomainRoutable routing are preserved; only temporary `p49-29020a2` removed.
 

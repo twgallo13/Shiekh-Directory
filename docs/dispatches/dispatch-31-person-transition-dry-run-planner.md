@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Implementation PR: [#52](https://github.com/twgallo13/Shiekh-Directory/pull/52), following the [v1 command contract](../plans/person-transition-command-contract.md) after merged design PR #51/main `49e4aa7`. This is an internal, unused server module, not a deployed feature or completed Phase 3. No runtime entry point imports it. No route, authentication capability, signing key, preparation/receipt, transaction, database write, account/provider action, UI Save or deployment is introduced. Published application source remains PR #49 / `29020a2`.
+Implementation PR: [#52](https://github.com/twgallo13/Shiekh-Directory/pull/52), following the [v1 command contract](../plans/person-transition-command-contract.md) after merged design PR #51/main `49e4aa7`. This is an internal, unused server module, not a deployed feature or completed Phase 3. No runtime entry point imports it. No route, authentication capability, signing key, preparation/receipt, transaction, database write, account/provider action or UI Save is introduced. It shipped, still unreferenced, with PR #53 / source `62acacb`; [Dispatch 32](dispatch-32-explicit-assignment-rules.md#publication-checkpoint--october-23-2026-pacific) records that release. No standalone planner deployment occurred.
 
 ## Implemented boundary
 
@@ -24,6 +24,8 @@ Follow-up review also found order-sensitive support-set no-op comparison and non
 Additional review reproduced two more edge cases: vacancy was unnecessarily blocked by inconsistent District member hierarchy, and compact preserved arrays were underestimated by JSON-byte doubling. Removal-only District vacancy now clears all derived DM copies with an explicit preserved-conflict warning; assign/replace still blocks the conflict. The recursive SDK-free estimator matches the established guard policy without importing SDK/writer modules into the planner or changing any active guard. Expanded 24-case planner/estimator validation includes contradictory members, compact arrays and UTF-8/threshold parity. Final evidence is recorded on PR52.
 
 ## Next slice and open gates
+
+Follow the owner's [simple positions/assignments rules](../plans/positions-and-assignments-rules.md): ordinary position additions and separate owner-record assignment remain simple. The guarded adapter/writer foundation below supports the short consequential removal/replacement/vacancy review; it is not a mandatory all-purpose promotion wizard. Data cleanup/restore remains deferred.
 
 Implement a **read-only command-preview adapter** with fresh company-wide administrator authority, actual coherent native projections/preconditions, safe public-only review, dedicated signing-key configuration and strict signing/expiry/denial tests. Do not reuse PR49's informational digest as a command capability. No new key or IAM grant is approved by this dispatch. Keep the writer unavailable until configuration is separately satisfied.
 

@@ -119,13 +119,14 @@ for (const failure of ['denied', 'unavailable', 'malformed']) test('Server trans
 });
 
 test('Server transition timeout offers read retry and cannot replace loaded data with a late response', async ({ page }) => {
-  const f = await preparePersonCard(page); let release!: () => void;
-  await page.route('**/api/directory/people/person-profile/transition-preview', async route => { await new Promise<void>(resolve => { release = resolve; }); await route.fulfill({ json: serverTransitionFixture() }).catch(() => {}); });
+  const f = await preparePersonCard(page); let release: () => void = () => {};
+  let reached!: () => void; const routed = new Promise<void>(resolve => { reached = resolve; });
+  await page.route('**/api/directory/people/person-profile/transition-preview', async route => { await new Promise<void>(resolve => { release = resolve; reached(); }); await route.fulfill({ json: serverTransitionFixture() }).catch(() => {}); });
   await page.clock.install(); await page.goto(origin + '/people/person-profile'); await restore(page, true);
   await page.getByText('Review promotion / offboarding', { exact: true }).click();
   const panel = page.getByRole('region', { name: 'Server dependency snapshot', exact: true });
   await panel.getByRole('button', { name: 'Refresh from server', exact: true }).click();
-  await expect(panel).toContainText('Reading current Directory'); await page.clock.fastForward(21_000);
+  await expect(panel).toContainText('Reading current Directory'); await routed; await page.clock.fastForward(21_000);
   await expect(panel).toContainText('no changes were made'); release();
   await expect(panel).not.toContainText('Snapshot read completed'); await expect(panel.getByRole('button', { name: 'Refresh from server', exact: true })).toBeEnabled();
   expect(f.commits).toHaveLength(0);

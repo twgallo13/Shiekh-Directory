@@ -17,6 +17,26 @@ const fields = {
 };
 const personFields = ['version', 'status', 'activeStatus', 'positionIds', 'jobTitle', 'primaryLocationId', 'supportedLocationIds'];
 const pick = (data: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.filter(key => Object.hasOwn(data, key)).map(key => [key, data[key]]));
+function validateProjected(collection: string, row: Record<string, unknown>) {
+  const validId = (value: unknown) => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value);
+  const optional = (key: string, check: (value: unknown) => boolean) => !Object.hasOwn(row, key) || check(row[key]);
+  const text = (value: unknown) => typeof value === 'string';
+  const reference = (value: unknown) => value === null || value === '' || validId(value);
+  const references = (value: unknown) => Array.isArray(value) && value.every(validId);
+  const leadershipShape = (data: unknown) => data !== null && typeof data === 'object' && !Array.isArray(data)
+    && leadership.every(key => !Object.hasOwn(data, key) || (['assistantStoreManagerIds', 'keyHolderIds'].includes(key) ? references((data as Record<string, unknown>)[key]) : reference((data as Record<string, unknown>)[key])));
+  let valid = validId(row.id) && optional('version', value => value === null || Number.isSafeInteger(value) && Number(value) >= 0);
+  if (collection === 'people') valid &&= optional('status', text) && optional('activeStatus', value => typeof value === 'boolean')
+    && optional('jobTitle', text) && optional('positionIds', references) && optional('primaryLocationId', reference) && optional('supportedLocationIds', references);
+  if (collection === 'locations') valid &&= ['storeNumber', 'name', 'type', 'recordStatus'].every(key => text(row[key]))
+    && optional('districtId', reference) && optional('regionId', reference) && leadershipShape(row);
+  if (collection === 'districts') valid &&= ['name', 'regionId', 'status'].every(key => text(row[key])) && optional('districtManagerId', reference);
+  if (collection === 'regions') valid &&= ['name', 'status'].every(key => text(row[key]));
+  if (collection === 'users') valid &&= text(row.role) && optional('personId', reference) && optional('status', text);
+  if (collection === 'requests') valid &&= row.status === 'Pending' && ['Person', 'Location'].includes(String(row.targetType)) && validId(row.targetId) && text(row.changeType)
+    && optional('requestedChanges', leadershipShape) && optional('currentSnapshot', leadershipShape);
+  if (!valid) throw new Error('Transition inventory contains invalid projected fields.');
+}
 function canonical(value: unknown): string {
   if (value === undefined) return 'null';
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -37,13 +57,17 @@ export async function previewPersonTransition(firestore: Firestore, personId: st
     if (accounts.size !== 1 || !allowed(current?.role, current?.status, current?.accessScope)) throw new DirectoryWriteDenied('Current Directory access does not permit this review.');
     const personSnapshot = await transaction.get(firestore.collection('people').doc(personId));
     if (!personSnapshot.exists) throw new DirectoryConflict('This Person no longer exists. Reload the directory.');
-    const person = { ...pick(personSnapshot.data()!, personFields), id: personId } as unknown as PersonRecord;
+    const projectedPerson = { ...pick(personSnapshot.data()!, personFields), id: personId };
+    validateProjected('people', projectedPerson);
+    const person = projectedPerson as unknown as PersonRecord;
     const entries = await Promise.all(Object.entries(TRANSITION_PREVIEW_LIMITS).map(async ([collection, maximum]) => {
       let query = firestore.collection(collection).select(...fields[collection as keyof typeof fields]);
       if (collection === 'requests') query = query.where('status', '==', 'Pending');
       const snapshot = await transaction.get(query.limit(maximum + 1));
       if (snapshot.size > maximum) throw new Error('Transition inventory capacity exceeded.');
-      return [collection, snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).sort((a, b) => a.id.localeCompare(b.id))] as const;
+      const rows = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      for (const row of rows) validateProjected(collection, row);
+      return [collection, rows.sort((a, b) => a.id.localeCompare(b.id))] as const;
     }));
     const data = Object.fromEntries(entries);
     // Includes all scanned authority inputs, so additions/removals and unversioned edits change the digest.

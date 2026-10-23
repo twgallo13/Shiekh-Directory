@@ -19,7 +19,7 @@ function fixture() {
     ['locations/store', { name: 'Store', storeNumber: '007', type: 'Enclosed Mall', recordStatus: 'Active', districtId: 'owned', storeManagerId: 'person', districtManagerId: 'other', locationInboxEmail: 'private-store@example.test', version: 5 }],
     ['locations/stale', { name: 'Stale', storeNumber: '008', type: 'Enclosed Mall', recordStatus: 'Retired', districtId: 'vacant', districtManagerId: 'person' }],
     ['users/linked', { personId: 'person', role: 'Viewer', status: 'Revoked', email: 'private-user@example.test', version: 4 }],
-    ['requests/pending', { status: 'Pending', targetId: 'unrelated', targetType: 'Location', requestedChanges: { districtManagerId: 'person', secret: 'private prose' }, currentSnapshot: {}, reason: 'private reason', version: 1 }],
+    ['requests/pending', { status: 'Pending', targetId: 'unrelated', targetType: 'Location', changeType: 'Store Manager Change', requestedChanges: { districtManagerId: 'person', secret: 'private prose' }, currentSnapshot: {}, reason: 'private reason', version: 1 }],
     ['requests/old', { status: 'Approved', targetId: 'person', targetType: 'Person', reason: 'private historical prose' }],
   ]);
   const reads: string[] = [];
@@ -77,8 +77,27 @@ test('digest is deterministic, changes on unversioned authority edits/additions/
   const first = await read(); assert.equal((await read()).digest, first.digest);
   f.records.get('people/person')!.workEmail = 'other@example.test'; assert.equal((await read()).digest, first.digest);
   f.records.get('districts/vacant')!.districtManagerId = 'person'; const changed = await read(); assert.notEqual(changed.digest, first.digest);
-  f.records.set('districts/new', { name: 'New', status: 'Active', districtManagerId: 'person' }); const added = await read(); assert.notEqual(added.digest, changed.digest);
+  f.records.set('districts/new', { name: 'New', regionId: 'west', status: 'Active', districtManagerId: 'person' }); const added = await read(); assert.notEqual(added.digest, changed.digest);
   f.records.delete('districts/new'); assert.equal((await read()).digest, changed.digest);
+});
+
+test('malformed projected relationships or metadata fail closed instead of certifying an incomplete review', async () => {
+  const cases: [string, string, unknown][] = [
+    ['people/person', 'supportedLocationIds', 'store'], ['people/person', 'supportedLocationIds', [null]],
+    ['people/person', 'primaryLocationId', 12], ['people/person', 'activeStatus', 'false'], ['people/person', 'positionIds', 'district-manager'],
+    ['locations/store', 'assistantStoreManagerIds', 'person'], ['locations/store', 'keyHolderIds', [42]],
+    ['locations/store', 'districtManagerId', ['person']], ['locations/store', 'storeNumber', 7], ['locations/store', 'districtId', {}],
+    ['districts/owned', 'districtManagerId', ['person']], ['districts/owned', 'regionId', {}],
+    ['regions/west', 'name', {}], ['users/linked', 'personId', ['person']], ['users/linked', 'role', {}],
+    ['requests/pending', 'targetId', {}], ['requests/pending', 'targetType', 'Unknown'],
+    ['requests/pending', 'requestedChanges', { assistantStoreManagerIds: 'person' }],
+    ['requests/pending', 'currentSnapshot', { districtManagerId: ['person'] }], ['people/person', 'version', -1],
+  ];
+  for (const [path, key, value] of cases) {
+    const f = fixture(); f.records.get(path)![key] = value; const before = structuredClone([...f.records]);
+    await assert.rejects(previewPersonTransition(f.firestore, 'person', actor, clock), /invalid projected fields/, `${path}.${key}`);
+    assert.deepEqual([...f.records], before);
+  }
 });
 
 test('empty dependencies are scoped, missing Person conflicts; no read is a clearance or mutation', async () => {

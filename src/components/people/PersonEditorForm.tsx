@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { ContactPrivacyLevel, LocationRecord, PersonRecord, PersonUpdate } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { formatUsPhone, normalizeUsPhone } from '../../lib/contactNormalization';
-import { personEmailEditChangesValue, resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } from '../../lib/personContacts';
+import { legacyIndividualEmailCandidate, personEmailEditChangesValue, resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits } from '../../lib/personContacts';
 import { PERSON_POSITIONS, personPositions, type PersonPositionId } from '../../lib/personPositions';
 import { personProfileImpact } from '../../lib/personProfileImpact';
 import { DirectoryCommitError } from '../../lib/directoryClient';
@@ -43,6 +43,9 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     supportedLocationIds: Array.isArray(person?.supportedLocationIds) ? person.supportedLocationIds.filter(item => typeof item === 'string') : [],
   }));
   const [touched, setTouched] = useState(new Set<string>());
+  const [emailMappingReview, setEmailMappingReview] = useState(false);
+  const [mappedLegacyEmail, setMappedLegacyEmail] = useState<string | null>(null);
+  const legacyEmailCandidate = legacyIndividualEmailCandidate(person, locations);
   const [reviewed, setReviewed] = useState(false), [discard, setDiscard] = useState(false);
   const [error, setError] = useState(''), [saving, setSaving] = useState(false), [uncertain, setUncertain] = useState(false);
   const busy = useRef(false);
@@ -54,14 +57,15 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
   const positionChanged = touched.has('positionIds');
   const conflicts = positionChanged ? impact.responsibilities.filter(row => !draft.positionIds.includes(row.requiredPosition)) : [];
   const edit = <K extends keyof typeof draft>(field: K, value: typeof draft[K]) => {
+    if (field === 'email') setMappedLegacyEmail(null);
     setDraft(previous => ({ ...previous, [field]: value })); setTouched(previous => new Set(previous).add(field)); setReviewed(false); setError('');
   };
-  const cancel = () => { if (busy.current) return; if (touched.size || uncertain) setDiscard(true); else onCancel(); };
+  const cancel = () => { if (busy.current) return; if (emailMappingReview) { setEmailMappingReview(false); return; } if (touched.size || uncertain) setDiscard(true); else onCancel(); };
   useEffect(() => { registerClose?.(cancel); return () => registerClose?.(null); });
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (busy.current || uncertain) return;
+    if (busy.current || uncertain || emailMappingReview) return;
     if (!draft.fullName.trim()) { setError('Enter a full name.'); return; }
     if (!person && !draft.positionIds.length) { setError('Select a position, including Other / corporate if appropriate.'); return; }
     if (conflicts.length) { setError('Retain the listed positions explicitly, or reassign/vacate their responsibilities before changing positions.'); return; }
@@ -74,7 +78,8 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     const phoneTouched = touched.has('phone') || touched.has('extension');
     const normalizedPhone = phoneInput && (!person || phoneTouched) ? normalizeUsPhone(phoneInput) : null;
     if ((!person || phoneTouched) && ((phoneInput && !normalizedPhone) || (!draft.phone.trim() && draft.extension.trim()))) { setError('Enter a valid US phone number and numeric extension, or clear both fields.'); return; }
-    const emailChanged = !person || (touched.has('email') && personEmailEditChangesValue(person, draft.email));
+    if (mappedLegacyEmail && mappedLegacyEmail !== legacyEmailCandidate) { setError('The saved legacy contact or known shared inboxes changed. Reload the saved record and review the email mapping again. No changes were sent.'); return; }
+    const emailChanged = Boolean(mappedLegacyEmail) || !person || (touched.has('email') && personEmailEditChangesValue(person, draft.email));
     if (emailChanged && draft.email.trim() && !normalizePersonEmail(draft.email.trim())) { setError('Enter one valid work email address, or leave it blank.'); return; }
     if (emailChanged && sharedPersonEmailKind(draft.email, locations)) { setError('This is a shared store inbox, not an individual work email. Leave this optional field blank or use an individually assigned work address. Store inbox responsibilities are shown separately.'); return; }
     const updates: PersonUpdate & { fullName: string } = { fullName: touched.has('fullName') || !person ? draft.fullName.trim() : person.fullName };
@@ -117,6 +122,10 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
           <div className="grid gap-3 sm:grid-cols-[1fr_8rem]"><TextField id={id + '-phone'} label="Work Phone" value={draft.phone} onChange={value => edit('phone', value)} /><TextField id={id + '-extension'} label="Extension" value={draft.extension} onChange={value => edit('extension', value)} /></div>
           <TextField id={id + '-email'} label="Individual work email (optional)" value={draft.email} onChange={value => edit('email', value)} />
           <p className="text-xs text-neutral-500">Leave blank if no individual address is assigned. Most SM/AMs use their store inbox; a few also have their own company address. Contact only—not sign-in, identity or mailbox permission.</p>
+          {legacyEmailCandidate && !personEmailEditChangesValue(person, draft.email) && <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+            <p>{mappedLegacyEmail ? 'Email mapping staged, not saved. Save Person to confirm it; the historical source stays unchanged.' : 'This address is saved only in the historical email field. Unrelated edits and retyping it do not map it automatically.'}</p>
+            {mappedLegacyEmail ? <Button size="sm" onClick={() => { setMappedLegacyEmail(null); setDraft(previous => ({ ...previous, email: email.value })); setTouched(previous => { const next = new Set(previous); next.delete('email'); return next; }); setError(''); }}>Undo email mapping</Button> : <Button size="sm" onClick={() => setEmailMappingReview(true)}>Use as individual work email</Button>}
+          </div>}
           {person?.email && Object.hasOwn(person, 'workEmail') && person.email.trim().toLowerCase() !== (person.workEmail || '').trim().toLowerCase() && <p className="break-all text-xs text-amber-900">Historical email alias retained for review: {person.email}</p>}
           {sharedPersonEmailKind(draft.email, locations) && <p className="text-xs text-amber-900">Saved or entered contact is a shared store inbox, not an individual address. Unrelated edits preserve the legacy value. Clear or replace it intentionally; the Location inbox and assignments are not changed.</p>}
           <div><FormLabel htmlFor={id + '-privacy'}>Phone visibility</FormLabel><select id={id + '-privacy'} value={draft.privacy} onChange={e => edit('privacy', e.target.value as ContactPrivacyLevel)} className={inputClass}>{!['Public', 'Internal', 'Restricted'].includes(draft.privacy) && <option value={draft.privacy}>Historical value (review)</option>}{['Public', 'Internal', 'Restricted'].map(value => <option key={value}>{value}</option>)}</select></div>
@@ -147,6 +156,9 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
       {!footerTarget && actions}
     </form>
     {footerTarget && createPortal(actions, footerTarget)}
+    <ConfirmDialog isOpen={emailMappingReview} title="Review individual email mapping" description="Only use an address assigned to this person, not a shared store inbox. This stages a draft change; Save Person is still required. It does not verify ownership, create a mailbox or grant sign-in/app access." confirmLabel="Stage email mapping" tone="primary" confirmDisabled={!legacyEmailCandidate || saving || uncertain} onConfirm={() => { if (!legacyEmailCandidate || busy.current || uncertain) return; setMappedLegacyEmail(legacyEmailCandidate); setDraft(previous => ({ ...previous, email: legacyEmailCandidate })); setTouched(previous => new Set(previous).add('email')); setError(''); setEmailMappingReview(false); }} onCancel={() => setEmailMappingReview(false)}>
+      <div className="mt-3 space-y-2 text-xs text-neutral-700"><p>Source: historical email (retained)</p><p>Destination: individual work email</p><p className="break-all font-mono">{legacyEmailCandidate || 'No eligible saved individual contact. Reload and review.'}</p><p>Person ID, staffing assignments, store inboxes and account access stay unchanged. API contact eligibility and grants still apply.</p></div>
+    </ConfirmDialog>
     <ConfirmDialog isOpen={discard} title="Leave this Person draft?" description={uncertain ? 'The save outcome is unknown. Leaving does not cancel an in-flight save. Check the saved record before making another change.' : 'Unsaved profile changes will be discarded. Management assignments and accounts have not been changed by this draft.'} confirmLabel="Leave draft" onConfirm={onCancel} onCancel={() => setDiscard(false)} />
   </>;
 }

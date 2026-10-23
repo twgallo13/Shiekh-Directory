@@ -20,6 +20,12 @@ Existing Person contacts that contain a conventional store mailbox or match a sa
 
 Editing and then restoring the same normalized email is also a no-op: it does not block other profile edits, rewrite stored casing, or promote a legacy-only `email` into `workEmail`.
 
+### Explicitly mapping an eligible historical individual address
+
+See [Dispatch 27](dispatches/dispatch-27-explicit-legacy-email-mapping.md) for actual review/publication state. When no canonical `workEmail` property exists and the saved historical contact is valid and not a known shared inbox, **Use as individual work email** opens a preview. Check that it is assigned to the person, then choose **Stage email mapping** and **Save Person**. The historical source remains unchanged. Preview/Cancel/Stage alone sends nothing; **Undo email mapping** cancels the staged intent. Typing into the email field also cancels that intent, even when the address is restored afterward.
+
+This action is unavailable when a canonical contact or explicit blank/null already exists; it never overrides a deliberate clear. Ordinary intentional replacement/clear editing remains available. A candidate becoming shared or changing before Save must be reviewed again. Permission/version rejection retains the draft; an unconfirmed save locks repetition until the saved record is checked. Mapping is not mailbox/identity verification, company sign-in or an account/API grant; existing API lifecycle/domain/shared-contact policies still determine whether contact can be returned.
+
 New or changed Person `email` / `workEmail` values cannot be conventional store-number mailboxes or match known Location inboxes. The server checks current and proposed Location inboxes in its existing transaction; clearing/deleting a Location in that same transaction cannot turn its old shared address into a new individual Person contact. The UI also blocks these edits. Other addresses still require human review: a syntactically valid address is not verified ownership, uniqueness, employment or company sign-in.
 
 To replace a legacy shared Person contact, intentionally enter the individual's own work address, or clear this optional field. Clearing `workEmail` uses an explicit empty string and does not fall back to the retained legacy `email`, erase the Location inbox or change assignments. Saving a contact never issues an account, invitation or permission. No real contact cleanup is performed by this release.

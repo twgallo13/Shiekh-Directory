@@ -12,6 +12,7 @@ import { isDeepStrictEqual } from "node:util";
 import { applyCorrection } from '../src/lib/correctionRequest';
 import { validateRequestProposal } from '../src/lib/requestValidation';
 import { personLifecycle } from '../src/lib/personLifecycle';
+import { sharedPersonEmailKind } from '../src/lib/personInboxResponsibilities';
 import { validatePersonPositionState } from './personPositionValidation';
 import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
@@ -806,6 +807,7 @@ export function validateMetadataWrites(
     return { ...write, data };
   });
 
+  validateIndividualPersonEmails(validatedWrites, previous, locations);
   try { validatePersonPositionState(validatedWrites, previous, combinedPeople, locations, hierarchyRegistry?.districts || []); }
   catch (error) { throw new DirectoryValidationError(error instanceof Error ? error.message : 'Invalid position assignment.'); }
   validateDistrictLeadershipState(validatedWrites, previous, locations, combinedPeople, hierarchyRegistry, actor);
@@ -814,6 +816,19 @@ export function validateMetadataWrites(
   validateRegistryRetirement(validatedWrites, locations, hierarchyRegistry, previous);
   validateFinalHierarchyState(validatedWrites, locations, hierarchyRegistry, previous);
   return validatedWrites;
+}
+
+/** Use the transaction's existing Location reads and proposed writes; preserve untouched legacy contacts. */
+function validateIndividualPersonEmails(writes: DirectoryWrite[], previous: (Record<string, unknown> | undefined)[], locations: Array<Record<string, unknown>>) {
+  // Retain old inbox keys too: clearing/deleting a Location in the same transaction cannot launder a shared contact.
+  const knownInboxes = [...locations, ...writes.filter(w => w.collection === 'locations' && w.operation === 'set' && w.data).map(w => w.data!)];
+  writes.forEach((write, index) => {
+    if (write.collection !== 'people' || write.operation !== 'set' || !write.data) return;
+    for (const field of ['email', 'workEmail'] as const) {
+      if (!Object.hasOwn(write.data, field) || isDeepStrictEqual(write.data[field], previous[index]?.[field])) continue;
+      if (sharedPersonEmailKind(write.data[field], knownInboxes)) throw new DirectoryValidationError('Shared store inboxes belong on Location records, not individual Person email. Leave the individual email blank or use an individually assigned work address.');
+    }
+  });
 }
 
 /** Stable JSON digest binds a retry to the exact original submission, independent of object key ordering. */

@@ -1,7 +1,7 @@
 import { canonicalId, type AssignmentIssue, type SourceRecord } from './personnelProjection';
 import { personLifecycle } from '../src/lib/personLifecycle';
 import { classifyHierarchyLocationType, resolveHierarchyApplicability } from '../src/lib/hierarchyResolution';
-import { normalizeLocationInboxEmail } from '../src/lib/locationInboxEmail';
+import { isConventionalStoreInboxEmail, normalizeLocationInboxEmail } from '../src/lib/locationInboxEmail';
 
 export const WORK_EMAIL_DOMAINS = ['shiekhshoes.com', 'shiekhshoes.org'] as const;
 export type WorkEmailStatus = 'not_granted' | 'missing' | 'invalid' | 'unapproved_domain' | 'shared_location_inbox' | 'withheld_inactive' | 'withheld_unknown_lifecycle' | 'unresolved_person' | 'available';
@@ -20,7 +20,7 @@ function workContact(person: SourceRecord | undefined, access: LeadershipContact
   if (!WORK_EMAIL_DOMAINS.some(domain => email.comparisonKey.endsWith('@' + domain))) return withheld('unapproved_domain');
   // Company store-number mailboxes are shared even before Location inbox data is populated.
   // Include zero-padded legacy variants conservatively; never generate/modify an address here.
-  if (/^store[0-9]+@shiekhshoes\.com$/.test(email.comparisonKey) || access.sharedInboxKeys.has(email.comparisonKey)) return withheld('shared_location_inbox');
+  if (isConventionalStoreInboxEmail(email.value) || access.sharedInboxKeys.has(email.comparisonKey)) return withheld('shared_location_inbox');
   return { workEmail: email.value, workEmailStatus: 'available' };
 }
 

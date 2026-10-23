@@ -8,6 +8,8 @@ The Directory will provide consistent organizational assignments and store infor
 
 ## Scope and working agreement
 
+Active implementation: [Dispatch 26](../dispatches/dispatch-26-person-inbox-responsibilities.md), optional individual Person email and canonical SM/AM shared-inbox responsibility. Code is validated (530 API/unit, 13 affected browser cases, types/build and mobile QA); review/publication remain pending until that dispatch records them. No public API fields/grants, real staff contacts, mailbox/provider/account access or data restoration are changed. Privileged historical restore scripts remain a separate, unrun validation boundary. Reuse successful applicable validation when only documentation changes.
+
 ### Owner clarification — store inboxes and optional individual email (October 22)
 
 Shiekh-Intel's exact new grants were explicitly approved and confirmed in Settings after PR #39 publication; old grants/token and Dynamic QR remain unchanged. Authentication/payload/consumer acceptance are still pending. The following app-neutral email work is approved implementation, not data restoration or mailbox/account administration:

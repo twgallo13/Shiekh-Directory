@@ -2,6 +2,8 @@
 
 ## Flexible import workflow
 
+This Fleet file imports/exports Locations, not individual Person contacts or mailbox/account access. Keep `LocationInboxEmail` separate from optional `Person.workEmail`; canonical SM/AM assignment IDs carry responsibility. Person-card contact guards and historical-restore boundaries are explained in the [contact guide](person-contacts-and-store-inboxes.md). No CSV columns or existing action/clearing semantics change in that work.
+
 Administrators may upload identity plus only the supported Location fields they intend to update. `LocationId` is matched first. When it is omitted, a unique digits-only `StoreNumber` may match an existing Location. Leading zeros are ignored for matching, but the supplied text remains the proposed stored Store Number. Nonnumeric Store Numbers are never reinterpreted, and Location, District, or Person names are never used as relationship identities.
 
 Omitted columns and blank cells preserve existing values. The Location inbox is the exception only when the dedicated `LocationInboxEmailAction` explicitly requests a clear. New Locations must provide all required fields; existing Locations need only identity plus changed fields. **Add and update** permits both outcomes. **Update existing only** blocks rows that do not resolve to an existing Location and is the default when an `shiekh_locations_editing_v2_...csv` file is selected.

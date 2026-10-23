@@ -1,5 +1,6 @@
 import type { PersonRecord, PersonUpdate } from '../types';
 import { formatUsPhone, type NormalizedPhone } from './contactNormalization';
+import { normalizeLocationInboxEmail } from './locationInboxEmail';
 
 export interface ResolvedPersonPhone {
   value: string;
@@ -25,6 +26,14 @@ export function resolvePersonPhone(person: PersonRecord | undefined): ResolvedPe
 export function resolvePersonEmail(person: PersonRecord | undefined): { value: string; source: 'work' | 'legacy' } {
   if (person && Object.hasOwn(person, 'workEmail')) return { value: person.workEmail || '', source: 'work' };
   return { value: person?.email || '', source: 'legacy' };
+}
+
+/** Restoring the resolved contact is a no-op, not permission to promote a legacy alias into workEmail. */
+export function personEmailEditChangesValue(person: PersonRecord | undefined, draft: string): boolean {
+  if (!person) return true;
+  const previous = resolvePersonEmail(person).value;
+  const key = (value: string) => normalizeLocationInboxEmail(value)?.comparisonKey ?? value.trim();
+  return key(draft) !== key(previous);
 }
 
 export function formatPersonPhone(person: PersonRecord | undefined): string {

@@ -2,7 +2,7 @@
 
 Owner UX clarification, October 23: follow the [simple positions/assignments rules](positions-and-assignments-rules.md). Routine position additions stay ordinary Person edits, with separate District/Store assignment. Reuse this guarded command foundation for consequential removal/replacement/vacancy; a mandatory all-purpose promotion wizard is not the intended UX. Data restore remains deferred. This clarification does not relax atomicity, authority or recovery requirements below.
 
-Status: October 22, 2026 Pacific. The first internal pure-planner slice is implemented in [Dispatch 31](../dispatches/dispatch-31-person-transition-dry-run-planner.md); review/merge evidence belongs on its PR. No command routes, signing key, receipts, writer or new UI below exist yet. [PR #49](../dispatches/dispatch-29-server-transition-preview.md) remains the published read-only dependency review. This contract narrows the first coordinated writer; it does not complete [Phase 3](directory-consistency-plan.md#phase-3-add-leadership-handover-and-offboarding).
+Status: October 23, 2026 Pacific. The internal pure planner is implemented in [Dispatch 31](../dispatches/dispatch-31-person-transition-dry-run-planner.md). [Dispatch 33](../dispatches/dispatch-33-signed-transition-preview.md) adds the read-only command preview in source, not yet published or configured. No live signing key, receipts, writer or new removal UI exists. [PR #49](../dispatches/dispatch-29-server-transition-preview.md) remains the published informational dependency review; PR #53 is the current application release. This contract narrows the first coordinated writer; it does not complete [Phase 3](directory-consistency-plan.md#phase-3-add-leadership-handover-and-offboarding).
 
 ## 1. Business outcome and explicit limits
 
@@ -23,7 +23,7 @@ Region-owned/acting/date-effective leadership, store-level inherited-DM override
 
 ## 3. Proposed intent (not arbitrary document writes)
 
-Future internal routes, explicitly unavailable until implementation/release:
+Internal routes below are unavailable in production until implementation/configuration/release. Only `/preview` is implemented in the current source slice; all remaining routes are still absent:
 
 - `POST /api/directory/person-transitions/preview`
 - `POST /api/directory/person-transitions/prepare`

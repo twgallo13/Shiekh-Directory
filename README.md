@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [Person contacts and shared store inboxes](docs/person-contacts-and-store-inboxes.md): optional individual email, canonical SM/AM inbox responsibility, legacy preservation and account/mailbox boundaries. [Dispatch 26](docs/dispatches/dispatch-26-person-inbox-responsibilities.md) tracks validation, review and publication; not live until its checkpoint.
+- [Person contacts and shared store inboxes](docs/person-contacts-and-store-inboxes.md): published optional individual email, canonical SM/AM inbox responsibility, legacy preservation and account/mailbox boundaries. [Dispatch 26](docs/dispatches/dispatch-26-person-inbox-responsibilities.md) records PR #43 validation, review and publication.
 
 - [District leadership API release](docs/dispatches/dispatch-25-district-leadership-api.md): PR #39 is published, with a separately versioned District roster/store-membership snapshot; DM work contact requires a separate grant. The owner-approved Shiekh-Intel grant update is confirmed; authenticated consumer acceptance remains pending and issue #36 stays open. Work email is not a verified sign-in identity.
 
@@ -28,7 +28,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 A **schema** describes the available fields and their types. An **API endpoint** is an address an app calls to read or change information. `locationInboxEmail` is an optional shared contact address for a Location; it is separate from a Person's work email and a User's sign-in email. The read API returns an address or `null` when there is no usable inbox.
 
-Current application release: `0d8055e`, Ready revision `shiekh-location-company-directory-pr41-0d8055e` at sole 100%; [exact release evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-41). District-owned v3 leadership and the conventional shared-store-mailbox contact safeguard are published. The owner-approved Shiekh-Intel grants are confirmed, preserving old grants/token; authenticated consumer acceptance remains pending. Next: optional individual company email and canonical SM/AM inbox-responsibility UX/write-path audit. Broader taxonomy migration, acting/Region ownership and full handover/offboarding remain unfinished. Email is not an account permission; no staffing/data restoration occurred.
+Current application release: `2f94e44`, Ready revision `shiekh-location-company-directory-pr43-2f94e44` at sole 100%; [exact release evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-43). Optional individual email and canonical SM/AM inbox-responsibility UI/write guards are published, retaining v3 leadership and shared-mailbox withholding. Existing API fields/scopes are unchanged. The owner-approved Shiekh-Intel grants are confirmed, preserving old grants/token; authenticated consumer acceptance remains pending. Next: explicit opt-in legacy individual-contact mapping, then remaining hierarchy/lifecycle work in the plan. Broader taxonomy migration, acting/Region ownership and full handover/offboarding remain unfinished. Email is not an account permission; no staffing/data restoration occurred.
 
 ## Development
 

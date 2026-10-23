@@ -16,6 +16,7 @@ import { personPositionLabel } from '../../lib/personPositions';
 import { personProfileImpact } from '../../lib/personProfileImpact';
 import { PersonInboxResponsibilities } from './PersonInboxResponsibilities';
 import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
+import { PersonTransitionReview } from './PersonTransitionReview';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -32,7 +33,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   onEditLocation,
   onSelectUser,
 }) => {
-  const { locations, districts, regions, users, currentUser, updatePerson, deletePerson } = useDirectory();
+  const { locations, districts, regions, users, requests, currentUser, updatePerson, deletePerson } = useDirectory();
   const [isEditing, setIsEditing] = useState(false);
   const editorClose = useRef<(() => void) | null>(null);
   const [editorFooter, setEditorFooter] = useState<HTMLDivElement | null>(null);
@@ -169,6 +170,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
           </div>
 
           <PersonInboxResponsibilities person={person} locations={locations} />
+
+          {canEdit && <PersonTransitionReview person={person} locations={locations} districts={districts} regions={regions} users={users} requests={requests} />}
 
           {person.district && (
             <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 flex items-center justify-between">

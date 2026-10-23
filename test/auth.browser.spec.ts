@@ -5,8 +5,8 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
-async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' | 'denied' = 'normal') {
-  await prepare(page, 'System Administrator');
+async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' | 'denied' = 'normal', role = 'System Administrator') {
+  await prepare(page, role);
   const seed: any = seedDirectory(2);
   const person = { id: 'person-profile', version: 2, fullName: 'Synthetic Profile Manager', jobTitle: ' SM ', role: 'Historical separate alias', department: '  Historic department  ', district: 'Legacy territory note', status: 'Active', activeStatus: true, workEmail: 'profile@example.test' };
   seed.people = [person];
@@ -28,6 +28,59 @@ async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty
   });
   return { seed, commits, release: () => release() };
 }
+
+test('Transition preflight groups canonical leadership stale copies accounts and pending references without writes on mobile', async ({ page }, testInfo) => {
+  const f = await preparePersonCard(page);
+  f.seed.people[0].primaryLocationId = 'missing-location'; f.seed.people[0].supportedLocationIds = ['loc-2'];
+  f.seed.locations[0].districtManagerId = 'other';
+  f.seed.locations[1] = { ...f.seed.locations[1], recordStatus: 'Retired', districtId: 'vacant', districtManagerId: 'person-profile' };
+  f.seed.districts.push({ id: 'vacant', name: 'Vacant District', regionId: 'west', status: 'Active', districtManagerId: null });
+  f.seed.districts.push({ id: 'zero', name: 'Zero Store District', regionId: 'west', status: 'Active', districtManagerId: 'person-profile' });
+  f.seed.users[0].status = 'Revoked';
+  f.seed.requests = [{ id: 'pending-person-review', status: 'Pending', targetType: 'Person', targetId: 'person-profile', targetName: 'Synthetic Profile Manager', changeType: 'Phone Number Correction', requestedChanges: {}, currentSnapshot: {}, reason: 'Private request note not copied' }, { id: 'pending-proposal', status: 'Pending', targetType: 'Location', targetId: 'loc-2', changeType: 'Store Manager Change', requestedChanges: { storeManagerId: 'person-profile' }, currentSnapshot: { districtManagerId: 'person-profile' } }];
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByText('Review promotion / offboarding', { exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Promotion and offboarding dependency review', exact: true });
+  await expect(panel).toContainText('not a complete inventory');
+  await expect(panel).toContainText('Zero Store District');
+  await expect(panel).toContainText('Inherited District stores: 1');
+  await expect(panel).toContainText('Historical DM copy differs');
+  await expect(panel).toContainText('Unavailable Location missing-location');
+  await expect(panel).toContainText('Revoked');
+  await expect(panel).toContainText('pending-person-review');
+  await expect(panel).toContainText('Proposed leadership references this Person ID');
+  await expect(panel).not.toContainText('Private request note');
+  await expect(panel.getByRole('link', { name: 'Review Directory accounts separately', exact: true })).toHaveAttribute('href', '/admin?tab=rbac');
+  await expect(panel.getByRole('link', { name: 'Review change requests separately', exact: true })).toHaveAttribute('target', '_blank');
+  expect(await panel.getByRole('button').count()).toBe(0);
+  await panel.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('transition-preflight-mobile.png'), fullPage: true });
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Transition preflight empty loaded data never claims offboarding clearance and does not enter an editor', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.locations = []; f.seed.districts = []; f.seed.users = []; f.seed.requests = [];
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByText('Review promotion / offboarding', { exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Promotion and offboarding dependency review', exact: true });
+  await expect(panel).toContainText('No current management references found in loaded records');
+  await expect(panel).toContainText('external access remains unverified');
+  await expect(panel).toContainText('server permissions, versions and lifecycle guards still decide');
+  await expect(page.getByRole('button', { name: 'Save Person', exact: true })).not.toBeVisible();
+  await page.getByText('Review promotion / offboarding', { exact: true }).click();
+  await expect(panel).not.toBeVisible(); expect(f.commits).toHaveLength(0);
+});
+
+for (const role of ['Viewer', 'Editor']) test('Transition preflight is not exposed to ' + role, async ({ page }) => {
+  const f = await preparePersonCard(page, 'normal', role);
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'Close Synthetic Profile Manager', exact: true })).toBeVisible();
+  await expect(page.getByText('Review promotion / offboarding', { exact: true })).not.toBeVisible();
+  expect(f.commits).toHaveLength(0);
+});
 
 test('Legacy email mapping requires preview opt-in and Save, preserving the alias and all unrelated fields', async ({ page }, testInfo) => {
   const f = await preparePersonCard(page);

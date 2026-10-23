@@ -11,7 +11,19 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #43
+## Current live revision — PR #45
+
+Released October 22, 2026 (Pacific): source `1b122fe9234b58c081655472e95fe0f4b4c3ab51`, tree `1ddf782ce662ea5f993ff55b724352c7f13c330b`, identical to reviewed `975fa42`. Build `5a8f752b-1ef3-4c16-820e-cf245eb270a4` succeeded; revision `shiekh-location-company-directory-pr45-1b122fe` is Ready at sole 100% desired/observed traffic. No-traffic candidate, concurrency-guarded promotion and final both-host checks passed. Configuration, identities, Firebase and 26 historical tags are preserved; only temporary `p45-1b122fe` was removed. Branded routing remains Ready/DomainRoutable. Both hosts match HTML `276bf60e704cc618df73962d3e8a67bcb45234250e87b11f5612f5d30dbe1bca`, 45 MIME-validated assets and all four unchanged served API documents. API/operating denial, unknown-route and cache protections passed.
+
+[Dispatch 27](dispatches/dispatch-27-explicit-legacy-email-mapping.md#publication-checkpoint--october-22-2026-pacific) records 13 affected units, 22 distinct incrementally passing browser cases, final types/build, synthetic mobile QA, resolved Escape issue and clean latest code/security reviews. CodeRabbit was rate-limited. The authenticated People page restored after refresh; no real contact mapping/save, mailbox/account permission, grant/token, Notion or consumer-app change was made. Consumer authenticated payload/acceptance remains pending. Next is read-only promotion/offboarding preflight; broad hierarchy/lifecycle/Region/acting work is not complete.
+
+**Rollback gate:** prefer forward repair. Prior PR #43 retains shared-contact write guards but has no explicit mapping UX. Rollback never reverses intentionally saved contacts or assignments; do not restore collections or remove grants to undo this screen. Preserve PR #41 contact withholding and all prior hierarchy/position/request/status/address safeguards. Documentation-only checkpoint commits need no rebuild.
+
+## Historical live revision — PR #43
+
+<a id="current-live-revision--pr-43"></a>
+
+Superseded by PR #45 above; original publication checkpoint retained below.
 
 Released October 22, 2026 (Pacific): source `2f94e444e44aa4594ba460bf35b771e6762ef238`, tree `ef574a7025f3a0cce1ae0b526b6a9d3a11b8daa4`, identical to reviewed `378ba8e265`. Build `30fe8b44-88f3-456b-8b49-ee8e4e0dc34b` succeeded; revision `shiekh-location-company-directory-pr43-2f94e44` is Ready at sole 100% desired/observed traffic. No-traffic candidate, concurrency-guarded promotion and final both-host checks passed. Configuration, identities, Firebase and 26 historical tag mappings are unchanged; only temporary `p43-2f94e44` was removed. Branded routing is Ready/DomainRoutable. Both hosts match HTML `959db7899bbfba5c08e5f6e4aee95c889f93158aa772ec410c4339f8d7933cd6`, 45 MIME-validated assets and all four unchanged served API documents. Authentication denial/cache/unknown-route guards remain intact.
 

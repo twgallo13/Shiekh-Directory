@@ -1,6 +1,6 @@
 # Person work contact and shared store inboxes
 
-This is app-neutral Directory guidance, not an account or mailbox permission policy. The owner-approved model allows a Person to hold multiple explicitly selected positions, including the rare Store Manager who has an individual company address as well as store inbox responsibility. Follow the [current release record](dispatches/dispatch-26-person-inbox-responsibilities.md) before assuming the screens/guards below are published.
+This is app-neutral Directory guidance, not an account or mailbox permission policy. The owner-approved model allows a Person to hold multiple explicitly selected positions, including the rare Store Manager who has an individual company address as well as store inbox responsibility. The [current release record](dispatches/dispatch-27-explicit-legacy-email-mapping.md) publishes PR #45's explicit mapping alongside PR #43's contact/responsibility guards; no live staff contact migration was performed.
 
 ## Where each value belongs
 

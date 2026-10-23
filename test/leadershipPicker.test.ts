@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { leadershipCandidates, leadershipPickerOptions, matchesListedLeadershipRole, type LeadershipRole } from '../src/lib/leadershipPicker';
+import { PERSON_POSITIONS } from '../src/lib/personPositions';
 
 const person = (id: string, jobTitle: string, extra = {}) => ({ id, fullName: id, jobTitle, status: 'Active', activeStatus: true, ...extra });
 for (const [role, alias] of [['District Manager', ' DM '], ['Regional Manager', 'rm'], ['Store Manager', ' SM'], ['Assistant Store Manager', 'assistant   manager'], ['Key Holder', 'keyholder']] as [LeadershipRole, string][]) {
@@ -8,7 +9,8 @@ for (const [role, alias] of [['District Manager', ' DM '], ['Regional Manager', 
     assert(matchesListedLeadershipRole(person('match', alias), role));
     assert(!matchesListedLeadershipRole(person('unrelated', 'Accountant'), role));
     assert(!matchesListedLeadershipRole(person('prefix', `Former ${role}`), role));
-    assert.deepEqual(leadershipCandidates([person('unrelated', 'Accountant'), person('match', alias)], role).map(p => p.id), ['match']);
+    const mapped = person('mapped', 'Unrelated display title', { positionIds: [PERSON_POSITIONS.find(p => p.label === role)!.id] });
+    assert.deepEqual(leadershipCandidates([person('unrelated', 'Accountant'), person('match', alias), mapped], role).map(p => p.id), ['mapped']);
   });
 }
 test('explicit job title wins over a conflicting legacy role; a blank job title can use its legacy role', () => {
@@ -16,14 +18,15 @@ test('explicit job title wins over a conflicting legacy role; a blank job title 
   assert(matchesListedLeadershipRole(person('legacy', ' ', { role: 'District Manager' }), 'District Manager'));
 });
 test('inactive, unknown and duplicate identities never become new candidates, including show-all mode', () => {
-  const roster = [person('active', 'District Manager'), person('inactive', 'District Manager', { status: 'Inactive', activeStatus: false }), person('unknown', 'District Manager', { activeStatus: false }), person('duplicate', 'District Manager'), person('duplicate', 'District Manager')];
+  const dm = { positionIds: ['district-manager'] };
+  const roster = [person('active', 'District Manager', dm), person('inactive', 'District Manager', { ...dm, status: 'Inactive', activeStatus: false }), person('unknown', 'District Manager', { ...dm, activeStatus: false }), person('duplicate', 'District Manager', dm), person('duplicate', 'District Manager', dm)];
   for (const showAll of [false, true]) assert.deepEqual(leadershipCandidates(roster, 'District Manager', showAll).map(p => p.id), ['active']);
 });
-test('show all is an explicit discovery opt-in and never mutates titles or assignments', () => {
-  const roster = [person('other', 'Operations Lead'), person('dm', 'District Manager')];
+test('older show-all callers cannot widen new eligibility or mutate titles and assignments', () => {
+  const roster = [person('other', 'Operations Lead'), person('legacy-dm', 'District Manager'), person('mapped-dm', 'Operations Lead', { positionIds: ['district-manager'] }), person('mapped-sm', 'District Manager', { positionIds: ['store-manager'] })];
   const before = structuredClone(roster);
   assert.equal(leadershipCandidates(roster, 'District Manager').length, 1);
-  assert.equal(leadershipCandidates(roster, 'District Manager', true).length, 2);
+  assert.equal(leadershipCandidates(roster, 'District Manager', true).length, 1);
   assert.deepEqual(roster, before);
 });
 test('all five slots retain unmatched current IDs visibly but disable them as new choices', () => {

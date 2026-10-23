@@ -27,7 +27,8 @@ test('explicit concurrent positions override descriptive titles without deriving
   assert.deepEqual(leadershipCandidates([mapped], 'Regional Manager', true), []);
   assert.equal(personPositions(person).source, 'legacy');
   assert.deepEqual(personPositions(person).ids, ['store-manager']);
-  assert(allowsLeadershipPosition({ jobTitle: 'Unusual cross-role coverage' }, 'District Manager'));
+  assert(!allowsLeadershipPosition({ jobTitle: 'Unusual cross-role coverage' }, 'District Manager'));
+  assert(!allowsLeadershipPosition({ jobTitle: 'District Manager' }, 'District Manager'), 'A matching title is not an explicit position');
 });
 
 test('invalid and explicitly empty mappings never fall back to a legacy title', () => {
@@ -84,7 +85,8 @@ test('all Location assignment writers reject mapped-ineligible people but permit
   const write = { collection: 'locations', operation: 'set', id: store.id, data: next };
   assert.throws(() => validatePersonPositionState([write], [{ ...store, storeManagerId: 'previous' } as any], [dm], [store as any], []), /Store Manager/);
   assert.doesNotThrow(() => validatePersonPositionState([write], [store as any], [dm], [store as any], []));
-  assert.doesNotThrow(() => validatePersonPositionState([write], [{ ...store, storeManagerId: 'previous' } as any], [person], [store as any], []));
+  assert.throws(() => validatePersonPositionState([write], [{ ...store, storeManagerId: 'previous' } as any], [person], [store as any], []), /Store Manager/);
+  assert.doesNotThrow(() => validatePersonPositionState([write], [store as any], [person], [store as any], []), 'Unchanged legacy responsibility remains preserved');
 });
 
 test('simultaneous position and assignment changes validate final state regardless of write order', () => {

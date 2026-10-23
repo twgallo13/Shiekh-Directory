@@ -2,6 +2,8 @@
 
 ## Flexible import workflow
 
+New leadership Person IDs require a clearly Active person with the matching explicitly selected Position; typed titles do not establish eligibility. Imports do not set Person positions. Unchanged historical assignments are preserved, and retained members of changed arrays do not acquire inferred positions; existing identity/lifecycle guards still apply. District-managed retail DM copies are derived, not an independent store-level grant. See the [application rules](plans/positions-and-assignments-rules.md). Data restoration is deferred.
+
 This Fleet file imports/exports Locations, not individual Person contacts or mailbox/account access. Keep `LocationInboxEmail` separate from optional `Person.workEmail`; canonical SM/AM assignment IDs carry responsibility. Person-card contact guards and historical-restore boundaries are explained in the [contact guide](person-contacts-and-store-inboxes.md). No CSV columns or existing action/clearing semantics change in that work.
 
 Administrators may upload identity plus only the supported Location fields they intend to update. `LocationId` is matched first. When it is omitted, a unique digits-only `StoreNumber` may match an existing Location. Leading zeros are ignored for matching, but the supplied text remains the proposed stored Store Number. Nonnumeric Store Numbers are never reinterpreted, and Location, District, or Person names are never used as relationship identities.

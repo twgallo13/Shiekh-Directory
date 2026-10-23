@@ -8,7 +8,7 @@ const actor: Account = { uid: 'synthetic-viewer', email: 'viewer@example.test', 
 /** Build detached synthetic Location, Person and request records for submission validation. */
 function fixture() {
   const target = { id: 'loc-synthetic', storeNumber: '007', storeManagerId: 'person-old', storeManagerName: 'Previous Manager', storeManagerPhone: '+12135550101' };
-  const people = [{ id: 'person-new', fullName: 'New Manager', status: 'Active', activeStatus: true, workPhone: '+12135550102' }];
+  const people = [{ id: 'person-new', fullName: 'New Manager', positionIds: ['store-manager'], status: 'Active', activeStatus: true, workPhone: '+12135550102' }];
   const request = { targetType: 'Location', targetId: target.id, changeType: 'Store Manager Change', status: 'Pending', requestedChanges: { storeManagerId: people[0].id, storeManagerName: people[0].fullName, storeManagerPhone: people[0].workPhone }, currentSnapshot: { storeManagerId: target.storeManagerId, storeManagerName: target.storeManagerName, storeManagerPhone: target.storeManagerPhone } };
   const validate = (data: Record<string, unknown> = request, roster = people) => validateMetadataWrites([{ collection: 'requests', id: 'req-synthetic', operation: 'set', data } satisfies DirectoryWrite], [undefined], [], actor, roster, [target]);
   return { target, people, request, validate };

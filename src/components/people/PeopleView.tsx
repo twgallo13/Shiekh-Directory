@@ -74,7 +74,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
           onChange={(e) => setRoleFilter(e.target.value)}
           className="bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs text-neutral-800 focus:outline-none cursor-pointer"
         >
-          <option value="all">All Roles</option>
+          <option value="all">All Positions</option>
           <option value="District Manager">District Managers</option>
           <option value="Store Manager">Store Managers</option>
           <option value="Store Operations Leadership">Operations Leadership</option>

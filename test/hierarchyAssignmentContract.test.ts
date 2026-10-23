@@ -194,7 +194,7 @@ describe("hierarchy assignment contract", () => {
           collection: "people",
           id: "p-new",
           operation: "set",
-          data: { fullName: "New Manager", status: "Active" },
+          data: { fullName: "New Manager", status: "Active", positionIds: ['store-manager'] },
         },
         {
           collection: "locations",

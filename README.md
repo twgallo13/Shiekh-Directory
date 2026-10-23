@@ -4,6 +4,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
+- [Positions and assignments: agreed rules](docs/plans/positions-and-assignments-rules.md): organization IDs, explicit multi-position eligibility, separate assignment/access and rules-first/data-later sequence. [Dispatch 32](docs/dispatches/dispatch-32-explicit-assignment-rules.md) records the bounded eligibility repair; coordinated removal/vacancy remains next.
+
 - [Published promotion/offboarding dependency preflight](docs/dispatches/dispatch-28-person-transition-preflight.md): PR #47 adds read-only canonical/stale assignment, workplace/support, account and Pending-correction review. It neither clears someone for inactivation nor changes staff/access.
 
 - [Published legacy individual-email mapping](docs/dispatches/dispatch-27-explicit-legacy-email-mapping.md): PR #45 adds reviewed draft opt-in, normal confirmed Save, source/clear preservation and no account/API permission changes.

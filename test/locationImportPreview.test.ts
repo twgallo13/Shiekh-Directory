@@ -28,7 +28,7 @@ const snapshot: Pick<DirectorySeed, 'locations' | 'people' | 'regions' | 'distri
   locations: [baseLocation],
   people: [
     { id: 'person-active', fullName: 'Active Person', status: 'Active' },
-    { id: 'person-inactive', fullName: 'Inactive Person', status: 'Inactive' },
+    { id: 'person-inactive', fullName: 'Inactive Person', status: 'Inactive', positionIds: ['store-manager'] },
   ],
   regions: [{ id: 'reg-west', name: 'West', status: 'Active' }],
   districts: [{ id: 'dist-1', name: 'District 1', regionId: 'reg-west', status: 'Active' }],

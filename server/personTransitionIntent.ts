@@ -46,7 +46,10 @@ export function normalizePersonTransitionIntent(value: unknown): PersonTransitio
     if (seen.has(key)) fail(); seen.add(key);
     if (d.action === 'replace' ? !canonicalTransitionId(d.replacementId) || d.replacementId === value.personId : Object.hasOwn(d, 'replacementId')) fail();
     return { owner: d.owner, id: d.id, field: d.field as LeadershipField, action: d.action, ...(d.action === 'replace' ? { replacementId: d.replacementId } : {}) };
-  }).sort((a, b) => `${a.owner}/${a.id}/${a.field}`.localeCompare(`${b.owner}/${b.id}/${b.field}`));
+  }).sort((a, b) => {
+    const left = `${a.owner}/${a.id}/${a.field}`; const right = `${b.owner}/${b.id}/${b.field}`;
+    return left < right ? -1 : left > right ? 1 : 0;
+  });
   return { schemaVersion: 1, personId: value.personId, positionIds: [...value.positionIds].sort(), lifecycle: value.lifecycle,
     reason: value.reason.trim(), responsibilities, primaryWorkplace: workplace(value.primaryWorkplace, true), supports: workplace(value.supports, false),
     acknowledgedRequestIds: ids(value.acknowledgedRequestIds) };

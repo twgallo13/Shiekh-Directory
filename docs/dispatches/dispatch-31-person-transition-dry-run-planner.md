@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Implementation follows the [v1 command contract](../plans/person-transition-command-contract.md) after merged design PR #51/main `49e4aa7`. This is an internal, unused server module, not a deployed feature or completed Phase 3. No runtime entry point imports it. No route, authentication capability, signing key, preparation/receipt, transaction, database write, account/provider action, UI Save or deployment is introduced. Published application source remains PR #49 / `29020a2`.
+Implementation PR: [#52](https://github.com/twgallo13/Shiekh-Directory/pull/52), following the [v1 command contract](../plans/person-transition-command-contract.md) after merged design PR #51/main `49e4aa7`. This is an internal, unused server module, not a deployed feature or completed Phase 3. No runtime entry point imports it. No route, authentication capability, signing key, preparation/receipt, transaction, database write, account/provider action, UI Save or deployment is introduced. Published application source remains PR #49 / `29020a2`.
 
 ## Implemented boundary
 
@@ -17,7 +17,7 @@ The adapter must supply a single actual coherent, complete read with limit+1 ove
 
 ## Validation
 
-Synthetic frozen-source tests cover explicit SM+DM, managed vacancy/inheritance/retired stores, legacy adoption denial, parent/eligibility conflicts, missing counterparties, all linked User states, multi-District departure, arrays/order/duplicates, SM phone/privacy clearing, historical DM copies, Pending acknowledgment/privacy, workplace constraints, deterministic/presence-aware hashes, malformed snapshots, semantic no-op and whole-plan capacity denial. Adjacent existing District handover, informational preview and review tests remain passing. Final exact validation and independent PR review evidence are recorded on the implementation PR; no production-data or actual Firestore concurrency claim is inferred from in-memory tests.
+Synthetic frozen-source tests cover explicit SM+DM, managed vacancy/inheritance/retired stores, legacy adoption denial, parent/eligibility conflicts, missing counterparties, all linked User states, multi-District departure, arrays/order/duplicates, SM phone/privacy clearing, historical DM copies, Pending acknowledgment/privacy, workplace constraints, deterministic/presence-aware hashes, malformed snapshots, semantic no-op and whole-plan capacity denial. Initial 17 planner cases and 48 existing adjacent District handover/informational preview/review cases passed; types, whitespace and 78 local documentation links passed. Independent code review found omitted Pending review for newly selected workplaces; CodeRabbit found locale-dependent intent ordering. Both were reproduced with failing synthetic regressions, repaired without changing any active runtime, and are covered by the expanded 19-case planner suite. Final exact validation/latest-head review evidence belongs on PR52; no production-data or actual Firestore concurrency claim is inferred from in-memory tests.
 
 No active generic writer/validator, public consumer/API field/scope/document, credential/token/grant, business record or cloud configuration changed. Existing runtime/browser validations remain applicable. No unnecessary deployment is needed for unreferenced modules.
 

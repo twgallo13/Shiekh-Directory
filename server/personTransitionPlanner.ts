@@ -195,6 +195,7 @@ export function planPersonTransition(rawIntent: unknown, snapshot: TransitionPla
     const before = field === 'primaryLocationId' ? person[field] ?? null : person[field] || [];
     if (isDeepStrictEqual(before, next)) { block(`Unchanged workplace decision: ${field}.`); continue; }
     if (decision.action === 'replace') for (const locationId of decision.ids!) {
+      associated.add(locationId);
       const location = data.locations.get(locationId);
       if (!location || location.recordStatus === 'Retired') block(`New workplace link must exist and not be retired: ${locationId}.`);
     }

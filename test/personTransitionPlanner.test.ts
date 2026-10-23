@@ -172,3 +172,19 @@ test('byte capacity estimates and every inventory limit fail closed without part
     assert.throws(() => planPersonTransition(f.intent, f.snapshot), /capacity/);
   }
 });
+
+test('new primary/support workplace targets require exact Pending acknowledgment', () => {
+  for (const field of ['primaryWorkplace', 'supports'] as const) {
+    const f = fixture(); f.snapshot.locations.push(doc('new-workplace', { name: 'New context', storeNumber: '009', type: 'Corporate Office', recordStatus: 'Active' }));
+    f.snapshot.requests.push(doc('new-context-request', { status: 'Pending', targetType: 'Location', targetId: 'new-workplace', changeType: 'Phone', requestedChanges: {}, currentSnapshot: {} }));
+    f.intent[field] = { action: 'replace', ids: ['new-workplace'] };
+    blocked(f, /Pending/); f.intent.acknowledgedRequestIds = ['new-context-request'];
+    assert.equal(planPersonTransition(f.intent, f.snapshot).ready, true);
+  }
+});
+test('responsibility normalization uses code-unit order for stable cross-runtime hashes', () => {
+  const f = fixture(); const ids = ['a_', 'a-', 'a.', 'a', 'A'];
+  f.intent.responsibilities = ids.map(id => ({ owner: 'locations', id, field: 'storeManagerId', action: 'retain' }));
+  // Sorts full owner/id/field keys, so the slash after "a" follows '-' and '.'.
+  assert.deepEqual(normalizePersonTransitionIntent(f.intent).responsibilities.map(d => d.id), ['A', 'a-', 'a.', 'a', 'a_']);
+});

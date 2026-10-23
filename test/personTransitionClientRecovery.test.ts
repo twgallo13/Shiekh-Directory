@@ -75,6 +75,12 @@ test('only current unique-session Company-wide admin can access a bound vault; a
   const otherVault = await openTransitionRecoveryVault(f.data, f.getSession, f.lock, webcrypto.subtle as SubtleCrypto, f.getGeneration); assert.deepEqual(otherVault.read(), []);
   f.setSession(session()); f.advanceGeneration(); assert.throws(f.vault.read, /session changed/);
   const rebound = await openTransitionRecoveryVault(f.data, f.getSession, f.lock, webcrypto.subtle as SubtleCrypto, f.getGeneration); assert.deepEqual(rebound.read(), [marker]);
+  for (const operation of ['persist', 'resolve']) {
+    const late = await fixture(); await late.vault.persist(marker);
+    const delayed = { async request<T>(_name: string, callback: () => Promise<T>) { const result = await callback(); late.advanceGeneration(); return result; } };
+    const bound = await openTransitionRecoveryVault(late.data, late.getSession, delayed, webcrypto.subtle as SubtleCrypto, late.getGeneration);
+    await assert.rejects(operation === 'persist' ? bound.persist(marker) : bound.resolve(marker, outcomes.cancelled), /session changed/);
+  }
 });
 
 test('storage/API availability, read-back, corruption and same-ID content conflicts fail closed', async () => {
@@ -116,6 +122,13 @@ test('reconciliation keeps missing/unknown/prepared operations blocked and never
 test('terminal resolution requires exact identity and fresh saved-state refresh before clearing a committed marker', async () => {
   const f = await fixture(); await f.vault.persist(marker);
   for (const outcome of [outcomes.unknown, outcomes.prepared, { ...outcomes.cancelled, personId: 'other' }]) await assert.rejects(f.vault.resolve(marker, outcome));
+  for (const outcome of [outcomes.cancelled, outcomes.committed]) {
+    const foreign = { ...outcome, auditId: `aud-person-transition-${outcome.state === 'cancelled' ? 'cancel-' : ''}${'f'.repeat(64)}` };
+    let refreshed = false;
+    await assert.rejects(f.vault.resolve(marker, foreign, async () => { refreshed = true; })); assert.equal(refreshed, false); assert.equal(f.vault.read().length, 1);
+    await assert.rejects(f.vault.reconcile(list(), [foreign]));
+  }
+  assert.equal((await f.vault.reconcile(list(), [outcomes.committed])).refreshPersonIds[0], marker.personId);
   await assert.rejects(f.vault.resolve(marker, outcomes.committed)); assert.equal(f.vault.read().length, 1);
   await assert.rejects(f.vault.resolve(marker, outcomes.committed, async () => { throw new Error('Refresh failed'); })); assert.equal(f.vault.read().length, 1);
   let refreshed = 0;

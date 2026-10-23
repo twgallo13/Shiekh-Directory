@@ -114,8 +114,24 @@ export async function openTransitionRecoveryVault(storage: Storage, getSession: 
     }
     check(); return markers.sort((a, b) => a.operationId.localeCompare(b.operationId));
   };
+  const verifyTerminalAudit = async (outcome: TransitionRecoveryOutcome) => {
+    check();
+    if (outcome.state === 'committed' || outcome.state === 'cancelled') {
+      const operationKey = await sha256(JSON.stringify([AUDIENCE, actorUid, outcome.operationId]), subtle);
+      check();
+      if (outcome.auditId !== `aud-person-transition-${outcome.state === 'cancelled' ? 'cancel-' : ''}${operationKey}`) fail();
+    }
+  };
   return {
     read,
+    /** Actor-bound reconciliation; the standalone pure parser checks shape, not audit ownership. */
+    async reconcile(remoteList: unknown, localStatuses: unknown[]) {
+      check(); const local = read();
+      if (!Array.isArray(localStatuses) || localStatuses.length > 50) fail();
+      const statuses = localStatuses.map(v => parseTransitionRecoveryOutcome(v));
+      for (const outcome of statuses) await verifyTerminalAudit(outcome);
+      check(); return reconcileTransitionRecovery(local, remoteList, statuses);
+    },
     /** Derivation only, NOT validation of an approved/current server preview or admission to submit. */
     async markerForReviewedCommand(value: { operationId: string; personId: string; intentHash: string; reviewEnvelope: string }) {
       check();
@@ -134,12 +150,14 @@ export async function openTransitionRecoveryVault(storage: Storage, getSession: 
         const encoded = JSON.stringify(marker); storage.setItem(key(marker), encoded);
         if (storage.getItem(key(marker)) !== encoded) fail(); check();
       });
+      check();
       return structuredClone(marker);
     },
     /** Terminal proof only. Refresh saved Directory state BEFORE forgetting a committed operation. */
     async resolve(value: unknown, rawOutcome: unknown, refreshSavedDirectory?: () => Promise<void>) {
       const marker = parseTransitionRecoveryMarker(value), outcome = parseTransitionRecoveryOutcome(rawOutcome, marker); check();
       if (!['committed', 'cancelled'].includes(outcome.state)) fail();
+      await verifyTerminalAudit(outcome);
       if (outcome.state === 'committed') {
         if (!refreshSavedDirectory) fail();
         await refreshSavedDirectory(); check();
@@ -149,6 +167,7 @@ export async function openTransitionRecoveryVault(storage: Storage, getSession: 
         if (previous && !same(previous, marker)) fail();
         storage.removeItem(key(marker)); if (storage.getItem(key(marker)) !== null) fail(); check();
       });
+      check();
       return outcome;
     },
   };

@@ -15,11 +15,26 @@ const fields = {
   districts: ['id', 'version', 'name', 'regionId', 'status', 'districtManagerId'],
   regions: ['id', 'version', 'name', 'status'],
   users: ['id', 'version', 'personId', 'role', 'status'],
-  requests: ['id', 'version', 'status', 'targetType', 'targetId', 'changeType', 'requestedChanges', 'currentSnapshot'],
+  requests: ['id', 'version', 'status', 'targetType', 'targetId', 'changeType', ...['requestedChanges', 'currentSnapshot'].flatMap(parent => leaders.map(field => `${parent}.${field}`))],
 };
 const personFields = ['id', 'version', 'fullName', 'positionIds', 'status', 'activeStatus'];
 const phoneFields = ['phone', 'phoneExtension', 'workPhone', 'workPhoneExtension', 'phonePrivacy'];
-const pick = (data: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.filter(k => Object.hasOwn(data, k)).map(k => [k, data[k]]));
+// Preserve Firestore's nested field-mask shape without fetching whole request maps.
+function pick(data: Record<string, unknown>, keys: string[]) {
+  const result: Record<string, any> = {};
+  for (const key of keys) {
+    const path = key.split('.'); let value: any = data, present = true;
+    for (const part of path) {
+      if (!object(value) || !Object.hasOwn(value, part)) { present = false; break; }
+      value = value[part];
+    }
+    if (!present) continue;
+    let target = result;
+    for (const part of path.slice(0, -1)) target = target[part] ??= {};
+    target[path.at(-1)!] = value;
+  }
+  return result;
+}
 const allowed = (actor: Pick<Account, 'role' | 'status' | 'accessScope'>) => actor.role === 'System Administrator' && actor.status === 'Active' && actor.accessScope === 'Company-wide';
 
 /** Fresh read-only SDK transaction. No prepare/commit/receipt, generic writes or browser-loaded fallback. */

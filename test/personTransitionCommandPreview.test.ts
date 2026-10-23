@@ -69,9 +69,20 @@ function fixture() {
     limit(value: number) { this.max = value; return this; }
     doc(id: string) { return { path: `${this.name}/${id}` }; }
   }
+  const projection = (data: any, keys: string[]) => {
+    const result: any = {};
+    for (const key of keys) {
+      const parts = key.split('.'); let current = data, present = true;
+      for (const part of parts) { if (!current || typeof current !== 'object' || !Object.hasOwn(current, part)) { present = false; break; } current = current[part]; }
+      if (!present) continue;
+      let target = result; for (const part of parts.slice(0, -1)) target = target[part] ??= {};
+      target[parts.at(-1)!] = structuredClone(current);
+    }
+    return result;
+  };
   const document = (path: string, keys: string[], exact = false) => ({ id: path.split('/')[1], ref: { path }, exists: records.has(path),
     updateTime: state.noTime === path ? undefined : records.has(path) ? { seconds: 100, nanoseconds: (versions.get(path) || 0) + (exact && state.incoherent && path.startsWith('locations/') ? 1 : 0) } : undefined,
-    data: () => records.has(path) ? Object.fromEntries(keys.filter(k => Object.hasOwn(records.get(path), k)).map(k => [k, structuredClone(records.get(path)[k])])) : undefined });
+    data: () => records.has(path) ? projection(records.get(path), keys) : undefined });
   const firestore = { collection: (name: string) => new Query(name), runTransaction: async (callback: any, options: unknown) => {
     assert.deepEqual(options, { readOnly: true });
     return callback({
@@ -128,11 +139,19 @@ test('blocked or missing replacements have no envelope, and pending review uses 
   f.intent.responsibilities[0] = { ...f.intent.responsibilities[0], action: 'replace', replacementId: 'missing' };
   const p = await previewPersonTransitionCommand(f.firestore, f.intent, actor, signer(), clock);
   assert.equal(p.ready, false); assert(!Object.hasOwn(p, 'reviewEnvelope')); assert.match(p.review.blockers.join(), /Active controlled/);
-  const pending = fixture(); pending.records.set('requests/pending', { status: 'Pending', targetType: 'Person', targetId: 'subject', changeType: 'Phone', reason: 'PRIVATE_PROSE', requestedChanges: { email: 'PRIVATE_PROPOSED_EMAIL' }, currentSnapshot: {} });
+  const pending = fixture(); pending.records.set('requests/pending', { status: 'Pending', targetType: 'Person', targetId: 'subject', changeType: 'Phone', reason: 'PRIVATE_PROSE', requestedChanges: { email: 'PRIVATE_PROPOSED_EMAIL', prose: 'PRIVATE'.repeat(2 * 1024 * 1024) }, currentSnapshot: {} });
   const blocked = await previewPersonTransitionCommand(pending.firestore, pending.intent, actor, signer(), clock); assert.equal(blocked.ready, false);
   pending.intent.acknowledgedRequestIds = ['pending'];
   const accepted = await previewPersonTransitionCommand(pending.firestore, pending.intent, actor, signer(), clock); assert.equal(accepted.ready, true);
   assert.doesNotMatch(JSON.stringify(accepted), /PRIVATE/); assert.deepEqual(accepted.review.pendingRequests.map(r => r.id), ['pending']);
+  const mask = pending.reads.find(r => r.collection === 'requests')!.keys;
+  assert(!mask.includes('requestedChanges')); assert(!mask.includes('currentSnapshot'));
+  assert(mask.includes('requestedChanges.storeManagerId')); assert(mask.includes('currentSnapshot.districtManagerId')); assert(!mask.some(k => /email|prose/i.test(k)));
+  const nested = fixture(); nested.records.set('requests/reference', { status: 'Pending', targetType: 'Location', targetId: 'unrelated', changeType: 'Leadership', requestedChanges: { storeManagerId: 'subject', email: 'PRIVATE' }, currentSnapshot: { districtManagerId: 'subject' } });
+  nested.intent.acknowledgedRequestIds = ['reference'];
+  const referenced = await previewPersonTransitionCommand(nested.firestore, nested.intent, actor, signer(), clock);
+  assert.equal(referenced.ready, true); assert.deepEqual(referenced.review.pendingRequests[0].reasons, ['Proposed leadership reference', 'Historical submission baseline reference']);
+  assert.doesNotMatch(JSON.stringify(referenced), /PRIVATE/);
 });
 
 test('native metadata and presence distinguish unversioned edits, explicit zero/null and absent application versions', async () => {
@@ -163,7 +182,7 @@ test('incomplete, malformed, excessive, incoherent or expired reads fail closed'
     (f: ReturnType<typeof fixture>) => { f.state.noTime = 'locations/store'; },
     (f: ReturnType<typeof fixture>) => { f.state.exactMissing = true; },
     (f: ReturnType<typeof fixture>) => { f.records.get('locations/store').id = 'different'; },
-    (f: ReturnType<typeof fixture>) => { f.records.set('requests/malformed', { status: 'Pending', targetType: 'Person', targetId: 'subject', changeType: 'Phone', requestedChanges: 'PRIVATE_BAD_SHAPE' }); },
+    (f: ReturnType<typeof fixture>) => { f.records.set('requests/malformed', { status: 'Pending', targetType: 'Person', targetId: 'subject', changeType: 'Phone', requestedChanges: { storeManagerId: { invalid: 'PRIVATE_BAD_SHAPE' } } }); },
     (f: ReturnType<typeof fixture>) => { f.records.get('districts/district').name = 'x'.repeat(8 * 1024 * 1024); },
     (f: ReturnType<typeof fixture>) => { f.state.fail = true; },
   ]) { const f = fixture(); mutate(f); await assert.rejects(previewPersonTransitionCommand(f.firestore, f.intent, actor, signer(), clock)); }

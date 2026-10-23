@@ -60,7 +60,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     if (field === 'email') setMappedLegacyEmail(null);
     setDraft(previous => ({ ...previous, [field]: value })); setTouched(previous => new Set(previous).add(field)); setReviewed(false); setError('');
   };
-  const cancel = () => { if (busy.current) return; if (touched.size || uncertain) setDiscard(true); else onCancel(); };
+  const cancel = () => { if (busy.current) return; if (emailMappingReview) { setEmailMappingReview(false); return; } if (touched.size || uncertain) setDiscard(true); else onCancel(); };
   useEffect(() => { registerClose?.(cancel); return () => registerClose?.(null); });
 
   const save = async (event: React.FormEvent) => {

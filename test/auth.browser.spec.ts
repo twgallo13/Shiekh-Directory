@@ -45,6 +45,10 @@ test('Legacy email mapping requires preview opt-in and Save, preserving the alia
   await expect(preview).not.toBeVisible();
   expect(f.commits).toHaveLength(0);
   await page.getByRole('button', { name: 'Use as individual work email', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(preview).not.toBeVisible();
+  await expect(page.getByLabel('Individual work email (optional)', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Use as individual work email', exact: true }).click();
   await expect(preview.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('legacy-email-mapping-mobile.png'), fullPage: true });

@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [Positions and assignments: agreed rules](docs/plans/positions-and-assignments-rules.md): organization IDs, explicit multi-position eligibility, separate assignment/access and rules-first/data-later sequence. [Dispatch 32](docs/dispatches/dispatch-32-explicit-assignment-rules.md) records PR #53, published source `62acacb` at sole 100% with completed clean reviews. [Dispatch 33](docs/dispatches/dispatch-33-signed-transition-preview.md) adds a source-only read-only command preview; signing configuration, writer/recovery and removal UI remain gated. Data cleanup/restore is deferred.
+- [Positions and assignments: agreed rules](docs/plans/positions-and-assignments-rules.md): organization IDs, explicit multi-position eligibility, separate assignment/access and rules-first/data-later sequence. [Dispatch 32](docs/dispatches/dispatch-32-explicit-assignment-rules.md) records PR #53, published source `62acacb` at sole 100% with completed clean reviews. [Dispatch 33](docs/dispatches/dispatch-33-signed-transition-preview.md) records merged, unpublished PR #55 read-only command preview; [Dispatch 34](docs/dispatches/dispatch-34-person-transition-recovery.md) adds unwired metadata recovery helpers. Signing configuration, client recovery, staffing writer and removal UI remain gated. Data cleanup/restore is deferred.
 
 - [Published promotion/offboarding dependency preflight](docs/dispatches/dispatch-28-person-transition-preflight.md): PR #47 adds read-only canonical/stale assignment, workplace/support, account and Pending-correction review. It neither clears someone for inactivation nor changes staff/access.
 

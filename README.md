@@ -1,5 +1,7 @@
 # Shiekh Directory
 
+Latest source-only continuation: [client transition recovery helpers](docs/dispatches/dispatch-35-client-transition-recovery.md) are tested but unimported; no new save workflow or production release is enabled. Use the published-source checkpoint below for what is actually live.
+
 Store operations and personnel directory. The live application is at [shiekh-dir.ai.studio](https://shiekh-dir.ai.studio).
 
 ## Documentation

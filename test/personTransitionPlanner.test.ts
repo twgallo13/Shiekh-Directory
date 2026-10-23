@@ -188,3 +188,11 @@ test('responsibility normalization uses code-unit order for stable cross-runtime
   // Sorts full owner/id/field keys, so the slash after "a" follows '-' and '.'.
   assert.deepEqual(normalizePersonTransitionIntent(f.intent).responsibilities.map(d => d.id), ['A', 'a-', 'a.', 'a', 'a_']);
 });
+
+test('unchanged support sets cannot create a business patch solely by reordering', () => {
+  const f = fixture(); const p = row(f.snapshot, 'people', 'subject');
+  p.positionIds = ['store-manager', 'district-manager']; p.supportedLocationIds = ['workplace', 'store'];
+  f.snapshot.locations.push(doc('workplace', { name: 'Context', storeNumber: '009', type: 'Corporate Office', recordStatus: 'Active' }));
+  f.intent.supports = { action: 'replace', ids: ['store', 'workplace'] };
+  const before = JSON.stringify(f.snapshot); blocked(f, /Unchanged workplace decision/); assert.equal(JSON.stringify(f.snapshot), before);
+});

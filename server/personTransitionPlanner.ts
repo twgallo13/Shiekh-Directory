@@ -192,7 +192,7 @@ export function planPersonTransition(rawIntent: unknown, snapshot: TransitionPla
   for (const [field, decision] of [['primaryLocationId', intent.primaryWorkplace], ['supportedLocationIds', intent.supports]] as const) {
     if (decision.action === 'retain') continue;
     const next = field === 'primaryLocationId' ? decision.action === 'clear' ? null : decision.ids![0] : decision.action === 'clear' ? [] : decision.ids!;
-    const before = field === 'primaryLocationId' ? person[field] ?? null : person[field] || [];
+    const before = field === 'primaryLocationId' ? person[field] ?? null : [...(person[field] || [])].sort();
     if (isDeepStrictEqual(before, next)) { block(`Unchanged workplace decision: ${field}.`); continue; }
     if (decision.action === 'replace') for (const locationId of decision.ids!) {
       associated.add(locationId);

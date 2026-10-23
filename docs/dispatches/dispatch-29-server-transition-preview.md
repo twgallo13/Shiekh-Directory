@@ -1,8 +1,10 @@
 # Dispatch 29 — Server-backed Person transition preview
 
+**Current checkpoint:** PR #49 is merged and published. The implementation/review notes below preserve the development sequence; the publication checkpoint at the end governs current state.
+
 ## Scope and release state
 
-P3.1 continuation from documentation main `981f924`, after [published PR #47](dispatch-28-person-transition-preflight.md). Implementation/synthetic validation are complete; independent review, merge and publication remain pending. PR #47 is still the deployed runtime until a release checkpoint records otherwise. [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) stays open for authenticated consumer acceptance.
+P3.1 continuation from documentation main `981f924`, after [PR #47](dispatch-28-person-transition-preflight.md), now published through PR #49. Exact source/build/traffic and separate review/acceptance limits are recorded in the publication checkpoint below. [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) stays open for authenticated consumer acceptance.
 
 Read-only review only: no coordinated writer, replacement choice, real staff/contact/assignment/account/mailbox/provider change, consumer fields/grants/tokens, consumer-app work, Notion edit, backfill or restore. Existing write guards remain authoritative. There is no safe-to-inactivate result.
 
@@ -38,3 +40,15 @@ Second scoped review repair: reject unclassified Location types using the existi
 Next: document explicit desired positions/replacements/vacancies, membership/version preconditions, Directory access consequences, atomic limits and idempotent receipts/cancel/uncertain-save recovery **before a coordinated writer**. No silent removal of old roles/stores or account-access grants. Region/acting leadership, migration and actual staffing decisions remain separate gates.
 
 Prefer forward repair; PR #47 remains a fallback containing the loaded-data report and all prior write guards. Reverting removes only this internal read/control, not data. Never restore collections or revoke credentials to undo the preview. Documentation-only checkpoint commits require no rebuild.
+
+## Publication checkpoint — October 22, 2026 Pacific
+
+Source `29020a2dc8bbadf70464e5ade504ec2a6fcccc8e`, tree `cf9ccc49f626cac7d6e448db18c13cd08b7c744b`, exactly matches tested `73ed604e389417e6368a973d0491d9b8605a12bb`. Build `c26c691e-04fa-4367-bca8-cb899a343cd0` succeeded with unchanged build principal. Ready revision `shiekh-location-company-directory-pr49-29020a2` is sole 100% desired/observed traffic after no-traffic candidate checks and concurrency-guarded promotion. Configuration/identities/Firebase, 26 historical tags and branded Ready/DomainRoutable routing are preserved; only temporary candidate tag removed.
+
+Both hosts match HTML SHA-256 `55bfb5e348b7e1bda5d6eba2a74212971eb5cbb0b83e28f1fa93f6b50588bd42`, 45 MIME-validated assets, and all four served document hashes from Dispatch26. No-store/conditional-cache, v1/v2/v3/operating/internal-preview denial and unknown-route checks passed. Promotion initially paused on a false document aggregate: candidate report included four document keys, baseline only two. Shared hashes and explicit live checks confirmed all four equal; corrected baseline option produced `apiDocsUnchanged: true` before promotion. This was a verifier input-set repair, not an application/configuration discrepancy or bypass.
+
+All three reported findings were fixed/tested and threads resolved. Latest-head security review completed without findings; optional latest code review was still running at publication, not claimed as approval. CodeRabbit's new-head run was rate-limited after its initial review/fix. Initial full suite 543/nine browsers plus final scoped 13 tests/timeout test/types/build are distinct applicable evidence, not a claim of rerunning every test after each fix.
+
+After confirming no draft, refreshed the existing authenticated People page and opened the known profile read-only. Explicit server refresh succeeded: 50 Locations, 3 Districts, 1 Region, 7 Users and zero Pending requests. All dependency groups and snapshot warnings rendered. Closed without editor/save/inactivation/deletion. This proves authorized live snapshot/display, not a staffing action, external-access check or authenticated consumer API acceptance. No live staffing/contact/account/mailbox/provider/grant/token/Notion/consumer-app mutation or restore; no private inventory exported into the repository.
+
+The existing Codespace was resumed after idle stop. Temporary deployment tooling had been removed by restart; [Google's official CLI package/checksum](https://docs.cloud.google.com/sdk/docs/install-sdk?hl=en) was rechecked: 590.0.0 Linux x86_64 archive SHA-256 `351ed4a2812c5525c1cee00334257a42c020fcaffa27d3067c1eec0a618dd83f`, verified before extraction. Existing authorization was reused, not expanded. Metadata is restricted. Next: coordinated-command contract before any writer; Region/acting/migration and issue 36 consumer acceptance remain separate.

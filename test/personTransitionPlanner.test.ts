@@ -196,3 +196,25 @@ test('unchanged support sets cannot create a business patch solely by reordering
   f.intent.supports = { action: 'replace', ids: ['store', 'workplace'] };
   const before = JSON.stringify(f.snapshot); blocked(f, /Unchanged workplace decision/); assert.equal(JSON.stringify(f.snapshot), before);
 });
+
+test('non-retail new grants validate hierarchy; valid Not Applicable and valid explicit membership remain allowed', () => {
+  for (const action of ['assign', 'replace'] as const) for (const invalid of ['Unknown', 'missing', 'retired', 'mismatch', 'region-only', 'not-applicable-with-refs']) {
+    const f = fixture(); const l = row(f.snapshot, 'locations', 'store'); l.type = 'Corporate Office';
+    l.hierarchyApplicability = invalid === 'Unknown' ? 'Unknown' : invalid === 'not-applicable-with-refs' ? 'Not Applicable' : 'Applicable';
+    if (invalid === 'missing') l.districtId = 'missing';
+    if (invalid === 'retired') row(f.snapshot, 'districts', 'district').status = 'Retired';
+    if (invalid === 'mismatch') l.regionId = 'other';
+    if (invalid === 'region-only') delete l.districtId;
+    f.intent.responsibilities[0] = { owner: 'locations', id: 'store', field: 'storeManagerId', action, ...(action === 'replace' ? { replacementId: 'replacement' } : {}) };
+    if (action === 'assign') delete l.storeManagerId;
+    blocked(f, /hierarchy|District\/Region/);
+    // Removal remains possible without granting responsibility or repairing source membership.
+    if (action === 'replace') { f.intent.responsibilities[0] = { owner: 'locations', id: 'store', field: 'storeManagerId', action: 'vacate' }; assert.equal(planPersonTransition(f.intent, f.snapshot).ready, true); }
+  }
+  for (const applicable of [true, false]) {
+    const f = fixture(); const l = row(f.snapshot, 'locations', 'store'); l.type = 'Corporate Office'; l.hierarchyApplicability = applicable ? 'Applicable' : 'Not Applicable';
+    if (!applicable) { delete l.regionId; delete l.districtId; }
+    f.intent.responsibilities[0] = { ...f.intent.responsibilities[0], action: 'replace', replacementId: 'replacement' };
+    assert.equal(planPersonTransition(f.intent, f.snapshot).ready, true);
+  }
+});

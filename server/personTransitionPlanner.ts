@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { classifyHierarchyLocationType, isRetailHierarchyType } from '../src/lib/hierarchyResolution';
+import { classifyHierarchyLocationType, isRetailHierarchyType, resolveLocationHierarchy } from '../src/lib/hierarchyResolution';
 import { personLifecycle } from '../src/lib/personLifecycle';
 import { LEADERSHIP_POSITION_FIELDS, listedPosition, personPositions, validPositionIds } from '../src/lib/personPositions';
 import { formatPersonPhone } from '../src/lib/personContacts';
@@ -83,6 +83,10 @@ export function planPersonTransition(rawIntent: unknown, snapshot: TransitionPla
   validateSnapshot(snapshot);
   const data = {} as Record<Collection, Map<string, Row>>;
   for (const c of Object.keys(limits) as Collection[]) data[c] = new Map(snapshot[c].map(d => [d.id, d.data === null ? null : { ...d.data, id: d.id }]));
+  const registry = {
+    regions: [...data.regions.values()].map(r => ({ id: r.id, name: r.name, status: r.status })),
+    districts: [...data.districts.values()].map(d => ({ id: d.id, name: d.name, status: d.status, regionId: d.regionId })),
+  };
   const person = data.people.get(intent.personId);
   if (!person) throw new Error('Subject Person must exist in exact reads.');
   const blockers = new Set<string>(); const warnings = new Set<string>();
@@ -168,10 +172,17 @@ export function planPersonTransition(rawIntent: unknown, snapshot: TransitionPla
     if (decision.action === 'vacate') next = lists.has(field) ? r[field].filter((v: string) => v !== person.id) : decision.owner === 'districts' ? null : '';
     if (Array.isArray(next) && new Set(next).size !== next.length) block(`Duplicate resulting leadership member: ${r.id}/${field}.`);
     if (decision.action === 'assign' || decision.action === 'replace') {
-      const d = decision.owner === 'districts' ? r : isRetailHierarchyType(r.type) ? data.districts.get(r.districtId) : null;
-      if (decision.owner === 'locations' && r.recordStatus !== 'Active') block(`New responsibility requires an Active Location: ${r.id}.`);
-      if ((decision.owner === 'districts' || isRetailHierarchyType(r.type)) && (!d || d.status !== 'Active' || data.regions.get(d.regionId)?.status !== 'Active'
-        || decision.owner === 'locations' && (r.regionId !== d.regionId || own(r, 'hierarchyApplicability') && r.hierarchyApplicability !== 'Applicable'))) block(`Valid Active District/Region required: ${r.id}.`);
+      if (decision.owner === 'districts') {
+        if (r.status !== 'Active' || data.regions.get(r.regionId)?.status !== 'Active') block(`Valid Active District/Region required: ${r.id}.`);
+      } else {
+        if (r.recordStatus !== 'Active') block(`New responsibility requires an Active Location: ${r.id}.`);
+        const h = resolveLocationHierarchy(r, registry);
+        const noIssues = !h.hierarchyIssues.length && !h.applicabilityIssues.length;
+        const notApplicable = !isRetailHierarchyType(r.type) && h.hierarchyApplicability === 'Not Applicable' && noIssues;
+        const applicable = h.hierarchyApplicability === 'Applicable' && noIssues && h.hierarchyStatus === 'resolved'
+          && h.districtId && h.regionId && h.districtStatus === 'Active' && h.regionStatus === 'Active';
+        if (!notApplicable && !applicable) block(`Resolve Location hierarchy before granting responsibility: ${r.id}.`);
+      }
     }
     const context = decision.owner === 'districts'
       ? { name: r.name, status: r.status, regionId: r.regionId, parentRegionStatus: data.regions.get(r.regionId)?.status ?? 'Missing' }

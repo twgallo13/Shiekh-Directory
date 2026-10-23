@@ -14,6 +14,8 @@ The Directory API is a read-only, server-authenticated view of active location r
 
 For the exhaustive allowlist of successful response fields, nested shapes, pagination metadata, and intentional exclusions, see [the emitted response schema](docs/api-response-schema.md).
 
+Internal transition review (implementation in review, not yet published): [Dispatch 29](docs/dispatches/dispatch-29-server-transition-preview.md) documents a Firebase-session-only bounded dependency read for company-wide administrators/stewards. It is not a consumer API route, grant or writer. Existing v1/v2/v3 schemas and served consumer guides remain unchanged.
+
 Person-card linked position IDs remain internal and do not grant access. Existing v1/v2 personnel/staffing allowlists stay contact-free. [Issue 36](https://github.com/twgallo13/Shiekh-Directory/issues/36) / P6.9 defines separate v3 District work-contact access with explicit new grants; no existing personnel/staffing grant authorizes it. Work contact is not verified sign-in identity; check Dispatch 25 for actual publication and client authorization.
 
 For a plain-language guide intended for a consuming app's blueprint, including examples, per-field availability, retrieval/synchronization steps, and live-verification limits, see [the app blueprint reference](docs/app-blueprint-directory-api.md).

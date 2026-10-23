@@ -2,6 +2,7 @@ import React from 'react';
 import type { DistrictRecord, LocationRecord, PersonRecord, RegionRecord, UpdateRequest, UserProfile } from '../../types';
 import { personLifecycle } from '../../lib/personLifecycle';
 import { personTransitionReview } from '../../lib/personTransitionReview';
+import { PersonServerTransitionPreview } from './PersonServerTransitionPreview';
 
 const linkClass = 'break-words font-semibold text-red-700 underline';
 const version = (value?: number) => typeof value === 'number' ? `loaded version ${value}` : 'version not available';
@@ -10,6 +11,7 @@ export function PersonTransitionReview({ person, locations, districts, regions, 
   return <details className="rounded-xl border border-neutral-200 bg-neutral-50">
     <summary className="cursor-pointer rounded-xl p-4 text-sm font-semibold text-neutral-900 focus-visible:outline-red-700">Review promotion / offboarding</summary>
     <section aria-label="Promotion and offboarding dependency review" className="space-y-4 border-t border-neutral-200 p-4 text-xs">
+      <PersonServerTransitionPreview personId={person.id} personVersion={person.version} />
       <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950">Read-only review of loaded records, not a complete inventory, atomic snapshot or permission to inactivate. Nothing here reassigns staff, changes positions, unlinks accounts or revokes access. Recheck saved records before any separate change.</p>
       <p className="break-all text-neutral-600">Person ID: {person.id} · {personLifecycle(person)} · {version(person.version)}</p>
       <div className="space-y-2"><h3 className="font-semibold">1. Current management responsibilities</h3>

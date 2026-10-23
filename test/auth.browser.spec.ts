@@ -53,7 +53,8 @@ test('Transition preflight groups canonical leadership stale copies accounts and
   await expect(panel).not.toContainText('Private request note');
   await expect(panel.getByRole('link', { name: 'Review Directory accounts separately', exact: true })).toHaveAttribute('href', '/admin?tab=rbac');
   await expect(panel.getByRole('link', { name: 'Review change requests separately', exact: true })).toHaveAttribute('target', '_blank');
-  expect(await panel.getByRole('button').count()).toBe(0);
+  await expect(panel.getByRole('button', { name: 'Refresh from server', exact: true })).toBeVisible();
+  expect(await panel.getByRole('button').count()).toBe(1);
   await panel.scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('transition-preflight-mobile.png'), fullPage: true });
@@ -79,6 +80,55 @@ for (const role of ['Viewer', 'Editor']) test('Transition preflight is not expos
   await page.goto(origin + '/people/person-profile'); await restore(page, true);
   await expect(page.getByRole('button', { name: 'Close Synthetic Profile Manager', exact: true })).toBeVisible();
   await expect(page.getByText('Review promotion / offboarding', { exact: true })).not.toBeVisible();
+  expect(f.commits).toHaveLength(0);
+});
+
+const serverTransitionFixture = () => ({ schemaVersion: 1, personId: 'person-profile', personVersion: 3, evaluatedAt: '2026-10-22T18:00:00.000Z', expiresAt: '2026-10-22T18:05:00.000Z', digest: 'a'.repeat(64), completeWithinScope: true, scanned: { locations: 2, people: 1, users: 1, districts: 1, regions: 1, requests: 1 }, review: { responsibilities: [{ key: 'district:fresh', label: 'Server-only District', source: 'District-owned DM' }], issues: [], workplaces: [{ locationId: 'missing', labels: ['Supports'], unavailable: true }], inheritedStores: [], historicalCopies: [], accounts: [{ id: 'server-linked', role: 'Viewer', status: 'Suspended' }], pendingRequests: [{ id: 'server-pending', changeType: 'Leadership', reasons: ['Targets this Person'] }] } });
+
+test('Server transition snapshot is explicit, separate, read-only and expires without claiming clearance', async ({ page }, testInfo) => {
+  const f = await preparePersonCard(page); let reads = 0;
+  await page.route('**/api/directory/people/person-profile/transition-preview', route => { reads++; expect(route.request().method()).toBe('GET'); expect(route.request().headers().authorization).toMatch(/^Bearer /); return route.fulfill({ json: serverTransitionFixture() }); });
+  await page.clock.install(); await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByText('Review promotion / offboarding', { exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Server dependency snapshot', exact: true });
+  expect(reads).toBe(0); await panel.getByRole('button', { name: 'Refresh from server', exact: true }).click();
+  await expect(panel).toContainText('Snapshot read completed'); await expect(panel).toContainText('loaded Person card differs');
+  await panel.getByText('View snapshot dependencies', { exact: true }).click();
+  await expect(panel).toContainText('Server-only District'); await expect(panel).toContainText('server-linked'); await expect(panel).toContainText('server-pending');
+  await expect(panel).toContainText('Unavailable / retired'); await expect(panel).toContainText('not a lock');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('server-transition-mobile.png'), fullPage: true });
+  await page.clock.fastForward(301_000); await expect(panel).toContainText('Snapshot expired');
+  expect(reads).toBe(1); expect(f.commits).toHaveLength(0);
+});
+
+for (const failure of ['denied', 'unavailable', 'malformed']) test('Server transition ' + failure + ' clears previous snapshot and permits read retry', async ({ page }) => {
+  const f = await preparePersonCard(page); let reads = 0;
+  await page.route('**/api/directory/people/person-profile/transition-preview', route => {
+    reads++; if (reads === 2) return route.fulfill(failure === 'malformed' ? { json: { ...serverTransitionFixture(), personId: 'wrong-person' } } : { status: failure === 'denied' ? 403 : 503, json: { error: { code: 'unavailable' } } });
+    return route.fulfill({ json: serverTransitionFixture() });
+  });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true); await page.getByText('Review promotion / offboarding', { exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Server dependency snapshot', exact: true });
+  const refresh = panel.getByRole('button', { name: 'Refresh from server', exact: true });
+  await refresh.click(); await expect(panel).toContainText('Snapshot read completed');
+  await refresh.click(); await expect(panel).toContainText('no changes were made');
+  await expect(panel).not.toContainText('Snapshot read completed'); await expect(panel).not.toContainText('Review digest:');
+  await refresh.click(); await expect(panel).toContainText('Snapshot read completed'); expect(f.commits).toHaveLength(0);
+});
+
+test('Server transition timeout offers read retry and cannot replace loaded data with a late response', async ({ page }) => {
+  const f = await preparePersonCard(page); let release: () => void = () => {};
+  let reached!: () => void; const routed = new Promise<void>(resolve => { reached = resolve; });
+  await page.route('**/api/directory/people/person-profile/transition-preview', async route => { await new Promise<void>(resolve => { release = resolve; reached(); }); await route.fulfill({ json: serverTransitionFixture() }).catch(() => {}); });
+  await page.clock.install(); await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByText('Review promotion / offboarding', { exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Server dependency snapshot', exact: true });
+  await panel.getByRole('button', { name: 'Refresh from server', exact: true }).click();
+  await expect(panel).toContainText('Reading current Directory'); await routed; await page.clock.fastForward(21_000);
+  await expect(panel).toContainText('no changes were made'); release();
+  await expect(panel).not.toContainText('Snapshot read completed'); await expect(panel.getByRole('button', { name: 'Refresh from server', exact: true })).toBeEnabled();
   expect(f.commits).toHaveLength(0);
 });
 

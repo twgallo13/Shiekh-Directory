@@ -56,6 +56,19 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
     catch (error) { response.status(error instanceof AccessDenied ? 403 : error instanceof AuthenticationUnavailable ? 503 : 401).json({ error: { code: 'operating_access_denied' } }); }
   };
   const operatingLimit = rateLimit({ limit: 10, windowMs: 60_000, standardHeaders: 'draft-8', legacyHeaders: false, keyGenerator: (_request, response) => response.locals.operatingActor.uid });
+  router.get('/people/:personId/transition-preview', operatingAuth, operatingLimit, async (request, response) => {
+    const actor = response.locals.operatingActor as Account;
+    if (!['System Administrator', 'Directory Data Steward'].includes(actor.role) || actor.accessScope !== 'Company-wide') return response.status(403).json({ error: { code: 'transition_access_denied' } });
+    if (!ID_PATTERN.test(String(request.params.personId))) return response.status(400).json({ error: { code: 'invalid_person_id' } });
+    try {
+      if (!store.previewPersonTransition) throw new Error('Unavailable');
+      // Do not synthesize ETag/304 for a fresh dependency read.
+      const preview = await store.previewPersonTransition(String(request.params.personId), actor);
+      return response.type('application/json').end(JSON.stringify(preview));
+    } catch (error) {
+      return response.status(error instanceof DirectoryConflict ? 409 : error instanceof DirectoryWriteDenied ? 403 : error instanceof DirectoryValidationError ? 400 : 503).json({ error: { code: 'transition_preview_unavailable', message: 'No fresh dependency review is available. Reload and retry; no changes were made.' } });
+    }
+  });
   router.get('/operating/directory', operatingAuth, rateLimit({ limit: 20, windowMs: 60_000, standardHeaders: 'draft-8', legacyHeaders: false, keyGenerator: (_request, response) => response.locals.operatingActor.uid }), async (_request, response) => {
     response.set('Cache-Control', 'no-store');
     try {

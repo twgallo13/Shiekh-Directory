@@ -12,6 +12,8 @@ Email domains, address matches and job titles do not grant permissions or merge 
 
 ## Reading and editing the Person card
 
+In-review continuation: [Dispatch 29](dispatches/dispatch-29-server-transition-preview.md) adds an explicit **Refresh from server** inside the dependency disclosure, separate from the loaded-data report. It checks current authority, bounded dependencies, versions/digest and expiry without saving anything. Failure/expiry never provides clearance. Review/publication are pending; see its checkpoint before expecting the control in production.
+
 The shared-inbox responsibility panel reads only saved Location `storeManagerId` and `assistantStoreManagerIds` references. One Person can have several Locations or both roles. A transfer/vacancy changes this projection when the canonical store assignment changes. Working at/supporting a Location, typed titles, matching emails or District leadership alone do not create an SM/AM responsibility.
 
 Each responsibility shows the Location link, Store Number (leading zeroes preserved), exact roles and saved shared inbox. Missing/invalid inboxes, inactive People, retired/not-confirmed-active Locations and non-retail/unclassified assignments are visible review warnings, not silent vacancy or permission claims. The panel is read-only; edit staffing or the inbox on the Location. A workplace/support Location may still show its shared contact as reference, explicitly not as SM/AM responsibility.

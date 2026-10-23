@@ -1,23 +1,15 @@
 import type { Firestore, Transaction } from '@google-cloud/firestore';
 import type { Account } from './authAuthority';
 import type { AuditLogEntry } from '../src/types';
-import { DirectoryWriteDenied } from './firestoreDirectory';
+import { assertPersonTransitionActor as actorGate, readPersonTransitionAuthority as authority } from './personTransitionAuthority';
 import type { PersonTransitionReviewSigner } from './personTransitionReviewEnvelope';
 import {
   TRANSITION_OPERATION_COLLECTION, assertTransitionReviewMatches, cancelledTransitionReceipt, newPreparedTransitionReceipt,
-  normalizeTransitionPreparation, readTransitionReceipt, storedTransitionReview, transitionActorUid,
+  normalizeTransitionPreparation, readTransitionReceipt, storedTransitionReview,
   transitionOperationIdentity, transitionOperationKey, transitionRecoveryOutcome,
   type TransitionOperationIdentity, type TransitionOperationReceipt,
 } from './personTransitionOperation';
 
-const allowed = (actor: Pick<Account, 'role' | 'status' | 'accessScope'>) => actor.role === 'System Administrator' && actor.status === 'Active' && actor.accessScope === 'Company-wide';
-function actorGate(actor: Account) {
-  if (!allowed(actor) || !transitionActorUid(actor.uid)) throw new DirectoryWriteDenied('Current Company-wide Active administrator recovery is required.');
-}
-async function authority(firestore: Firestore, transaction: Transaction, actor: Account) {
-  const accounts = await transaction.get(firestore.collection('users').where('firebaseUid', '==', actor.uid).select('role', 'status', 'accessScope').limit(2));
-  if (accounts.size !== 1 || !allowed(accounts.docs[0].data() as Pick<Account, 'role' | 'status' | 'accessScope'>)) throw new DirectoryWriteDenied('Current administrator authority is required.');
-}
 function now(clock: () => Date) {
   const value = clock().getTime();
   if (!Number.isSafeInteger(value) || value < 0) throw new Error('Transition recovery clock is unavailable.');

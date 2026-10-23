@@ -1,5 +1,6 @@
 import type { Firestore, Transaction } from '@google-cloud/firestore';
 import type { Account } from './authAuthority';
+import type { AuditLogEntry } from '../src/types';
 import { DirectoryWriteDenied } from './firestoreDirectory';
 import type { PersonTransitionReviewSigner } from './personTransitionReviewEnvelope';
 import {
@@ -76,12 +77,14 @@ export async function cancelPersonTransitionRecovery(firestore: Firestore, marke
     const cancelled = cancelledTransitionReceipt(identity, current, now(clock));
     // One create-only deterministic audit and receipt mutation in the same SDK transaction.
     // No raw command, token, reason, private contact or before/after document is persisted.
-    transaction.create(firestore.collection('audit_logs').doc(cancelled.auditId!), {
+    const audit = {
       id: cancelled.auditId, timestamp: new Date(cancelled.updatedAt).toISOString(), userId: actor.uid,
-      action: 'Person Transition Submission Cancelled', entityType: 'Person', entityId: identity.personId,
+      userName: actor.name, action: 'Person Transition Submission Cancelled', entityType: 'Person', entityId: identity.personId,
+      entityName: 'Unconfirmed Person transition',
       operationId: identity.operationId, commandDigest: identity.commandDigest,
       details: 'Uncommitted Directory transition sealed against late preparation; no staffing or external access change.',
-    });
+    } satisfies AuditLogEntry & { operationId: string; commandDigest: string };
+    transaction.create(firestore.collection('audit_logs').doc(cancelled.auditId!), audit);
     if (current) transaction.update(reference, { state: cancelled.state, updatedAt: cancelled.updatedAt, auditId: cancelled.auditId });
     else transaction.create(reference, cancelled);
     return transitionRecoveryOutcome(identity, cancelled);

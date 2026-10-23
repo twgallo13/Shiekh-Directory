@@ -161,7 +161,10 @@ test('cancellation seals absent/prepared IDs; late or changed preparation cannot
     await assert.rejects(preparePersonTransitionRecovery(f.firestore, input(), actor, signer, clock), /cancelled/);
     const differentIntent = { ...intent, reason: 'Other' }, token = signer.sign({ ...claims, intentHash: personTransitionIntentHash(differentIntent) });
     await assert.rejects(preparePersonTransitionRecovery(f.firestore, input({ intent: differentIntent, reviewEnvelope: token }), actor, signer, clock), /identity conflict/); assert.equal(f.writes.length, 2);
-    const audits = [...f.records].filter(([p]) => p.startsWith('audit_logs/')); assert.equal(audits.length, 1); assert.doesNotMatch(JSON.stringify(audits), /PRIVATE|ptv1\.|intentHash|reviewEnvelope/);
+    const audits = [...f.records].filter(([p]) => p.startsWith('audit_logs/')); assert.equal(audits.length, 1);
+    assert.equal(audits[0][1].userName, actor.name); assert.equal(audits[0][1].entityName, 'Unconfirmed Person transition');
+    const { userName: _standardAuditAttribution, ...minimalAudit } = audits[0][1];
+    assert.doesNotMatch(JSON.stringify(minimalAudit), /PRIVATE|ptv1\.|intentHash|reviewEnvelope/);
   }
   const f = fixture(); f.records.set(path(), committed()); const before = structuredClone([...f.records]); assert.equal((await cancelPersonTransitionRecovery(f.firestore, marker(), actor)).state, 'committed'); assert.deepEqual([...f.records], before); assert.equal(f.writes.length, 0);
   const skewed = fixture(); skewed.records.set(path(), prepared());

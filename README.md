@@ -4,7 +4,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
-- [Promotion/offboarding dependency preflight](docs/dispatches/dispatch-28-person-transition-preflight.md): read-only canonical/stale assignment, workplace/support, account and pending-correction review. Check publication state; it neither clears someone for inactivation nor changes staff/access.
+- [Published promotion/offboarding dependency preflight](docs/dispatches/dispatch-28-person-transition-preflight.md): PR #47 adds read-only canonical/stale assignment, workplace/support, account and Pending-correction review. It neither clears someone for inactivation nor changes staff/access.
 
 - [Published legacy individual-email mapping](docs/dispatches/dispatch-27-explicit-legacy-email-mapping.md): PR #45 adds reviewed draft opt-in, normal confirmed Save, source/clear preservation and no account/API permission changes.
 
@@ -32,7 +32,7 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 A **schema** describes the available fields and their types. An **API endpoint** is an address an app calls to read or change information. `locationInboxEmail` is an optional shared contact address for a Location; it is separate from a Person's work email and a User's sign-in email. The read API returns an address or `null` when there is no usable inbox.
 
-Current application release: `1b122fe`, Ready revision `shiekh-location-company-directory-pr45-1b122fe` at sole 100%; [exact release evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-45). Explicit legacy-individual mapping is published, retaining optional individual contact, SM/AM inbox responsibility/write guards, v3 leadership and shared-mailbox withholding. API fields/scopes and existing approved Shiekh-Intel grants/token are unchanged; authenticated consumer acceptance remains pending. Next: read-only promotion/offboarding dependency preflight before coordinated writers. Broader taxonomy migration, acting/Region ownership and full handover/offboarding remain unfinished. No staff data restoration, live contact mapping or access mutation occurred in the release.
+Current application release: `360d8a3`, Ready revision `shiekh-location-company-directory-pr47-360d8a3` at sole 100%; [exact release evidence](docs/cloud-run-deployment-runbook.md#current-live-revision--pr-47). Read-only promotion/offboarding dependency review is published, retaining earlier contact/hierarchy/request/status/address safeguards. API fields/scopes and approved Shiekh-Intel grants/token are unchanged; consumer acceptance remains pending. Next: fresh server-backed transition-preview contract before coordinated writers. Broader Region/acting/full handover/offboarding/migration remains unfinished. No live staff/contact/access mutation or restore.
 
 ## Development
 

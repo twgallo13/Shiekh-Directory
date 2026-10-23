@@ -2,6 +2,8 @@
 
 ## Status and source audit
 
+Contract PR: [#51](https://github.com/twgallo13/Shiekh-Directory/pull/51). Documentation/link/scope checks passed; independent review and merge are tracked on that PR. This is not a new runtime release.
+
 Design-only continuation from clean documentation main `2805e29`, after published runtime PR #49/source `29020a2`. [Implementation contract v1](../plans/person-transition-command-contract.md) defines the next bounded slices; it implements no routes, signing key, receipt, planner, UI or writer. No cloud build/deploy, business-record mutation, consumer fields/grants/tokens, provider/account action, private Notion edit or restore is bundled. Issue 36 consumer acceptance remains separate.
 
 Source anchors inspected:

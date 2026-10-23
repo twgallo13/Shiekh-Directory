@@ -11,7 +11,17 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #39
+## Current live revision — PR #41
+
+Released October 22, 2026 (Pacific): merged source `0d8055e09824380735a176a44aa1fc4b412b7117`, tree `df0cc0627fa5a631cae3bc7494e515eeb283e08b`, identical to reviewed `dad5a1f`. Ready revision `shiekh-location-company-directory-pr41-0d8055e` is the sole 100% desired/observed target. Build `5b1fa26f-cca1-4558-9a76-786ef03bf049` succeeded with unchanged principal. No-traffic preview, both-host assets/denial guards/cache/exact docs and concurrency-guarded promotion passed; all configuration/identities/Firebase and 26 historical tags are preserved. Only temporary `p41-0d8055e` was removed; branded routing remains Ready/DomainRoutable. HTML and 46 assets remain identical to PR #39; served v3 documentation intentionally changed.
+
+This release prevents conventional shared store-number mailboxes from being returned as individual DM work contact even before Location inbox data is populated. Codex code/security reviews completed without findings; CodeRabbit was rate-limited, not reviewed or paid. Seven affected API/schema/compatibility tests, types and production build passed. [Dispatch 25](dispatches/dispatch-25-district-leadership-api.md#follow-on--conventional-store-mailbox-contact-safeguard) records evidence/limits. Existing owner-approved Shiekh-Intel grants/token remain, Dynamic QR is unchanged, and authenticated consumer acceptance is still pending. No mailbox, human access, Person, staffing or data restoration changes. Next: optional individual email and canonical SM/AM inbox-responsibility UX/write-path audit in the maintained plan. The scope-sensitive rollback gate below still applies.
+
+## Historical live revision — PR #39
+
+<a id="current-live-revision--pr-39"></a>
+
+Superseded by PR #41 above; this preserves the original v3 publication evidence.
 
 Later access checkpoint: the owner explicitly approved the exact Shiekh-Intel target and two new v3 grants; Settings confirmed them while preserving its old three grants and single token version. No token secret was read or rotated; Dynamic QR/account permissions are unchanged. Initial publication's no-new-grant statement below is historical. Authenticated consumer acceptance remains pending. See Dispatch 25 for the latest email-policy follow-on work.
 

@@ -39,6 +39,12 @@ export function normalizePersonEmail(value: unknown): string | null {
   return normalizeLocationInboxEmail(value)?.value ?? null;
 }
 
+/** Reserved company store-number mailboxes are shared, including legacy padded variants. */
+export function isConventionalStoreInboxEmail(value: unknown): boolean {
+  const normalized = normalizeLocationInboxEmail(value);
+  return Boolean(normalized && /^store[0-9]+@shiekhshoes\.com$/.test(normalized.comparisonKey));
+}
+
 export function locationInboxConflictDigest(
   email: string,
   members: readonly LocationInboxConflictMember[],

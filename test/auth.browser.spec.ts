@@ -28,6 +28,65 @@ async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty
   return { seed, commits, release: () => release() };
 }
 
+test('Person inbox responsibilities show canonical SM and AM roles with optional individual contact on mobile', async ({ page }, testInfo) => {
+  const f = await preparePersonCard(page);
+  f.seed.people[0].workEmail = 'individual@shiekhshoes.com';
+  f.seed.locations[0].locationInboxEmail = 'store1@shiekhshoes.com';
+  f.seed.locations[1].assistantStoreManagerIds = ['person-profile'];
+  f.seed.locations[1].locationInboxEmail = 'store2@shiekhshoes.com';
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  const responsibilities = page.getByRole('region', { name: 'Shared store inbox responsibilities', exact: true });
+  await expect(responsibilities).toContainText('Store Manager');
+  await expect(responsibilities).toContainText('Assistant Manager');
+  await expect(responsibilities).toContainText('store1@shiekhshoes.com');
+  await expect(responsibilities).toContainText('store2@shiekhshoes.com');
+  await expect(responsibilities.getByRole('link', { name: '#001 · Bootstrap Store 1', exact: true })).toHaveAttribute('href', '/locations/loc-1');
+  await expect(page.getByRole('dialog').getByText('individual@shiekhshoes.com', { exact: true })).toBeVisible();
+  await responsibilities.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('person-inbox-responsibilities-mobile.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await expect(page.getByLabel('Individual work email (optional)', { exact: true })).toHaveValue('individual@shiekhshoes.com');
+  await expect(page.getByRole('region', { name: 'Shared store inbox responsibilities', exact: true })).toContainText('does not verify mailbox access');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Person editor preserves legacy shared contact on unrelated save and blocks new shared contact then permits individual or blank', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.people[0].workEmail = 'store1@shiekhshoes.com';
+  f.seed.people[0].email = 'store1@shiekhshoes.com';
+  f.seed.locations[1].locationInboxEmail = 'team@example.test';
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await expect(page.getByText('Saved shared contact (legacy)', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByLabel('Department', { exact: true }).fill('Synthetic changed department');
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes).toHaveLength(1);
+  expect(f.commits[0].writes[0].collection).toBe('people');
+  expect(f.commits[0].writes[0].data.workEmail).toBe('store1@shiekhshoes.com');
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  for (const email of ['STORE007@SHIEKHSHOES.COM', 'Team@EXAMPLE.test']) {
+    await page.getByLabel('Individual work email (optional)', { exact: true }).fill(email);
+    await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('shared store inbox');
+    expect(f.commits).toHaveLength(1);
+  }
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill('individual@shiekhshoes.com');
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(2);
+  expect(f.commits[1].writes[0].data.workEmail).toBe('individual@shiekhshoes.com');
+  expect(f.commits[1].writes[0].data.email).toBe('store1@shiekhshoes.com');
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill('');
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(3);
+  expect(f.commits[2].writes[0].data.workEmail).toBe('');
+  await expect(page.getByText('No individual email assigned', { exact: true })).toBeVisible();
+  expect(f.commits.every(c => c.writes.every((w: any) => w.collection === 'people'))).toBe(true);
+});
+
 test('Person card links concurrent positions only after review and preserves titles assignments and account access', async ({ page }) => {
   const f = await preparePersonCard(page);
   await page.goto(origin + '/people/person-profile'); await restore(page, true);
@@ -134,7 +193,7 @@ test('Person card is readable on mobile and support search preserves selected lo
   await page.goto(origin + '/people/person-profile'); await restore(page, true);
   await page.getByRole('button', { name: 'Edit Person' }).click();
   await expect(page.getByRole('textbox', { name: 'Full Name', exact: true })).toBeVisible();
-  for (const name of ['Display title (optional)', 'Work Phone', 'Extension', 'Work Email', 'Phone visibility', 'Works at', 'Active Status']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
+  for (const name of ['Display title (optional)', 'Work Phone', 'Extension', 'Individual work email (optional)', 'Phone visibility', 'Works at', 'Active Status']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
   await page.getByLabel('Find support locations', { exact: true }).fill('nothing matches');
   await expect(page.getByRole('button', { name: /Remove support/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

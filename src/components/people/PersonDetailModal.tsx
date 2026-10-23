@@ -14,6 +14,8 @@ import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { personLifecycle } from '../../lib/personLifecycle';
 import { personPositionLabel } from '../../lib/personPositions';
 import { personProfileImpact } from '../../lib/personProfileImpact';
+import { PersonInboxResponsibilities } from './PersonInboxResponsibilities';
+import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -57,6 +59,9 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
   if (!person) return null;
 
+  const email = resolvePersonEmail(person);
+  const sharedEmail = sharedPersonEmailKind(email.value, locations);
+  const invalidEmail = Boolean(email.value && !normalizeLocationInboxEmail(email.value));
   const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const impact = personProfileImpact(person, locations, districts, regions, users);
   const ownedDistricts = districts.filter(d => d.districtManagerId === person.id);
@@ -152,15 +157,18 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
             <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
               <div className="text-neutral-500 text-[10px] font-semibold uppercase flex items-center gap-1">
-                <Mail className="w-3 h-3 text-neutral-400" /> Email Address
+                <Mail className="w-3 h-3 text-neutral-400" /> {sharedEmail ? 'Saved shared contact (legacy)' : email.source === 'legacy' && email.value ? 'Saved contact (legacy)' : 'Individual work email'}
               </div>
-              <div className="text-neutral-900 font-medium truncate">{resolvePersonEmail(person).value || 'N/A'}</div>
+              <div className="break-all text-neutral-900 font-medium">{email.value || 'No individual email assigned'}</div>
+              <p className="text-[10px] text-neutral-500">{sharedEmail ? 'Shared inbox, not personal identity. Preserved for explicit review.' : invalidEmail ? 'Saved address needs review. Preserved, not verified.' : email.source === 'legacy' && email.value ? 'Legacy contact preserved; review before using as an individual address.' : 'Optional contact only—not sign-in or account access.'}</p>
               <div className="text-neutral-400 text-[10px] pt-1">{personLifecycle(person) === 'unknown' ? 'Needs lifecycle review' : personLifecycle(person) === 'active' ? 'Active' : 'Inactive'}{person.department ? ` · ${person.department}` : ''}</div>
               {Object.hasOwn(person, 'workEmail') && person.email && (person.workEmail || '').trim().toLowerCase() !== person.email.trim().toLowerCase() && (
                 <div className="break-all pt-1 text-[10px] text-neutral-500">Historical email alias (not used as the active contact): {person.email}</div>
               )}
             </div>
           </div>
+
+          <PersonInboxResponsibilities person={person} locations={locations} />
 
           {person.district && (
             <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 flex items-center justify-between">
@@ -188,15 +196,15 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                     {hasLeadershipRole && canEdit && row.location && onEditLocation && <Button size="sm" variant="ghost" onClick={() => onEditLocation(row.location!)}><Pencil className="h-3 w-3" />Edit Assignment</Button>}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">{row.labels.map(label => <span key={label} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-neutral-700">{label}</span>)}</div>
-                  {row.location && row.labels.some(label => ['Primary workplace', 'Supports'].includes(label)) && normalizeLocationInboxEmail(row.location.locationInboxEmail) && (
+                  {row.location && row.labels.some(label => ['Primary workplace', 'Supports'].includes(label)) && !row.labels.some(label => ['Store Manager', 'Assistant Manager'].includes(label)) && normalizeLocationInboxEmail(row.location.locationInboxEmail) && (
                     <div className="mt-2 rounded-md border border-neutral-200 bg-white px-2 py-1.5">
-                      <div className="text-[10px] font-semibold uppercase text-neutral-500">Shared inbox for this Location</div>
+                      <div className="text-[10px] font-semibold uppercase text-neutral-500">Location contact — not an SM/AM responsibility</div>
                       <a href={`mailto:${encodeURIComponent(normalizeLocationInboxEmail(row.location.locationInboxEmail)!.value)}`} className="mt-0.5 block break-all text-xs text-red-700 hover:underline">
                         {row.location.locationInboxEmail}
                       </a>
                     </div>
                   )}
-                  {row.location && !row.labels.some(label => ['Primary workplace', 'Supports'].includes(label))
+                  {row.location && !row.labels.some(label => ['Primary workplace', 'Supports', 'Store Manager', 'Assistant Manager'].includes(label))
                     && row.location.locationInboxEmail && (
                     <p className="mt-2 text-[10px] text-neutral-500">Leadership association only; this is not shown as a workplace inbox.</p>
                   )}

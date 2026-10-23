@@ -1,5 +1,7 @@
 # Directory API v1: emitted response fields
 
+The [Person contact/inbox-responsibility UI](person-contacts-and-store-inboxes.md) adds no API fields or scopes. SM/AM responsibility is derived internally from canonical Location assignments, not an individual-contact export. See [Dispatch 26](dispatches/dispatch-26-person-inbox-responsibilities.md) for its publication checkpoint.
+
 V3 work-contact eligibility additionally withholds conventional store-number mailboxes as `shared_location_inbox` without requiring populated Location inbox data. Existing field names/status enums and v1/v2 shapes are unchanged. See Dispatch 25 for the safeguard's release status.
 
 Separate v3 contract: [District leadership fields and synchronization](district-leadership-api.md), [strict emitted schema](district-leadership-openapi.json). V3 returns a canonical District roster plus Location membership under one snapshot; `districtManager.workEmail` requires an additional explicit contact grant and never confers sign-in/access. This does not add email to the v1/v2 allowlists below. See [Dispatch 25](dispatches/dispatch-25-district-leadership-api.md) for actual release/authorization status.

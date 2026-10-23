@@ -13,6 +13,8 @@ import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { FormLabel } from '../common/FormLabel';
 import { PersonLocationRelationshipFields } from './PersonLocationRelationshipFields';
+import { PersonInboxResponsibilities } from './PersonInboxResponsibilities';
+import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
 
 interface PersonEditorFormProps {
   person?: PersonRecord; locations: LocationRecord[]; submitLabel: string;
@@ -73,6 +75,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     const normalizedPhone = phoneInput && (!person || phoneTouched) ? normalizeUsPhone(phoneInput) : null;
     if ((!person || phoneTouched) && ((phoneInput && !normalizedPhone) || (!draft.phone.trim() && draft.extension.trim()))) { setError('Enter a valid US phone number and numeric extension, or clear both fields.'); return; }
     if ((!person || touched.has('email')) && draft.email.trim() && !normalizePersonEmail(draft.email.trim())) { setError('Enter one valid work email address, or leave it blank.'); return; }
+    if ((!person || touched.has('email')) && sharedPersonEmailKind(draft.email, locations)) { setError('This is a shared store inbox, not an individual work email. Leave this optional field blank or use an individually assigned work address. Store inbox responsibilities are shown separately.'); return; }
     const updates: PersonUpdate & { fullName: string } = { fullName: touched.has('fullName') || !person ? draft.fullName.trim() : person.fullName };
     if (!person || touched.has('fullName')) updates.name = draft.fullName.trim();
     for (const field of ['jobTitle', 'department'] as const) if (!person || touched.has(field)) updates[field] = draft[field].trim();
@@ -111,12 +114,13 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
         <section className={sectionClass} aria-label="Contact and privacy">
           <h3 className="font-semibold text-neutral-900">Contact & privacy</h3>
           <div className="grid gap-3 sm:grid-cols-[1fr_8rem]"><TextField id={id + '-phone'} label="Work Phone" value={draft.phone} onChange={value => edit('phone', value)} /><TextField id={id + '-extension'} label="Extension" value={draft.extension} onChange={value => edit('extension', value)} /></div>
-          <TextField id={id + '-email'} label="Work Email" value={draft.email} onChange={value => edit('email', value)} />
-          <p className="text-xs text-neutral-500">Person contact only—not their login or the store's shared inbox.</p>
+          <TextField id={id + '-email'} label="Individual work email (optional)" value={draft.email} onChange={value => edit('email', value)} />
+          <p className="text-xs text-neutral-500">Leave blank if no individual address is assigned. Most SM/AMs use their store inbox; a few also have their own company address. Contact only—not sign-in, identity or mailbox permission.</p>
           {person?.email && Object.hasOwn(person, 'workEmail') && person.email.trim().toLowerCase() !== (person.workEmail || '').trim().toLowerCase() && <p className="break-all text-xs text-amber-900">Historical email alias retained for review: {person.email}</p>}
-          {locations.some(l => typeof l.locationInboxEmail === 'string' && l.locationInboxEmail.trim().toLowerCase() === draft.email.trim().toLowerCase() && draft.email.trim()) && <p className="text-xs text-amber-900">Contact matches a shared Location inbox. Review intentionally; neither contact nor identity will be rewritten automatically.</p>}
+          {sharedPersonEmailKind(draft.email, locations) && <p className="text-xs text-amber-900">Saved or entered contact is a shared store inbox, not an individual address. Unrelated edits preserve the legacy value. Clear or replace it intentionally; the Location inbox and assignments are not changed.</p>}
           <div><FormLabel htmlFor={id + '-privacy'}>Phone visibility</FormLabel><select id={id + '-privacy'} value={draft.privacy} onChange={e => edit('privacy', e.target.value as ContactPrivacyLevel)} className={inputClass}>{!['Public', 'Internal', 'Restricted'].includes(draft.privacy) && <option value={draft.privacy}>Historical value (review)</option>}{['Public', 'Internal', 'Restricted'].map(value => <option key={value}>{value}</option>)}</select></div>
         </section>
+        <PersonInboxResponsibilities person={person} locations={locations} />
         <section className={sectionClass}><PersonLocationRelationshipFields locations={locations} primaryLocationId={draft.primaryLocationId} supportedLocationIds={draft.supportedLocationIds} onPrimaryLocationChange={value => edit('primaryLocationId', value)} onSupportedLocationIdsChange={value => edit('supportedLocationIds', value)} /></section>
         <section className={sectionClass} aria-label="Management responsibilities">
           <h3 className="font-semibold text-neutral-900">Management responsibilities</h3>

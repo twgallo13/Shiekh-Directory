@@ -1,5 +1,7 @@
 # Store Directory API v1
 
+Person-card contact editing and canonical SM/AM inbox responsibilities are described in the [contact guide](docs/person-contacts-and-store-inboxes.md), with [Dispatch 26](docs/dispatches/dispatch-26-person-inbox-responsibilities.md) tracking publication. This internal screen/write-validation work does not add public API fields/scopes or individual SM/AM contact export. V1 Location inbox and v2/v3 identity/contact exclusions below remain unchanged.
+
 Current authorization update: after publication, the owner-approved Shiekh-Intel client received the two new v3 grants, retaining its old grants/token. Successful consumer authentication/payload acceptance remains unverified. See Dispatch 25; grant-required fields never imply sign-in or account access.
 
 Store inbox policy: shared store mailboxes stay on `Location.locationInboxEmail`; optional individual company email stays on `Person.workEmail`. The separately scoped v3 DM contact projection withholds conventional store-number mailboxes even when Location inbox data is missing. It does not infer account or mailbox access. This safeguard's publication is recorded in Dispatch 25; v1/v2 fields are unchanged.

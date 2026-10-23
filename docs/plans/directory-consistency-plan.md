@@ -8,6 +8,8 @@ The Directory will provide consistent organizational assignments and store infor
 
 ## Scope and working agreement
 
+Active next slice: [Dispatch 27](../dispatches/dispatch-27-explicit-legacy-email-mapping.md), explicit reviewed/staged legacy individual-contact mapping through the existing confirmed/versioned Save. No automatic data migration or canonical-clear overwrite; review/publication are separate checkpoints. PR #43 remains the deployed application until that dispatch records a later release. Consumer acceptance and broader hierarchy/lifecycle work remain separate gates.
+
 Published bounded slice: [Dispatch 26](../dispatches/dispatch-26-person-inbox-responsibilities.md), optional individual Person email and canonical SM/AM shared-inbox responsibility. Initial final 530 API/unit and 13 affected browser cases passed; scoped review repair then passed 12 affected unit / 2 browser cases plus final types/build. Latest-head Codex code/security reviews passed without remaining findings; CodeRabbit was rate-limited. Both-host release and read-only authenticated UI checks passed. No public API fields/grants, real staff contacts, mailbox/provider/account access or data restoration were changed. Privileged historical restore scripts remain a separate, unrun validation boundary. Reuse successful applicable validation when only documentation changes.
 
 ### Sequenced follow-through after Dispatch 26

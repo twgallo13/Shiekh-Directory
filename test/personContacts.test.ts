@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { personEmailEditChangesValue, resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits, serializePersonUpdate } from '../src/lib/personContacts';
+import { legacyIndividualEmailCandidate, personEmailEditChangesValue, resolvePersonEmail, resolvePersonPhone, serializePersonContactEdits, serializePersonUpdate } from '../src/lib/personContacts';
 import type { PersonRecord } from '../src/types';
 
 const personWithDifferentContacts: PersonRecord = {
@@ -13,6 +13,22 @@ const personWithDifferentContacts: PersonRecord = {
   email: 'legacy@example.test',
   workEmail: 'work@example.test',
 };
+
+test('legacy individual mapping is opt-in eligible only with an absent canonical email and a valid non-shared alias', () => {
+  const person = { id: 'legacy', fullName: 'Synthetic Legacy', email: ' Individual@SHIEKHSHOES.COM ' };
+  assert.equal(legacyIndividualEmailCandidate(person, []), 'Individual@shiekhshoes.com');
+  for (const workEmail of ['', 'existing@shiekhshoes.com', null, undefined]) {
+    assert.equal(legacyIndividualEmailCandidate({ ...person, workEmail } as PersonRecord, []), null);
+  }
+  for (const email of ['', 'invalid', 'store007@shiekhshoes.com', 'TEAM@EXAMPLE.test']) {
+    assert.equal(legacyIndividualEmailCandidate({ ...person, email }, [{ locationInboxEmail: 'team@example.test' }]), null);
+  }
+  assert.equal(legacyIndividualEmailCandidate(undefined, []), null);
+  assert.equal(personEmailEditChangesValue(person, 'Individual@shiekhshoes.com'), false);
+  const updates = serializePersonContactEdits(person, null, legacyIndividualEmailCandidate(person, [])!, false, true);
+  assert.deepEqual(updates, { workEmail: 'Individual@shiekhshoes.com' });
+  assert.equal(person.email, ' Individual@SHIEKHSHOES.COM ');
+});
 
 test('restored shared or invalid legacy contact is a no-op without promoting aliases or rewriting stored casing', () => {
   for (const fields of [{ email: 'store7@shiekhshoes.com' }, { email: 'other@example.test', workEmail: 'STORE7@shiekhshoes.com' }, { email: 'invalid legacy' }]) {

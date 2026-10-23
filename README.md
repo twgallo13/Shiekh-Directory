@@ -4,6 +4,8 @@ Store operations and personnel directory. The live application is at [shiekh-dir
 
 ## Documentation
 
+- [Explicit legacy individual-email mapping](docs/dispatches/dispatch-27-explicit-legacy-email-mapping.md): reviewed draft opt-in, normal confirmed Save, source/clear preservation and no account/API permission changes. Check its publication state before assuming it is live.
+
 - [Person contacts and shared store inboxes](docs/person-contacts-and-store-inboxes.md): published optional individual email, canonical SM/AM inbox responsibility, legacy preservation and account/mailbox boundaries. [Dispatch 26](docs/dispatches/dispatch-26-person-inbox-responsibilities.md) records PR #43 validation, review and publication.
 
 - [District leadership API release](docs/dispatches/dispatch-25-district-leadership-api.md): PR #39 is published, with a separately versioned District roster/store-membership snapshot; DM work contact requires a separate grant. The owner-approved Shiekh-Intel grant update is confirmed; authenticated consumer acceptance remains pending and issue #36 stays open. Work email is not a verified sign-in identity.

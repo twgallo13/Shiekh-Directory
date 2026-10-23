@@ -5,7 +5,7 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
-async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' = 'normal') {
+async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' | 'denied' = 'normal') {
   await prepare(page, 'System Administrator');
   const seed: any = seedDirectory(2);
   const person = { id: 'person-profile', version: 2, fullName: 'Synthetic Profile Manager', jobTitle: ' SM ', role: 'Historical separate alias', department: '  Historic department  ', district: 'Legacy territory note', status: 'Active', activeStatus: true, workEmail: 'profile@example.test' };
@@ -23,10 +23,111 @@ async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty
     if (mode === 'unknown') return route.fulfill({ status: 502, contentType: 'text/html', body: 'Unknown save result' });
     if (mode === 'empty') return route.fulfill({ json: { records: [] } });
     if (mode === 'reject') return route.fulfill({ status: 409, json: { error: { code: 'directory_conflict', message: 'Synthetic saved version changed.' } } });
+    if (mode === 'denied') return route.fulfill({ status: 403, json: { error: { code: 'write_not_allowed', message: 'Synthetic permission denied.' } } });
     return route.fulfill({ json: commitResponseFor(body) });
   });
   return { seed, commits, release: () => release() };
 }
+
+test('Legacy email mapping requires preview opt-in and Save, preserving the alias and all unrelated fields', async ({ page }, testInfo) => {
+  const f = await preparePersonCard(page);
+  delete f.seed.people[0].workEmail;
+  f.seed.people[0].email = ' Individual@SHIEKHSHOES.COM ';
+  const before = structuredClone(f.seed.people[0]);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByRole('button', { name: 'Use as individual work email', exact: true }).click();
+  const preview = page.getByRole('alertdialog', { name: 'Review individual email mapping', exact: true });
+  await expect(preview).toContainText('Individual@shiekhshoes.com');
+  await expect(preview).toContainText('Source: historical email (retained)');
+  await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(preview).not.toBeVisible();
+  expect(f.commits).toHaveLength(0);
+  await page.getByRole('button', { name: 'Use as individual work email', exact: true }).click();
+  await expect(preview.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('legacy-email-mapping-mobile.png'), fullPage: true });
+  await preview.getByRole('button', { name: 'Stage email mapping', exact: true }).click();
+  await expect(page.getByText(/Email mapping staged, not saved/)).toBeVisible();
+  expect(f.commits).toHaveLength(0);
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes).toHaveLength(1);
+  const write = f.commits[0].writes[0];
+  expect(write.collection).toBe('people'); expect(write.id).toBe(before.id); expect(write.expectedVersion).toBe(2);
+  const { workEmail, ...saved } = write.data;
+  expect(workEmail).toBe('Individual@shiekhshoes.com');
+  // Context saves the full previous record; no alias/assignment/account rewriting is allowed.
+  expect(saved).toEqual(before);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Use as individual work email', exact: true })).not.toBeVisible();
+});
+
+test('Legacy email mapping undo and later email edits cancel the opt-in without automatic promotion', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  delete f.seed.people[0].workEmail; f.seed.people[0].email = 'individual@shiekhshoes.com';
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  const stage = async () => {
+    await page.getByRole('button', { name: 'Use as individual work email', exact: true }).click();
+    await page.getByRole('button', { name: 'Stage email mapping', exact: true }).click();
+  };
+  await stage(); await page.getByRole('button', { name: 'Undo email mapping', exact: true }).click();
+  await stage();
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill('temporary@shiekhshoes.com');
+  await page.getByLabel('Individual work email (optional)', { exact: true }).fill('individual@shiekhshoes.com');
+  await expect(page.getByText(/Email mapping staged, not saved/)).not.toBeVisible();
+  await page.getByLabel('Department', { exact: true }).fill('Unrelated change');
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes[0].data).not.toHaveProperty('workEmail');
+  expect(f.commits[0].writes[0].data.email).toBe('individual@shiekhshoes.com');
+});
+
+test('Legacy email mapping is absent for shared invalid or already canonical contacts including intentional clears', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  const person = f.seed.people[0]; f.seed.locations[0].locationInboxEmail = 'team@example.test';
+  for (const fields of [{ email: 'store007@shiekhshoes.com' }, { email: 'TEAM@EXAMPLE.test' }, { email: 'invalid' }, { email: 'individual@shiekhshoes.com', workEmail: '' }, { email: 'individual@shiekhshoes.com', workEmail: null }, { email: 'individual@shiekhshoes.com', workEmail: 'existing@shiekhshoes.com' }]) {
+    delete person.workEmail; Object.assign(person, fields);
+    await page.goto(origin + '/people/person-profile'); await restore(page, true);
+    await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Use as individual work email', exact: true })).not.toBeVisible();
+  }
+  expect(f.commits).toHaveLength(0);
+});
+
+for (const mode of ['unknown', 'empty', 'reject', 'denied'] as const) test('Legacy email mapping preserves draft and existing recovery contract on ' + mode, async ({ page }) => {
+  const f = await preparePersonCard(page, mode);
+  delete f.seed.people[0].workEmail; f.seed.people[0].email = 'individual@shiekhshoes.com';
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByRole('button', { name: 'Use as individual work email', exact: true }).click();
+  await page.getByRole('button', { name: 'Stage email mapping', exact: true }).click();
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText(mode === 'unknown' || mode === 'empty' ? 'Outcome unknown' : 'draft is retained');
+  await expect(page.getByText(/Email mapping staged, not saved/)).toBeVisible();
+  expect(f.commits).toHaveLength(1);
+  if (mode === 'unknown' || mode === 'empty') await expect(page.getByRole('button', { name: 'Save Person', exact: true })).toBeDisabled();
+  else await expect(page.getByRole('button', { name: 'Save Person', exact: true })).toBeEnabled();
+});
+
+test('Legacy email mapping keeps close and duplicate-save locks while confirmation is in flight', async ({ page }) => {
+  const f = await preparePersonCard(page, 'hold');
+  delete f.seed.people[0].workEmail; f.seed.people[0].email = 'individual@shiekhshoes.com';
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByRole('button', { name: 'Use as individual work email', exact: true }).click();
+  await page.getByRole('button', { name: 'Stage email mapping', exact: true }).click();
+  await page.getByRole('button', { name: 'Save Person', exact: true }).dblclick();
+  await expect.poll(() => f.commits.length).toBe(1);
+  await expect(page.getByLabel('Individual work email (optional)', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Save Person', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Close Synthetic Profile Manager', exact: true }).click();
+  await expect(page.getByLabel('Individual work email (optional)', { exact: true })).toBeVisible();
+  f.release(); await expect(page.getByRole('button', { name: 'Edit Person', exact: true })).toBeVisible();
+  expect(f.commits).toHaveLength(1);
+});
 
 test('Person inbox responsibilities show canonical SM and AM roles with optional individual contact on mobile', async ({ page }, testInfo) => {
   const f = await preparePersonCard(page);

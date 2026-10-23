@@ -1,6 +1,7 @@
 import type { PersonRecord, PersonUpdate } from '../types';
 import { formatUsPhone, type NormalizedPhone } from './contactNormalization';
 import { normalizeLocationInboxEmail } from './locationInboxEmail';
+import { sharedPersonEmailKind } from './personInboxResponsibilities';
 
 export interface ResolvedPersonPhone {
   value: string;
@@ -34,6 +35,13 @@ export function personEmailEditChangesValue(person: PersonRecord | undefined, dr
   const previous = resolvePersonEmail(person).value;
   const key = (value: string) => normalizeLocationInboxEmail(value)?.comparisonKey ?? value.trim();
   return key(draft) !== key(previous);
+}
+
+/** Candidate only; never automatic promotion, ownership verification or permission. */
+export function legacyIndividualEmailCandidate(person: PersonRecord | undefined, locations: ReadonlyArray<{ locationInboxEmail?: unknown }>): string | null {
+  if (!person || Object.hasOwn(person, 'workEmail')) return null;
+  const normalized = normalizeLocationInboxEmail(person.email);
+  return normalized && !sharedPersonEmailKind(normalized.value, locations) ? normalized.value : null;
 }
 
 export function formatPersonPhone(person: PersonRecord | undefined): string {

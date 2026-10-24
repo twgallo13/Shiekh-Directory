@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Directory data is served by its authenticated server/API, not client SDKs.
+    // Deploy ONLY to the approved Directory named-database release.
+    // Server SDK authorization remains governed separately by existing IAM.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

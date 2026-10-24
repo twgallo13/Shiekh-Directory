@@ -1,6 +1,6 @@
 # Shiekh Directory
 
-Latest UI source continuation: [explicit position removal and strict save recovery](docs/dispatches/dispatch-40-position-removal-ui.md). The integrated screen is tested locally, not deployed; server admission remains default-off. Production protection/configuration and release gates remain. Older source-stage descriptions below are historical checkpoints.
+Latest UI source continuation: [explicit position removal and strict save recovery](docs/dispatches/dispatch-40-position-removal-ui.md), merged in PR #63 after clean final code/security reviews. The integrated screen is tested locally, not deployed; server admission remains default-off. The owner approved a [Directory-only protection repair after compatibility checks](security/README.md); production protection/configuration and release gates remain. Older source-stage descriptions below are historical checkpoints.
 
 Latest source-only continuation: [reviewed-command controller and transport](docs/dispatches/dispatch-37-transition-client-controller.md) build on the [client recovery helpers](docs/dispatches/dispatch-35-client-transition-recovery.md). These are tested but unimported; no new save workflow or production release is enabled. Last verified serving source is PR #53 `62acacb`, as recorded in Dispatch 32. Historical release checkpoints below are not the latest runtime.
 

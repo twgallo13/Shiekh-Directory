@@ -15,6 +15,8 @@ import { FormLabel } from '../common/FormLabel';
 import { PersonLocationRelationshipFields } from './PersonLocationRelationshipFields';
 import { PersonInboxResponsibilities } from './PersonInboxResponsibilities';
 import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
+import { useAuth } from '../../context/AuthContext';
+import { PositionRemovalReview } from './PositionRemovalReview';
 
 interface PersonEditorFormProps {
   person?: PersonRecord; locations: LocationRecord[]; submitLabel: string;
@@ -32,6 +34,10 @@ function TextField({ id, label, value, onChange, required = false }: { id: strin
 export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onCancel, registerClose, footerTarget, children }: PersonEditorFormProps) {
   const id = useId();
   const { districts, regions, users } = useDirectory();
+  const { account } = useAuth();
+  const canCoordinate = account?.role === 'System Administrator' && account.accessScope === 'Company-wide';
+  const [removalOpen, setRemovalOpen] = useState(false), [recoveryOnly, setRecoveryOnly] = useState(false);
+  const removalClose = useRef<(() => void) | null>(null);
   const phone = resolvePersonPhone(person), email = resolvePersonEmail(person), positionState = personPositions(person || {});
   const [expectedVersion] = useState(person?.version ?? 0);
   const [draft, setDraft] = useState(() => ({
@@ -60,7 +66,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     if (field === 'email') setMappedLegacyEmail(null);
     setDraft(previous => ({ ...previous, [field]: value })); setTouched(previous => new Set(previous).add(field)); setReviewed(false); setError('');
   };
-  const cancel = () => { if (busy.current) return; if (emailMappingReview) { setEmailMappingReview(false); return; } if (touched.size || uncertain) setDiscard(true); else onCancel(); };
+  const cancel = () => { if (removalOpen) { removalClose.current?.(); return; } if (busy.current) return; if (emailMappingReview) { setEmailMappingReview(false); return; } if (touched.size || uncertain) setDiscard(true); else onCancel(); };
   useEffect(() => { registerClose?.(cancel); return () => registerClose?.(null); });
 
   const save = async (event: React.FormEvent) => {
@@ -100,7 +106,14 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     } finally { busy.current = false; setSaving(false); }
   };
 
-  const actions = <div className="flex justify-end gap-2"><Button size="sm" disabled={saving} onClick={cancel}>Cancel</Button><Button form={id + '-form'} type="submit" size="sm" variant="primary" isLoading={saving} disabled={uncertain}>{submitLabel}</Button></div>;
+  const openRemoval = (recover = false) => {
+    if (!person || !canCoordinate || busy.current || uncertain) return;
+    if ([...touched].some(field => field !== 'positionIds') || recover && touched.size) { setError('Save or discard your other profile edits before opening staffing recovery or replacement review. Your draft is kept.'); return; }
+    if (!recover && (draft.status !== 'Active' || personLifecycle(person) !== 'active')) { setError('Resolve Active Status before a position handover. This review does not inactivate people or change account access.'); return; }
+    setRecoveryOnly(recover); setRemovalOpen(true);
+  };
+  if (removalOpen && person) return <PositionRemovalReview footerTarget={footerTarget} personId={person.id} expectedVersion={expectedVersion} originalPositions={[...positionState.ids]} desiredPositions={draft.positionIds} recoveryOnly={recoveryOnly} registerClose={close => { removalClose.current = close; }} onClose={() => setRemovalOpen(false)} onSaved={onCancel} />;
+  const actions = <div className="flex flex-wrap justify-end gap-2"><Button size="sm" disabled={saving} onClick={cancel}>Cancel</Button>{conflicts.length > 0 && canCoordinate ? <Button size="sm" variant="primary" disabled={saving || uncertain} onClick={() => openRemoval()}>Review replacement or vacancy</Button> : <Button form={id + '-form'} type="submit" size="sm" variant="primary" isLoading={saving} disabled={uncertain}>{submitLabel}</Button>}</div>;
   return <>
     <form id={id + '-form'} onSubmit={save} className="space-y-4 text-sm">
       <fieldset disabled={saving || uncertain} className="min-w-0 space-y-4 disabled:opacity-70">
@@ -139,6 +152,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
           {impact.issues.map(issue => <p key={issue} className="text-xs text-amber-900">{issue}</p>)}
           {person?.district && <p className="break-words rounded-lg bg-white p-3 text-xs text-neutral-500">Legacy territory/district text (reference only): {person.district}. Not an assignment; preserved.</p>}
           <a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="inline-block text-xs font-semibold text-red-700 underline">Open Organization & leadership settings</a>
+          {person && canCoordinate && <Button size="sm" disabled={saving || uncertain} onClick={() => openRemoval(true)}>Recover interrupted staffing change</Button>}
           {positionChanged && <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><h4 className="font-semibold">Review position change</h4><p>Selected: {PERSON_POSITIONS.filter(p => draft.positionIds.includes(p.id)).map(p => p.label).join(', ') || 'No positions'}. Existing assignments and accounts stay unchanged.</p>
             {conflicts.map(row => <p key={row.key} role="alert">Retain {PERSON_POSITIONS.find(p => p.id === row.requiredPosition)!.label} or reassign/vacate: {row.label}.</p>)}
             <label className="flex items-start gap-2"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} className="mt-0.5 accent-red-700" />I reviewed the responsibilities. Save positions only; do not change assignments or access.</label>

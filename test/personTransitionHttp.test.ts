@@ -22,6 +22,16 @@ test('HTTP port is disabled unless explicitly enabled; actor/scope/generation ch
   const changed = fixture(); changed.generation(); await assert.rejects(changed.port.list()); assert.equal(changed.calls.length, 0);
 });
 
+test('capability discovery is authenticated without admission; preview and strict bootstrap use fixed independently gated paths', async () => {
+  const disabled = fixture(false); await disabled.port.capabilities();
+  await assert.rejects(disabled.port.preview(command.intent)); await assert.rejects(disabled.port.directory());
+  assert.deepEqual(disabled.calls.map(c => c.url), ['/api/directory/person-transitions/capabilities']);
+  const recovery = fixture(false, 1000, true); await recovery.port.directory(); await assert.rejects(recovery.port.preview(command.intent));
+  assert.equal(recovery.calls[0].url, '/api/auth/bootstrap'); assert.equal(recovery.calls[0].init.method, 'GET');
+  const enabled = fixture(); await enabled.port.preview(command.intent); assert.equal(enabled.calls[0].url, '/api/directory/person-transitions/preview'); assert.deepEqual(JSON.parse(enabled.calls[0].init.body as string), command.intent);
+  const denied = fixture(false); denied.state.account!.role = 'Viewer'; await assert.rejects(denied.port.capabilities()); assert.equal(denied.calls.length, 0);
+});
+
 test('HTTP port uses only fixed same-origin paths, header authentication, no-store/error redirects and detached fixed bodies', async () => {
   const f = fixture(); await f.port.list(); await f.port.status(marker); await f.port.prepare(command); await f.port.commit(command); await f.port.cancel(marker);
   assert.deepEqual(f.calls.map(c => c.url), ['operations', 'status', 'prepare', 'commit', 'cancel'].map(p => '/api/directory/person-transitions/' + p));

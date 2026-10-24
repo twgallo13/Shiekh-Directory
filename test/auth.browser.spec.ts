@@ -32,7 +32,7 @@ async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty
   return { seed, commits, release: () => release() };
 }
 
-async function prepareRemoval(page: Page, mode: 'normal' | 'lost' | 'refresh-fails' | 'prepare-fails' | 'disabled' | 'stale' = 'normal') {
+async function prepareRemoval(page: Page, mode: 'normal' | 'lost' | 'refresh-fails' | 'prepare-fails' | 'disabled' | 'stale' | 'recovery-only' = 'normal') {
   const f = await preparePersonCard(page), subject = f.seed.people[0]; subject.positionIds = ['store-manager', 'district-manager'];
   f.seed.people.push({ id: 'new-dm', fullName: 'Eligible District Lead', positionIds: ['district-manager'], status: 'Active' }, { id: 'title-only', fullName: 'Legacy Title Lead', jobTitle: 'District Manager', status: 'Active' }, { id: 'inactive-dm', fullName: 'Inactive Lead', positionIds: ['district-manager'], status: 'Inactive' });
   f.seed.locations[1] = { ...f.seed.locations[1], regionId: 'west', districtId: 'north', districtManagerId: subject.id, recordStatus: 'Retired' };
@@ -43,7 +43,7 @@ async function prepareRemoval(page: Page, mode: 'normal' | 'lost' | 'refresh-fai
   await page.route('**/api/directory/person-transitions/*', async route => {
     const method = new URL(route.request().url()).pathname.split('/').at(-1)!;
     const body = route.request().method() === 'POST' ? route.request().postDataJSON() : undefined; calls.push({ method, body });
-    if (method === 'capabilities') return route.fulfill({ json: { schemaVersion: 1, newCommandsEnabled: mode !== 'disabled', recoveryEnabled: mode !== 'disabled' } });
+    if (method === 'capabilities') return route.fulfill({ json: { schemaVersion: 1, newCommandsEnabled: !['disabled', 'recovery-only'].includes(mode), recoveryEnabled: mode !== 'disabled' } });
     if (method === 'operations') { if (mode === 'stale') subject.version++; return route.fulfill({ json: { schemaVersion: 1, operations: [...records.values()].filter(r => r.state === 'prepared').map(r => transitionRecoveryOutcome(r, r)), complete: true, canCommit: false } }); }
     if (method === 'preview') {
       const now = Date.now(), envelope = signer.sign({ actorUid: 'synthetic-uid', personId: subject.id, intentHash: personTransitionIntentHash(body), stateHash: 'a'.repeat(64), planHash: 'b'.repeat(64), issuedAt: now, expiresAt: now + 300_000 });
@@ -154,6 +154,21 @@ test('Resolved Pending request acknowledgment is pruned without losing replaceme
   await expect(panel.getByRole('checkbox', { name: /I reviewed pending-a/ })).toHaveCount(0); await expect(panel.getByRole('combobox')).toHaveValue('__vacant__'); await expect(panel.getByRole('textbox', { name: 'Reason for this change' })).toHaveValue('Keep this reviewed draft');
   await panel.getByRole('button', { name: 'Review with server' }).click(); await expect(panel.getByRole('button', { name: 'Confirm and save' })).toBeEnabled();
   expect(f.calls.filter(c => c.method === 'preview').map(c => c.body.acknowledgedRequestIds)).toEqual([['pending-a'], []]); expect(f.businessCommits()).toBe(0);
+});
+
+test('Saved review Escape exits the old editor and the next profile edit uses the refreshed version', async ({ page }) => {
+  const f = await prepareRemoval(page), panel = await openRemoval(page);
+  await panel.getByRole('combobox').selectOption('__vacant__'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Synthetic vacancy');
+  await panel.getByRole('button', { name: 'Review with server' }).click(); await panel.getByRole('button', { name: 'Confirm and save' }).click(); await expect(panel).toContainText('Saved. The current Directory was refreshed');
+  await page.keyboard.press('Escape'); await expect(page.getByRole('button', { name: 'Edit Person', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click(); await page.getByRole('textbox', { name: 'Department', exact: true }).fill('After confirmed handover'); await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(1); expect(f.commits[0].writes[0].expectedVersion).toBe(3);
+});
+test('Recovery-only release explains the disabled new-change form while retaining status access', async ({ page }) => {
+  const f = await prepareRemoval(page, 'recovery-only'), panel = await openRemoval(page);
+  await expect(panel).toContainText('New staffing changes are not enabled on this release'); await expect(panel.getByRole('combobox')).toHaveCount(0);
+  await panel.getByRole('button', { name: 'Check original result' }).click(); await expect(panel).toContainText('New staffing changes are not enabled on this release');
+  expect(f.calls.filter(c => ['prepare', 'commit'].includes(c.method))).toHaveLength(0); expect(f.calls.filter(c => c.method === 'operations').length).toBeGreaterThan(0);
 });
 
 test('Removal actual local HTTP and SDK: browser review commits District inheritance once and confirms saved state', async ({ page }) => {

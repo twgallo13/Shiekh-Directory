@@ -11,7 +11,7 @@ function fixture() {
 }
 test('strict saved refresh applies complete current state once and preserves zero-padded store identity', async () => { const f = fixture(); await refreshTransitionSavedState(f.options); assert.equal(f.applied(), 1); assert.equal(parseTransitionDirectory(body()).locations[0].storeNumber, '007'); });
 test('failed/incomplete/duplicate/invalid-version refresh rejects without applying', async () => {
-  for (const change of [(b: any) => { delete b.people; }, (b: any) => { b.people.push(b.people[0]); }, (b: any) => { b.people[0].version = -1; }, (b: any) => { b.serverNow = 'invalid'; }]) { const f = fixture(), b = body(); change(b); f.read(async () => b); await assert.rejects(refreshTransitionSavedState(f.options)); assert.equal(f.applied(), 0); }
+  for (const change of [(b: any) => { delete b.people; }, (b: any) => { b.people.push(b.people[0]); }, (b: any) => { b.people[0].version = -1; }, (b: any) => { b.serverNow = 'invalid'; }, (b: any) => { delete b.people[0].fullName; }, (b: any) => { delete b.locations[0].name; }, (b: any) => { b.locations[0].storeNumber = 7; }]) { const f = fixture(), b = body(); change(b); f.read(async () => b); await assert.rejects(refreshTransitionSavedState(f.options)); assert.equal(f.applied(), 0); }
   const f = fixture(); f.read(async () => { throw new Error('Synthetic outage'); }); await assert.rejects(refreshTransitionSavedState(f.options)); assert.equal(f.applied(), 0);
 });
 test('pending writes, changed epoch, permission loss and same-UID new session reject late application', async () => {

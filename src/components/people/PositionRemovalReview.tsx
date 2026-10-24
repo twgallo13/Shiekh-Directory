@@ -23,6 +23,7 @@ export function PositionRemovalReview({ personId, expectedVersion, originalPosit
   const auth = useAuth(), directory = useDirectory();
   const [seed, setSeed] = useState<DirectorySeed | null>(null), [state, setState] = useState<TransitionClientSnapshot | null>(null);
   const [busy, setBusy] = useState(true), [error, setError] = useState(''), [choices, setChoices] = useState<Record<string, string>>({}), [reason, setReason] = useState('');
+  const [newCommandsEnabled, setNewCommandsEnabled] = useState<boolean | null>(null);
   const [pending, setPending] = useState<{ id: string; reasons: string[] }[]>([]), [acknowledged, setAcknowledged] = useState<string[]>([]), [warnings, setWarnings] = useState<string[]>([]);
   const controller = useRef<Controller | null>(null), port = useRef<ReturnType<typeof createTransitionCommandHttpPort> | null>(null), live = useRef(true), action = useRef(false);
   const effectGeneration = useRef(0);
@@ -31,8 +32,9 @@ export function PositionRemovalReview({ personId, expectedVersion, originalPosit
   useEffect(() => { if (state && ['review-ready', 'saved', 'outcome-unknown', 'cancellation-confirmed'].includes(state.phase)) heading.current?.focus(); }, [state?.phase]);
   const close = () => {
     if (action.current || closeState.current.busy || closeState.current.unresolved) return;
-    try { const current = controller.current?.snapshot(); if (current?.busy || current?.unresolved.length) return; } catch { return; }
-    controller.current?.dispose(); onClose();
+    let saved = false;
+    try { const current = controller.current?.snapshot(); if (current?.busy || current?.unresolved.length) return; saved = current?.phase === 'saved'; } catch { return; }
+    controller.current?.dispose(); if (saved) onSaved(); else onClose();
   };
   useEffect(() => { registerClose(close); return () => registerClose(null); });
   useEffect(() => {
@@ -44,6 +46,7 @@ export function PositionRemovalReview({ personId, expectedVersion, originalPosit
         const caps: any = await readPort.capabilities();
         if (!caps || Object.keys(caps).sort().join(',') !== 'newCommandsEnabled,recoveryEnabled,schemaVersion' || caps.schemaVersion !== 1 || typeof caps.newCommandsEnabled !== 'boolean' || typeof caps.recoveryEnabled !== 'boolean' || !caps.recoveryEnabled) throw new Error('This workflow is not available on this release. No changes were submitted.');
         if (!active()) return;
+        setNewCommandsEnabled(caps.newCommandsEnabled);
         const transport = createTransitionCommandHttpPort({ session: auth.currentSession, generation: auth.sessionGeneration, request: fetch, enabled: caps.newCommandsEnabled, recoveryEnabled: caps.recoveryEnabled }); port.current = transport;
         bound = await openSessionBoundTransition(auth, { personId, storage: localStorage, locks: navigator.locks, subtle: crypto.subtle, port: transport, admissionEnabled: () => caps.newCommandsEnabled,
           newOperationId: () => crypto.randomUUID(), refreshSavedDirectory: () => directory.refreshTransitionDirectory(transport.directory), publish: snapshot => { if (active()) setState(snapshot); } });
@@ -89,6 +92,7 @@ export function PositionRemovalReview({ personId, expectedVersion, originalPosit
     <div className="flex items-start gap-3"><ShieldCheck className="mt-1 h-6 w-6 shrink-0 text-red-700" aria-hidden="true" /><div><h2 ref={heading} tabIndex={-1} className="text-lg font-semibold outline-none">{recoveryOnly ? 'Recover a staffing change' : 'Review affected assignments'}</h2><p className="mt-1 text-neutral-600">{recoveryOnly ? 'Check the original result before making another change.' : 'Choose a replacement or explicitly leave a vacancy. Nothing is selected for you.'}</p></div></div>
     <p className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs leading-5">Store → District → Region stays unchanged. District DM changes apply once to its linked stores, including retired stores. Workplace/support links, contacts and account access are not changed by this review.</p>
     <div role="status" aria-live="polite" className="text-neutral-700">{busy ? 'Checking the current Directory…' : state?.message}</div>
+    {newCommandsEnabled === false && !recoveryOnly && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950">New staffing changes are not enabled on this release. Recovery and cancellation of original submissions remain available.</p>}
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">{error}</p>}
     {seed && <fieldset disabled={!editing} className="min-w-0 space-y-4">
       <div><h3 className="font-semibold">Positions after this change</h3><p className="mt-1 text-neutral-600">{PERSON_POSITIONS.filter(p => desiredPositions.includes(p.id)).map(p => p.label).join(' · ') || 'No linked positions'}</p></div>

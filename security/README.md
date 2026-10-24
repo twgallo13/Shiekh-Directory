@@ -1,10 +1,10 @@
 # Directory client-access policy
 
-`directory.firestore.rules` is the proposed server-only client policy for the Directory's **one named database**. Application authorization remains in the authenticated server/API. Firebase authentication still signs users in; that does not authorize direct Firestore client access. Existing server SDK/IAM permissions are separate and must be preserved.
+`directory.firestore.rules` is the server-only client policy for the Directory's **one named database**, activated October 23, 2026 Pacific from PR #64 merge `5612c4c`. [Dispatch 41](../docs/dispatches/dispatch-41-directory-protection-checkpoint.md) records read-back, unchanged other releases and live denial/server continuity. Application authorization remains in the authenticated server/API. Firebase authentication still signs users in; that does not authorize direct Firestore client access. Existing server SDK/IAM permissions are separate and must be preserved.
 
 ## Scope and release gate
 
-The owner approved a Directory-only protection repair after compatibility checks. This file's presence or merge does **not** deploy it, change IAM, or enable the staffing workflow. Do not add a project-wide/default-database Firebase deployment configuration. Do not apply this file to Dynamic QR, another database, or every database in the shared project.
+The owner approved a Directory-only protection repair after compatibility checks. This file's presence or merge alone does **not** deploy it, change IAM, or enable the staffing workflow; the distinct activation above was verified separately. Do not add a project-wide/default-database Firebase deployment configuration. Do not apply this file to Dynamic QR, another database, or every database in the shared project.
 
 Before activating:
 

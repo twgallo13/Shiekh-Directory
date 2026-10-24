@@ -37,11 +37,14 @@ import { fetchOperatingPreview, saveOperatingCommand, cancelOperatingCommand } f
 import type { OperatingCommand } from '../../server/operatingCommand';
 import type { OperatingPreview } from '../../server/firestoreOperating';
 import type { OperatingState } from '../lib/operatingState';
+import { refreshTransitionSavedState } from '../lib/transitionSavedRefresh';
+import { clearLegacyDirectoryCaches } from '../lib/personTransitionRecovery';
 
 interface DirectoryContextType {
   operatingNow: Date;
   operatingRefreshError: string | null;
   refreshOperatingDirectory: () => Promise<void>;
+  refreshTransitionDirectory: (read: () => Promise<unknown>) => Promise<void>;
   previewOperatingUpdate: (locationId: string, action: OperatingCommand['action']) => Promise<OperatingPreview>;
   saveOperatingUpdate: (command: OperatingCommand) => Promise<{ replayed: boolean; state: OperatingState }>;
   cancelOperatingUpdate: (command: OperatingCommand) => Promise<boolean>;
@@ -112,7 +115,7 @@ interface DirectoryContextType {
 const DirectoryContext = createContext<DirectoryContextType | null>(null);
 
 export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: DirectorySeed }> = ({ children, seed }) => {
-  const { account, user } = useAuth();
+  const { account, user, currentSession, sessionGeneration } = useAuth();
   if (!account || !user) throw new Error('Authorized directory account required.');
   const currentUser: UserProfile = { id: account.uid, name: account.name, email: account.email || '', role: account.role, status: 'Active', accessScope: account.accessScope, personId: account.personId || undefined };
   const [initialDirectory] = useState(() => {
@@ -139,6 +142,21 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const [operatingRefreshError, setOperatingRefreshError] = useState<string | null>(null);
   const writeFence = useRef({ epoch: 0, pending: 0 });
   const polling = useRef(false);
+
+  const refreshTransitionDirectory = async (read: () => Promise<unknown>) => {
+    if (polling.current || writeFence.current.pending) throw new Error('A Directory refresh or save is still running. Keep this operation and retry recovery.');
+    polling.current = true; writeFence.current.epoch++;
+    try {
+      await refreshTransitionSavedState({ session: currentSession, generation: sessionGeneration, fence: () => writeFence.current, read, apply: body => {
+        const canonical = canonicalDirectoryBootstrap(body.locations, body.people, body.hoursTemplates);
+        setLocations(canonical.locations); setPeople(canonical.people); setHoursTemplates(body.hoursTemplates);
+        setDistricts(body.districts); setRegions(body.regions); setUsers(body.users); setRequests(body.requests);
+        setAuditLogs(body.auditLogs.map(scrubLegacyApiKeyAuditEntry));
+        anchor.current = { server: Date.parse(body.serverNow!), monotonic: performance.now() };
+        setOperatingNow(new Date(anchor.current.server)); setOperatingRefreshError(null);
+      } });
+    } finally { polling.current = false; }
+  };
 
   const refreshOperatingDirectory = async (fullReconciliation = false) => {
     if (polling.current || writeFence.current.pending) return;
@@ -186,7 +204,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   };
 
   useEffect(() => {
-    for (const key of Object.keys(localStorage)) if (key.startsWith('shiekh_') && key !== 'shiekh_theme_preference') localStorage.removeItem(key);
+    clearLegacyDirectoryCaches(localStorage);
   }, []);
 
   const reconcileCommittedRecords = (result: DirectoryCommitResult) => {
@@ -979,6 +997,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         operatingNow,
         operatingRefreshError,
         refreshOperatingDirectory: () => refreshOperatingDirectory(true),
+        refreshTransitionDirectory,
         previewOperatingUpdate,
         saveOperatingUpdate,
         cancelOperatingUpdate,

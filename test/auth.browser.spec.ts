@@ -2,6 +2,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { buildLocationImportPlan } from '../src/lib/locationImportPreview';
 import type { LocationRecord, UpdateRequest } from '../src/types';
 import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
+import { PersonTransitionReviewSigner } from '../server/personTransitionReviewEnvelope';
+import { personTransitionIntentHash } from '../server/personTransitionPlanner';
+import { normalizeTransitionPreparation, transitionOperationIdentity, transitionRecoveryOutcome, newPreparedTransitionReceipt, storedTransitionReview, readTransitionReceipt, transitionCommitAuditId, cancelledTransitionReceipt } from '../server/personTransitionOperation';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
@@ -28,6 +31,151 @@ async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty
   });
   return { seed, commits, release: () => release() };
 }
+
+async function prepareRemoval(page: Page, mode: 'normal' | 'lost' | 'refresh-fails' | 'prepare-fails' | 'disabled' | 'stale' = 'normal') {
+  const f = await preparePersonCard(page), subject = f.seed.people[0]; subject.positionIds = ['store-manager', 'district-manager'];
+  f.seed.people.push({ id: 'new-dm', fullName: 'Eligible District Lead', positionIds: ['district-manager'], status: 'Active' }, { id: 'title-only', fullName: 'Legacy Title Lead', jobTitle: 'District Manager', status: 'Active' }, { id: 'inactive-dm', fullName: 'Inactive Lead', positionIds: ['district-manager'], status: 'Inactive' });
+  f.seed.locations[1] = { ...f.seed.locations[1], regionId: 'west', districtId: 'north', districtManagerId: subject.id, recordStatus: 'Retired' };
+  f.seed.locations[0].districtManagerId = subject.id;
+  const signer = new PersonTransitionReviewSigner({ activeKeyId: 'synthetic', keys: [{ id: 'synthetic', secret: Buffer.alloc(32, 0x79).toString('base64url') }] });
+  const records = new Map<string, any>(), calls: any[] = []; let refreshFails = mode === 'refresh-fails', businessCommits = 0;
+  await page.route('**/api/auth/bootstrap', route => refreshFails && businessCommits ? route.fulfill({ status: 503, json: { error: 'Synthetic refresh outage' } }) : route.fulfill({ json: f.seed }));
+  await page.route('**/api/directory/person-transitions/*', async route => {
+    const method = new URL(route.request().url()).pathname.split('/').at(-1)!;
+    const body = route.request().method() === 'POST' ? route.request().postDataJSON() : undefined; calls.push({ method, body });
+    if (method === 'capabilities') return route.fulfill({ json: { schemaVersion: 1, newCommandsEnabled: mode !== 'disabled', recoveryEnabled: mode !== 'disabled' } });
+    if (method === 'operations') { if (mode === 'stale') subject.version++; return route.fulfill({ json: { schemaVersion: 1, operations: [...records.values()].filter(r => r.state === 'prepared').map(r => transitionRecoveryOutcome(r, r)), complete: true, canCommit: false } }); }
+    if (method === 'preview') {
+      const now = Date.now(), envelope = signer.sign({ actorUid: 'synthetic-uid', personId: subject.id, intentHash: personTransitionIntentHash(body), stateHash: 'a'.repeat(64), planHash: 'b'.repeat(64), issuedAt: now, expiresAt: now + 300_000 });
+      return route.fulfill({ json: { schemaVersion: 1, personId: subject.id, ready: true, canCommit: false, review: { blockers: [], warnings: [], pendingRequests: [] }, reviewEnvelope: envelope } });
+    }
+    if (method === 'prepare' || method === 'commit') {
+      if (mode === 'prepare-fails' && method === 'prepare') return route.fulfill({ status: 502, json: { error: 'Synthetic unknown preparation' } });
+      const command = normalizeTransitionPreparation(body, 'synthetic-uid'), identity = command.identity;
+      if (!records.has(identity.operationId)) { const claims = signer.verify(body.reviewEnvelope, { actorUid: 'synthetic-uid', personId: subject.id, intentHash: command.intentHash }, Date.now()); records.set(identity.operationId, newPreparedTransitionReceipt(identity, storedTransitionReview(claims, command.envelopeHash), Date.now())); }
+      if (method === 'commit' && records.get(identity.operationId).state === 'prepared') {
+        businessCommits++; subject.positionIds = body.intent.positionIds; subject.version++;
+        const decision = body.intent.responsibilities.find((r: any) => r.owner === 'districts');
+        if (decision) { f.seed.districts[0].districtManagerId = decision.action === 'replace' ? decision.replacementId : null; for (const l of f.seed.locations) { l.districtManagerId = f.seed.districts[0].districtManagerId || ''; l.districtManagerName = decision.action === 'replace' ? 'Eligible District Lead' : ''; } }
+        const previous = records.get(identity.operationId); records.set(identity.operationId, readTransitionReceipt({ ...previous, state: 'committed', updatedAt: Math.max(Date.now(), previous.updatedAt), auditId: transitionCommitAuditId(identity), changes: [{ collection: 'people', id: subject.id, version: subject.version }] }, identity));
+      }
+      if (mode === 'lost' && method === 'commit') return route.fulfill({ status: 502, json: { error: 'Synthetic lost response' } });
+      return route.fulfill({ json: transitionRecoveryOutcome(identity, records.get(identity.operationId)) });
+    }
+    const identity = transitionOperationIdentity(body, 'synthetic-uid');
+    if (method === 'cancel') records.set(identity.operationId, cancelledTransitionReceipt(identity, records.get(identity.operationId) ?? null, Date.now()));
+    return route.fulfill({ json: transitionRecoveryOutcome(identity, records.get(identity.operationId) ?? null) });
+  });
+  return { ...f, calls, businessCommits: () => businessCommits, allowRefresh: () => { refreshFails = false; } };
+}
+async function openRemoval(page: Page) {
+  await page.goto(origin + '/people/person-profile'); await restore(page, true); await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'District Manager', exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Review replacement or vacancy', exact: true }).click();
+  return page.getByRole('dialog');
+}
+test('Removal review uses one District choice, eligible positions only, keyboard confirmation and a strict saved-state refresh', async ({ page }, testInfo) => {
+  const f = await prepareRemoval(page); await page.setViewportSize({ width: 390, height: 844 }); const panel = await openRemoval(page);
+  await expect(panel.getByRole('heading', { name: 'Review affected assignments' })).toBeFocused();
+  const choice = panel.getByRole('combobox'); await expect(choice).toHaveCount(1); await expect(choice).toHaveValue('');
+  await expect(panel).toContainText('2 inherited stores · one District decision'); await expect(panel).toContainText('Retained — this position remains selected');
+  expect(await choice.locator('option').allTextContents()).toEqual(['Choose intentionally…', 'Leave vacant', 'Eligible District Lead · new-dm']);
+  await panel.getByRole('button', { name: 'Review with server' }).click(); await expect(panel.getByRole('alert')).toContainText('Choose an eligible replacement');
+  await choice.selectOption('new-dm'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Synthetic reviewed promotion coverage');
+  await panel.getByRole('button', { name: 'Review with server' }).click();
+  await expect(panel.getByRole('button', { name: 'Confirm and save' })).toBeVisible(); expect(f.businessCommits()).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('position-removal-mobile.png'), fullPage: true });
+  const confirm = panel.getByRole('button', { name: 'Confirm and save' }); await confirm.focus(); await confirm.press('Enter');
+  await expect(panel).toContainText('Saved. The current Directory was refreshed'); expect(f.businessCommits()).toBe(1);
+  expect(f.calls.filter(c => c.method === 'commit')).toHaveLength(1); expect(f.commits).toHaveLength(0);
+  expect(f.seed.locations[0].storeManagerId).toBe('person-profile'); expect(f.seed.districts[0].districtManagerId).toBe('new-dm');
+  await panel.getByRole('button', { name: 'Done', exact: true }).click(); await expect(page.getByRole('region', { name: 'Position replacement and vacancy review' })).toHaveCount(0); await expect(page.getByRole('button', { name: 'Edit Person', exact: true })).toBeVisible();
+});
+for (const mode of ['lost', 'refresh-fails'] as const) test(`Removal ${mode} retains its marker, blocks dismissal and recovers without a second commit`, async ({ page }) => {
+  const f = await prepareRemoval(page, mode), panel = await openRemoval(page);
+  await panel.getByRole('combobox').selectOption('__vacant__'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Synthetic vacancy');
+  await panel.getByRole('button', { name: 'Review with server' }).click(); await panel.getByRole('button', { name: 'Confirm and save' }).click();
+  await expect(panel).toContainText('Outcome unknown'); await expect(panel.getByRole('button', { name: 'Back to profile' })).toBeDisabled();
+  await page.keyboard.press('Escape'); await expect(panel).toBeVisible();
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('shiekh_person_transition_v1:')).length)).toBe(1);
+  f.allowRefresh(); await panel.getByRole('button', { name: 'Check original result' }).click();
+  await expect(panel).toContainText('current Directory refreshed'); expect(f.calls.filter(c => c.method === 'commit')).toHaveLength(1); expect(f.businessCommits()).toBe(1);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('shiekh_person_transition_v1:')).length)).toBe(0);
+});
+test('Unknown preparation can be explicitly sealed, never implicitly retried or committed', async ({ page }) => {
+  const f = await prepareRemoval(page, 'prepare-fails'), panel = await openRemoval(page);
+  await panel.getByRole('combobox').selectOption('__vacant__'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Synthetic vacancy');
+  await panel.getByRole('button', { name: 'Review with server' }).click(); await panel.getByRole('button', { name: 'Confirm and save' }).click(); await expect(panel).toContainText('Outcome unknown');
+  await panel.getByRole('button', { name: 'Cancel this submission' }).click(); await expect(panel).toContainText('Cancellation confirmed');
+  expect(f.calls.filter(c => c.method === 'prepare')).toHaveLength(1); expect(f.businessCommits()).toBe(0); expect(f.calls.filter(c => c.method === 'commit')).toHaveLength(0);
+  await panel.getByRole('button', { name: 'Back to profile' }).click(); await expect(page.getByRole('checkbox', { name: 'Store Manager', exact: true })).toBeChecked();
+});
+for (const mode of ['disabled', 'stale'] as const) test(`Removal ${mode} fails closed without preparation or a business write`, async ({ page }) => {
+  const f = await prepareRemoval(page, mode), panel = await openRemoval(page);
+  await expect(panel.getByRole('alert')).toContainText(mode === 'disabled' ? 'not available' : 'saved Person changed');
+  expect(f.calls.filter(c => ['prepare', 'commit'].includes(c.method))).toHaveLength(0); expect(f.businessCommits()).toBe(0);
+});
+
+test('Reload recovers a lost committed result through the profile without reconstructing or repeating its command', async ({ page }) => {
+  const f = await prepareRemoval(page, 'lost'); let panel = await openRemoval(page);
+  await panel.getByRole('combobox').selectOption('__vacant__'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('PRIVATE_SYNTHETIC_REASON');
+  await panel.getByRole('button', { name: 'Review with server' }).click(); await panel.getByRole('button', { name: 'Confirm and save' }).click(); await expect(panel).toContainText('Outcome unknown');
+  const before = f.calls.find(c => c.method === 'commit').body.operationId;
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toMatch(/PRIVATE_SYNTHETIC_REASON|ptv1\.|synthetic-token/);
+  await page.reload(); await restore(page, true); await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByRole('button', { name: 'Recover interrupted staffing change', exact: true }).click(); panel = page.getByRole('dialog');
+  await expect(panel).toContainText('Original save confirmed and current Directory refreshed');
+  expect(f.calls.filter(c => c.method === 'commit').map(c => c.body.operationId)).toEqual([before]); expect(f.businessCommits()).toBe(1);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('shiekh_person_transition_v1:')).length)).toBe(0);
+});
+test('Mixed profile edits are retained rather than silently included or discarded by a position handover', async ({ page }) => {
+  const f = await prepareRemoval(page); await page.goto(origin + '/people/person-profile'); await restore(page, true); await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Department', exact: true }).fill('Unsaved department'); await page.getByRole('checkbox', { name: 'District Manager', exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Review replacement or vacancy' }).click(); await expect(page.getByRole('alert').filter({ hasText: 'Your draft is kept' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Department', exact: true })).toHaveValue('Unsaved department'); expect(f.calls).toHaveLength(0); expect(f.commits).toHaveLength(0);
+});
+test('Review edits invalidate the old envelope; ordinary same-UID token refresh keeps the reviewed screen', async ({ page }) => {
+  const f = await prepareRemoval(page), panel = await openRemoval(page);
+  await panel.getByRole('combobox').selectOption('__vacant__'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('First reason'); await panel.getByRole('button', { name: 'Review with server' }).click();
+  await page.evaluate(() => (window as any).__restore(true)); await expect(panel.getByRole('button', { name: 'Confirm and save' })).toBeEnabled();
+  await panel.getByRole('button', { name: 'Edit choices' }).click(); await expect(panel.getByRole('button', { name: 'Confirm and save' })).toHaveCount(0);
+  await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Second reason'); await panel.getByRole('button', { name: 'Review with server' }).click();
+  expect(f.calls.filter(c => c.method === 'preview').map(c => c.body.reason)).toEqual(['First reason', 'Second reason']); expect(f.businessCommits()).toBe(0);
+});
+
+test('Removal actual local HTTP and SDK: browser review commits District inheritance once and confirms saved state', async ({ page }) => {
+  test.skip(process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8089', 'Explicit isolated demo emulator opt-in only.');
+  // Guard above precedes SDK initialization. Never use environment-selected production project/database.
+  const { spawn } = await import('node:child_process');
+  const f = await prepareRemoval(page);
+  // Use the normal Node/tsx SDK loader, not Playwright's transformed module cache.
+  const child = spawn(process.execPath, ['--import', 'tsx', 'test/transitionBrowserServer.ts'], { cwd: process.cwd(), env: process.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  const ready = new Promise<string>((resolve, reject) => {
+    let text = ''; const timer = setTimeout(() => reject(new Error('Synthetic SDK server startup timed out.')), 15_000);
+    child.stdout.on('data', chunk => { text += chunk; const match = text.match(/http:\/\/127\.0\.0\.1:\d+/); if (match) { clearTimeout(timer); resolve(match[0]); } });
+    child.once('error', error => { clearTimeout(timer); reject(error); }); child.once('exit', () => { clearTimeout(timer); reject(new Error('Synthetic SDK server exited.')); });
+  });
+  child.stderr.on('data', () => {}); child.stdin.end(JSON.stringify(f.seed));
+  try {
+    const base = await ready;
+    await page.route('**/api/auth/bootstrap', async route => route.fulfill({ json: await (await fetch(base + '/api/auth/bootstrap')).json() }));
+    const actualCalls: string[] = [];
+    await page.route('**/api/directory/person-transitions/*', async route => {
+      const request = route.request(), url = new URL(request.url()); actualCalls.push(url.pathname.split('/').at(-1)!);
+      const response = await fetch(base + url.pathname, { method: request.method(), headers: { Authorization: 'Bearer synthetic-token', ...(request.method() === 'POST' ? { 'Content-Type': 'application/json' } : {}) }, ...(request.method() === 'POST' ? { body: request.postData()! } : {}) });
+      await route.fulfill({ status: response.status, contentType: 'application/json', body: await response.text() });
+    });
+    const panel = await openRemoval(page); await panel.getByRole('combobox').selectOption('new-dm'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Synthetic SDK browser handover');
+    await panel.getByRole('button', { name: 'Review with server' }).click(); await expect(panel.getByRole('button', { name: 'Confirm and save' })).toBeEnabled();
+    await panel.getByRole('button', { name: 'Confirm and save' }).click(); await expect(panel).toContainText('Saved. The current Directory was refreshed');
+    expect(actualCalls.filter(method => method === 'commit')).toHaveLength(1);
+    const saved: any = await (await fetch(base + '/__synthetic_result')).json(); expect(saved.positionIds).toEqual(['store-manager']); expect(saved.version).toBe(3); expect(saved.districtManagerId).toBe('new-dm');
+    for (const location of f.seed.locations) { const current = saved.locations.find((l: any) => l.id === location.id); expect(current.districtManagerId).toBe('new-dm'); expect(current.recordStatus).toBe(location.recordStatus); }
+    expect(saved.locations.find((l: any) => l.id === 'loc-1').storeManagerId).toBe('person-profile'); expect(saved.auditCount).toBe(1);
+    expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('shiekh_person_transition_v1:')).length)).toBe(0);
+  } finally { child.kill(); }
+});
 
 test('Transition preflight groups canonical leadership stale copies accounts and pending references without writes on mobile', async ({ page }, testInfo) => {
   const f = await preparePersonCard(page);
@@ -338,7 +486,8 @@ test('Person card blocks silent loss of SM responsibility and zero-store Distric
   await page.getByRole('checkbox', { name: 'Store Manager', exact: true }).uncheck();
   await page.getByRole('checkbox', { name: 'District Manager', exact: true }).check();
   await expect(page.getByText(/Retain Store Manager or reassign\/vacate/)).toBeVisible();
-  await page.getByRole('button', { name: 'Save Person' }).click();
+  await expect(page.getByRole('button', { name: 'Save Person' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Review replacement or vacancy' })).toBeVisible();
   expect(f.commits).toHaveLength(0);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.getByRole('button', { name: 'Leave draft' }).click();

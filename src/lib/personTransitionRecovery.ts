@@ -1,6 +1,12 @@
 import type { SessionState } from './authSession';
 
 export const TRANSITION_RECOVERY_PREFIX = 'shiekh_person_transition_v1:';
+/** Remove obsolete record caches, never unresolved-operation identities. Explicit sign-out
+ * still uses clearProtectedStorage to remove all protected keys, including these markers.
+ */
+export function clearLegacyDirectoryCaches(storage: Storage) {
+  for (const key of Object.keys(storage)) if (key.startsWith('shiekh_') && key !== 'shiekh_theme_preference' && !key.startsWith(TRANSITION_RECOVERY_PREFIX)) storage.removeItem(key);
+}
 const AUDIENCE = 'directory-person-transition-operation-v1';
 const id = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(v);
 const uuid = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(v);

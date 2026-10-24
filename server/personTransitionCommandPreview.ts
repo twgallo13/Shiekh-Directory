@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { DocumentSnapshot, Firestore } from '@google-cloud/firestore';
+import type { DocumentSnapshot, Firestore, Transaction } from '@google-cloud/firestore';
 import type { Account } from './authAuthority';
-import { DirectoryValidationError, DirectoryWriteDenied } from './firestoreDirectory';
-import { canonicalTransitionId, normalizePersonTransitionIntent, object } from './personTransitionIntent';
+import { DirectoryValidationError } from './firestoreDirectory';
+import { canonicalTransitionId, normalizePersonTransitionIntent, object, type PersonTransitionIntent } from './personTransitionIntent';
+import { assertPersonTransitionActor, readPersonTransitionAuthority } from './personTransitionAuthority';
 import { planPersonTransition, type TransitionPlannerSnapshot, type TransitionSourceDocument } from './personTransitionPlanner';
 import { LEADERSHIP_POSITION_FIELDS } from '../src/lib/personPositions';
 import { TRANSITION_REVIEW_TTL_MS, type PersonTransitionReviewSigner } from './personTransitionReviewEnvelope';
@@ -35,20 +36,8 @@ function pick(data: Record<string, unknown>, keys: string[]) {
   }
   return result;
 }
-const allowed = (actor: Pick<Account, 'role' | 'status' | 'accessScope'>) => actor.role === 'System Administrator' && actor.status === 'Active' && actor.accessScope === 'Company-wide';
-
-/** Fresh read-only SDK transaction. No prepare/commit/receipt, generic writes or browser-loaded fallback. */
-export async function previewPersonTransitionCommand(firestore: Firestore, raw: unknown, actor: Account, signer: PersonTransitionReviewSigner | undefined, clock = () => new Date()) {
-  if (!allowed(actor)) throw new DirectoryWriteDenied('Company-wide Active administrator review is required.');
-  let intent: ReturnType<typeof normalizePersonTransitionIntent>;
-  try { intent = normalizePersonTransitionIntent(raw); } catch { throw new DirectoryValidationError('Invalid Person transition intent.'); }
-  if (!signer) throw new Error('Transition review signing is unavailable.');
-  const started = clock().getTime();
-  if (!Number.isSafeInteger(started) || started < 0) throw new Error('Transition review clock is unavailable.');
-  const expires = started + TRANSITION_REVIEW_TTL_MS;
-  const result = await firestore.runTransaction(async transaction => {
-    const accounts = await transaction.get(firestore.collection('users').where('firebaseUid', '==', actor.uid).select('role', 'status', 'accessScope').limit(2));
-    if (accounts.size !== 1 || !allowed(accounts.docs[0].data() as Pick<Account, 'role' | 'status' | 'accessScope'>)) throw new DirectoryWriteDenied('Current administrator authority is required.');
+/** Internal read adapter, no writes/authority claims. Caller owns an authenticated, authority-checked SDK transaction. */
+export async function readPersonTransitionCommandPlan(firestore: Firestore, transaction: Transaction, intent: PersonTransitionIntent) {
     const snapshot: TransitionPlannerSnapshot = { complete: true, coherentReadId: randomUUID(), people: [], locations: [], districts: [], regions: [], users: [], requests: [] };
     let bytes = 0;
     const source = (collection: keyof Omit<TransitionPlannerSnapshot, 'complete' | 'coherentReadId'>, doc: DocumentSnapshot, selected: string[]): TransitionSourceDocument => {
@@ -107,6 +96,20 @@ export async function previewPersonTransitionCommand(firestore: Firestore, raw: 
       snapshot.people.push(...rows.map(doc => source('people', doc, selected)));
     }
     return planPersonTransition(intent, snapshot);
+}
+
+/** Fresh read-only SDK transaction. No prepare/commit/receipt, generic writes or browser-loaded fallback. */
+export async function previewPersonTransitionCommand(firestore: Firestore, raw: unknown, actor: Account, signer: PersonTransitionReviewSigner | undefined, clock = () => new Date()) {
+  assertPersonTransitionActor(actor);
+  let intent: ReturnType<typeof normalizePersonTransitionIntent>;
+  try { intent = normalizePersonTransitionIntent(raw); } catch { throw new DirectoryValidationError('Invalid Person transition intent.'); }
+  if (!signer) throw new Error('Transition review signing is unavailable.');
+  const started = clock().getTime();
+  if (!Number.isSafeInteger(started) || started < 0) throw new Error('Transition review clock is unavailable.');
+  const expires = started + TRANSITION_REVIEW_TTL_MS;
+  const result = await firestore.runTransaction(async transaction => {
+    await readPersonTransitionAuthority(firestore, transaction, actor);
+    return readPersonTransitionCommandPlan(firestore, transaction, intent);
   }, { readOnly: true });
   const now = clock().getTime();
   if (!Number.isSafeInteger(now) || now < started || now >= expires) throw new Error('Transition preview expired during its read.');

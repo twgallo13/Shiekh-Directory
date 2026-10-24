@@ -47,7 +47,9 @@ async function prepareRemoval(page: Page, mode: 'normal' | 'lost' | 'refresh-fai
     if (method === 'operations') { if (mode === 'stale') subject.version++; return route.fulfill({ json: { schemaVersion: 1, operations: [...records.values()].filter(r => r.state === 'prepared').map(r => transitionRecoveryOutcome(r, r)), complete: true, canCommit: false } }); }
     if (method === 'preview') {
       const now = Date.now(), envelope = signer.sign({ actorUid: 'synthetic-uid', personId: subject.id, intentHash: personTransitionIntentHash(body), stateHash: 'a'.repeat(64), planHash: 'b'.repeat(64), issuedAt: now, expiresAt: now + 300_000 });
-      return route.fulfill({ json: { schemaVersion: 1, personId: subject.id, ready: true, canCommit: false, review: { blockers: [], warnings: [], pendingRequests: [] }, reviewEnvelope: envelope } });
+      const pending = f.seed.requests.filter((r: any) => r.status === 'Pending').map((r: any) => ({ id: r.id, reasons: ['Targets this Person'] }));
+      const ready = JSON.stringify(pending.map((r: any) => r.id).sort()) === JSON.stringify([...body.acknowledgedRequestIds].sort());
+      return route.fulfill({ json: { schemaVersion: 1, personId: subject.id, ready, canCommit: false, review: { blockers: ready ? [] : ['Review and acknowledge the exact current Pending request IDs.'], warnings: [], pendingRequests: pending }, ...(ready ? { reviewEnvelope: envelope } : {}) } });
     }
     if (method === 'prepare' || method === 'commit') {
       if (mode === 'prepare-fails' && method === 'prepare') return route.fulfill({ status: 502, json: { error: 'Synthetic unknown preparation' } });
@@ -142,6 +144,16 @@ test('Review edits invalidate the old envelope; ordinary same-UID token refresh 
   await panel.getByRole('button', { name: 'Edit choices' }).click(); await expect(panel.getByRole('button', { name: 'Confirm and save' })).toHaveCount(0);
   await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Second reason'); await panel.getByRole('button', { name: 'Review with server' }).click();
   expect(f.calls.filter(c => c.method === 'preview').map(c => c.body.reason)).toEqual(['First reason', 'Second reason']); expect(f.businessCommits()).toBe(0);
+});
+
+test('Resolved Pending request acknowledgment is pruned without losing replacement choices or reason', async ({ page }) => {
+  const f = await prepareRemoval(page); f.seed.requests.push({ id: 'pending-a', status: 'Pending', targetType: 'Person', targetId: 'person-profile', changeType: 'Phone', requestedChanges: {}, currentSnapshot: {} });
+  const panel = await openRemoval(page); await panel.getByRole('combobox').selectOption('__vacant__'); await panel.getByRole('textbox', { name: 'Reason for this change' }).fill('Keep this reviewed draft');
+  await panel.getByRole('checkbox', { name: /I reviewed pending-a/ }).check(); f.seed.requests[0].status = 'Approved';
+  await panel.getByRole('button', { name: 'Review with server' }).click(); await expect(panel.getByRole('alert')).toContainText('exact current Pending request IDs');
+  await expect(panel.getByRole('checkbox', { name: /I reviewed pending-a/ })).toHaveCount(0); await expect(panel.getByRole('combobox')).toHaveValue('__vacant__'); await expect(panel.getByRole('textbox', { name: 'Reason for this change' })).toHaveValue('Keep this reviewed draft');
+  await panel.getByRole('button', { name: 'Review with server' }).click(); await expect(panel.getByRole('button', { name: 'Confirm and save' })).toBeEnabled();
+  expect(f.calls.filter(c => c.method === 'preview').map(c => c.body.acknowledgedRequestIds)).toEqual([['pending-a'], []]); expect(f.businessCommits()).toBe(0);
 });
 
 test('Removal actual local HTTP and SDK: browser review commits District inheritance once and confirms saved state', async ({ page }) => {

@@ -73,6 +73,8 @@ export function PositionRemovalReview({ personId, expectedVersion, originalPosit
     if (!result || result.schemaVersion !== 1 || result.personId !== personId || typeof result.ready !== 'boolean' || result.canCommit !== false || !result.review || !Array.isArray(result.review.blockers) || !result.review.blockers.every((v: unknown) => typeof v === 'string') || !Array.isArray(result.review.warnings) || !result.review.warnings.every((v: unknown) => typeof v === 'string') || !Array.isArray(result.review.pendingRequests) || !result.review.pendingRequests.every((r: any) => typeof r.id === 'string' && Array.isArray(r.reasons) && r.reasons.every((v: unknown) => typeof v === 'string'))) throw new Error('The server review could not be verified. No change was submitted.');
     if (!live.current) return;
     setPending(result.review.pendingRequests); setWarnings(result.review.warnings);
+    const currentPendingIds = new Set<string>(result.review.pendingRequests.map((request: { id: string }) => request.id));
+    setAcknowledged(previous => previous.filter(id => currentPendingIds.has(id)));
     if (!result.ready) throw new Error(result.review.blockers.join(' ') || 'Resolve the current review before saving.');
     await controller.current.stageReviewed(intent, result.reviewEnvelope);
   });

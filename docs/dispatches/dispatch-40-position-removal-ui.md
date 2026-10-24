@@ -29,4 +29,8 @@ Real browser testing found and repaired native `fetch` receiver binding, which s
 
 ## Remaining release gates
 
+Review repair: when a Pending correction resolves during review, the returned current IDs now prune stale acknowledgments without auto-acknowledging new requests or losing the selected replacement/vacancy and reason. The new focused browser regression, final types/build and whitespace passed. This makes ten distinct new synthetic browser scenarios across the recorded runs; unchanged earlier passing SDK/ordinary evidence was reused.
+
+Production activation remains on hold for an owner decision about direct-client policy after read-only compatibility/protection inspection. Do not infer broader production rule/IAM authority from the earlier single-secret approval. Keep detailed live security observations in the owner's private release-check record, not in a public issue or source discussion. No production rule or access change was made.
+
 Review this integrated UI and repair valid findings. Verify production receipt/audit direct-client protection and required indexes without changing policy implicitly. Provision only the owner's approved one private signing secret/read binding for the existing Directory server identity, then use guarded no-traffic release, denial/configuration checks and promotion. Both server gates remain default-off until acceptance; no real staffing selections are used as release tests. Data restoration/migration, Region/acting ownership, full offboarding and issue #36 consumer-side acceptance remain separate.

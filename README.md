@@ -2,7 +2,7 @@
 
 Latest source-only continuation: [reviewed-command controller and transport](docs/dispatches/dispatch-37-transition-client-controller.md) build on the [client recovery helpers](docs/dispatches/dispatch-35-client-transition-recovery.md). These are tested but unimported; no new save workflow or production release is enabled. Last verified serving source is PR #53 `62acacb`, as recorded in Dispatch 32. Historical release checkpoints below are not the latest runtime.
 
-The next [atomic transition writer and isolated SDK evidence](docs/dispatches/dispatch-36-atomic-transition-emulator.md) remains unwired; configuration, full recovery/UI integration and release gates are still required.
+The [atomic transition writer](docs/dispatches/dispatch-36-atomic-transition-emulator.md) now has [explicitly gated server endpoints](docs/dispatches/dispatch-39-gated-transition-routes.md), disabled by default. [Synchronous session boundaries](docs/dispatches/dispatch-38-transition-session-boundaries.md) are integrated in source. The accessible removal dialog, full browser/server acceptance, production protection/configuration and release gates remain required; no new staffing workflow is live.
 
 Store operations and personnel directory. The live application is at [shiekh-dir.ai.studio](https://shiekh-dir.ai.studio).
 

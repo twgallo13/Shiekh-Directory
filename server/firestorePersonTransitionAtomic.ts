@@ -34,8 +34,8 @@ function savedBytes(value: unknown, depth = 0): number {
   throw new Error('Unsupported saved transition document value.');
 }
 
-/** Unwired internal writer. No route or DirectoryStore method invokes this module.
- * Future HTTP callers MUST authenticate Firebase before calling it. No arbitrary patches/paths,
+/** Internal writer behind explicit disabled-by-default Store/HTTP command gates.
+ * HTTP callers MUST authenticate Firebase before calling it. No arbitrary patches/paths,
  * account/provider calls or generic/District-only guard bypass. All business writes are derived
  * from the fixed intent and fresh coherent plan, and occur with audit + receipt in one transaction.
  */

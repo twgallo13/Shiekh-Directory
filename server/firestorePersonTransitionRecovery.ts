@@ -22,8 +22,8 @@ async function receipt(firestore: Firestore, transaction: Transaction, identity:
   return { reference, current: doc.exists ? readTransitionReceipt(doc.data(), identity) : null };
 }
 
-/** Internal, unwired foundation. No routes, Store methods or staffing writer import this module.
- * Future callers MUST authenticate the Firebase session first. These transactional checks do not
+/** Internal recovery behind separate disabled-by-default Store/HTTP gates.
+ * Callers MUST authenticate the Firebase session first. These transactional checks do not
  * replace token verification. Only minimal recovery metadata can be changed here.
  */
 export async function preparePersonTransitionRecovery(firestore: Firestore, raw: unknown, actor: Account, signer: PersonTransitionReviewSigner | undefined, clock = () => new Date()) {

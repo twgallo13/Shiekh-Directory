@@ -1,6 +1,6 @@
 # Shiekh Directory
 
-Latest source-only continuation: [client transition recovery helpers](docs/dispatches/dispatch-35-client-transition-recovery.md) are tested but unimported; no new save workflow or production release is enabled. Use the published-source checkpoint below for what is actually live.
+Latest source-only continuation: [reviewed-command controller and transport](docs/dispatches/dispatch-37-transition-client-controller.md) build on the [client recovery helpers](docs/dispatches/dispatch-35-client-transition-recovery.md). These are tested but unimported; no new save workflow or production release is enabled. Last verified serving source is PR #53 `62acacb`, as recorded in Dispatch 32. Historical release checkpoints below are not the latest runtime.
 
 The next [atomic transition writer and isolated SDK evidence](docs/dispatches/dispatch-36-atomic-transition-emulator.md) remains unwired; configuration, full recovery/UI integration and release gates are still required.
 

@@ -5,7 +5,7 @@ import { personLifecycle } from '../src/lib/personLifecycle';
 import { LEADERSHIP_POSITION_FIELDS, listedPosition, personPositions, validPositionIds } from '../src/lib/personPositions';
 import { formatPersonPhone } from '../src/lib/personContacts';
 import type { PersonRecord } from '../src/types';
-import { canonicalTransitionId as id, normalizePersonTransitionIntent, object, type LeadershipField } from './personTransitionIntent';
+import { canonicalTransitionId as id, normalizePersonTransitionIntent, object, canonicalTransitionJSON as canonical, type LeadershipField } from './personTransitionIntent';
 import { conservativeDocumentBytes } from './conservativeDocumentSize';
 
 type Row = Record<string, any>;
@@ -26,12 +26,6 @@ const own = (r: Row, k: string) => Object.hasOwn(r, k);
 const refs = (v: unknown) => Array.isArray(v) && v.every(id) && new Set(v).size === v.length;
 const ref = (v: unknown) => v === '' || v === null || id(v);
 const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
-function canonical(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-  if (object(v)) return `{${Object.keys(v).sort(compare).map(k => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`;
-  if (v === null || typeof v === 'string' || typeof v === 'boolean' || typeof v === 'number' && Number.isFinite(v)) return JSON.stringify(v);
-  throw new Error('Snapshot must contain detached JSON values only.');
-}
 const digest = (v: unknown) => createHash('sha256').update(canonical(v)).digest('hex');
 /** Same normalized intent identity used by previews and internal recovery preparation. */
 export const personTransitionIntentHash = (raw: unknown) => digest(normalizePersonTransitionIntent(raw));

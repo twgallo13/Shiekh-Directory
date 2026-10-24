@@ -10,7 +10,7 @@ import { INITIAL_SESSION, type Account } from "../src/lib/authSession";
 
 const account: Account = { uid: "test", email: "user@example.test", name: "Synthetic User", role: "Viewer", status: "Active", accessScope: "Company-wide", emailVerified: true, personId: "person-test", authenticationMethod: "google.com" };
 function gated(state: Partial<AuthContextValue>) {
-  const value: AuthContextValue = { ...INITIAL_SESSION, emailLink: null, clearEmailLink() {}, async signOut() {}, retry() {}, ...state };
+  const value: AuthContextValue = { ...INITIAL_SESSION, emailLink: null, clearEmailLink() {}, async signOut() {}, retry() {}, currentSession: () => INITIAL_SESSION, sessionGeneration: () => 0, onSessionBoundary: () => () => {}, ...state };
   return renderToStaticMarkup(React.createElement(MemoryRouter, { initialEntries: ["/admin"] }, React.createElement(AuthContext.Provider, { value }, React.createElement(AuthGate, null, React.createElement("div", null, "PROTECTED_DIRECTORY")))));
 }
 test("loading, signed-out and denied deep routes never render protected content", () => {

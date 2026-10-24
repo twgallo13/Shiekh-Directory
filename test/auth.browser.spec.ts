@@ -1518,6 +1518,46 @@ test("server denial on recheck removes the authorized shell", async ({ page }) =
   await expect(page.getByRole("heading", { name: "My Profile / Account" })).toHaveCount(0);
 });
 
+test('explicit sign-out broadcasts a synchronous boundary to another tab even when Firebase sign-out fails', async ({ context }) => {
+  const first = await context.newPage(), second = await context.newPage();
+  await prepare(first); await prepare(second);
+  await first.goto(`${origin}/account`); await restore(first, true);
+  await second.goto(`${origin}/account`); await restore(second, true);
+  await expect(second.getByRole('heading', { name: 'My Profile / Account' })).toBeVisible();
+  await second.evaluate(() => { sessionStorage.setItem('shiekh_synthetic_private_draft', 'private'); localStorage.setItem('app-theme', 'dark'); });
+  await first.evaluate(() => { (window as any).__authFailure = 'auth/network-request-failed'; });
+  await second.evaluate(() => { (window as any).__authFailure = 'auth/network-request-failed'; });
+  await first.getByRole('button', { name: 'Sign out', exact: true }).last().click();
+  await expect(first.getByRole('alert')).toContainText('Sign-out could not finish');
+  await expect(second.getByRole('alert')).toContainText('Sign-out could not finish');
+  let rechecks = 0; second.on('request', request => { if (request.url().endsWith('/api/auth/me')) rechecks++; });
+  await second.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+  await expect(second.getByRole('heading', { name: 'Directory access unavailable' })).toBeVisible();
+  await expect(second.getByRole('heading', { name: 'My Profile / Account' })).toHaveCount(0);
+  expect(rechecks).toBe(0);
+  expect(await second.evaluate(() => sessionStorage.getItem('shiekh_synthetic_private_draft'))).toBeNull();
+  expect(await second.evaluate(() => localStorage.getItem('app-theme'))).toBe('dark');
+  await second.evaluate(() => { (window as any).__authFailure = null; });
+  await second.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(second).toHaveURL(`${origin}/sign-in`);
+});
+
+test('same-UID Firebase token callback keeps the authorized shell while its current authority is rechecked', async ({ page }) => {
+  await prepare(page); await page.goto(`${origin}/account`); await restore(page, true);
+  await expect(page.getByRole('heading', { name: 'My Profile / Account' })).toBeVisible();
+  let release!: () => void;
+  await page.route('**/api/auth/me', async route => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ json: { uid: 'synthetic-uid', email: 'user@example.test', emailVerified: true, name: 'Synthetic User', role: 'Viewer', status: 'Active', accessScope: 'Company-wide', personId: null, authenticationMethod: 'password' } });
+  });
+  await page.evaluate(() => (window as any).__restore(true));
+  await expect.poll(() => typeof release).toBe('function');
+  await expect(page.getByRole('heading', { name: 'My Profile / Account' })).toBeVisible();
+  await expect(page.getByText('Restoring secure session...', { exact: true })).toHaveCount(0);
+  release();
+  await expect(page.getByRole('heading', { name: 'My Profile / Account' })).toBeVisible();
+});
+
 test("Export All Stores prepares authoritative metadata, confirms, and downloads after server response", async ({ page }) => {
   const fixture = await prepareExportBrowser(page, { bootstrapCount: 3, exportCount: 120 });
   await page.goto(`${origin}/admin`); await restore(page, true);

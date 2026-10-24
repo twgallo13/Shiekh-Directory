@@ -41,3 +41,39 @@ test('real browser actor namespace and permission loss deny stale vault access w
   await bind(a, 'synthetic-browser-admin'); expect(await a.evaluate(() => (window as any).recovery.vault.read())).toEqual([marker]);
   expect(await a.evaluate(() => { (window as any).recovery.state.generation++; try { (window as any).recovery.vault.read(); return false; } catch { return true; } })).toBe(true);
 });
+
+test('real browser controller survives a lost response and fresh-controller restart without duplicating the command', async ({ page }) => {
+  await open(page);
+  const result = await page.evaluate(async () => {
+    const controllerPath = '/src/lib/personTransitionController.ts', intentPath = '/src/lib/personTransitionIntent.ts';
+    const { createPersonTransitionController } = await import(controllerPath), { canonicalTransitionJSON, normalizePersonTransitionIntent } = await import(intentPath);
+    const uid = 'synthetic-browser-admin', personId = 'synthetic-person', now = Date.now(), time = new Date(now).toISOString();
+    const b64 = (value: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(value))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const sha = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(v => v.toString(16).padStart(2, '0')).join('');
+    const intent = normalizePersonTransitionIntent({ schemaVersion: 1, personId, positionIds: ['store-manager', 'district-manager'], lifecycle: 'keep', reason: 'Synthetic browser review', responsibilities: [], primaryWorkplace: { action: 'retain' }, supports: { action: 'retain' }, acknowledgedRequestIds: [] });
+    const claims = { actorUid: uid, personId, intentHash: await sha(canonicalTransitionJSON(intent)), stateHash: 'a'.repeat(64), planHash: 'b'.repeat(64), issuedAt: now, expiresAt: now + 300_000, schemaVersion: 1, audience: 'directory-person-transition-review-v1', keyId: 'synthetic' };
+    const payload = b64(new TextEncoder().encode(JSON.stringify(claims)).buffer);
+    const key = await crypto.subtle.importKey('raw', new Uint8Array(32).fill(0x76), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const envelope = `ptv1.${payload}.${b64(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`directory-person-transition-review-v1.${payload}`)))}`;
+    let stored: any = null, commits = 0, refreshes = 0;
+    const base = (marker: any, state: string) => ({ ...marker, state, canCommit: false, createdAt: time, preparedAt: time, resolvedAt: state === 'committed' ? time : null, auditId: null, changes: [] });
+    const port = {
+      list: async () => ({ schemaVersion: 1, operations: stored?.state === 'prepared' ? [stored] : [], complete: true, canCommit: false }),
+      status: async () => stored,
+      prepare: async (body: any) => {
+        const marker = JSON.parse(Object.values(localStorage).find((v: any) => JSON.parse(v).operationId === body.operationId) as string);
+        stored = base(marker, 'prepared'); return stored;
+      },
+      commit: async () => { commits++; stored = { ...stored, state: 'committed', resolvedAt: time, auditId: 'aud-person-transition-' + await sha(JSON.stringify(['directory-person-transition-operation-v1', uid, stored.operationId])), changes: [{ collection: 'people', id: personId, version: 2 }] }; throw new Error('Synthetic lost response'); },
+      cancel: async () => { throw new Error('Not expected'); },
+    };
+    const state = (window as any).recovery.state;
+    const options = { personId, storage: localStorage, session: () => state, generation: () => state.generation, locks: navigator.locks, subtle: crypto.subtle, port, admissionEnabled: () => true, newOperationId: () => crypto.randomUUID(), refreshSavedDirectory: async () => { refreshes++; } };
+    const original = await createPersonTransitionController(options); await original.recover(); await original.stageReviewed(intent, envelope); await original.prepare();
+    try { await original.commit(); } catch { /* Outcome remains unknown until the receipt is reconciled. */ }
+    const uncertain = original.snapshot().phase, secretStored = JSON.stringify(localStorage).includes('ptv1.'); original.dispose();
+    const restored = await createPersonTransitionController(options); await restored.recover();
+    return { uncertain, secretStored, phase: restored.snapshot().phase, commits, refreshes, markerCount: Object.keys(localStorage).filter(k => k.startsWith('shiekh_person_transition_v1:')).length };
+  });
+  expect(result).toEqual({ uncertain: 'outcome-unknown', secretStored: false, phase: 'saved', commits: 1, refreshes: 1, markerCount: 0 });
+});

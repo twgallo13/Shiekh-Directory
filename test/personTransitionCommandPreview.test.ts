@@ -191,7 +191,7 @@ test('incomplete, malformed, excessive, incoherent or expired reads fail closed'
   const slow = fixture(); let calls = 0; await assert.rejects(previewPersonTransitionCommand(slow.firestore, slow.intent, actor, signer(), () => new Date(time + (calls++ ? TRANSITION_REVIEW_TTL_MS : 0))), /expired/);
 });
 
-test('HTTP preview is private, admin-only, bounded and never enables writer methods', async () => {
+test('HTTP preview is private, admin-only, bounded and does not enable disabled command/recovery methods', async () => {
   let selected = actor, failure = false, calls = 0, writes = 0;
   const f = fixture(), app = express();
   app.use('/api/directory', createDirectoryDataRouter(async () => selected, { commit: async () => { writes++; throw new Error('Forbidden'); }, previewPersonTransitionCommand: async (intent, current) => { calls++; if (failure) throw new Error('PRIVATE_BACKEND_FAILURE'); return previewPersonTransitionCommand(f.firestore, intent, current, signer(), clock); } }));
@@ -208,8 +208,8 @@ test('HTTP preview is private, admin-only, bounded and never enables writer meth
     assert.equal((await post(' '.repeat(128 * 1024) + JSON.stringify(f.intent))).status, 413); assert.equal(calls, 0);
     const success = await post(JSON.stringify(f.intent)); assert.equal(success.status, 200); assert.equal(success.headers.get('cache-control'), 'no-store'); assert.equal(success.headers.get('etag'), null);
     const body = await success.json(); assert.equal(body.ready, true); assert.equal(body.canCommit, false); assert.doesNotMatch(JSON.stringify(body), /PRIVATE|19095550100|internal|patches|preconditions/);
-    for (const mode of ['prepare', 'commit', 'cancel', 'status']) assert.equal((await post('{}', true, mode)).status, 404);
-    assert.equal((await fetch(`${url}/operations`)).status, 404); assert.equal(writes, 0);
+    for (const mode of ['prepare', 'commit', 'cancel', 'status']) assert.equal((await post('{}', true, mode)).status, 503);
+    assert.equal((await fetch(`${url}/operations`)).status, 401); assert.equal(writes, 0);
     failure = true; const unavailable = await post(JSON.stringify(f.intent)); assert.equal(unavailable.status, 503); assert.doesNotMatch(await unavailable.text(), /PRIVATE/);
     const attempts = [];
     for (let index = 0; index < 11; index++) attempts.push((await post(JSON.stringify(f.intent))).status);

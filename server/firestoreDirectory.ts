@@ -21,6 +21,9 @@ import { previewOperating, commitOperating, cancelOperating, type OperatingPrevi
 import { previewPersonTransition } from './personTransitionPreview';
 import { previewPersonTransitionCommand } from './personTransitionCommandPreview';
 import { loadPersonTransitionReviewSigner } from './personTransitionReviewEnvelope';
+import { personTransitionCapabilities, requirePersonTransitionAdmission } from './personTransitionConfiguration';
+import { preparePersonTransitionRecovery, readPersonTransitionRecovery, cancelPersonTransitionRecovery, listPersonTransitionPreparations } from './firestorePersonTransitionRecovery';
+import { commitPersonTransitionAtomic } from './firestorePersonTransitionAtomic';
 import {
   LOCATION_IMPORT_MAX_ATOMIC_BYTES,
   digestLocationImportManifest,
@@ -85,6 +88,12 @@ export interface DirectoryReader {
 }
 
 export interface DirectoryWriter {
+  personTransitionCapabilities?(): ReturnType<typeof personTransitionCapabilities>;
+  preparePersonTransitionCommand?(command: unknown, actor: Account): ReturnType<typeof preparePersonTransitionRecovery>;
+  commitPersonTransitionCommand?(command: unknown, actor: Account): ReturnType<typeof commitPersonTransitionAtomic>;
+  readPersonTransitionOperation?(marker: unknown, actor: Account): ReturnType<typeof readPersonTransitionRecovery>;
+  cancelPersonTransitionOperation?(marker: unknown, actor: Account): ReturnType<typeof cancelPersonTransitionRecovery>;
+  listPersonTransitionOperations?(actor: Account): ReturnType<typeof listPersonTransitionPreparations>;
   previewPersonTransitionCommand?(intent: unknown, actor: Account): ReturnType<typeof previewPersonTransitionCommand>;
   previewPersonTransition?(personId: string, actor: Account): ReturnType<typeof previewPersonTransition>;
   readOperatingDirectory?(): Promise<Pick<DirectorySeed, 'locations' | 'people' | 'hoursTemplates' | 'regions' | 'districts' | 'serverNow'>>;
@@ -97,6 +106,13 @@ export interface DirectoryWriter {
 
 export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter {
   constructor(private readonly firestore: Firestore) {}
+
+  personTransitionCapabilities() { return personTransitionCapabilities(); }
+  preparePersonTransitionCommand(command: unknown, actor: Account) { requirePersonTransitionAdmission('command'); return preparePersonTransitionRecovery(this.firestore, command, actor, loadPersonTransitionReviewSigner()); }
+  commitPersonTransitionCommand(command: unknown, actor: Account) { requirePersonTransitionAdmission('command'); return commitPersonTransitionAtomic(this.firestore, command, actor, loadPersonTransitionReviewSigner()); }
+  readPersonTransitionOperation(marker: unknown, actor: Account) { requirePersonTransitionAdmission('recovery'); return readPersonTransitionRecovery(this.firestore, marker, actor); }
+  cancelPersonTransitionOperation(marker: unknown, actor: Account) { requirePersonTransitionAdmission('recovery'); return cancelPersonTransitionRecovery(this.firestore, marker, actor); }
+  listPersonTransitionOperations(actor: Account) { requirePersonTransitionAdmission('recovery'); return listPersonTransitionPreparations(this.firestore, actor); }
 
   previewPersonTransition(personId: string, actor: Account) { return previewPersonTransition(this.firestore, personId, actor); }
   previewPersonTransitionCommand(intent: unknown, actor: Account) { return previewPersonTransitionCommand(this.firestore, intent, actor, loadPersonTransitionReviewSigner()); }

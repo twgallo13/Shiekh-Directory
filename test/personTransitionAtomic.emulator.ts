@@ -8,6 +8,10 @@ import { PersonTransitionReviewSigner } from '../server/personTransitionReviewEn
 import { preparePersonTransitionRecovery, readPersonTransitionRecovery, cancelPersonTransitionRecovery } from '../server/firestorePersonTransitionRecovery';
 import { commitPersonTransitionAtomic } from '../server/firestorePersonTransitionAtomic';
 import { normalizeTransitionPreparation, TRANSITION_OPERATION_COLLECTION, transitionCommitAuditId } from '../server/personTransitionOperation';
+import express from 'express';
+import { once } from 'node:events';
+import { createDirectoryDataRouter } from '../server/directoryDataApi';
+import { FirestoreDirectoryStore } from '../server/firestoreDirectory';
 
 // Deliberately outside *.test.ts: explicit opt-in only. Fail BEFORE any SDK instance/RPC.
 if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8089') throw new Error('This integration suite requires the isolated loopback emulator at 127.0.0.1:8089.');
@@ -39,6 +43,40 @@ async function fixture() {
   };
   return { db, time, clock, records, intent, review };
 }
+
+test('actual HTTP plus SDK: gated reviewed command commits once, then keyless disabled-admission recovery preserves its result', { timeout: 60_000 }, async () => {
+  const f = await fixture();
+  const names = ['PERSON_TRANSITION_REVIEW_KEYRING', 'PERSON_TRANSITION_COMMANDS_ENABLED', 'PERSON_TRANSITION_RECOVERY_ENABLED'] as const;
+  const before = names.map(name => process.env[name]);
+  const app = express(); app.use('/api/directory', createDirectoryDataRouter(async token => { assert.equal(token, 'synthetic-local-token'); return actor; }, new FirestoreDirectoryStore(f.db)));
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${(server.address() as any).port}/api/directory/person-transitions`;
+  const request = (mode: string, body?: unknown) => fetch(`${base}/${mode}`, { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: 'Bearer synthetic-local-token', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  try {
+    delete process.env.PERSON_TRANSITION_REVIEW_KEYRING; delete process.env.PERSON_TRANSITION_COMMANDS_ENABLED; delete process.env.PERSON_TRANSITION_RECOVERY_ENABLED;
+    assert.deepEqual(await (await request('capabilities')).json(), { schemaVersion: 1, newCommandsEnabled: false, recoveryEnabled: false });
+    process.env.PERSON_TRANSITION_REVIEW_KEYRING = JSON.stringify({ activeKeyId: 'synthetic', keys: [{ id: 'synthetic', secret: Buffer.alloc(32, 0x73).toString('base64url') }] });
+    process.env.PERSON_TRANSITION_COMMANDS_ENABLED = 'true'; process.env.PERSON_TRANSITION_RECOVERY_ENABLED = 'true';
+    const reviewed = await request('preview', f.intent); assert.equal(reviewed.status, 200); const preview: any = await reviewed.json(); assert.equal(preview.ready, true);
+    const command = { schemaVersion: 1, operationId: randomUUID(), intent: f.intent, reviewEnvelope: preview.reviewEnvelope };
+    const parsed = normalizeTransitionPreparation(command, actor.uid), marker = { schemaVersion: 1, operationId: command.operationId, personId: f.intent.personId, commandDigest: parsed.identity.commandDigest };
+    assert.equal((await request('prepare', command)).status, 200);
+    const savedResponse = await request('commit', command); assert.equal(savedResponse.status, 200); const saved: any = await savedResponse.json(); assert.equal(saved.state, 'committed');
+    assert.deepEqual(await (await request('commit', command)).json(), saved);
+    assert.equal((await f.db.doc('people/subject').get()).data()!.version, 1);
+    assert.equal((await f.db.collection('audit_logs').get()).size, 1);
+    delete process.env.PERSON_TRANSITION_REVIEW_KEYRING; process.env.PERSON_TRANSITION_COMMANDS_ENABLED = 'false';
+    assert.equal((await request('commit', command)).status, 503);
+    assert.deepEqual(await (await request('status', marker)).json(), saved);
+    assert.deepEqual(await (await request('cancel', marker)).json(), saved);
+    const outstanding: any = await (await request('operations')).json(); assert.equal(outstanding.complete, true); assert.deepEqual(outstanding.operations, []);
+    assert.equal((await f.db.doc('people/subject').get()).data()!.version, 1); assert.equal((await f.db.collection('audit_logs').get()).size, 1);
+    assert.doesNotMatch(JSON.stringify(saved), /PRIVATE|reviewEnvelope|Synthetic leadership review/);
+  } finally {
+    names.forEach((name, index) => { if (before[index] === undefined) delete process.env[name]; else process.env[name] = before[index]; });
+    server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await f.db.terminate();
+  }
+});
 
 test('actual SDK: nested masks/native metadata and atomic District+Person+retired-copy updates preserve unrelated fields', { timeout: 60_000 }, async () => {
   const f = await fixture();

@@ -2,6 +2,8 @@
 
 October 23, 2026 Pacific. Source integration, not a production release. Follows [Dispatch 38](dispatch-38-transition-session-boundaries.md). Last verified serving source remains PR #53 `62acacb`; no deployment, real staffing change, secret or IAM binding is performed here.
 
+PR #59 merged at `ca71f53` after clean code/security/CodeRabbit reviews. PR #60 merged at `b70f8f3` after repairing both valid code findings, clean final code/security reviews and affected browser acceptance; CodeRabbit was rate-limited on its final head, not an approval. This phase builds on those merged trees. Preview explanatory text now describes its own lack of side effects, rather than falsely claiming no separate recovery endpoint can be enabled.
+
 ## Fixed server surface
 
 Under `/api/directory/person-transitions`, current authenticated Active Company-wide System Administrators can query `GET /capabilities`. The existing read-only `POST /preview` remains. New endpoints are `POST /prepare`, `POST /commit`, `GET /operations`, `POST /status` and `POST /cancel`. They accept only the fixed normalized command or minimal immutable marker, not arbitrary patches, actor IDs, collection paths or account changes. These are internal Firebase-session endpoints, not a new Directory consumer API/grant.

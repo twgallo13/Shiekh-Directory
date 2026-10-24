@@ -117,7 +117,7 @@ export async function previewPersonTransitionCommand(firestore: Firestore, raw: 
   return {
     schemaVersion: 1 as const, personId: intent.personId, ready: result.ready, canCommit: false as const,
     evaluatedAt: new Date(started).toISOString(), expiresAt: new Date(expires).toISOString(),
-    review: { ...result.review, excluded: ['Preview only: no preparation, receipt, commit, cancellation or recovery capability is enabled.', 'A signed review is not authentication, a lock, permission to write or complete offboarding.', 'No account, Firebase, mailbox, API credential, provider or consumer access changes.'] },
+    review: { ...result.review, excluded: ['This preview does not prepare, commit, cancel or resolve an operation. Separate protected endpoints and explicit admission are required.', 'A signed review is not authentication, a lock, permission to write or complete offboarding.', 'No account, Firebase, mailbox, API credential, provider or consumer access changes.'] },
     ...(reviewEnvelope ? { reviewEnvelope } : {}),
   };
 }

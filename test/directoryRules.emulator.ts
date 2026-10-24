@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { Firestore } from '@google-cloud/firestore';
@@ -10,7 +11,8 @@ import { TRANSITION_OPERATION_COLLECTION } from '../server/personTransitionOpera
 if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8089') {
   throw new Error('Rules acceptance requires the isolated loopback emulator at 127.0.0.1:8089.');
 }
-const PROJECT = 'demo-directory-transitions';
+// A fresh demo project isolates both loaded Rules and data from every other run.
+const PROJECT = `demo-dir-rules-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 const collections = [...new Set([...Object.values(DIRECTORY_COLLECTIONS),
   TRANSITION_OPERATION_COLLECTION, 'api_clients', 'api_client_tokens',
   'request_submission_receipts', 'location_import_receipts', 'system',
@@ -51,5 +53,8 @@ test('server-only Directory rules deny client operations regardless of client cl
       await ref.update({ version: 2 });
       assert.equal((await ref.get()).get('version'), 2);
     }
-  } finally { await env.cleanup(); await server.terminate(); }
+  } finally {
+    try { await env.clearFirestore(); }
+    finally { await env.cleanup(); await server.terminate(); }
+  }
 });

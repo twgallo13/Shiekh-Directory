@@ -21,6 +21,10 @@ Only the official Rules testing dev dependency was added; no pre-existing packag
 
 ## Next gate — stop for the owner's infrastructure-isolation decision
 
+### October 24 continuation
+
+The owner approved a dedicated limited Directory runtime identity, with the Directory remaining the location source of truth and existing API connections preserved. The initial identity-choice question is therefore **answered**; do not ask it again. Read-only service/source/IAM preflight then identified an additional shared-infrastructure access boundary. Details are retained privately, not in this repository. Simply changing Directory's identity has not been established as sufficient for the intended signing-secret isolation. A broader, staged shared-permission remediation plan requires owner approval before changing permissions used by other applications. No new identity, custom role, grant, secret/version, diagnostic Job, revision or traffic update was performed. Production remains at the verified policy/runtime checkpoint above. The original decision-stage text below is historical.
+
 The limited signing-secret setup has **not** been performed: no secret/value/version or secret-read grant was created, and no runtime identity changed. Compatibility inspection found an infrastructure-isolation question that could make the prior limited approval broader than intended. Details and the owner's pending choice are retained privately; do not silently grant access, create a new server identity, or alter shared/project IAM.
 
 If the owner approves Directory-only identity isolation, first inventory the Directory's required database, Firebase sign-in-check, mail/import and new signing permissions, including inherited access; propose/validate least-privilege mappings, preserve all other apps and identities, then use a guarded zero-traffic candidate before any production switch. Do not claim a new identity alone proves secret isolation without inspecting effective access. Otherwise keep the new staffing workflow off and review the plan with the owner.

@@ -27,11 +27,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     controller.current = session;
     try {
       const auth = getSharedAuth();
-      const unsubscribe = onIdTokenChanged(auth, user => { if (!signingOut.current) void session.restore(user); }, () => session.deny("Firebase session restoration failed."));
+      const unsubscribe = onIdTokenChanged(auth, user => {
+        if (signingOut.current) return;
+        const previous = session.boundary.snapshot();
+        void session.restore(user, previous.status === 'authorized' && !!user && previous.user?.uid === user.uid);
+      }, () => session.deny("Firebase session restoration failed."));
       const otherTabSignOut = (event: StorageEvent) => {
         if (event.key !== SESSION_SIGNOUT_SIGNAL || !event.newValue || event.storageArea !== localStorage) return;
-        session.clear();
-        try { clearProtectedStorage(sessionStorage); } catch { /* The session is fenced even if browser storage is unavailable. */ }
+        // Suppress refresh synchronously and finish this tab's Firebase sign-out too.
+        // Do not rebroadcast: other tabs receive the original event directly.
+        void signOut(false);
       };
       window.addEventListener('storage', otherTabSignOut);
       const refresh = () => { if (!signingOut.current && document.visibilityState === "visible") void session.restore(auth.currentUser, true); };
@@ -45,10 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
   const clearEmailLink = () => { capturedLink = null; setEmailLink(null); };
-  const signOut = async () => {
+  const signOut = async (broadcast = true) => {
     signingOut.current = true;
     controller.current?.clear();
-    try { localStorage.setItem(SESSION_SIGNOUT_SIGNAL, crypto.randomUUID()); } catch { /* Firebase sign-out still runs when local broadcast is unavailable. */ }
+    if (broadcast) try { localStorage.setItem(SESSION_SIGNOUT_SIGNAL, crypto.randomUUID()); } catch { /* Firebase sign-out still runs when local broadcast is unavailable. */ }
     clearEmailLink();
     clearProtectedStorage(localStorage);
     clearProtectedStorage(sessionStorage);
@@ -62,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       controller.current?.deny("Sign-out could not finish. Retry sign-out before leaving this shared device.");
     }
   };
-  return <AuthContext.Provider value={{ ...state, emailLink, clearEmailLink, signOut,
+  return <AuthContext.Provider value={{ ...state, emailLink, clearEmailLink, signOut: () => signOut(),
     currentSession: () => boundary.current!.snapshot(),
     sessionGeneration: () => boundary.current!.generation(),
     onSessionBoundary: listener => boundary.current!.subscribe(listener),

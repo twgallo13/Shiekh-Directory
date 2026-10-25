@@ -10,6 +10,8 @@ node --import tsx scripts/runtimePreviewGuard.ts path/to/private-snapshot-bundle
 
 Keep the bundle outside the repository with owner-only permissions. Environment values, IAM members and deployment configuration may be private. The command emits only fixed error codes/limitations, never input values, paths or parse-error contents. Input is limited to 10 MiB. Exit0 means the mechanical checks passed; exit1 means blocked/unreadable evidence. `releaseAuthorized` is **always false**.
 
+The CLI resolves linked-checkout/entry paths before deciding whether to run, including preserved-symlink entry mode. Resolution failure is fatal rather than a silent exit0. Importing the library through a normal entry remains inert.
+
 The bundle must contain these independently collected snapshots:
 
 - `productionBefore` and `productionAfter`: complete Cloud Run v1 Service resources for the Directory production service, including generation, observedGeneration, spec and observed traffic. All three service snapshots must include the `cloud.googleapis.com/location` metadata label set to `us-west1`; missing/wrong region evidence blocks the check.

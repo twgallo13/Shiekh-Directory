@@ -1,6 +1,6 @@
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 const PROJECT = 'gen-lang-client-0801664258';
@@ -10,11 +10,13 @@ const PREVIEW = 'shiekh-directory-runtime-preview';
 const IDENTITY = `shiekh-directory-runtime@${PROJECT}.iam.gserviceaccount.com`;
 const object = (v: unknown): Record<string, unknown> | undefined =>
   v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : undefined;
+/** Read a JSON object path without assuming the snapshot's shape. */
 function at(v: unknown, ...keys: string[]): unknown {
   for (const key of keys) v = object(v)?.[key];
   return v;
 }
 const annotations = (v: unknown) => object(at(v, 'spec', 'template', 'metadata', 'annotations'));
+/** Preserve security/network annotations; exclude only explicit preview differences. */
 function stableAnnotations(v: unknown) {
   const result = { ...annotations(v) };
   for (const key of Object.keys(result)) {
@@ -24,6 +26,7 @@ function stableAnnotations(v: unknown) {
   }
   return result;
 }
+/** Require versioned policy evidence and reject public or malformed memberships. */
 function privatePolicy(v: unknown): boolean {
   const policy = object(v);
   if (!policy || typeof policy.etag !== 'string' || !policy.etag) return false;
@@ -108,9 +111,22 @@ export function checkRuntimePreview(input: unknown) {
       'Not effective-access isolation, signed-in user/consumer acceptance or permission to deploy.'] };
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+/** Canonicalize both paths; a resolution failure must enter the CLI error path, not silently exit0. */
+export function runtimePreviewEntry(entryPath: string | undefined, moduleUrl: string) {
+  if (!entryPath) return { isMain: false, entryResolutionFailed: false };
   try {
-    if (process.argv.length !== 3 || statSync(process.argv[2]).size > 10 * 1024 * 1024) throw new Error();
+    const entry = pathToFileURL(realpathSync(resolve(entryPath))).href;
+    const module = pathToFileURL(realpathSync(fileURLToPath(moduleUrl))).href;
+    return { isMain: entry === module, entryResolutionFailed: false };
+  } catch {
+    return { isMain: true, entryResolutionFailed: true };
+  }
+}
+
+const entry = runtimePreviewEntry(process.argv[1], import.meta.url);
+if (entry.isMain) {
+  try {
+    if (entry.entryResolutionFailed || process.argv.length !== 3 || statSync(process.argv[2]).size > 10 * 1024 * 1024) throw new Error();
     const result = checkRuntimePreview(JSON.parse(readFileSync(process.argv[2], 'utf8')));
     console.log(JSON.stringify(result));
     process.exitCode = result.mechanicalChecksPassed ? 0 : 1;

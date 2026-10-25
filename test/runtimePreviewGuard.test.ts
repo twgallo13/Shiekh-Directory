@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, symlinkSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkRuntimePreview } from '../scripts/runtimePreviewGuard';
+import { checkRuntimePreview, runtimePreviewEntry } from '../scripts/runtimePreviewGuard';
 
 function fixture() {
   const production = { apiVersion: 'serving.knative.dev/v1', kind: 'Service', metadata: {
@@ -85,4 +85,35 @@ test('missing, malformed and ambiguous evidence fails closed without exposing va
   }
   const input = fixture(); Object.assign(input.projectIamPolicy, { bindings: [{ role: 'bad', members: 'allUsers' }] });
   assert.equal(checkRuntimePreview(input).mechanicalChecksPassed, false);
+});
+
+test('entry detection keeps imports inert and makes resolution failure explicitly fatal', () => {
+  assert.deepEqual(runtimePreviewEntry(undefined, import.meta.url), { isMain: false, entryResolutionFailed: false });
+  assert.deepEqual(runtimePreviewEntry('scripts/runtimePreviewGuard.ts', import.meta.url), { isMain: false, entryResolutionFailed: false });
+  const missing = join(tmpdir(), `missing-entry-${process.pid}-${Date.now()}.ts`);
+  assert.deepEqual(runtimePreviewEntry(missing, import.meta.url), { isMain: true, entryResolutionFailed: true });
+});
+
+test('CLI through a linked checkout executes checks with default and preserved symlink entry paths', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'directory-guard-link-test-'));
+  const link = join(directory, 'checkout');
+  let linked = false;
+  try {
+    symlinkSync(process.cwd(), link, process.platform === 'win32' ? 'junction' : 'dir'); linked = true;
+    const file = join(directory, 'private-input.json');
+    const script = join(link, 'scripts', 'runtimePreviewGuard.ts');
+    for (const flags of [[], ['--preserve-symlinks-main']]) {
+      writeFileSync(file, JSON.stringify(fixture()));
+      const good = spawnSync(process.execPath, [...flags, '--import', 'tsx', script, file], { encoding: 'utf8' });
+      assert.equal(good.status, 0, good.stderr); assert.equal(JSON.parse(good.stdout).mechanicalChecksPassed, true);
+      writeFileSync(file, '{private-secret-invalid');
+      const bad = spawnSync(process.execPath, [...flags, '--import', 'tsx', script, file], { encoding: 'utf8' });
+      assert.equal(bad.status, 1); assert.equal(JSON.parse(bad.stderr).mechanicalChecksPassed, false);
+      assert(!`${bad.stdout}${bad.stderr}`.includes('private-secret-invalid'));
+    }
+  } finally {
+    // Remove only our link before cleaning our own temporary fixture directory.
+    if (linked) unlinkSync(link);
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

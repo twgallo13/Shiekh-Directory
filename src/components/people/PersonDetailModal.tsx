@@ -7,7 +7,7 @@ import { Button } from '../common/Button';
 import { EmptyState } from '../common/EmptyState';
 import { Modal } from '../common/Modal';
 import { ConfirmDialog } from '../common/ConfirmDialog';
-import { formatPersonPhone, resolvePersonEmail } from '../../lib/personContacts';
+import { formatPersonPhone, resolvePersonEmail, resolvePersonPhone } from '../../lib/personContacts';
 import { buildPersonLocationRelationships, getPersonDeletionBlockers } from '../../lib/personLocationRelationships';
 import { PersonEditorForm } from './PersonEditorForm';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
@@ -62,7 +62,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
   const email = resolvePersonEmail(person);
   const sharedEmail = sharedPersonEmailKind(email.value, locations);
-  const invalidEmail = Boolean(email.value && !normalizeLocationInboxEmail(email.value));
+  const normalizedEmail = normalizeLocationInboxEmail(email.value);
+  const invalidEmail = Boolean(email.value && !normalizedEmail);
   const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const impact = personProfileImpact(person, locations, districts, regions, users);
   const ownedDistricts = districts.filter(d => d.districtManagerId === person.id);
@@ -147,50 +148,32 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
         />
       ) : (
         <div className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
-              <div className="text-neutral-500 text-[10px] font-semibold uppercase flex items-center gap-1">
-                <Phone className="w-3 h-3 text-neutral-400" /> Direct Phone
-              </div>
-              <div className="font-mono text-neutral-900 font-medium">{formatPersonPhone(person) || 'N/A'}</div>
-              <PrivacyBadge level={person.phonePrivacy} />
+          <p className="text-sm text-neutral-500">{personLifecycle(person) === 'unknown' ? 'Status needs review' : personLifecycle(person) === 'active' ? 'Active' : 'Inactive'}{person.department ? ` · ${person.department}` : ''}</p>
+          <dl className="divide-y divide-neutral-100">
+            <div className="grid gap-1 py-3 sm:grid-cols-[6rem_1fr] sm:gap-3">
+              <dt className="text-xs text-neutral-500">Direct phone</dt><dd className="flex flex-wrap items-center gap-2">
+                {resolvePersonPhone(person).value ? <a href={`tel:${resolvePersonPhone(person).value.replace(/[^0-9+]/g, '')}`} className="text-sm font-medium text-red-700 hover:underline">{formatPersonPhone(person)}</a> : <span className="text-sm text-neutral-500">Not recorded</span>}
+                <PrivacyBadge level={person.phonePrivacy} />
+              </dd>
             </div>
-
-            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1">
-              <div className="text-neutral-500 text-[10px] font-semibold uppercase flex items-center gap-1">
-                <Mail className="w-3 h-3 text-neutral-400" /> {sharedEmail ? 'Saved shared contact (legacy)' : email.source === 'legacy' && email.value ? 'Saved contact (legacy)' : 'Individual work email'}
-              </div>
-              <div className="break-all text-neutral-900 font-medium">{email.value || 'No individual email assigned'}</div>
-              <p className="text-[10px] text-neutral-500">{sharedEmail ? 'Shared inbox, not personal identity. Preserved for explicit review.' : invalidEmail ? 'Saved address needs review. Preserved, not verified.' : email.source === 'legacy' && email.value ? 'Legacy contact preserved; review before using as an individual address.' : 'Optional contact only—not sign-in or account access.'}</p>
-              <div className="text-neutral-400 text-[10px] pt-1">{personLifecycle(person) === 'unknown' ? 'Needs lifecycle review' : personLifecycle(person) === 'active' ? 'Active' : 'Inactive'}{person.department ? ` · ${person.department}` : ''}</div>
-              {Object.hasOwn(person, 'workEmail') && person.email && (person.workEmail || '').trim().toLowerCase() !== person.email.trim().toLowerCase() && (
-                <div className="break-all pt-1 text-[10px] text-neutral-500">Historical email alias (not used as the active contact): {person.email}</div>
-              )}
+            <div className="grid gap-1 py-3 sm:grid-cols-[6rem_1fr] sm:gap-3">
+              <dt className="text-xs text-neutral-500">{sharedEmail ? 'Saved shared contact' : email.source === 'legacy' && email.value ? 'Saved contact' : 'Work email'}</dt><dd className="min-w-0">
+                {normalizedEmail && !sharedEmail && email.source !== 'legacy' ? <a href={`mailto:${encodeURIComponent(normalizedEmail.value)}`} className="break-all text-sm font-medium text-red-700 hover:underline">{email.value}</a> : <span className="break-all text-sm text-neutral-700">{email.value || 'Not assigned'}</span>}
+                {(sharedEmail || invalidEmail || (email.source === 'legacy' && email.value)) && <p className="mt-1 text-xs text-amber-900">{sharedEmail ? 'Shared inbox — not an individual address.' : invalidEmail ? 'Saved address needs review.' : 'Historical contact — needs review before use.'}</p>}
+                {Object.hasOwn(person, 'workEmail') && person.email && (person.workEmail || '').trim().toLowerCase() !== person.email.trim().toLowerCase() && <details className="mt-2 text-xs text-neutral-500"><summary className="cursor-pointer">Historical contact</summary><p className="mt-1 break-all">{person.email}</p></details>}
+              </dd>
             </div>
-          </div>
-
-          <PersonInboxResponsibilities person={person} locations={locations} />
-
-          {canEdit && <PersonTransitionReview person={person} locations={locations} districts={districts} regions={regions} users={users} requests={requests} />}
-
-          {person.district && (
-            <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <MapPin className="w-3.5 h-3.5 text-neutral-400" />
-                <span className="text-neutral-600">Legacy territory/district text (reference only):</span>
-              </div>
-              <span className="font-semibold text-neutral-900">{person.district}</span>
-            </div>
-          )}
+          </dl>
+          <PersonInboxResponsibilities person={person} locations={locations} compact />
 
           <div className="space-y-2">
-            {ownedDistricts.length > 0 && <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3"><h3 className="font-semibold">District-owned management responsibilities</h3>{impact.responsibilities.filter(r => r.key.startsWith('district:')).map(row => <p key={row.key} className="mt-2">{row.label} · {row.source}</p>)}{canEdit && <a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-red-700 underline">Manage District leadership in Organization settings</a>}</div>}
+            {ownedDistricts.length > 0 && <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3"><h3 className="font-semibold">Districts</h3>{impact.responsibilities.filter(r => r.key.startsWith('district:')).map(row => <p key={row.key} className="mt-2">{row.label}</p>)}{canEdit && <a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-red-700 underline">Manage District leadership</a>}</div>}
             {impact.issues.map(issue => <p key={issue} className="text-amber-900">{issue}</p>)}
             <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider">Locations ({relationships.length})</div>
-            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+            <div className="divide-y divide-neutral-200">
               {relationships.map(row => {
                 const hasLeadershipRole = row.labels.some(label => !['Primary workplace', 'Supports'].includes(label));
-                return <div key={row.locationId} className={`rounded-lg border p-2.5 ${row.unavailable ? 'border-amber-200 bg-amber-50' : 'border-neutral-200 bg-neutral-50'}`}>
+                return <div key={row.locationId} className={`py-3 ${row.unavailable ? 'border-amber-200 bg-amber-50' : 'border-neutral-200'}`}>
                   <div className="flex items-start justify-between gap-3">
                     <button type="button" disabled={!row.location} onClick={() => row.location && onSelectLocation?.(row.location)} className="min-w-0 text-left font-medium text-neutral-900 hover:text-red-700 disabled:cursor-not-allowed">
                       {row.location ? <><strong className="text-red-700">#{row.location.storeNumber}</strong> {row.location.name}</> : <>Unavailable Location · {row.locationId}</>}
@@ -201,21 +184,29 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
                   <div className="mt-2 flex flex-wrap gap-1">{row.labels.map(label => <span key={label} className="rounded border border-neutral-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-neutral-700">{label}</span>)}</div>
                   {row.location && row.labels.some(label => ['Primary workplace', 'Supports'].includes(label)) && !row.labels.some(label => ['Store Manager', 'Assistant Manager'].includes(label)) && normalizeLocationInboxEmail(row.location.locationInboxEmail) && (
                     <div className="mt-2 rounded-md border border-neutral-200 bg-white px-2 py-1.5">
-                      <div className="text-[10px] font-semibold uppercase text-neutral-500">Location contact — not an SM/AM responsibility</div>
+                      <div className="text-[10px] font-semibold uppercase text-neutral-500">Workplace contact</div>
                       <a href={`mailto:${encodeURIComponent(normalizeLocationInboxEmail(row.location.locationInboxEmail)!.value)}`} className="mt-0.5 block break-all text-xs text-red-700 hover:underline">
                         {row.location.locationInboxEmail}
                       </a>
                     </div>
                   )}
-                  {row.location && !row.labels.some(label => ['Primary workplace', 'Supports', 'Store Manager', 'Assistant Manager'].includes(label))
-                    && row.location.locationInboxEmail && (
-                    <p className="mt-2 text-[10px] text-neutral-500">Leadership association only; this is not shown as a workplace inbox.</p>
-                  )}
                 </div>;
               })}
-              {relationships.length === 0 && <EmptyState icon={Store} title="No Locations assigned" description="This person has no workplace, support, or leadership Location relationships." compact />}
+              {relationships.length === 0 && <EmptyState icon={Store} title="No Locations assigned" description="Workplace and leadership assignments will appear here." compact />}
             </div>
           </div>
+          {canEdit && <PersonTransitionReview person={person} locations={locations} districts={districts} regions={regions} users={users} requests={requests} />}
+
+          {person.district && (
+            <details className="rounded-lg border border-neutral-200 p-3"><summary className="cursor-pointer text-xs font-medium text-neutral-600">Historical territory note</summary><div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-3.5 h-3.5 text-neutral-400" />
+                <span className="text-neutral-600">Reference only, not an assignment:</span>
+              </div>
+              <span className="font-semibold text-neutral-900">{person.district}</span>
+            </div></details>
+          )}
+
         </div>
       )}
     </Modal>

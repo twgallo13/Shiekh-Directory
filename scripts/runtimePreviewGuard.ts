@@ -72,6 +72,7 @@ export function checkRuntimePreview(input: unknown) {
   const serving = Array.isArray(traffic) ? traffic.filter(t => typeof at(t, 'percent') === 'number' && (at(t, 'percent') as number) > 0) : [];
   fail(typeof revision === 'string' && revision.startsWith(`${PREVIEW}-`)
     && at(candidate, 'status', 'latestCreatedRevisionName') === revision
+    && Array.isArray(traffic) && traffic.length === 1 && at(serving[0], 'tag') === undefined
     && serving.length === 1 && at(serving[0], 'revisionName') === revision
     && at(serving[0], 'percent') === 100, 'candidate_not_serving_tested_revision');
   const baselineTraffic = at(before, 'status', 'traffic');

@@ -11,7 +11,7 @@ import { Button } from '../common/Button';
 import { sendMailEvent } from '../../lib/mailClient';
 
 /** Dedicated immediate path, independent of correction approval and permanent Location editing. */
-export function OperatingStatusPanel({ location }: { location: LocationRecord }) {
+export function OperatingStatusPanel({ location, alertsOnly = false }: { location: LocationRecord; alertsOnly?: boolean }) {
   const { currentUser, people, districts, regions, operatingNow, operatingRefreshError, previewOperatingUpdate, saveOperatingUpdate, cancelOperatingUpdate, refreshOperatingDirectory } = useDirectory();
   const key = `directory-operating-operation:${currentUser.id}`;
   const [stored] = useState(() => {
@@ -85,8 +85,8 @@ export function OperatingStatusPanel({ location }: { location: LocationRecord })
     } catch (e) { setError(e instanceof Error ? e.message : 'Notification recovery is unavailable. Operating state is unchanged.'); }
     finally { busyRef.current = false; setBusy(false); }
   };
-  return <section aria-label="Current operating state" className="rounded-xl border border-neutral-200 bg-white p-4 space-y-3">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">{state.state === 'Unknown' ? 'Needs verification' : state.state}</h3><p className="text-neutral-600">{state.reason}</p></div><p className="text-[11px] text-neutral-500">Store-local time · {location.timeZone}</p></div>
+  return <section aria-label="Current operating state" hidden={alertsOnly && !pending && !stored.error && !operatingRefreshError && !error && !message && !state.temporaryClosure && state.issues.length === 0} className="rounded-xl border border-neutral-200 bg-white p-4 space-y-3">
+    {!alertsOnly && <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">{state.state === 'Unknown' ? 'Needs verification' : state.state}</h3><p className="text-neutral-600">{state.reason}</p></div><p className="text-[11px] text-neutral-500">Store-local time · {location.timeZone}</p></div>}
     {state.temporaryClosure && <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-900">Temporary closure automatically ends {expiryLabel(state.temporaryClosure.expiresAt, state.temporaryClosure.timeZone)}. After expiry, the applicable schedule/lifecycle applies—not forced opening.</p>}
     {state.issues.length > 0 && <p className="text-amber-800">{state.issues.join(' ')}</p>}
     {operatingRefreshError && <p role="alert" className="text-amber-900">{operatingRefreshError}</p>}
@@ -96,12 +96,12 @@ export function OperatingStatusPanel({ location }: { location: LocationRecord })
     {pending ? <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
       <p>An unconfirmed {pending.action} update is retained for Location {pending.locationId}. Its original reason and confirmation are locked.</p><p>{pending.reason}</p>
       {ownPending ? <div className="flex flex-wrap gap-2"><Button disabled={busy} size="sm" onClick={() => void attempt(pending, true)}>Recover operating update</Button><Button disabled={busy} size="sm" onClick={() => void reconcileOrCancel()}>Check saved state / cancel if not saved</Button></div> : <a className="underline font-semibold" href={`/locations/${encodeURIComponent(pending.locationId)}`}>Open that Location to recover</a>}
-    </div> : canOperate && !stored.error && <div className="flex flex-wrap gap-2">
+    </div> : !alertsOnly && canOperate && !stored.error && <div className="flex flex-wrap gap-2">
       {active ? <Button variant="secondary" disabled={busy} size="sm" onClick={() => void begin('reopen')}>End temporary closure</Button> : <Button variant="danger" disabled={busy} size="sm" onClick={() => void begin(location.temporaryClosure ? 'renew' : 'close')}>{location.temporaryClosure ? 'Confirm closure for today' : 'Report temporary closure'}</Button>}
       <Button variant="ghost" disabled={busy} size="sm" onClick={() => void refreshOperatingDirectory()}>Refresh saved state</Button>
       {(notificationId || state.temporaryClosure) && <Button variant="ghost" disabled={busy} size="sm" onClick={() => void recoverAlert()}>Check / recover steward alert</Button>}
     </div>}
-    <p className="text-[11px] text-neutral-500">Hours modifiers and permanent lifecycle are separate. Connected visible screens refresh within a target of 60 seconds; offline changes cannot be guaranteed current.</p>
+    {!alertsOnly && <details className="text-[11px] text-neutral-500"><summary className="cursor-pointer">About status updates</summary><p className="mt-2">Hours modifiers and permanent lifecycle are separate. Connected visible screens refresh within a target of 60 seconds; offline changes cannot be guaranteed current.</p></details>}
     <ConfirmDialog isOpen={Boolean(preview)} title={preview?.action === 'reopen' ? 'End this temporary closure?' : 'Confirm immediate temporary closure'} description={preview ? `Store #${preview.storeNumber} — ${preview.locationName}. ${preview.action === 'reopen' ? 'Return to the applicable schedule and lifecycle. This does not force the store open.' : `Publish immediately, without steward approval, until ${expiryLabel(preview.expectedExpiresAt!, preview.timeZone)}. Continuing closure on another day requires explicit confirmation.`}` : ''} confirmLabel={busy ? 'Saving…' : preview?.action === 'reopen' ? 'End temporary closure' : 'Confirm closure'} confirmDisabled={busy || !reason.trim() || reason.trim().length > 500} cancelDisabled={busy} onCancel={() => { if (!busyRef.current) setPreview(null); }} onConfirm={confirm}>
       <label className="block text-xs font-semibold">Reason for operating update<textarea aria-label="Reason for operating update" value={reason} maxLength={500} disabled={busy} onChange={e => setReason(e.target.value)} className="mt-1 w-full rounded-lg border border-neutral-300 p-2 font-normal" /></label>
       <p className="text-xs text-neutral-600">Customer-facing information, also shared through the Directory API. Do not include personal or confidential details.</p>

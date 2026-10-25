@@ -5,6 +5,97 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+
+for (const width of [360, 1280]) test(`Quick contact cards prioritize business information at ${width}px without writes`, async ({ page }, testInfo) => {
+  const f = await preparePersonCard(page);
+  const location = f.seed.locations[0];
+  Object.assign(f.seed.people[0], { positionIds: ['store-manager', 'district-manager'], phone: '(213) 555-0101', workEmail: 'manager@example.test' });
+  Object.assign(location, { name: 'Sample Downtown', address: '745 Sample Broadway', suite: 'Suite 200', phone: '(213) 555-0100', locationInboxEmail: 'store001@example.test', mallOrCenterName: 'Sample Center', wayfindingDirections: 'Second floor, beside the north entrance.', phonePrivacy: 'Public' });
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto(origin + '/locations/loc-1'); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Sample Downtown', exact: true })).toBeVisible();
+  const address = dialog.locator('address');
+  await expect(address).toContainText('745 Sample Broadway');
+  expect((await address.boundingBox())!.y).toBeLessThan(350);
+  await expect(dialog.getByRole('link', { name: 'Get directions' })).toHaveAttribute('href', /Suite%20200/);
+  await expect(dialog.getByRole('link', { name: 'store001@example.test', exact: true })).toHaveAttribute('href', 'mailto:store001%40example.test');
+  await expect(dialog).not.toContainText('Synced & Live');
+  await expect(dialog).not.toContainText('not automatically verified');
+  await expect(dialog.getByText('Record ID', { exact: true })).toHaveCount(0);
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('store-quick-card.png'), fullPage: true });
+  await dialog.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(dialog.getByText('Record ID', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Hours', exact: true }).or(dialog.getByRole('button', { name: 'Hours & status', exact: true })).click();
+  await expect(dialog.getByRole('region', { name: 'Current operating state', exact: true })).toBeVisible();
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await expect(page.getByRole('dialog').getByRole('link', { name: 'manager@example.test', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).not.toContainText('Optional contact only');
+  await expect(page.getByRole('dialog')).not.toContainText('Leadership association only');
+  await page.screenshot({ path: testInfo.outputPath('person-quick-card.png'), fullPage: true });
+  expect(f.commits).toHaveLength(0);
+});
+
+for (const state of ['closed', 'unknown'] as const) test(`Quick store card keeps ${state} status truthful and reports clipboard failure`, async ({ page }) => {
+  const f = await preparePersonCard(page);
+  if (state === 'closed') f.seed.locations[0].operationalStatus = 'Permanently Closed';
+  else f.seed.locations[0].timeZone = 'Invalid/Zone';
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('Synthetic clipboard denial'); } } }));
+  await page.goto(origin + '/locations/loc-1'); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText(state === 'closed' ? 'Closed' : 'Needs verification', { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByText('Open', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Copy store information', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('Clipboard access is unavailable');
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Quick person card omits empty shared inbox panels but retains legacy-contact warnings', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.locations = [];
+  Object.assign(f.seed.people[0], { email: 'shared@example.test', workEmail: '', district: 'Old territory' });
+  delete f.seed.people[0].workEmail;
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('region', { name: 'Shared store inbox responsibilities', exact: true })).toHaveCount(0);
+  await expect(dialog.getByText('Historical contact — needs review before use.', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('Old territory', { exact: true })).not.toBeVisible();
+  await dialog.getByText('Historical territory note', { exact: true }).click();
+  await expect(dialog.getByText('Old territory', { exact: true })).toBeVisible();
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Reviewed contact links use canonical work phone privacy and trimmed mail recipients', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  Object.assign(f.seed.people[0], { workPhone: '+12135550101', phone: '+12135550199', phonePrivacy: 'Restricted', workEmail: '  manager@example.test  ' });
+  f.seed.locations[0].storeManagerPhonePrivacy = 'Internal';
+  await page.goto(origin + '/locations/loc-1'); await restore(page, true);
+  const roster = page.getByRole('region', { name: 'Store leadership', exact: true });
+  await expect(roster.getByRole('link', { name: '(213) 555-0101', exact: true })).toHaveAttribute('href', 'tel:+12135550101');
+  await expect(roster.getByText('Internal', { exact: true })).toBeVisible();
+  delete f.seed.people[0].workPhone;
+  await page.reload(); await restore(page, true);
+  await expect(roster.getByRole('link', { name: '(213) 555-0199', exact: true })).toHaveCount(0);
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await expect(page.getByRole('dialog').getByRole('link', { name: 'manager@example.test', exact: true })).toHaveAttribute('href', 'mailto:manager%40example.test');
+  expect(f.commits).toHaveLength(0);
+});
+
+for (const mode of ['closure', 'malformed-hours'] as const) test(`Overview preserves resolved operating diagnostics: ${mode}`, async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.serverNow = '2026-10-22T18:00:00Z';
+  if (mode === 'closure') f.seed.locations[0].temporaryClosure = { id: 'synthetic-closure', reason: 'Power outage', startsAt: '2026-10-22T17:00:00Z', expiresAt: '2026-10-23T00:00:00Z', timeZone: 'UTC' };
+  else f.seed.locations[0].holidayHours = [{ id: 'malformed', date: 'not-a-date' }];
+  await page.goto(origin + '/locations/loc-1'); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const status = page.getByRole('region', { name: 'Current operating state', exact: true });
+  await expect(status).toBeVisible();
+  await expect(status).toContainText(mode === 'closure' ? 'Temporary closure automatically ends' : 'Dated schedules have invalid or reversed dates.');
+  if (mode === 'closure') await expect(status).toContainText('confirmed closure deadline is retained');
+  expect(f.commits).toHaveLength(0);
+});
+
 async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' | 'denied' = 'normal', role = 'System Administrator') {
   await prepare(page, role);
   const seed: any = seedDirectory(2);
@@ -623,6 +714,7 @@ async function prepareOperating(page: Page, uncertain = false) {
   });
   await page.route('**/api/mail/event', route => { mail.push(route.request().postDataJSON()); return route.fulfill({ json: { success: true, status: 'accepted' } }); });
   await page.goto(`${origin}/locations/loc-1`); await restore(page, true);
+  await page.getByRole('button', { name: 'Hours & status', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Report temporary closure' })).toBeVisible();
   return { seed, calls, mail, previews: () => previews };
 }
@@ -655,7 +747,9 @@ test('Operating uncertain save survives reload and retries only the same immutab
   await expect(page.getByRole('button', { name: 'Recover operating update' })).toBeVisible();
   expect(f.mail).toHaveLength(0);
   await page.reload(); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Recover operating update' }).click();
+  await page.getByRole('button', { name: 'Hours & status', exact: true }).click();
   await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
   expect(f.calls).toHaveLength(2); expect(f.calls[1]).toEqual(f.calls[0]);
   await expect.poll(() => f.mail.length).toBe(1);
@@ -665,6 +759,8 @@ test('Operating expiry returns to schedule on the store clock without requiring 
   const f = await prepareOperating(page);
   f.seed.locations[0].temporaryClosure = { id: 'event', reason: 'Power outage', startsAt: '2026-10-22T17:00:00Z', expiresAt: '2026-10-23T07:00:00Z', timeZone: 'America/Los_Angeles' };
   await page.reload(); await restore(page, true);
+  await expect(page.getByText('Power outage', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Hours & status', exact: true }).click();
   await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
   // An offline screen still expires its locally retained closure; no stale fixture clock reset.
   await page.route('**/api/auth/bootstrap', route => route.abort());

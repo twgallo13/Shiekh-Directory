@@ -5,6 +5,79 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+for (const width of [390, 1280]) {
+  test(`Directory store cards show complete contacts and separate selection at ${width}px`, async ({ page }, testInfo) => {
+    const f = await preparePersonCard(page);
+    Object.assign(f.seed.locations[0], { address: '123 Long Shopping Center Boulevard', suite: 'Level 2, Suite 007', city: 'Los Angeles', state: 'CA', zipCode: '90001', mallOrCenterName: 'Synthetic Mall', locationInboxEmail: 'store001@example.test', districtManagerId: 'copied-dm' });
+    f.seed.people.push({ id: 'copied-dm', fullName: 'Wrong copied manager', status: 'Active' });
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(origin + '/locations'); await restore(page, true);
+    await page.getByRole('button', { name: 'Cards View', exact: true }).click();
+    const card = page.getByRole('button', { name: 'Open store #001 Bootstrap Store 1', exact: true });
+    await expect(card).toContainText('Level 2, Suite 007');
+    await expect(card).toContainText('123 Long Shopping Center Boulevard');
+    await expect(card).toContainText('store001@example.test');
+    await expect(card).toContainText('District Manager: Synthetic Profile Manager');
+    await expect(card).not.toContainText('Wrong copied manager');
+    await page.getByRole('checkbox', { name: 'Select store #001 Bootstrap Store 1', exact: true }).check();
+    await expect(page.getByRole('button', { name: 'Configure Bulk Hours & Holiday Exception' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Close location details', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('store-cards.png'), fullPage: true });
+    await card.focus(); await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Close location details', exact: true })).toBeVisible();
+    expect(f.commits).toHaveLength(0);
+  });
+
+  test(`Directory people cards qualify contacts and linked assignments at ${width}px`, async ({ page }, testInfo) => {
+    const f = await preparePersonCard(page);
+    Object.assign(f.seed.people[0], { positionIds: ['store-manager', 'district-manager'], workEmail: 'store001@shiekhshoes.com', workPhone: '+12135550101', phonePrivacy: 'Internal', primaryLocationId: 'loc-1' });
+    f.seed.people.push({ id: 'inactive-person', fullName: 'Synthetic Inactive Person', positionIds: ['other'], status: 'Inactive', activeStatus: false });
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(origin + '/people'); await restore(page, true);
+    const card = page.getByRole('button', { name: 'Open profile for Synthetic Profile Manager', exact: true });
+    await expect(card).toContainText('Shared store contact');
+    await expect(card).toContainText('Store Manager · District Manager');
+    await expect(card).toContainText('District: North District');
+    await expect(card).toContainText('Works at: #001 Bootstrap Store 1');
+    await expect(card).not.toContainText('Legacy territory note');
+    await expect(card).toContainText('Internal');
+    await expect(page.getByRole('button', { name: 'Open profile for Synthetic Inactive Person', exact: true })).toContainText('Inactive');
+    await page.getByLabel('Filter people by position').selectOption('District Manager');
+    await expect(page.getByRole('button', { name: 'Open profile for Synthetic Inactive Person', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('people-cards.png'), fullPage: true });
+    await card.focus(); await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Edit Person', exact: true })).toBeVisible();
+    expect(f.commits).toHaveLength(0);
+  });
+
+  test(`Directory search shows addresses and controlled positions at ${width}px`, async ({ page }, testInfo) => {
+    const f = await preparePersonCard(page);
+    Object.assign(f.seed.locations[0], { address: '123 Shopping Boulevard', suite: 'Suite 007' });
+    Object.assign(f.seed.people[0], { positionIds: ['regional-manager'], jobTitle: 'Outdated display title' });
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(origin + '/locations'); await restore(page, true);
+    await page.getByRole('button', { name: 'Search stores and personnel', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Search directory', exact: true });
+    await dialog.getByLabel('Search directory records').fill('Suite 007');
+    const location = dialog.getByRole('button', { name: 'Open store #001 Bootstrap Store 1', exact: true });
+    await expect(location).toContainText('123 Shopping Boulevard, Suite 007');
+    expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('directory-search.png'), fullPage: true });
+    await dialog.getByLabel('Search directory records').fill('regional manager');
+    const person = dialog.getByRole('button', { name: 'Open profile for Synthetic Profile Manager', exact: true });
+    await expect(person).toContainText('Regional Manager');
+    await expect(person).not.toContainText('Outdated display title');
+    await expect(person).not.toContainText('Legacy territory note');
+    await person.focus(); await page.keyboard.press('Enter');
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Edit Person', exact: true })).toBeVisible();
+    expect(f.commits).toHaveLength(0);
+  });
+}
+
+
 for (const width of [390, 1280]) test(`Person editor layout keeps optional detail collapsed at ${width}px`, async ({ page }, testInfo) => {
   const f = await preparePersonCard(page);
   Object.assign(f.seed.people[0], { positionIds: ['store-manager', 'district-manager'], workPhone: '+12135550101', phonePrivacy: 'Internal', supportedLocationIds: ['loc-2'] });

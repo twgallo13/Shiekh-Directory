@@ -3,6 +3,9 @@ import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord } from '../../types';
 import { resolveActivePerson } from '../../lib/readProjectionContract';
 import { resolvePersonEmail } from '../../lib/personContacts';
+import { PERSON_POSITIONS, personPositions, personPositionLabel } from '../../lib/personPositions';
+import { personLifecycle } from '../../lib/personLifecycle';
+import { PrivacyBadge } from '../common/StatusBadge';
 import { Search, Store, User, X, ArrowRight } from 'lucide-react';
 import { useDialogFocus } from '../common/useDialogFocus';
 
@@ -19,7 +22,7 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
   onSelectLocation,
   onSelectPerson,
 }) => {
-  const { locations, people } = useDirectory();
+  const { locations, people, districts } = useDirectory();
   const [query, setQuery] = useState('');
   const dialogRef = React.useRef<HTMLDivElement>(null);
   useDialogFocus(isOpen, onClose, dialogRef);
@@ -54,6 +57,8 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
         p.fullName.toLowerCase().includes(cleanQuery) ||
         resolvePersonEmail(p).value.toLowerCase().includes(cleanQuery) ||
         p.jobTitle?.toLowerCase().includes(cleanQuery) ||
+        PERSON_POSITIONS.some(position => personPositions(p).ids.includes(position.id) && position.label.toLowerCase().includes(cleanQuery)) ||
+        districts.some(district => district.districtManagerId === p.id && district.name.toLowerCase().includes(cleanQuery)) ||
         p.district?.toLowerCase().includes(cleanQuery)
       ).slice(0, 5)
     : [];
@@ -79,21 +84,22 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
             type="text"
             autoFocus
             placeholder="Search stores, managers, districts, cities..."
+            aria-label="Search directory records"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="flex-1 bg-transparent text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-sm text-neutral-900 placeholder-neutral-400 focus:outline-none"
           />
           <button
             type="button"
             onClick={onClose}
             aria-label="Close directory search"
-            className="p-1 text-neutral-400 hover:text-neutral-700 cursor-pointer rounded-lg hover:bg-neutral-100 transition-colors"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="max-h-96 overflow-y-auto p-2 text-xs space-y-3">
+        <div className="max-h-[min(24rem,calc(100dvh-12rem))] space-y-3 overflow-y-auto p-2 text-xs">
           {matchingLocations.length > 0 && (
             <div>
               <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
@@ -109,21 +115,23 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
                       onClick={() => {
                         onSelectLocation(loc);
                       }}
-                      className="w-full p-2.5 rounded-lg hover:bg-neutral-50 flex items-center justify-between text-left cursor-pointer transition-colors border border-transparent hover:border-neutral-200"
+                      aria-label={`Open store #${loc.storeNumber} ${loc.name}`}
+                      className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-transparent p-3 text-left transition-colors hover:border-neutral-200 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <Store className="w-4 h-4 text-red-600" />
-                        <div>
+                      <div className="flex min-w-0 items-start gap-2.5">
+                        <Store aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                        <div className="min-w-0 break-words">
                           <div className="font-semibold text-neutral-900">
                             #{loc.storeNumber} — {loc.name}
                           </div>
-                          <div className="text-[11px] text-neutral-500">
-                            {loc.city}, {loc.state} • {loc.phone}
-                            {storeManager ? ` • Mgr: ${storeManager.fullName}` : ''}
-                          </div>
+                          {loc.recordStatus === 'Retired' && <p className="text-[11px] text-neutral-500">Retired</p>}
+                          <p className="mt-1 text-neutral-700">{[loc.address, loc.suite].filter(Boolean).join(', ') || 'Address not recorded'}</p>
+                          <p className="text-[11px] text-neutral-500">{[loc.city, loc.state, loc.zipCode].filter(Boolean).join(' ')}</p>
+                          {loc.phone && <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-neutral-600">{loc.phone}<PrivacyBadge level={loc.phonePrivacy} /></div>}
+                          {storeManager && <p className="mt-1 text-[11px] text-neutral-500">Store Manager: {storeManager.fullName}</p>}
                         </div>
                       </div>
-                      <ArrowRight className="w-3.5 h-3.5 text-neutral-400" />
+                      <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                     </button>
                   );
                 })}
@@ -144,18 +152,21 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
                     onClick={() => {
                       onSelectPerson(person);
                     }}
-                    className="w-full p-2.5 rounded-lg hover:bg-neutral-50 flex items-center justify-between text-left cursor-pointer transition-colors border border-transparent hover:border-neutral-200"
+                    aria-label={`Open profile for ${person.fullName}`}
+                    className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-transparent p-3 text-left transition-colors hover:border-neutral-200 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <User className="w-4 h-4 text-blue-600" />
-                      <div>
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <User aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+                      <div className="min-w-0 break-words">
                         <div className="font-semibold text-neutral-900">{person.fullName}</div>
                         <div className="text-[11px] text-neutral-500">
-                          {person.jobTitle || person.role} {person.district ? `• ${person.district}` : ''}
+                          {personPositionLabel(person)}
                         </div>
+                        {personLifecycle(person) !== 'active' && <p className="mt-1 text-[11px] text-amber-800">{personLifecycle(person) === 'inactive' ? 'Inactive' : 'Status needs review'}</p>}
+                        {districts.filter(district => district.districtManagerId === person.id).map(district => <p key={district.id} className="mt-1 text-[11px] text-neutral-500">District: {district.name || district.id}{district.status === 'Retired' ? ' (Retired)' : ''}</p>)}
                       </div>
                     </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-neutral-400" />
+                    <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                   </button>
                 ))}
               </div>

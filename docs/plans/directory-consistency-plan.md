@@ -2,7 +2,7 @@
 
 ## Contact-first UX continuation — October 24, 2026 Pacific
 
-The owner requested a focused store/person card cleanup, prioritizing address and business contacts for quick reference. [Contact card audit and acceptance plan](contact-card-ux-audit.md) records the findings, presentation scope, safeguards and follow-up screen reviews. Work starts with detail-card layout and concise labels; no staffing, API permission or production-security gate is changed. Source work is not a deployment checkpoint.
+The owner requested a focused store/person card cleanup, prioritizing address and business contacts for quick reference. [Contact card audit and acceptance plan](contact-card-ux-audit.md) records the findings, presentation scope, safeguards and follow-up screen reviews. The card cleanup is now live through the [isolated PR70 UI publication](../dispatches/dispatch-43-contact-card-ui-release.md): release source b2d26fe uses the PR53 backend plus only four reviewed UI components and compatible tests. Current main's newer staffing/session/backend code was not deployed. No staffing, API permission or production-security gate changed. Next UX work is Person editor guidance/grouping, then list/search and Organization/correction screens; shared runtime/signing/workflow gates remain separate.
 
 ## Latest owner clarification — October 23, 2026 Pacific
 

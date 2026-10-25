@@ -1,5 +1,9 @@
 # Directory hierarchy and operating workflows implementation plan
 
+## Contact-first UX continuation — October 24, 2026 Pacific
+
+The owner requested a focused store/person card cleanup, prioritizing address and business contacts for quick reference. [Contact card audit and acceptance plan](contact-card-ux-audit.md) records the findings, presentation scope, safeguards and follow-up screen reviews. Work starts with detail-card layout and concise labels; no staffing, API permission or production-security gate is changed. Source work is not a deployment checkpoint.
+
 ## Latest owner clarification — October 23, 2026 Pacific
 
 **Historical October 24 account-only preparation:** The dedicated Directory runtime account was created with zero direct project grants and zero user-managed keys verified. The subsequent limited grants below supersede that zero-grant state. Account creation does not prove signing-secret isolation. See [Dispatch41](../dispatches/dispatch-41-directory-protection-checkpoint.md#october-24-continuation) for the chronological evidence. Shared-role cleanup and workflow activation remain incomplete.

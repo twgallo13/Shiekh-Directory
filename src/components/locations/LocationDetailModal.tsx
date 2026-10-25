@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { LocationRecord, PersonRecord } from '../../types';
 import { useDirectory } from '../../context/DirectoryContext';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
@@ -8,7 +8,6 @@ import { useDialogFocus } from '../common/useDialogFocus';
 import { CustomMetadataFields } from './CustomMetadataFields';
 import { formatUsPhone } from '../../lib/contactNormalization';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
-import { Mail } from 'lucide-react';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { buildLocationReadProjection, resolveActiveLocationManagers, resolveActivePersonList } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
@@ -23,15 +22,11 @@ import {
   Edit3, 
   AlertCircle, 
   ExternalLink,
-  ShieldCheck,
-  Globe,
-  Star,
   History,
   Info,
   Calendar,
   Copy,
   Check,
-  Users
 } from 'lucide-react';
 
 interface LocationDetailModalProps {
@@ -42,7 +37,7 @@ interface LocationDetailModalProps {
   onSelectPerson?: (person: PersonRecord) => void;
 }
 
-export type LocationDetailTab = 'overview' | 'hours' | 'audit';
+export type LocationDetailTab = 'overview' | 'hours' | 'audit' | 'details';
 
 export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   location,
@@ -59,6 +54,11 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   const [copyError, setCopyError] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus(Boolean(location), onClose, dialogRef);
+  useEffect(() => {
+    setActiveTab('overview');
+    setCopied(false);
+    setCopyError('');
+  }, [location?.id]);
 
   // Filter audit logs specifically for this location
   const locationAuditLogs = useMemo(() => {
@@ -146,12 +146,6 @@ Operational lifecycle: ${location.operationalStatus}`;
   // Determine current day of week (lowercase)
   const currentDayKey = todayStatus.dayName.toLowerCase();
 
-  const isNonRetail = location.type === 'Corporate Office' || location.type === 'Warehouse / Distribution Center' || location.type === 'Other Company Location';
-  const classification = isNonRetail ? 'Non-Retail / Corporate' : 'Retail Store';
-
-  const getCurrentStatusDisplay = () => {
-    return `${todayStatus.state === 'Unknown' ? 'Needs verification' : todayStatus.state} — ${todayStatus.reason}`;
-  };
 
   return (
     <div
@@ -178,9 +172,6 @@ Operational lifecycle: ${location.operationalStatus}`;
                 <span className="px-2 py-0.5 rounded bg-red-700 text-white text-xs font-mono font-bold">
                   STORE #{location.storeNumber}
                 </span>
-                <span className="text-xs text-neutral-400 font-medium">
-                  {location.type}
-                </span>
                 <OperationalStatusBadge status={location.operationalStatus} location={location} surface="dark" />
               </div>
 
@@ -191,7 +182,7 @@ Operational lifecycle: ${location.operationalStatus}`;
 
               {/* Subtitle: Muted text */}
               <div className="text-xs text-neutral-400 font-normal">
-                {location.city}, {location.state} • {classification} • ID: {location.id}
+                {location.city}, {location.state}
               </div>
             </div>
 
@@ -214,6 +205,7 @@ Operational lifecycle: ${location.operationalStatus}`;
             <button
               type="button"
               onClick={() => setActiveTab('overview')}
+              aria-pressed={activeTab === 'overview'}
               className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs border-b-2 transition-all cursor-pointer sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'overview'
                   ? 'border-red-600 text-red-600 font-bold'
@@ -222,12 +214,13 @@ Operational lifecycle: ${location.operationalStatus}`;
             >
               <Info className="hidden h-3.5 w-3.5 sm:block" />
               <span className="sm:hidden">Overview</span>
-              <span className="hidden sm:inline">Overview & Contacts</span>
+              <span className="hidden sm:inline">Overview</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('hours')}
+              aria-pressed={activeTab === 'hours'}
               className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs border-b-2 transition-all cursor-pointer sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'hours'
                   ? 'border-red-600 text-red-600 font-bold'
@@ -236,12 +229,13 @@ Operational lifecycle: ${location.operationalStatus}`;
             >
               <Clock className="hidden h-3.5 w-3.5 sm:block" />
               <span className="sm:hidden">Hours</span>
-              <span className="hidden sm:inline">Operating Hours & Notices</span>
+              <span className="hidden sm:inline">Hours & status</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab('audit')}
+              aria-pressed={activeTab === 'audit'}
               className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-1 py-3 text-xs border-b-2 transition-all cursor-pointer sm:flex-none sm:gap-2 sm:px-4 ${
                 activeTab === 'audit'
                   ? 'border-red-600 text-red-600 font-bold'
@@ -250,7 +244,7 @@ Operational lifecycle: ${location.operationalStatus}`;
             >
               <History className="hidden h-3.5 w-3.5 sm:block" />
               <span className="sm:hidden">Audit</span>
-              <span className="hidden sm:inline">Audit History</span>
+              <span className="hidden sm:inline">History</span>
               <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold sm:ml-1 ${
                 activeTab === 'audit'
                   ? 'bg-red-100 text-red-700'
@@ -259,6 +253,7 @@ Operational lifecycle: ${location.operationalStatus}`;
                 {locationAuditLogs.length}
               </span>
             </button>
+            <button type="button" aria-pressed={activeTab === 'details'} onClick={() => setActiveTab('details')} className={`min-w-0 flex-1 border-b-2 px-2 py-3 text-xs sm:flex-none sm:px-4 ${activeTab === 'details' ? 'border-red-600 font-bold text-red-600' : 'border-transparent font-medium text-neutral-500 hover:text-neutral-800'}`}>Details</button>
           </div>
 
           {/* Far-Right [Copy] Action Button */}
@@ -266,6 +261,7 @@ Operational lifecycle: ${location.operationalStatus}`;
             type="button"
             onClick={handleCopyStoreInfo}
             className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-300 bg-neutral-100 p-2 text-xs font-semibold text-neutral-700 shadow-2xs transition-colors hover:bg-neutral-200 hover:text-neutral-900 sm:px-3 sm:py-1.5"
+            aria-label={copied ? 'Store information copied' : 'Copy store information'}
             title="Copy store information to clipboard"
           >
             {copied ? (
@@ -283,379 +279,83 @@ Operational lifecycle: ${location.operationalStatus}`;
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6 text-xs">
+        <div className="min-h-0 overflow-y-auto flex-1 p-4 sm:p-5 text-sm">
+          {copyError && <p role="alert" className="mb-3 text-xs text-red-700">{copyError}</p>}
+          {copied && <p role="status" className="sr-only">Copied to clipboard.</p>}
           
-          {/* TAB 1: OVERVIEW & CONTACTS */}
           {activeTab === 'overview' && (
-            <div className="space-y-5 animate-in fade-in duration-150">
-              <OperatingStatusPanel location={location} />
-              
-              {/* 1. Property & Hours Columns - Two-Column Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
-                {/* Left Column (Property) */}
-                <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3 flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
-                        Store Property & Contact
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[9px] font-medium text-neutral-500">Phone privacy</span>
-                        <PrivacyBadge level={location.phonePrivacy} />
-                      </div>
-                    </div>
-
-                    {/* Clickable Phone Number Link in Canonical Red */}
-                    <div className="p-2.5 bg-white rounded-lg border border-neutral-200 shadow-2xs space-y-1">
-                      <div className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                        Direct Customer Line
-                      </div>
-                      <a 
-                        href={`tel:${location.phone.replace(/[^0-9+]/g, '')}`}
-                        className="flex items-center gap-2 group pt-0.5"
-                        title="Click to call store"
-                      >
-                        <div className="p-1.5 rounded-md bg-red-50 text-red-600 border border-red-200 group-hover:bg-red-100 transition-colors">
-                          <Phone className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="text-sm font-mono font-medium text-red-600 group-hover:text-red-700 group-hover:underline">
-                          {formatUsPhone(location.phone, location.phoneExtension)}
-                        </span>
-                      </a>
-                    </div>
-
-                    <div className="min-w-0 rounded-lg border border-neutral-200 bg-white p-2.5 shadow-2xs">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-                        Location inbox · shared contact
-                      </div>
-                      {normalizedLocationInbox ? (
-                        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-                          <a href={`mailto:${encodeURIComponent(normalizedLocationInbox.value)}`} className="min-w-0 break-all text-xs font-medium text-red-700 hover:underline">
-                            {normalizedLocationInbox.value}
-                          </a>
-                          <button
-                            type="button"
-                            aria-label="Copy location inbox"
-                            title="Copy location inbox"
-                            onClick={() => { void handleCopyLocationInbox(); }}
-                            className="inline-flex shrink-0 items-center gap-1 rounded border border-neutral-300 px-2 py-1 text-[10px] font-semibold text-neutral-700 hover:bg-neutral-100"
-                          >
-                            <Copy className="h-3 w-3" aria-hidden="true" /> Copy
-                          </button>
-                          <a
-                            href={`mailto:${encodeURIComponent(normalizedLocationInbox.value)}`}
-                            aria-label="Email location inbox"
-                            className="inline-flex shrink-0 items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-semibold text-red-700 hover:bg-red-100"
-                          >
-                            <Mail className="h-3 w-3" aria-hidden="true" /> Email
-                          </a>
-                        </div>
-                      ) : (
-                        <p className="mt-1 break-all text-xs text-neutral-500">{location.locationInboxEmail ? `Historical inbox needs review: ${location.locationInboxEmail}` : 'No location inbox recorded'}</p>
-                      )}
-                      <p className="mt-1 text-[10px] text-neutral-500">Separate from the phone privacy setting; not automatically verified or synced with Google. Email opens a draft only.</p>
-                      {copyError && <p role="alert" className="mt-1 text-[10px] text-red-700">{copyError}</p>}
-                      {copied && <p role="status" className="sr-only">Copied to clipboard.</p>}
-                    </div>
-
-                    {/* Clickable Address Block with Directions External Link */}
-                    <div className="p-2.5 bg-white rounded-lg border border-neutral-200 shadow-2xs space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                          Physical Address
-                        </span>
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.address}, ${location.city}, ${location.state} ${location.zipCode}`)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded hover:bg-red-100 transition-colors"
-                          title="Get Google Maps directions"
-                        >
-                          <span>Directions</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
-                      </div>
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.address}, ${location.city}, ${location.state} ${location.zipCode}`)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-start gap-2 group pt-0.5"
-                      >
-                        <div className="p-1.5 rounded-md bg-red-50 text-red-600 border border-red-200 group-hover:bg-red-100 transition-colors shrink-0 mt-0.5">
-                          <MapPin className="w-3.5 h-3.5" />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-neutral-800 group-hover:text-red-700 group-hover:underline">
-                            {location.address}{location.suite ? `, ${location.suite}` : ''}
-                          </div>
-                          <div className="text-xs text-neutral-600 font-normal">
-                            {location.city}, {location.state} {location.zipCode}
-                          </div>
-                        </div>
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Location Meta Details */}
-                  <div className="pt-2 border-t border-neutral-200 space-y-1.5 text-neutral-600">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-neutral-500">Location Type:</span>
-                      <span className="font-semibold text-neutral-800">{location.type}</span>
-                    </div>
-                    {location.mallOrCenterName && (
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-neutral-500">Center / Mall:</span>
-                        <span className="font-semibold text-neutral-800 truncate max-w-[180px]">{location.mallOrCenterName}</span>
-                      </div>
-                    )}
-                      {location.wayfindingDirections && <div className="rounded-lg border border-blue-100 bg-blue-50 p-3"><h4 className="text-xs font-semibold text-blue-900">Finding the store</h4><p className="mt-1 whitespace-pre-wrap break-words text-xs text-blue-900">{location.wayfindingDirections}</p></div>}
-                      {/* External Store & Review Links if available */}
-                    {(location.googleReviewUrl || location.storePageUrl) && (
-                      <div className="pt-1.5 flex flex-wrap gap-1.5">
-                        {location.googleReviewUrl && (
-                          <a 
-                            href={location.googleReviewUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded hover:bg-amber-100 transition-colors"
-                          >
-                            <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                            <span>Reviews</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        )}
-                        {location.storePageUrl && (
-                          <a 
-                            href={location.storePageUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-100 transition-colors"
-                          >
-                            <Globe className="w-3 h-3 text-blue-600" />
-                            <span>Webpage</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </div>
+            <div className="space-y-5">
+              <section aria-label="Address and contact" className="grid gap-5 sm:grid-cols-[1.15fr_1fr]">
+                <div className="min-w-0">
+                  <h3 className="mb-2 text-xs font-semibold text-neutral-500">Address</h3>
+                  <address className="not-italic text-base font-semibold leading-relaxed text-neutral-900">
+                    {location.address || 'Address not recorded'}
+                    {location.suite && <span className="block">{location.suite}</span>}
+                    <span className="block text-sm font-normal">{location.city}, {location.state} {location.zipCode}</span>
+                  </address>
+                  {location.mallOrCenterName && <p className="mt-1 break-words text-sm text-neutral-600">{location.mallOrCenterName}</p>}
+                  {location.address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([location.address, location.suite, location.city, location.state, location.zipCode].filter(Boolean).join(', '))}`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 py-1 text-sm font-medium text-red-700 hover:underline"><MapPin className="h-4 w-4" />Get directions<ExternalLink className="h-3 w-3" /></a>}
+                  {location.wayfindingDirections && <div className="mt-3 border-l-2 border-neutral-200 pl-3"><h4 className="text-xs font-semibold text-neutral-500">Finding the store</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-800">{location.wayfindingDirections}</p></div>}
                 </div>
-
-                {/* Right Column (Hours) */}
-                <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3 flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
-                        Operating Hours
-                      </div>
-                      <span className="text-[10px] text-neutral-400 font-mono">
-                        {location.timeZone ? location.timeZone.split('/')[1]?.replace('_', ' ') : 'Local Time'}
-                      </span>
-                    </div>
-
-                    {/* Current status wrapped in prominent green highlight box */}
-                    <div className="bg-emerald-50 text-emerald-800 p-2 rounded flex items-center justify-between font-semibold text-xs border border-emerald-200/70">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                        <span>{getCurrentStatusDisplay()}</span>
-                      </div>
-                      <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    </div>
-
-                    {/* Today's Schedule Overview */}
-                    <div className="p-2.5 bg-white rounded-lg border border-neutral-200 text-xs space-y-1">
-                      <div className="flex items-center justify-between text-[11px] text-neutral-500">
-                        <span>Today ({todayStatus.dayName}):</span>
-                        <span className="font-mono font-bold text-neutral-900">{todayStatus.hoursString}</span>
-                      </div>
-                      {visibleNotice && (
-                        <div className="pt-1.5 border-t border-neutral-100 text-[10px] text-amber-700 flex items-center gap-1 font-medium">
-                          <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
-                          <span className="truncate">{visibleNotice.shortDescription}</span>
-                        </div>
-                      )}
-                    </div>
+                <div className="min-w-0 space-y-4">
+                  <div>
+                    <div className="mb-1 flex flex-wrap items-center gap-2"><h3 className="text-xs font-semibold text-neutral-500">Store phone</h3><PrivacyBadge level={location.phonePrivacy} /></div>
+                    {location.phone ? <a href={`tel:${location.phone.replace(/[^0-9+]/g, '')}`} className="inline-flex items-center gap-2 py-1 text-base font-medium text-red-700 hover:underline"><Phone className="h-4 w-4" />{formatUsPhone(location.phone, location.phoneExtension)}</a> : <p className="text-sm text-neutral-500">Not recorded</p>}
                   </div>
-
-                  {/* View All 7 Days Styled in Red */}
-                  <div className="flex flex-col items-start gap-1 border-t border-neutral-200 pt-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('hours')}
-                      className="text-red-600 hover:text-red-700 font-medium text-xs inline-flex items-center gap-1 hover:underline cursor-pointer"
-                    >
-                      <span>View All 7 Days &rarr;</span>
-                    </button>
-                    <span className="text-[10px] text-neutral-400 sm:max-w-44 sm:truncate sm:text-right" title={hoursSourceLabel}>
-                      {hoursSourceLabel}
-                    </span>
+                  <div>
+                    <h3 className="mb-1 text-xs font-semibold text-neutral-500">Store inbox</h3>
+                    {normalizedLocationInbox ? <div className="flex min-w-0 items-start gap-2">
+                      <a href={`mailto:${encodeURIComponent(normalizedLocationInbox.value)}`} className="min-w-0 break-all py-1 text-sm font-medium text-red-700 hover:underline">{normalizedLocationInbox.value}</a>
+                      <button type="button" aria-label="Copy location inbox" title="Copy location inbox" onClick={() => { void handleCopyLocationInbox(); }} className="shrink-0 rounded p-2 text-neutral-500 hover:bg-neutral-100"><Copy className="h-4 w-4" /></button>
+                    </div> : <p className="text-sm text-neutral-500">{location.locationInboxEmail ? 'Saved inbox needs review' : 'Not recorded'}</p>}
                   </div>
+                  {(location.storePageUrl || location.googleReviewUrl) && <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium text-red-700">
+                    {location.storePageUrl && <a href={location.storePageUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline">Store website<ExternalLink className="h-3 w-3" /></a>}
+                    {location.googleReviewUrl && <a href={location.googleReviewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline">Google reviews<ExternalLink className="h-3 w-3" /></a>}
+                  </div>}
                 </div>
-
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                    <Users className="h-3.5 w-3.5" /> Employment Relationships
-                  </div>
-                  <span className="text-[10px] text-neutral-400">Derived from People records</span>
-                </div>
-                <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+              </section>
+              <section aria-label="Today's hours" className="flex flex-wrap items-center justify-between gap-3 border-y border-neutral-200 py-3">
+                <div><h3 className="text-xs font-semibold text-neutral-500">Today · {todayStatus.dayName}</h3><p className="mt-1 text-sm font-semibold text-neutral-900">{todayStatus.hoursString}</p></div>
+                <div className="text-right"><p className="text-xs text-neutral-500">{location.timeZone?.split('/').pop()?.replace(/_/g, ' ') || 'Local time'}</p><button type="button" onClick={() => setActiveTab('hours')} className="mt-1 py-1 text-sm font-medium text-red-700 hover:underline">Hours & status →</button></div>
+              </section>
+              <OperatingStatusPanel location={location} alertsOnly />
+              {(todayStatus.temporaryClosure || todayStatus.state === 'Unknown' || visibleNotice) && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                <p className="font-semibold">{todayStatus.reason}</p>
+                {visibleNotice && <p className="mt-1 whitespace-pre-wrap break-words">{visibleNotice.shortDescription}</p>}
+              </div>}
+              <section aria-label="Store leadership">
+                <h3 className="mb-2 text-xs font-semibold text-neutral-500">Leadership</h3>
+                <dl className="divide-y divide-neutral-100">
                   {[
-                    { label: 'Works at this Location', records: primaryEmployees, empty: 'No primary employees assigned' },
-                    { label: 'Supports this Location', records: supportingEmployees, empty: 'No supporting employees assigned' },
-                  ].map((group, index) => (
-                    <div key={group.label} className={`grid gap-2 p-3 sm:grid-cols-[10rem_1fr] sm:items-start ${index === 0 ? 'border-b border-neutral-200' : ''}`}>
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">{group.label}</span>
-                      {group.records.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
-                          {group.records.map(person => (
-                            <button
-                              type="button"
-                              key={person.id}
-                              onClick={() => handleOpenPerson(person.id)}
-                              className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-medium text-neutral-800 hover:bg-neutral-100 hover:text-red-700"
-                            >
-                              {person.fullName}<ExternalLink className="h-3 w-3 text-neutral-400" />
-                            </button>
-                          ))}
-                        </div>
-                      ) : <span className="text-xs italic text-neutral-400">{group.empty}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* 2. Canonical Leadership Roster */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-neutral-500 uppercase tracking-wider text-[10px]">
-                    Store Leadership Roster
-                  </div>
-                  <span className="text-[10px] text-neutral-400">Sourced from People Directory</span>
-                </div>
-                {staffingDiagnostics.length > 0 && <details className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
-                  <summary className="cursor-pointer font-semibold">Saved staffing needs review ({staffingDiagnostics.length})</summary>
-                  <p className="mt-2">Canonical IDs are preserved. Copied legacy names do not create assignments or People.</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-4">{staffingDiagnostics.map((warning, index) => <li key={index} className="break-words">{warning}</li>)}</ul>
-                </details>}
-
-                <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Store Manager</span>
-                    <div>
-                      {storeManager ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPerson(storeManager.id)}
-                          className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
-                        >
-                          <span>{storeManager.fullName}</span>
-                          <ExternalLink className="w-3 h-3 text-neutral-400" />
-                        </button>
-                      ) : (
-                        <span className="text-neutral-400 italic text-xs">Position Vacant</span>
-                      )}
-                    </div>
-                    <div className="text-left sm:text-right">
-                      {resolvePersonPhone(storeManager).value ? (
-                        <a 
-                          href={`tel:${resolvePersonPhone(storeManager).value.replace(/[^0-9+]/g, '')}`}
-                          className="font-mono text-[11px] font-medium text-red-600 hover:underline"
-                        >
-                          {formatPersonPhone(storeManager)}
-                        </a>
-                      ) : (
-                        <span className="font-mono text-[11px] text-neutral-400">No phone on record</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">District Manager</span>
-                    <div>
-                      {districtManager ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPerson(districtManager.id)}
-                          className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
-                        >
-                          <span>{districtManager.fullName}</span>
-                          <ExternalLink className="w-3 h-3 text-neutral-400" />
-                        </button>
-                      ) : (
-                        <span className="text-neutral-400 italic text-xs">Unassigned</span>
-                      )}
-                    </div>
-                    <span className="max-w-64 text-[11px] font-medium text-neutral-600">
-                      {hierarchyDistrictLabel(hierarchy, location.type)}
-                    </span>
-                  </div>
-
-                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Regional Manager</span>
-                    <div>
-                      {regionalManager ? (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPerson(regionalManager.id)}
-                          className="flex cursor-pointer items-center gap-1 text-xs font-bold text-neutral-900 hover:text-red-600 hover:underline"
-                        >
-                          <span>{regionalManager.fullName}</span>
-                          <ExternalLink className="w-3 h-3 text-neutral-400" />
-                        </button>
-                      ) : (
-                        <span className="text-neutral-400 italic text-xs">Unassigned</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 border-b border-neutral-200 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Assistant Managers</span>
-                    {assistantManagers.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                          {assistantManagers.map(person => (
-                            <button
-                              type="button"
-                              key={person.id}
-                              onClick={() => handleOpenPerson(person.id)}
-                              className="inline-flex cursor-pointer items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-medium text-neutral-800 transition-colors hover:bg-neutral-100"
-                            >
-                              <span>{person.fullName}</span>
-                            </button>
-                          ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs italic text-neutral-400">None assigned</span>
-                    )}
-                    <span className="text-[11px] text-neutral-500">{assistantManagers.length} assigned</span>
-                  </div>
-
-                  <div className="grid gap-3 p-3 sm:grid-cols-[9rem_1fr_auto] sm:items-center">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Key Holders</span>
-                    {keyHolders.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5">
-                          {keyHolders.map(person => (
-                            <button
-                              type="button"
-                              key={person.id}
-                              onClick={() => handleOpenPerson(person.id)}
-                              className="inline-flex cursor-pointer items-center gap-1 rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] text-neutral-700 transition-colors hover:bg-neutral-100"
-                            >
-                              <span>{person.fullName}</span>
-                            </button>
-                          ))}
-                      </div>
-                    ) : (
-                      <span className="text-xs italic text-neutral-400">None designated</span>
-                    )}
-                    <span className="text-[11px] text-neutral-500">{keyHolders.length} assigned</span>
-                  </div>
-                </div>
-              </div>
-
+                    { label: 'Store Manager', records: storeManager ? [storeManager] : [] },
+                    { label: 'District Manager', records: districtManager ? [districtManager] : [] },
+                    { label: 'Regional Manager', records: regionalManager ? [regionalManager] : [] },
+                    { label: 'Assistant Managers', records: assistantManagers },
+                    { label: 'Key Holders', records: keyHolders },
+                  ].map(group => <div key={group.label} className="grid gap-1 py-2 sm:grid-cols-[9rem_1fr] sm:gap-3">
+                    <dt className="text-xs text-neutral-500">{group.label}</dt>
+                    <dd className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                      {group.records.length ? group.records.map(person => <span key={person.id} className="inline-flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                        <button type="button" disabled={!onSelectPerson} onClick={() => handleOpenPerson(person.id)} className="break-words text-left font-medium text-neutral-900 hover:text-red-700 hover:underline disabled:no-underline">{person.fullName}</button>
+                        {group.label === 'Store Manager' && resolvePersonPhone(person).value && <a href={`tel:${resolvePersonPhone(person).value.replace(/[^0-9+]/g, '')}`} className="text-xs text-red-700 hover:underline">{formatPersonPhone(person)}</a>}
+                      </span>) : <span className="text-neutral-500">Unassigned</span>}
+                    </dd>
+                  </div>)}
+                </dl>
+                <p className="mt-2 break-words text-xs text-neutral-500">{hierarchyDistrictLabel(hierarchy, location.type)}{hierarchy.regionName ? ` · ${hierarchy.regionName}` : ''}</p>
+                {(staffingDiagnostics.length > 0 || hierarchy.hierarchyIssues.length > 0 || hierarchy.applicabilityIssues.length > 0) && <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><summary className="cursor-pointer font-semibold">Assignments need review</summary><ul className="mt-2 list-disc space-y-1 pl-4">{[...staffingDiagnostics, ...hierarchy.hierarchyIssues, ...hierarchy.applicabilityIssues].map((warning, index) => <li key={index} className="break-words">{warning}</li>)}</ul></details>}
+              </section>
+            </div>
+          )}
+          {activeTab === 'details' && <div className="space-y-5">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-sm">
+              <dt className="text-neutral-500">Record ID</dt><dd className="break-all">{location.id}</dd>
+              <dt className="text-neutral-500">Location type</dt><dd>{location.type}</dd>
+              <dt className="text-neutral-500">Lifecycle</dt><dd>{location.operationalStatus}</dd>
+              {location.locationInboxEmail && !normalizedLocationInbox && <><dt className="text-neutral-500">Saved inbox</dt><dd className="break-all">{location.locationInboxEmail}</dd></>}
+            </dl>
+            {(primaryEmployees.length > 0 || supportingEmployees.length > 0) && <section aria-label="Workplace and support"><h3 className="mb-2 text-sm font-semibold">Workplace & support</h3>{[{ label: 'Works here', records: primaryEmployees }, { label: 'Supports this location', records: supportingEmployees }].filter(group => group.records.length).map(group => <div key={group.label} className="mb-3"><p className="text-xs text-neutral-500">{group.label}</p><div className="mt-1 flex flex-wrap gap-2">{group.records.map(person => <button type="button" key={person.id} disabled={!onSelectPerson} onClick={() => handleOpenPerson(person.id)} className="rounded border border-neutral-200 px-2 py-1 text-sm hover:text-red-700">{person.fullName}</button>)}</div></div>)}</section>}
               {/* 3. Steward Verification Block with Green Checkmark Icon */}
               <div className="p-3.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between">
                 <div className="space-y-0.5">
@@ -688,30 +388,13 @@ Operational lifecycle: ${location.operationalStatus}`;
 
               <CustomMetadataFields definitions={customFieldDefinitions} values={location.customMetadata || {}} />
 
-              {/* 4. Google Business Profile (GBP) Status Block (Absolute bottom of content area) */}
-              <div className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-xl">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-200">
-                    <Globe className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-neutral-900">Google Business Profile (GBP)</div>
-                    <div className="text-[11px] text-neutral-500">Maps Search Listings & Operating Hours</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Synced & Live</span>
-                </div>
-              </div>
 
-            </div>
-          )}
+          </div>}
 
           {/* TAB 2: OPERATING HOURS & NOTICES */}
           {activeTab === 'hours' && (
             <div className="space-y-5 animate-in fade-in duration-150">
-              
+              <OperatingStatusPanel location={location} />
               {/* Notice alert if active */}
               {visibleNotice ? (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-xs text-amber-900 shadow-xs">

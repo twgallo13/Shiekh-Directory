@@ -5,6 +5,28 @@ import { DEFAULT_WEEKLY_HOURS } from '../src/lib/defaultHours';
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+for (const mode of ['Table View', 'District Groups']) test(`Directory table opens stores by keyboard in ${mode}`, async ({ page }) => {
+  const f = await preparePersonCard(page);
+  await page.goto(origin + '/locations'); await restore(page, true);
+  await page.getByRole('button', { name: mode, exact: true }).click();
+  const open = page.getByRole('button', { name: 'Open store #001 Bootstrap Store 1', exact: true });
+  await open.focus(); await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Close location details', exact: true })).toBeVisible();
+  expect(f.commits).toHaveLength(0);
+});
+
+for (const email of ['historical@example.test', 'store001@shiekhshoes.com']) test(`Directory cards qualify malformed inbox and historical contact: ${email}`, async ({ page }) => {
+  const f = await preparePersonCard(page);
+  delete f.seed.people[0].workEmail; f.seed.people[0].email = email;
+  f.seed.locations[0].locationInboxEmail = 'not-an-email';
+  await page.goto(origin + '/locations'); await restore(page, true);
+  await page.getByRole('button', { name: 'Cards View', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Open store #001 Bootstrap Store 1', exact: true })).toContainText('Saved inbox needs review');
+  await page.goto(origin + '/people'); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'Open profile for Synthetic Profile Manager', exact: true })).toContainText(email.startsWith('store') ? 'Historical shared contact · needs review' : 'Historical contact · needs review');
+  expect(f.commits).toHaveLength(0);
+});
+
 for (const width of [390, 1280]) {
   test(`Directory store cards show complete contacts and separate selection at ${width}px`, async ({ page }, testInfo) => {
     const f = await preparePersonCard(page);

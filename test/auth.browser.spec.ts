@@ -8,6 +8,46 @@ import { normalizeTransitionPreparation, transitionOperationIdentity, transition
 
 const origin = process.env.AUTH_BROWSER_TEST_ORIGIN || "http://127.0.0.1:3001";
 
+for (const width of [390, 1280]) test(`Person editor layout keeps optional detail collapsed at ${width}px`, async ({ page }, testInfo) => {
+  const f = await preparePersonCard(page);
+  Object.assign(f.seed.people[0], { positionIds: ['store-manager', 'district-manager'], workPhone: '+12135550101', phonePrivacy: 'Internal', supportedLocationIds: ['loc-2'] });
+  f.seed.locations[0].locationInboxEmail = 'store001@example.test';
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('Find support locations', { exact: true })).not.toBeVisible();
+  await expect(dialog.getByRole('button', { name: /Remove support Bootstrap Store 2/ })).toBeVisible();
+  await expect(dialog.getByText('Legacy territory/district text (reference only): Legacy territory note. Not an assignment; preserved.', { exact: true })).not.toBeVisible();
+  await expect(dialog.getByRole('region', { name: 'Shared store inbox responsibilities', exact: true }).getByRole('heading', { name: 'Assigned store contacts', exact: true })).toBeVisible();
+  const footer = await dialog.getByRole('button', { name: 'Save Person', exact: true }).boundingBox();
+  expect(footer!.y + footer!.height).toBeLessThanOrEqual(900);
+  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await dialog.getByRole('heading', { name: 'Profile & positions', exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('person-editor-profile.png'), fullPage: true });
+  await dialog.getByRole('heading', { name: 'Contact details', exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('person-editor-contact.png'), fullPage: true });
+  await dialog.getByRole('checkbox', { name: 'Regional Manager', exact: true }).check();
+  await expect(dialog.getByRole('region', { name: 'Profile and positions', exact: true }).getByRole('heading', { name: 'Review position change', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('region', { name: 'Management responsibilities', exact: true }).locator('details[open]')).toHaveCount(1);
+  expect(f.commits).toHaveLength(0);
+});
+
+test('Person editor keeps unavailable workplace/support links during an unrelated save', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  Object.assign(f.seed.people[0], { primaryLocationId: 'missing-primary', supportedLocationIds: ['missing-support', 'loc-2'] });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  await expect(page.getByText('1 saved support location is unavailable. Review these links before changing them.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove support missing-support', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Works at', { exact: true })).toHaveValue('missing-primary');
+  await page.getByLabel('Department', { exact: true }).fill('Updated department');
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  expect(f.commits).toHaveLength(1);
+  expect(f.commits[0].writes[0].data.primaryLocationId).toBe('missing-primary');
+  expect(f.commits[0].writes[0].data.supportedLocationIds).toEqual(['missing-support', 'loc-2']);
+});
+
 for (const width of [360, 1280]) test(`Quick contact cards prioritize business information at ${width}px without writes`, async ({ page }, testInfo) => {
   const f = await preparePersonCard(page);
   const location = f.seed.locations[0];
@@ -540,7 +580,9 @@ test('Person inbox responsibilities show canonical SM and AM roles with optional
   await page.screenshot({ path: testInfo.outputPath('person-inbox-responsibilities-mobile.png'), fullPage: true });
   await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
   await expect(page.getByLabel('Individual work email (optional)', { exact: true })).toHaveValue('individual@shiekhshoes.com');
-  await expect(page.getByRole('region', { name: 'Shared store inbox responsibilities', exact: true })).toContainText('does not verify mailbox access');
+  const editorInboxes = page.getByRole('region', { name: 'Shared store inbox responsibilities', exact: true });
+  await editorInboxes.getByText('About these contacts', { exact: true }).click();
+  await expect(editorInboxes.getByText('From SM/AM assignments. Mailbox access is not verified.', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(f.commits).toHaveLength(0);
 });
@@ -551,7 +593,7 @@ test('Person editor preserves legacy shared contact on unrelated save and blocks
   f.seed.people[0].email = 'store1@shiekhshoes.com';
   f.seed.locations[1].locationInboxEmail = 'team@example.test';
   await page.goto(origin + '/people/person-profile'); await restore(page, true);
-  await expect(page.getByText('Saved shared contact (legacy)', { exact: true })).toBeVisible();
+  await expect(page.getByText('Saved shared contact', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
   await page.getByLabel('Individual work email (optional)', { exact: true }).fill('temporary@shiekhshoes.com');
   await page.getByLabel('Individual work email (optional)', { exact: true }).fill('store1@shiekhshoes.com');
@@ -578,7 +620,7 @@ test('Person editor preserves legacy shared contact on unrelated save and blocks
   await page.getByRole('button', { name: 'Save Person', exact: true }).click();
   await expect.poll(() => f.commits.length).toBe(3);
   expect(f.commits[2].writes[0].data.workEmail).toBe('');
-  await expect(page.getByText('No individual email assigned', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('Not assigned', { exact: true })).toBeVisible();
   expect(f.commits.every(c => c.writes.every((w: any) => w.collection === 'people'))).toBe(true);
 });
 
@@ -631,6 +673,7 @@ test('Person card blocks silent loss of SM responsibility and zero-store Distric
   f.seed.locations = []; f.seed.users = [];
   await page.reload(); await restore(page, true);
   await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByText(/Current management assignments/).click();
   await expect(page.getByRole('link', { name: /North District.*0 linked stores/ })).toBeVisible();
   await page.getByLabel('Active Status', { exact: true }).selectOption('Inactive');
   await page.getByRole('button', { name: 'Save Person' }).click();
@@ -705,6 +748,7 @@ test('Person card is readable on mobile and support search preserves selected lo
   await page.getByRole('button', { name: 'Edit Person' }).click();
   await expect(page.getByRole('textbox', { name: 'Full Name', exact: true })).toBeVisible();
   for (const name of ['Display title (optional)', 'Work Phone', 'Extension', 'Individual work email (optional)', 'Phone visibility', 'Works at', 'Active Status']) await expect(page.getByLabel(name, { exact: true })).toBeVisible();
+  await page.getByText('Choose support locations', { exact: true }).click();
   await page.getByLabel('Find support locations', { exact: true }).fill('nothing matches');
   await expect(page.getByRole('button', { name: /Remove support/ })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -2120,6 +2164,7 @@ test('Person legacy territory is reference-only and unrelated edits preserve lin
   await page.goto(`${origin}/people`); await restore(page, true);
   await page.getByRole('button', { name: /District Manager/ }).click();
   await page.getByRole('button', { name: 'Edit Person' }).click();
+  await page.getByText('Historical territory note', { exact: true }).click();
   await expect(page.getByText(/Legacy territory\/district text \(reference only\)/)).toBeVisible();
   await expect(page.getByLabel('Assigned Territory / District (Compatibility)')).toHaveCount(0);
   await page.getByLabel('Department', { exact: true }).fill('Synthetic department');

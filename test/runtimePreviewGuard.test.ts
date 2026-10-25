@@ -32,6 +32,8 @@ const cases: [string, (f: ReturnType<typeof fixture>) => void][] = [
   ['production traffic change', f => { f.productionAfter.status.traffic[0].percent = 90; }],
   ['historical tag loss', f => { f.productionAfter.status.traffic.pop(); }],
   ['production environment drift', f => { f.productionAfter.spec.template.spec.containers[0].env[0].value = 'changed'; }],
+  ['production ingress drift', f => { f.productionAfter.metadata.annotations['run.googleapis.com/ingress'] = 'internal'; }],
+  ['production labels drift', f => { Object.assign(f.productionAfter.metadata, { labels: { security: 'changed' } }); }],
   ['IAM drift', f => { f.productionIamAfter.etag = 'changed'; }],
   ['wrong candidate target', f => { f.candidate.metadata.name = f.productionBefore.metadata.name; }],
   ['wrong project', f => { f.candidate.metadata.namespace = 'another-project'; }],

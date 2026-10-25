@@ -53,7 +53,9 @@ export function checkRuntimePreview(input: unknown) {
       && at(service, 'status', 'observedGeneration') === generation, `${label}_stale_generation`);
   }
   fail(!!object(at(before, 'spec')) && isDeepStrictEqual(at(before, 'spec'), at(after, 'spec'))
-    && isDeepStrictEqual(at(before, 'status', 'traffic'), at(after, 'status', 'traffic')), 'production_drift');
+    && isDeepStrictEqual(at(before, 'status', 'traffic'), at(after, 'status', 'traffic'))
+    && isDeepStrictEqual(at(before, 'metadata', 'annotations'), at(after, 'metadata', 'annotations'))
+    && isDeepStrictEqual(at(before, 'metadata', 'labels'), at(after, 'metadata', 'labels')), 'production_drift');
   fail(!!object(at(input, 'productionIamBefore')) && !!object(at(input, 'productionIamAfter'))
     && isDeepStrictEqual(at(input, 'productionIamBefore'), at(input, 'productionIamAfter')), 'production_iam_drift_or_missing');
   const ready = at(candidate, 'status', 'conditions');

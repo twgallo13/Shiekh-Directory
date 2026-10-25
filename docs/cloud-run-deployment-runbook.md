@@ -11,7 +11,15 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — isolated PR #70 UI release
+## Current live revision — isolated PR #72 Person editor UI release
+
+Published October 25, 2026 Pacific. Ready revision `shiekh-location-company-directory-ux72-bdf62e6` is sole 100% desired/observed traffic. Source **`bdf62e66364c9e8665f0c5d17a9eac5e901a5ad2`** on `codex/person-editor-live-release` adds only the two reviewed Person editor components and compatible tests to deployed UI70 source b2d26fe. PR72 merged as `5acfa60d25f269af362f6238f16a3af480458693`, reviewed head `5695f68`. Save handlers/guards/dialogs are unchanged. Main-only staffing recovery remains excluded; this is **not a deployment of all current main**.
+
+Build `6a06ac8a-c83e-4c3a-967c-b3fba0e158cf` succeeded. Exact-source/configuration/IAM/build-principal checks, zero-traffic public acceptance, etag-guarded promotion and temporary-tag cleanup passed. Runtime/build identities, environment/secret references, network/security/scaling, service IAM and 26 historical tags remain unchanged. Branded mapping is Ready/DomainRoutable. Both hosts match accepted HTML `0ae31c2f9677d1e6c9b85efac8bdb679dd03f3b4d8a0c5692795ed9aacfa02f0`, 45 MIME-validated assets, unchanged compiled Firebase settings and four consumer documents. API/operating/internal-preview denials, unknown-route and cache checks passed. The signed-in live editor was inspected and cancelled without saving.
+
+[Dispatch44](dispatches/dispatch-44-person-editor-ui-release.md) records validation and limits. Runtime switching, shared-permission cleanup, signing/staffing activation, data restore and issue36 authenticated consumer acceptance remain separate and incomplete. Other apps and API credentials/grants are unchanged. **Rollback:** prior revision `shiekh-location-company-directory-ux70-b2d26fe` retains the same backend contract. Traffic rollback does not restore data or reverse database protection. Documentation-only follow-ups need no rebuild.
+
+## Historical live revision — isolated PR #70 UI release
 
 Published October 24, 2026 Pacific. Ready revision `shiekh-location-company-directory-ux70-b2d26fe` is sole 100% desired/observed traffic. Source is **`b2d26fe1bbc70c3cf9ff008bdac361c147409765`** on `codex/contact-card-live-release`: the live PR53 base plus four reviewed UI components and compatible synthetic tests only. It is **not a deployment of all current main**. Those four runtime blobs match PR70 head `e6cbb53`; PR70 merged as `e0d7f472d1b325ac17c2378b993ab6ad91d3b66d`. Keep the release source pinned for reproduction.
 

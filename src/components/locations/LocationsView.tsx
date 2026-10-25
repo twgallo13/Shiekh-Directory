@@ -5,6 +5,7 @@ import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { resolveActiveLocationManagers } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { resolveOperatingState } from '../../lib/operatingState';
+import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
@@ -619,7 +620,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                             <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                               #{loc.storeNumber}
                             </span>
-                            <div className="font-semibold text-neutral-900">{loc.name}</div>
+                            <button type="button" aria-label={`Open store #${loc.storeNumber} ${loc.name}`} onClick={event => { event.stopPropagation(); onSelectLocation(loc); }} className="rounded py-1 text-left font-semibold text-neutral-900 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600">{loc.name || 'Unnamed location'}</button>
                             {isRetired && (
                               <span className="text-[10px] font-bold text-neutral-500 bg-neutral-200 px-1.5 py-0.5 rounded">
                                 Retired
@@ -630,7 +631,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
                         <td className="py-3 px-4">
                           <div className="text-neutral-900 font-medium">{loc.city}, {loc.state}</div>
-                          <div className="text-[11px] text-neutral-500 truncate max-w-[180px]">{loc.address}</div>
+                          <div className="max-w-xs break-words text-[11px] text-neutral-500">{[loc.address, loc.suite].filter(Boolean).join(', ') || 'Address not recorded'}</div>
                         </td>
 
                         <td className="py-3 px-4">
@@ -770,7 +771,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                                   <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                                     #{loc.storeNumber}
                                   </span>
-                                  <span className="font-semibold text-neutral-900">{loc.name}</span>
+                                  <button type="button" aria-label={`Open store #${loc.storeNumber} ${loc.name}`} onClick={event => { event.stopPropagation(); onSelectLocation(loc); }} className="rounded py-1 text-left font-semibold text-neutral-900 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600">{loc.name || 'Unnamed location'}</button>
                                 </div>
                               </td>
                               <td className="py-2.5 px-4">
@@ -854,7 +855,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                         <span className="break-words">{loc.phone || 'Phone not recorded'}</span>
                         {loc.phone && <PrivacyBadge level={loc.phonePrivacy} />}
                       </div>
-                      {loc.locationInboxEmail && <div className="flex items-start gap-2"><Mail aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" /><span className="min-w-0 break-all">{loc.locationInboxEmail}</span></div>}
+                      {loc.locationInboxEmail && <div className="flex items-start gap-2"><Mail aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" /><span className="min-w-0 break-all">{!normalizeLocationInboxEmail(loc.locationInboxEmail) && <span className="block text-amber-800">Saved inbox needs review</span>}{loc.locationInboxEmail}</span></div>}
                     </div>
 
                     {/* Card Footer: District & Manager */}

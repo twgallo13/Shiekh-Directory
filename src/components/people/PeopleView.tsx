@@ -92,7 +92,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
         {filtered.map(person => {
           const email = resolvePersonEmail(person);
           const shared = sharedPersonEmailKind(email.value, locations);
-          const contactLabel = shared ? 'Shared store contact' : email.value && !normalizeLocationInboxEmail(email.value) ? 'Contact needs review' : email.source === 'legacy' ? 'Saved contact' : 'Work email';
+          const contactLabel = shared ? email.source === 'legacy' ? 'Historical shared contact · needs review' : 'Shared store contact' : email.value && !normalizeLocationInboxEmail(email.value) ? 'Contact needs review' : email.source === 'legacy' ? 'Historical contact · needs review' : 'Work email';
           const workplace = locations.find(location => location.id === person.primaryLocationId);
           const ownedDistricts = districts.filter(district => district.districtManagerId === person.id);
           const lifecycle = personLifecycle(person);

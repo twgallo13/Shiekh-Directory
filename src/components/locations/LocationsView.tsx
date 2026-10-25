@@ -1,11 +1,12 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useId } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
 import { resolveActiveLocationManagers } from '../../lib/readProjectionContract';
 import { hierarchyDistrictLabel, hierarchyGroupId, hierarchyGroupLabel, resolveHierarchyGroupKey, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { resolveOperatingState } from '../../lib/operatingState';
-import { OperationalStatusBadge } from '../common/StatusBadge';
+import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
+import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
 import { 
@@ -23,6 +24,7 @@ import {
   Clock,
   MapPin,
   Phone,
+  Mail,
   Calendar,
   AlertCircle
 } from 'lucide-react';
@@ -60,6 +62,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
   onAddNewLocation,
   onRequestCorrection,
 }) => {
+  const cardDescriptionId = useId();
   const { 
     locations, 
     operatingNow,
@@ -363,12 +366,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
       {/* Filter Ribbon */}
       <div className="flex items-center justify-between gap-3 bg-white p-3 rounded-xl border border-neutral-200 shadow-xs flex-wrap">
-        <div className="flex items-center gap-2.5 flex-1 min-w-[280px] flex-wrap">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
           <div className="flex-1 min-w-[200px] relative">
             <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Search store #, name, city, manager, district..."
+              aria-label="Search locations"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-7 py-1.5 bg-neutral-50 border border-neutral-200 rounded-lg text-xs text-neutral-800 placeholder-neutral-400 focus:outline-none focus:border-red-500 focus:bg-white"
@@ -617,7 +621,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                             <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                               #{loc.storeNumber}
                             </span>
-                            <div className="font-semibold text-neutral-900">{loc.name}</div>
+                            <button type="button" aria-label={`Open store #${loc.storeNumber} ${loc.name}`} onClick={event => { event.stopPropagation(); onSelectLocation(loc); }} className="rounded py-1 text-left font-semibold text-neutral-900 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600">{loc.name || 'Unnamed location'}</button>
                             {isRetired && (
                               <span className="text-[10px] font-bold text-neutral-500 bg-neutral-200 px-1.5 py-0.5 rounded">
                                 Retired
@@ -628,7 +632,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
 
                         <td className="py-3 px-4">
                           <div className="text-neutral-900 font-medium">{loc.city}, {loc.state}</div>
-                          <div className="text-[11px] text-neutral-500 truncate max-w-[180px]">{loc.address}</div>
+                          <div className="max-w-xs break-words text-[11px] text-neutral-500">{[loc.address, loc.suite].filter(Boolean).join(', ') || 'Address not recorded'}</div>
                         </td>
 
                         <td className="py-3 px-4">
@@ -768,7 +772,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                                   <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
                                     #{loc.storeNumber}
                                   </span>
-                                  <span className="font-semibold text-neutral-900">{loc.name}</span>
+                                  <button type="button" aria-label={`Open store #${loc.storeNumber} ${loc.name}`} onClick={event => { event.stopPropagation(); onSelectLocation(loc); }} className="rounded py-1 text-left font-semibold text-neutral-900 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600">{loc.name || 'Unnamed location'}</button>
                                 </div>
                               </td>
                               <td className="py-2.5 px-4">
@@ -814,64 +818,55 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                 const isRetired = loc.recordStatus === 'Retired';
 
                 return (
-                  <div
+                  <article
                     key={loc.id}
-                    onClick={() => onSelectLocation(loc)}
-                    className={`bg-white rounded-xl border p-4 hover:shadow-md transition-all cursor-pointer relative space-y-3 ${
+                    className={`relative min-w-0 self-start rounded-xl border bg-white transition-all hover:shadow-md ${
                       isSelected
                         ? 'border-red-500 ring-2 ring-red-500/20 bg-red-50/25'
                         : 'border-neutral-200 hover:border-neutral-300 shadow-xs'
                     }`}
                   >
-                    {/* Card Header */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <div 
-                          onClick={(e) => e.stopPropagation()} 
-                          className="pt-0.5"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelectStore(loc.id)}
-                            className="rounded border-neutral-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4"
-                          />
-                        </div>
+                    <label className="absolute right-2 top-2 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg hover:bg-neutral-100">
+                      <input type="checkbox" aria-label={`Select store #${loc.storeNumber} ${loc.name}`} checked={isSelected} onChange={() => toggleSelectStore(loc.id)} className="h-4 w-4 rounded border-neutral-300 accent-red-700" />
+                    </label>
+                    <button type="button" onClick={() => onSelectLocation(loc)} aria-label={`Open store #${loc.storeNumber} ${loc.name}`} aria-describedby={`${cardDescriptionId}-${loc.id}-status ${cardDescriptionId}-${loc.id}-contacts ${cardDescriptionId}-${loc.id}-leadership`} className="w-full min-w-0 space-y-3 rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2">
+                    <div id={`${cardDescriptionId}-${loc.id}-status`} className="space-y-2 pr-10">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-xs">
                           #{loc.storeNumber}
                         </span>
-                        <div>
-                          <h4 className="font-bold text-neutral-900 text-sm leading-tight">{loc.name}</h4>
-                          <span className="text-[10px] text-neutral-400">{loc.type}</span>
-                        </div>
+                        <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
+                        {isRetired && <span className="text-xs font-medium text-neutral-500">Retired</span>}
                       </div>
-                      <OperationalStatusBadge status={loc.operationalStatus} location={loc} />
+                      <h4 className="break-words text-sm font-bold leading-tight text-neutral-900">{loc.name || 'Unnamed location'}</h4>
                     </div>
 
                     {/* Card Details */}
-                    <div className="space-y-1.5 text-xs text-neutral-600 border-t border-neutral-100 pt-2.5">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                        <span className="truncate">{loc.address}, {loc.city}, {loc.state} {loc.zipCode}</span>
+                    <div id={`${cardDescriptionId}-${loc.id}-contacts`} className="space-y-1.5 text-xs text-neutral-600 border-t border-neutral-100 pt-2.5">
+                      <div className="flex items-start gap-2">
+                        <MapPin aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                        <div className="min-w-0 break-words text-neutral-800"><p>{loc.address || 'Address not recorded'}</p>{loc.suite && <p>{loc.suite}</p>}<p>{[loc.city, loc.state, loc.zipCode].filter(Boolean).join(' ')}</p>{loc.mallOrCenterName && <p className="mt-1 text-neutral-500">{loc.mallOrCenterName}</p>}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                        <Clock aria-hidden="true" className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                         <span className="font-medium text-neutral-800">{todayHours.hoursString}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                        <span>{loc.phone}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Phone aria-hidden="true" className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                        <span className="break-words">{loc.phone || 'Phone not recorded'}</span>
+                        {loc.phone && <PrivacyBadge level={loc.phonePrivacy} />}
                       </div>
+                      {loc.locationInboxEmail && <div className="flex items-start gap-2"><Mail aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" /><span className="min-w-0 break-all">{!normalizeLocationInboxEmail(loc.locationInboxEmail) && <span className="block text-amber-800">Saved inbox needs review</span>}{loc.locationInboxEmail}</span></div>}
                     </div>
 
                     {/* Card Footer: District & Manager */}
-                    <div className="border-t border-neutral-100 pt-2 flex items-center justify-between text-[11px] text-neutral-500">
-                      <span>{hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id), loc.type)}</span>
-                      <span className="font-medium text-neutral-700 truncate max-w-[130px]">
-                        {leadershipByLocationId.get(loc.id)?.storeManager?.fullName ? `Mgr: ${leadershipByLocationId.get(loc.id)?.storeManager?.fullName}` : 'Vacant'}
-                      </span>
+                    <div id={`${cardDescriptionId}-${loc.id}-leadership`} className="space-y-1 break-words border-t border-neutral-100 pt-2 text-[11px] text-neutral-500">
+                      <p>{hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id), loc.type)}</p>
+                      <p className="text-neutral-700">Store Manager: {leadershipByLocationId.get(loc.id)?.storeManager?.fullName || 'Unassigned'}</p>
+                      <p>District Manager: {leadershipByLocationId.get(loc.id)?.districtManager?.fullName || 'Unassigned'}</p>
                     </div>
-                  </div>
+                    </button>
+                  </article>
                 );
               })}
             </div>
@@ -920,7 +915,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                   ))}
                 </select>
                 <p className="text-[11px] text-neutral-400 mt-1">
-                  Will instantly adjust status across Google Business Profile and customer directory.
+                  Updates the Directory. Google Business Profile publication is separate.
                 </p>
               </div>
 

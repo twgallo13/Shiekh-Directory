@@ -17,7 +17,7 @@ for (const width of [390, 1280]) test(`Person editor layout keeps optional detai
   await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('Find support locations', { exact: true })).not.toBeVisible();
-  await expect(dialog.getByRole('button', { name: /Remove support Bootstrap Store 2/ })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /Remove support #.* · Bootstrap Store 2/ })).toBeVisible();
   await expect(dialog.getByText('Legacy territory/district text (reference only): Legacy territory note. Not an assignment; preserved.', { exact: true })).not.toBeVisible();
   await expect(dialog.getByRole('region', { name: 'Shared store inbox responsibilities', exact: true }).getByRole('heading', { name: 'Assigned store contacts', exact: true })).toBeVisible();
   const footer = await dialog.getByRole('button', { name: 'Save Person', exact: true }).boundingBox();
@@ -31,6 +31,21 @@ for (const width of [390, 1280]) test(`Person editor layout keeps optional detai
   await expect(dialog.getByRole('region', { name: 'Profile and positions', exact: true }).getByRole('heading', { name: 'Review position change', exact: true })).toBeVisible();
   await expect(dialog.getByRole('region', { name: 'Management responsibilities', exact: true }).locator('details[open]')).toHaveCount(1);
   expect(f.commits).toHaveLength(0);
+});
+
+test('Person editor distinguishes same-name support locations when removing a link', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.locations[0].name = f.seed.locations[1].name = 'Same Mall';
+  Object.assign(f.seed.people[0], { primaryLocationId: undefined, supportedLocationIds: ['loc-1', 'loc-2'] });
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await page.getByRole('button', { name: 'Edit Person', exact: true }).click();
+  const first = page.getByRole('button', { name: `Remove support #${f.seed.locations[0].storeNumber} · Same Mall`, exact: true });
+  const second = page.getByRole('button', { name: `Remove support #${f.seed.locations[1].storeNumber} · Same Mall`, exact: true });
+  await expect(first).toBeVisible(); await expect(second).toBeVisible();
+  await first.click(); await expect(first).toHaveCount(0); await expect(second).toBeVisible();
+  await page.getByRole('button', { name: 'Save Person', exact: true }).click();
+  await expect.poll(() => f.commits.length).toBe(1);
+  expect(f.commits[0].writes[0].data.supportedLocationIds).toEqual(['loc-2']);
 });
 
 test('Person editor keeps unavailable workplace/support links during an unrelated save', async ({ page }) => {

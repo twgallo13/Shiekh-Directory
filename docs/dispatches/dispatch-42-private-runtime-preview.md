@@ -24,4 +24,6 @@ These are boot, configuration and fail-closed/read-only HTTP checks, not authent
 
 Reuse existing synthetic save/invitation/transition validation where source remains unchanged. Bounded boot/HTTP/SDK acceptance above is complete; signed-in UI/consumer continuity, coordinated other-app permission replacements and effective reverse-access isolation remain separate. Do not switch production or enable staffing commands from this bounded evidence alone.
 
+While the other app agent handles the shared-claim repair, [the offline preview guard](../runtime-preview-guard.md) provides separately tested mechanical snapshot checks. It has no cloud-write or application-server integration, always reports release unauthorized, and does not replace the outstanding acceptance gates. Its synthetic tests do not constitute a fresh live preview validation.
+
 Other-app reports remain tracked in [Dynamic QR153](https://github.com/twgallo13/Dynamic-Qr/issues/153), [Welcome Gift47](https://github.com/twgallo13/Welcome-Gift/issues/47) and [LP-Intel31](https://github.com/twgallo13/shiekh-lp-intelligence/issues/31); no comments were present at this continuation's initial check. Casting remains untouched; its repository has not been identified. Do not repeatedly poll unchanged issues or revoke shared access before the affected workflows have tested replacements.

@@ -12,7 +12,7 @@ function fixture() {
     labels: { 'cloud.googleapis.com/location': 'us-west1' }, annotations: { 'run.googleapis.com/ingress': 'all' } },
   spec: { template: { metadata: { annotations: { 'run.googleapis.com/execution-environment': 'gen2' } }, spec: {
     serviceAccountName: 'existing-runtime', containers: [{ image: `registry/image@sha256:${'a'.repeat(64)}`, env: [{ name: 'UNRELATED', value: 'synthetic-sensitive-value' }] }] } } },
-  status: { observedGeneration: 1, traffic: [{ revisionName: 'published', percent: 100 }, { revisionName: 'older', tag: 'retained' }] } };
+  status: { observedGeneration: 1, traffic: [{ revisionName: 'published', percent: 100 }, { revisionName: 'older', tag: 'retained' }] as { revisionName: string; percent?: number; tag?: string }[] } };
   const candidate = structuredClone(production);
   candidate.metadata.name = 'shiekh-directory-runtime-preview';
   candidate.spec.template.spec.serviceAccountName = 'shiekh-directory-runtime@gen-lang-client-0801664258.iam.gserviceaccount.com';

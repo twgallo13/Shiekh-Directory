@@ -48,9 +48,9 @@ export function PersonLocationRelationshipFields({
   };
 
   return (
-    <fieldset className="space-y-3 border-t border-neutral-200 pt-3">
+    <fieldset className="min-w-0 space-y-3">
       <legend className="px-1 text-sm font-semibold text-neutral-900">Work locations</legend>
-      <p className="text-xs text-neutral-600">Workplace and support links are separate from management responsibilities.</p>
+      <p className="text-xs text-neutral-600">Where this person works or helps. Leadership is assigned separately.</p>
       <div>
         <FormLabel htmlFor={`${fieldId}-primary`}>Works at</FormLabel>
         <select
@@ -71,10 +71,19 @@ export function PersonLocationRelationshipFields({
       </div>
 
       <div className="space-y-2">
+        {supportedLocationIds.length > 0 && (<div className="flex flex-wrap gap-2" aria-label="Selected support locations">{supportedLocationIds.map(locationId => {
+          const location = locations.find(item => item.id === locationId);
+          const label = location ? `#${location.storeNumber} · ${location.name}` : locationId;
+          return <button key={locationId} type="button" onClick={() => toggleSupportLocation(locationId, false)} className="max-w-full break-words rounded-full border border-red-200 bg-red-50 px-3 py-1 text-left text-xs text-red-800" aria-label={`Remove support ${label}`}>{label} ×</button>;
+        })}</div>)}
+        {unavailableSupportIds.length > 0 && <p className="text-xs text-amber-900">{unavailableSupportIds.length} saved support {unavailableSupportIds.length === 1 ? 'location is' : 'locations are'} unavailable. Review these links before changing them.</p>}
+        <details className="rounded-lg border border-neutral-200 p-3">
+          <summary className="cursor-pointer text-xs font-medium text-neutral-700"><span>Choose support locations</span><span className="ml-2 text-neutral-500">{supportedLocationIds.length} selected</span></summary>
+          <div className="mt-3 space-y-2">
         <FormLabel htmlFor={`${fieldId}-search`}>Find support locations</FormLabel>
         <input id={`${fieldId}-search`} value={search} onChange={event => setSearch(event.target.value)} placeholder="Search store number or location name" className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs" />
-        <div className="flex flex-wrap gap-2" aria-label="Selected support locations">{supportedLocationIds.map(locationId => <button key={locationId} type="button" onClick={() => toggleSupportLocation(locationId, false)} className="max-w-full break-words rounded-full border border-red-200 bg-red-50 px-3 py-1 text-left text-xs text-red-800" aria-label={`Remove support ${locations.find(l => l.id === locationId)?.name || locationId}`}>{locations.find(l => l.id === locationId)?.name || locationId} ×</button>)}</div>
-        <p className="text-xs text-neutral-600">Supports · {supportedLocationIds.length} selected. Search narrows results without clearing selections.</p>
+
+        <p className="text-xs text-neutral-600">Search does not clear selected locations.</p>
         <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 bg-neutral-50 p-2">
           {matchingLocations.map(location => (
             <label key={location.id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 hover:bg-white">
@@ -105,6 +114,8 @@ export function PersonLocationRelationshipFields({
             <p className="px-2 py-1 text-xs text-neutral-500">{search.trim() ? 'No matching locations. Selected links are retained above.' : 'No additional eligible Locations.'}</p>
           )}
         </div>
+          </div>
+        </details>
       </div>
     </fieldset>
   );

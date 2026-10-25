@@ -71,7 +71,11 @@ export function PersonLocationRelationshipFields({
       </div>
 
       <div className="space-y-2">
-        {supportedLocationIds.length > 0 && (<div className="flex flex-wrap gap-2" aria-label="Selected support locations">{supportedLocationIds.map(locationId => <button key={locationId} type="button" onClick={() => toggleSupportLocation(locationId, false)} className="max-w-full break-words rounded-full border border-red-200 bg-red-50 px-3 py-1 text-left text-xs text-red-800" aria-label={`Remove support ${locations.find(l => l.id === locationId)?.name || locationId}`}>{locations.find(l => l.id === locationId)?.name || locationId} ×</button>)}</div>)}
+        {supportedLocationIds.length > 0 && (<div className="flex flex-wrap gap-2" aria-label="Selected support locations">{supportedLocationIds.map(locationId => {
+          const location = locations.find(item => item.id === locationId);
+          const label = location ? `#${location.storeNumber} · ${location.name}` : locationId;
+          return <button key={locationId} type="button" onClick={() => toggleSupportLocation(locationId, false)} className="max-w-full break-words rounded-full border border-red-200 bg-red-50 px-3 py-1 text-left text-xs text-red-800" aria-label={`Remove support ${label}`}>{label} ×</button>;
+        })}</div>)}
         {unavailableSupportIds.length > 0 && <p className="text-xs text-amber-900">{unavailableSupportIds.length} saved support {unavailableSupportIds.length === 1 ? 'location is' : 'locations are'} unavailable. Review these links before changing them.</p>}
         <details className="rounded-lg border border-neutral-200 p-3">
           <summary className="cursor-pointer text-xs font-medium text-neutral-700"><span>Choose support locations</span><span className="ml-2 text-neutral-500">{supportedLocationIds.length} selected</span></summary>

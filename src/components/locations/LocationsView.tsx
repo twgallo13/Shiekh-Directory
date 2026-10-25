@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useId } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { LocationRecord, PersonRecord, LocationType, OperationalStatus } from '../../types';
 import { getTodayHoursForLocation } from '../../utils/timezoneHelper';
@@ -62,6 +62,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
   onAddNewLocation,
   onRequestCorrection,
 }) => {
+  const cardDescriptionId = useId();
   const { 
     locations, 
     operatingNow,
@@ -828,8 +829,8 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                     <label className="absolute right-2 top-2 z-10 flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg hover:bg-neutral-100">
                       <input type="checkbox" aria-label={`Select store #${loc.storeNumber} ${loc.name}`} checked={isSelected} onChange={() => toggleSelectStore(loc.id)} className="h-4 w-4 rounded border-neutral-300 accent-red-700" />
                     </label>
-                    <button type="button" onClick={() => onSelectLocation(loc)} aria-label={`Open store #${loc.storeNumber} ${loc.name}`} className="w-full min-w-0 space-y-3 rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2">
-                    <div className="space-y-2 pr-10">
+                    <button type="button" onClick={() => onSelectLocation(loc)} aria-label={`Open store #${loc.storeNumber} ${loc.name}`} aria-describedby={`${cardDescriptionId}-${loc.id}-status ${cardDescriptionId}-${loc.id}-contacts ${cardDescriptionId}-${loc.id}-leadership`} className="w-full min-w-0 space-y-3 rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2">
+                    <div id={`${cardDescriptionId}-${loc.id}-status`} className="space-y-2 pr-10">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200 text-xs">
                           #{loc.storeNumber}
@@ -841,7 +842,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                     </div>
 
                     {/* Card Details */}
-                    <div className="space-y-1.5 text-xs text-neutral-600 border-t border-neutral-100 pt-2.5">
+                    <div id={`${cardDescriptionId}-${loc.id}-contacts`} className="space-y-1.5 text-xs text-neutral-600 border-t border-neutral-100 pt-2.5">
                       <div className="flex items-start gap-2">
                         <MapPin aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
                         <div className="min-w-0 break-words text-neutral-800"><p>{loc.address || 'Address not recorded'}</p>{loc.suite && <p>{loc.suite}</p>}<p>{[loc.city, loc.state, loc.zipCode].filter(Boolean).join(' ')}</p>{loc.mallOrCenterName && <p className="mt-1 text-neutral-500">{loc.mallOrCenterName}</p>}</div>
@@ -859,7 +860,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
                     </div>
 
                     {/* Card Footer: District & Manager */}
-                    <div className="space-y-1 break-words border-t border-neutral-100 pt-2 text-[11px] text-neutral-500">
+                    <div id={`${cardDescriptionId}-${loc.id}-leadership`} className="space-y-1 break-words border-t border-neutral-100 pt-2 text-[11px] text-neutral-500">
                       <p>{hierarchyDistrictLabel(hierarchyByLocationId.get(loc.id), loc.type)}</p>
                       <p className="text-neutral-700">Store Manager: {leadershipByLocationId.get(loc.id)?.storeManager?.fullName || 'Unassigned'}</p>
                       <p>District Manager: {leadershipByLocationId.get(loc.id)?.districtManager?.fullName || 'Unassigned'}</p>

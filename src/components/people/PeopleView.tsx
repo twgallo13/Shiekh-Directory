@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useId } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { Person } from '../../types';
 import { Search, Plus, UserRoundSearch, Phone, Mail, MapPin } from 'lucide-react';
@@ -19,6 +19,7 @@ interface PeopleViewProps {
 }
 
 export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
+  const cardDescriptionId = useId();
   const { people, locations, districts, currentUser, addPerson } = useDirectory();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -102,6 +103,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
             key={person.id}
             onClick={() => onSelectPerson(person)}
             aria-label={`Open profile for ${person.fullName}`}
+            aria-describedby={`${cardDescriptionId}-${person.id}-profile ${cardDescriptionId}-${person.id}-contacts`}
             className="min-w-0 space-y-3 self-start rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-xs transition-all hover:border-neutral-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
           >
             <div className="flex items-start justify-between">
@@ -109,7 +111,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
                 <div aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-200 bg-red-50 text-xs font-bold text-red-600">
                   {person.fullName?.[0] || 'P'}
                 </div>
-                <div className="min-w-0 break-words">
+                <div id={`${cardDescriptionId}-${person.id}-profile`} className="min-w-0 break-words">
                   <h3 className="font-bold text-neutral-900 text-sm">{person.fullName}</h3>
                   <p className="mt-0.5 text-xs text-neutral-500">{personPositionLabel(person)}</p>
                   {lifecycle !== 'active' && <p className="mt-1 text-xs font-medium text-amber-800">{lifecycle === 'inactive' ? 'Inactive' : 'Status needs review'}</p>}
@@ -117,7 +119,7 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
               </div>
             </div>
 
-            <div className="space-y-1.5 text-xs pt-2 border-t border-neutral-100">
+            <div id={`${cardDescriptionId}-${person.id}-contacts`} className="space-y-1.5 text-xs pt-2 border-t border-neutral-100">
               <div className="flex flex-wrap items-center gap-2 text-neutral-500">
                 <Phone aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                 <span className="break-words text-neutral-700">{formatPersonPhone(person) || 'No direct phone'}</span>

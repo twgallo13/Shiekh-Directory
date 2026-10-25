@@ -23,6 +23,7 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
   onSelectPerson,
 }) => {
   const { locations, people, districts } = useDirectory();
+  const resultDescriptionId = React.useId();
   const [query, setQuery] = useState('');
   const dialogRef = React.useRef<HTMLDivElement>(null);
   useDialogFocus(isOpen, onClose, dialogRef);
@@ -116,11 +117,12 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
                         onSelectLocation(loc);
                       }}
                       aria-label={`Open store #${loc.storeNumber} ${loc.name}`}
+                      aria-describedby={`${resultDescriptionId}-location-${loc.id}`}
                       className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-transparent p-3 text-left transition-colors hover:border-neutral-200 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                     >
                       <div className="flex min-w-0 items-start gap-2.5">
                         <Store aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-                        <div className="min-w-0 break-words">
+                        <div id={`${resultDescriptionId}-location-${loc.id}`} className="min-w-0 break-words">
                           <div className="font-semibold text-neutral-900">
                             #{loc.storeNumber} — {loc.name}
                           </div>
@@ -153,15 +155,17 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
                       onSelectPerson(person);
                     }}
                     aria-label={`Open profile for ${person.fullName}`}
+                    aria-describedby={`${resultDescriptionId}-person-${person.id}`}
                     className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-transparent p-3 text-left transition-colors hover:border-neutral-200 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                   >
                     <div className="flex min-w-0 items-start gap-2.5">
                       <User aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
-                      <div className="min-w-0 break-words">
+                      <div id={`${resultDescriptionId}-person-${person.id}`} className="min-w-0 break-words">
                         <div className="font-semibold text-neutral-900">{person.fullName}</div>
                         <div className="text-[11px] text-neutral-500">
                           {personPositionLabel(person)}
                         </div>
+                        {person.jobTitle?.toLowerCase().includes(cleanQuery) && person.jobTitle.trim() !== personPositionLabel(person) && <p className="mt-1 text-[11px] text-neutral-500">Display title: {person.jobTitle}</p>}
                         {personLifecycle(person) !== 'active' && <p className="mt-1 text-[11px] text-amber-800">{personLifecycle(person) === 'inactive' ? 'Inactive' : 'Status needs review'}</p>}
                         {districts.filter(district => district.districtManagerId === person.id).map(district => <p key={district.id} className="mt-1 text-[11px] text-neutral-500">District: {district.name || district.id}{district.status === 'Retired' ? ' (Retired)' : ''}</p>)}
                       </div>

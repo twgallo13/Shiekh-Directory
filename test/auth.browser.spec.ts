@@ -68,6 +68,36 @@ test('Quick person card omits empty shared inbox panels but retains legacy-conta
   expect(f.commits).toHaveLength(0);
 });
 
+test('Reviewed contact links use canonical work phone privacy and trimmed mail recipients', async ({ page }) => {
+  const f = await preparePersonCard(page);
+  Object.assign(f.seed.people[0], { workPhone: '+12135550101', phone: '+12135550199', phonePrivacy: 'Restricted', workEmail: '  manager@example.test  ' });
+  f.seed.locations[0].storeManagerPhonePrivacy = 'Internal';
+  await page.goto(origin + '/locations/loc-1'); await restore(page, true);
+  const roster = page.getByRole('region', { name: 'Store leadership', exact: true });
+  await expect(roster.getByRole('link', { name: '(213) 555-0101', exact: true })).toHaveAttribute('href', 'tel:+12135550101');
+  await expect(roster.getByText('Internal', { exact: true })).toBeVisible();
+  delete f.seed.people[0].workPhone;
+  await page.reload(); await restore(page, true);
+  await expect(roster.getByRole('link', { name: '(213) 555-0199', exact: true })).toHaveCount(0);
+  await page.goto(origin + '/people/person-profile'); await restore(page, true);
+  await expect(page.getByRole('dialog').getByRole('link', { name: 'manager@example.test', exact: true })).toHaveAttribute('href', 'mailto:manager%40example.test');
+  expect(f.commits).toHaveLength(0);
+});
+
+for (const mode of ['closure', 'malformed-hours'] as const) test(`Overview preserves resolved operating diagnostics: ${mode}`, async ({ page }) => {
+  const f = await preparePersonCard(page);
+  f.seed.serverNow = '2026-10-22T18:00:00Z';
+  if (mode === 'closure') f.seed.locations[0].temporaryClosure = { id: 'synthetic-closure', reason: 'Power outage', startsAt: '2026-10-22T17:00:00Z', expiresAt: '2026-10-23T00:00:00Z', timeZone: 'UTC' };
+  else f.seed.locations[0].holidayHours = [{ id: 'malformed', date: 'not-a-date' }];
+  await page.goto(origin + '/locations/loc-1'); await restore(page, true);
+  await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const status = page.getByRole('region', { name: 'Current operating state', exact: true });
+  await expect(status).toBeVisible();
+  await expect(status).toContainText(mode === 'closure' ? 'Temporary closure automatically ends' : 'Dated schedules have invalid or reversed dates.');
+  if (mode === 'closure') await expect(status).toContainText('confirmed closure deadline is retained');
+  expect(f.commits).toHaveLength(0);
+});
+
 async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' | 'denied' = 'normal', role = 'System Administrator') {
   await prepare(page, role);
   const seed: any = seedDirectory(2);

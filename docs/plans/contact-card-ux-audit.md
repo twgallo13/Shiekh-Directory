@@ -39,6 +39,12 @@ The final card slice passed eight focused browser cases: desktop/mobile contact-
 
 ## Follow-up work
 
+### Review repair and isolated publication plan
+
+Final review identified a hidden resolved-state warning in Overview: active closure deadlines and specific operating diagnostics now keep the alert-only panel visible. The Store Manager roster uses only the canonical work phone, labeled with the existing Location/Person phone classification; historical numbers remain in the Person record rather than being presented as verified work contacts here. Mail links use the normalized recipient while preserving saved display text. A compact disclosure explains that assigned inbox contacts do not verify mailbox access. Seven affected browser cases passed after these repairs, including three new regressions; unchanged earlier coverage is reused rather than added as repeated tests.
+
+The UX publication can be isolated from newer unpublished staffing code: all four changed runtime components were byte-identical between the live PR53 source and PR70's base. Prepare the release from the verified live source plus only those reviewed component blobs and compatible synthetic tests. Do not deploy all of current main, switch runtime identities, change shared access or enable the new staffing workflow for this UI release. Verify that server/dependency/auth/provider/API source and served consumer documents match the live base, then use a zero-traffic candidate and configuration/traffic guards before promotion. The other apps' coordinated repair and permission cleanup remain separate.
+
 1. Review Person editor explanatory text and grouping next, preserving meaningful warnings at the point of change.
 2. Apply the same contact-first hierarchy to list/grid cards and search results after these detail views are accepted.
 3. Review Organization settings, correction forms and empty/error states for consistent labels and concise task guidance.

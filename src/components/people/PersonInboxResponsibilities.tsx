@@ -7,7 +7,8 @@ export function PersonInboxResponsibilities({ person, locations, compact = false
   const rows = person ? personInboxResponsibilities(person, locations) : [];
   if (compact && !rows.length) return null;
   return <section aria-label="Shared store inbox responsibilities" className={compact ? 'space-y-2 border-b border-neutral-200 pb-3' : 'space-y-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4'}>
-    <h3 className="text-sm font-semibold text-neutral-900">{compact ? 'Store inboxes' : 'Shared store inbox responsibilities'}</h3>
+    <h3 className="text-sm font-semibold text-neutral-900">{compact ? 'Assigned store contacts' : 'Shared store inbox responsibilities'}</h3>
+    {compact && <details className="text-xs text-neutral-500"><summary className="cursor-pointer">About these contacts</summary><p className="mt-1">From SM/AM assignments. Mailbox access is not verified.</p></details>}
     {!compact && <p className="text-xs text-neutral-600">From saved Store Manager / Assistant Manager assignments, not workplace, title or email. This does not verify mailbox access or grant app permissions.</p>}
     {rows.length ? <ul className="space-y-2">{rows.map(row => <li key={row.location.id} className="space-y-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs">
       <a href={'/locations/' + encodeURIComponent(row.location.id)} target="_blank" rel="noopener noreferrer" className="block break-words font-semibold text-red-700 underline">#{row.location.storeNumber} · {row.location.name || 'Unnamed Location'}</a>

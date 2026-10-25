@@ -80,6 +80,9 @@ export const LocationDetailModal: React.FC<LocationDetailModalProps> = ({
   const normalizedLocationInbox = normalizeLocationInboxEmail(location.locationInboxEmail);
   const canEditDirectly = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const { storeManager, districtManager, regionalManager } = resolveActiveLocationManagers(location, people, districts);
+  const managerPhone = resolvePersonPhone(storeManager);
+  const managerPhoneLabel = formatUsPhone(managerPhone.value, managerPhone.extension);
+  const managerPhonePrivacy = location.storeManagerPhonePrivacy || storeManager?.phonePrivacy || 'Restricted';
   const assistantManagers = resolveActivePersonList(location.assistantStoreManagerIds, people);
   const keyHolders = resolveActivePersonList(location.keyHolderIds, people);
   const staffingDiagnostics = buildLocationReadProjection(location, people, districts).warnings;
@@ -338,7 +341,7 @@ Operational lifecycle: ${location.operationalStatus}`;
                     <dd className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                       {group.records.length ? group.records.map(person => <span key={person.id} className="inline-flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                         <button type="button" disabled={!onSelectPerson} onClick={() => handleOpenPerson(person.id)} className="break-words text-left font-medium text-neutral-900 hover:text-red-700 hover:underline disabled:no-underline">{person.fullName}</button>
-                        {group.label === 'Store Manager' && resolvePersonPhone(person).value && <a href={`tel:${resolvePersonPhone(person).value.replace(/[^0-9+]/g, '')}`} className="text-xs text-red-700 hover:underline">{formatPersonPhone(person)}</a>}
+                        {group.label === 'Store Manager' && managerPhone.source === 'work' && managerPhone.value && <span className="inline-flex flex-wrap items-center gap-2"><a href={`tel:${managerPhone.value.replace(/[^0-9+]/g, '')}`} className="text-xs text-red-700 hover:underline">{managerPhoneLabel}</a><PrivacyBadge level={managerPhonePrivacy} /></span>}
                       </span>) : <span className="text-neutral-500">Unassigned</span>}
                     </dd>
                   </div>)}

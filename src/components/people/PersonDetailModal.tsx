@@ -62,7 +62,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
   const email = resolvePersonEmail(person);
   const sharedEmail = sharedPersonEmailKind(email.value, locations);
-  const invalidEmail = Boolean(email.value && !normalizeLocationInboxEmail(email.value));
+  const normalizedEmail = normalizeLocationInboxEmail(email.value);
+  const invalidEmail = Boolean(email.value && !normalizedEmail);
   const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const impact = personProfileImpact(person, locations, districts, regions, users);
   const ownedDistricts = districts.filter(d => d.districtManagerId === person.id);
@@ -157,7 +158,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
             </div>
             <div className="grid gap-1 py-3 sm:grid-cols-[6rem_1fr] sm:gap-3">
               <dt className="text-xs text-neutral-500">{sharedEmail ? 'Saved shared contact' : email.source === 'legacy' && email.value ? 'Saved contact' : 'Work email'}</dt><dd className="min-w-0">
-                {email.value && !invalidEmail && !sharedEmail && email.source !== 'legacy' ? <a href={`mailto:${encodeURIComponent(email.value)}`} className="break-all text-sm font-medium text-red-700 hover:underline">{email.value}</a> : <span className="break-all text-sm text-neutral-700">{email.value || 'Not assigned'}</span>}
+                {normalizedEmail && !sharedEmail && email.source !== 'legacy' ? <a href={`mailto:${encodeURIComponent(normalizedEmail.value)}`} className="break-all text-sm font-medium text-red-700 hover:underline">{email.value}</a> : <span className="break-all text-sm text-neutral-700">{email.value || 'Not assigned'}</span>}
                 {(sharedEmail || invalidEmail || (email.source === 'legacy' && email.value)) && <p className="mt-1 text-xs text-amber-900">{sharedEmail ? 'Shared inbox — not an individual address.' : invalidEmail ? 'Saved address needs review.' : 'Historical contact — needs review before use.'}</p>}
                 {Object.hasOwn(person, 'workEmail') && person.email && (person.workEmail || '').trim().toLowerCase() !== person.email.trim().toLowerCase() && <details className="mt-2 text-xs text-neutral-500"><summary className="cursor-pointer">Historical contact</summary><p className="mt-1 break-all">{person.email}</p></details>}
               </dd>

@@ -85,7 +85,7 @@ export function OperatingStatusPanel({ location, alertsOnly = false }: { locatio
     } catch (e) { setError(e instanceof Error ? e.message : 'Notification recovery is unavailable. Operating state is unchanged.'); }
     finally { busyRef.current = false; setBusy(false); }
   };
-  return <section aria-label="Current operating state" hidden={alertsOnly && !pending && !stored.error && !operatingRefreshError && !error && !message} className="rounded-xl border border-neutral-200 bg-white p-4 space-y-3">
+  return <section aria-label="Current operating state" hidden={alertsOnly && !pending && !stored.error && !operatingRefreshError && !error && !message && !state.temporaryClosure && state.issues.length === 0} className="rounded-xl border border-neutral-200 bg-white p-4 space-y-3">
     {!alertsOnly && <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">{state.state === 'Unknown' ? 'Needs verification' : state.state}</h3><p className="text-neutral-600">{state.reason}</p></div><p className="text-[11px] text-neutral-500">Store-local time · {location.timeZone}</p></div>}
     {state.temporaryClosure && <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-900">Temporary closure automatically ends {expiryLabel(state.temporaryClosure.expiresAt, state.temporaryClosure.timeZone)}. After expiry, the applicable schedule/lifecycle applies—not forced opening.</p>}
     {state.issues.length > 0 && <p className="text-amber-800">{state.issues.join(' ')}</p>}

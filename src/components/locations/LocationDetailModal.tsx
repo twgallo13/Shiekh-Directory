@@ -285,6 +285,7 @@ Operational lifecycle: ${location.operationalStatus}`;
         <div className="min-h-0 overflow-y-auto flex-1 p-4 sm:p-5 text-sm">
           {copyError && <p role="alert" className="mb-3 text-xs text-red-700">{copyError}</p>}
           {copied && <p role="status" className="sr-only">Copied to clipboard.</p>}
+          <OperatingStatusPanel key={location.id} location={location} alertsOnly={activeTab !== 'hours'} />
           
           {activeTab === 'overview' && (
             <div className="space-y-5">
@@ -322,7 +323,6 @@ Operational lifecycle: ${location.operationalStatus}`;
                 <div><h3 className="text-xs font-semibold text-neutral-500">Today · {todayStatus.dayName}</h3><p className="mt-1 text-sm font-semibold text-neutral-900">{todayStatus.hoursString}</p></div>
                 <div className="text-right"><p className="text-xs text-neutral-500">{location.timeZone?.split('/').pop()?.replace(/_/g, ' ') || 'Local time'}</p><button type="button" onClick={() => setActiveTab('hours')} className="mt-1 py-1 text-sm font-medium text-red-700 hover:underline">Hours & status →</button></div>
               </section>
-              <OperatingStatusPanel location={location} alertsOnly />
               {(todayStatus.temporaryClosure || todayStatus.state === 'Unknown' || visibleNotice) && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
                 <p className="font-semibold">{todayStatus.reason}</p>
                 {visibleNotice && <p className="mt-1 whitespace-pre-wrap break-words">{visibleNotice.shortDescription}</p>}
@@ -397,7 +397,6 @@ Operational lifecycle: ${location.operationalStatus}`;
           {/* TAB 2: OPERATING HOURS & NOTICES */}
           {activeTab === 'hours' && (
             <div className="space-y-5 animate-in fade-in duration-150">
-              <OperatingStatusPanel location={location} />
               {/* Notice alert if active */}
               {visibleNotice ? (
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-xs text-amber-900 shadow-xs">

@@ -96,6 +96,26 @@ for (const mode of ['closure', 'malformed-hours'] as const) test(`Overview prese
   expect(f.commits).toHaveLength(0);
 });
 
+test('Operating recovery stays synchronized when switching Overview to Hours during the save', async ({ page }) => {
+  const f = await prepareOperating(page, true);
+  await page.getByRole('button', { name: 'Report temporary closure' }).click();
+  await page.getByLabel('Reason for operating update').fill('Synthetic outage');
+  await page.getByRole('button', { name: 'Confirm closure', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Recover operating update' })).toBeVisible();
+  await page.reload(); await restore(page, true);
+  let release = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/directory/operating/commit', async route => { await held; await route.fallback(); });
+  await page.getByRole('button', { name: 'Recover operating update' }).click();
+  await page.getByRole('button', { name: 'Hours & status', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Recover operating update' })).toBeDisabled();
+  release();
+  await expect(page.getByRole('button', { name: 'End temporary closure' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Recover operating update' })).toHaveCount(0);
+  expect(f.calls).toHaveLength(2);
+  expect(f.calls[1]).toEqual(f.calls[0]);
+});
+
 async function preparePersonCard(page: Page, mode: 'normal' | 'unknown' | 'empty' | 'hold' | 'reject' | 'denied' = 'normal', role = 'System Administrator') {
   await prepare(page, role);
   const seed: any = seedDirectory(2);

@@ -2,6 +2,8 @@
 
 Owner request, October 24, 2026 Pacific. Prioritize a straightforward store reference card: business information first, minimal commentary and wasted space. This is a focused review of the Location and Person detail cards, not a claim that every application screen has been audited.
 
+**Publication:** The card cleanup is live through [Dispatch43's isolated UI release](../dispatches/dispatch-43-contact-card-ui-release.md). Release source b2d26fe preserves the PR53 backend; it does not deploy newer main-branch staffing code. The source-only statements below retain their milestone-time meaning. Person editor/list/settings improvements remain follow-up work.
+
 ## Evidence and findings
 
 Reviewed the owner's three screenshots, the live Person editor read-only, and the detail-card components, contact projections, hierarchy resolvers and operating-status panel. The live editor was left untouched because it was already open; no business record was saved.

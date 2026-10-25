@@ -11,7 +11,19 @@ Recovered 2026-09-11 via the Cloud Run Admin API using existing Application Defa
 - **Branded domain:** `https://shiekh-dir.ai.studio` → Cloud Run domain mapping routes to `shiekh-location-company-directory` (us-west1). Confirmed live via `gcloud beta run domain-mappings list`.
 - **Artifact Registry image:** `us-west1-docker.pkg.dev/gen-lang-client-0801664258/cloud-run-source-deploy/shiekh-location-company-directory`
 
-## Current live revision — PR #53
+## Current live revision — isolated PR #70 UI release
+
+Published October 24, 2026 Pacific. Ready revision `shiekh-location-company-directory-ux70-b2d26fe` is sole 100% desired/observed traffic. Source is **`b2d26fe1bbc70c3cf9ff008bdac361c147409765`** on `codex/contact-card-live-release`: the live PR53 base plus four reviewed UI components and compatible synthetic tests only. It is **not a deployment of all current main**. Those four runtime blobs match PR70 head `e6cbb53`; PR70 merged as `e0d7f472d1b325ac17c2378b993ab6ad91d3b66d`. Keep the release source pinned for reproduction.
+
+Build `3e687c90-d5e1-45f8-8e60-182b84003f5a` succeeded. The no-traffic candidate passed exact-source/configuration/IAM/traffic/tag/build-principal checks and public acceptance before etag-guarded promotion. Runtime/build identities, environment/secret references, security/network/scaling, service IAM and all 26 historical tags are preserved; only temporary `u70-b2d26fe` was removed. Branded mapping remains Ready/DomainRoutable. Both hosts match the accepted HTML `50ef245fd2fe245840bd2487d9f789c4d458c1d672e4160bddf34973eed38e66`, 45 MIME-validated assets, compiled Firebase settings and four unchanged consumer documents. API/operating/internal-preview denials and unknown-route/cache checks passed. Existing user session restored; live store and Person cards inspected read-only.
+
+[Dispatch43](dispatches/dispatch-43-contact-card-ui-release.md) records source isolation, validation and acceptance limits. The newer staffing backend/session/controller code from main is excluded. Dedicated-runtime switching, effective-access/shared-permission cleanup, signing setup, staffing activation, data restore and issue36 authenticated consumer acceptance remain separate and incomplete. No other app, API credential or business record was changed. Do not deploy current main wholesale while those gates remain.
+
+**Rollback:** previous revision `shiekh-location-company-directory-pr53-62acacb` restores the prior UI with the same backend contract. A traffic rollback does not restore data or undo database protection. Preserve the Directory-only client policy and the existing workflow/security gates. Documentation-only follow-ups require no rebuild.
+
+<a id="current-live-revision--pr-53"></a>
+
+## Historical live revision — PR #53
 
 **Separate protection/runtime-preparation checkpoints, October 23–24, 2026 Pacific:** [Dispatch41](dispatches/dispatch-41-directory-protection-checkpoint.md) records the Directory-only client-policy activation from PR64, unchanged other releases and authorized app continuity. Subsequent owner-approved dedicated-account provisioning and limited grants passed bounded actual-identity tests; [Dispatch42](dispatches/dispatch-42-private-runtime-preview.md) records a separate IAM-protected preview using the exact live image, not a production release. The identity/shared-cleanup scope approvals are resolved. Signing setup still requires verified effective isolation and other release gates, not another scope approval. Live production retains its original PR53 identity/traffic; PR63 staffing UI remains unpublished/default-off. Neither preview boot nor account separation alone authorizes a traffic switch, shared-role revocation or signing/workflow activation.
 

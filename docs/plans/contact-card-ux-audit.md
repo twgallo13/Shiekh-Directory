@@ -45,6 +45,8 @@ Final review identified a hidden resolved-state warning in Overview: active clos
 
 The UX publication can be isolated from newer unpublished staffing code: all four changed runtime components were byte-identical between the live PR53 source and PR70's base. Prepare the release from the verified live source plus only those reviewed component blobs and compatible synthetic tests. Do not deploy all of current main, switch runtime identities, change shared access or enable the new staffing workflow for this UI release. Verify that server/dependency/auth/provider/API source and served consumer documents match the live base, then use a zero-traffic candidate and configuration/traffic guards before promotion. The other apps' coordinated repair and permission cleanup remain separate.
 
+An additional advisory finding identified stale pending recovery after switching tabs during a save. The modal now owns one persistently mounted operating panel, switching its presentation instead of replacing its state. The new delayed-recovery/tab-switch regression and ten affected operating/diagnostic cases passed. The isolated live-base release passed 19 cases before this repair; with the added case there are 20 distinct applicable scenarios, not 30 independent tests. Final isolated release types/build and main-branch type checking passed. Production has not been promoted by these checks.
+
 1. Review Person editor explanatory text and grouping next, preserving meaningful warnings at the point of change.
 2. Apply the same contact-first hierarchy to list/grid cards and search results after these detail views are accepted.
 3. Review Organization settings, correction forms and empty/error states for consistent labels and concise task guidance.

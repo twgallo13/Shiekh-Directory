@@ -46,6 +46,7 @@ export function checkRuntimePreview(input: unknown) {
   for (const [label, service, name] of [['baseline', before, SERVICE], ['production', after, SERVICE], ['candidate', candidate, PREVIEW]] as const) {
     fail(at(service, 'apiVersion') === 'serving.knative.dev/v1' && at(service, 'kind') === 'Service'
       && at(service, 'metadata', 'name') === name && at(service, 'metadata', 'namespace') === NAMESPACE
+      && at(service, 'metadata', 'labels', 'cloud.googleapis.com/location') === 'us-west1'
       && !!object(at(service, 'spec', 'template', 'spec'))
       && Array.isArray(at(service, 'status', 'traffic')), `${label}_snapshot_invalid`);
     const generation = at(service, 'metadata', 'generation');
@@ -56,7 +57,10 @@ export function checkRuntimePreview(input: unknown) {
     && isDeepStrictEqual(at(before, 'status', 'traffic'), at(after, 'status', 'traffic'))
     && isDeepStrictEqual(at(before, 'metadata', 'annotations'), at(after, 'metadata', 'annotations'))
     && isDeepStrictEqual(at(before, 'metadata', 'labels'), at(after, 'metadata', 'labels')), 'production_drift');
-  fail(!!object(at(input, 'productionIamBefore')) && !!object(at(input, 'productionIamAfter'))
+  fail(['productionIamBefore', 'productionIamAfter'].every(key => {
+    const policy = at(input, key);
+    return !!object(policy) && typeof at(policy, 'etag') === 'string' && (at(policy, 'etag') as string).length > 0;
+  })
     && isDeepStrictEqual(at(input, 'productionIamBefore'), at(input, 'productionIamAfter')), 'production_iam_drift_or_missing');
   const ready = at(candidate, 'status', 'conditions');
   fail(Array.isArray(ready) && ready.some(c => at(c, 'type') === 'Ready' && at(c, 'status') === 'True'), 'candidate_not_ready');

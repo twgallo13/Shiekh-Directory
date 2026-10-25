@@ -8,7 +8,8 @@ import { checkRuntimePreview } from '../scripts/runtimePreviewGuard';
 
 function fixture() {
   const production = { apiVersion: 'serving.knative.dev/v1', kind: 'Service', metadata: {
-    name: 'shiekh-location-company-directory', namespace: '1063064400866', generation: 1, annotations: { 'run.googleapis.com/ingress': 'all' } },
+    name: 'shiekh-location-company-directory', namespace: '1063064400866', generation: 1,
+    labels: { 'cloud.googleapis.com/location': 'us-west1' }, annotations: { 'run.googleapis.com/ingress': 'all' } },
   spec: { template: { metadata: { annotations: { 'run.googleapis.com/execution-environment': 'gen2' } }, spec: {
     serviceAccountName: 'existing-runtime', containers: [{ image: `registry/image@sha256:${'a'.repeat(64)}`, env: [{ name: 'UNRELATED', value: 'synthetic-sensitive-value' }] }] } } },
   status: { observedGeneration: 1, traffic: [{ revisionName: 'published', percent: 100 }, { revisionName: 'older', tag: 'retained' }] } };
@@ -35,6 +36,10 @@ const cases: [string, (f: ReturnType<typeof fixture>) => void][] = [
   ['production ingress drift', f => { f.productionAfter.metadata.annotations['run.googleapis.com/ingress'] = 'internal'; }],
   ['production labels drift', f => { Object.assign(f.productionAfter.metadata, { labels: { security: 'changed' } }); }],
   ['IAM drift', f => { f.productionIamAfter.etag = 'changed'; }],
+  ['missing production IAM etags', f => { delete (f.productionIamBefore as Record<string, unknown>).etag; delete (f.productionIamAfter as Record<string, unknown>).etag; }],
+  ['empty production IAM etags', f => { f.productionIamBefore.etag = ''; f.productionIamAfter.etag = ''; }],
+  ['wrong production region', f => { for (const s of [f.productionBefore, f.productionAfter]) s.metadata.labels['cloud.googleapis.com/location'] = 'us-central1'; }],
+  ['missing candidate region', f => { delete (f.candidate.metadata.labels as Record<string, unknown>)['cloud.googleapis.com/location']; }],
   ['wrong candidate target', f => { f.candidate.metadata.name = f.productionBefore.metadata.name; }],
   ['wrong project', f => { f.candidate.metadata.namespace = 'another-project'; }],
   ['wrong identity', f => { f.candidate.spec.template.spec.serviceAccountName = 'shared-runtime'; }],

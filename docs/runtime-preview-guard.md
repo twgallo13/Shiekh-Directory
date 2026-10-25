@@ -12,7 +12,7 @@ Keep the bundle outside the repository with owner-only permissions. Environment 
 
 The bundle must contain these independently collected snapshots:
 
-- `productionBefore` and `productionAfter`: complete Cloud Run v1 Service resources for the Directory production service, including generation, observedGeneration, spec and observed traffic.
+- `productionBefore` and `productionAfter`: complete Cloud Run v1 Service resources for the Directory production service, including generation, observedGeneration, spec and observed traffic. All three service snapshots must include the `cloud.googleapis.com/location` metadata label set to `us-west1`; missing/wrong region evidence blocks the check.
 - `productionIamBefore` and `productionIamAfter`: production service IAM policies, including etags; these must be exactly unchanged.
 - `candidate`: complete v1 Service resource for the separate Directory runtime preview. It must be observed Ready, with its newest ready revision actually receiving its sole100% traffic, the dedicated identity, the same pinned image/runtime configuration, and min0/max1.
 - `candidateIamPolicy` and `projectIamPolicy`: current full policies with etags. Public principals, malformed member lists, missing policy evidence and disabled/unknown invoker IAM checks block this stage. This is not an effective-permission or group/ancestor-policy analysis.

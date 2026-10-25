@@ -2,7 +2,7 @@
 
 Owner request, October 24, 2026 Pacific. Prioritize a straightforward store reference card: business information first, minimal commentary and wasted space. This is a focused review of the Location and Person detail cards, not a claim that every application screen has been audited.
 
-**Publication:** The card cleanup is live through [Dispatch43's isolated UI release](../dispatches/dispatch-43-contact-card-ui-release.md). The Person editor cleanup follows in [Dispatch44](../dispatches/dispatch-44-person-editor-ui-release.md), source bdf62e6 on that release lineage. Both preserve the PR53 backend and exclude newer main-branch staffing code. The source-only statements below retain their milestone-time meaning. List/search/settings improvements remain follow-up work.
+**Publication:** Detail cards are live through [Dispatch43](../dispatches/dispatch-43-contact-card-ui-release.md); the Person editor through [Dispatch44](../dispatches/dispatch-44-person-editor-ui-release.md); list/grid/search through [Dispatch45](../dispatches/dispatch-45-list-search-ui-release.md), source c7d1938. All use isolated UI releases preserving the PR53 backend and excluding newer main-branch staffing code. The source-only statements below retain their milestone-time meaning. Organization/correction/empty-state improvements remain follow-up work. Dispatch45 records the current signed-in visual verification limitation.
 
 ## Evidence and findings
 
@@ -50,6 +50,6 @@ The UX publication can be isolated from newer unpublished staffing code: all fou
 An additional advisory finding identified stale pending recovery after switching tabs during a save. The modal now owns one persistently mounted operating panel, switching its presentation instead of replacing its state. The new delayed-recovery/tab-switch regression and ten affected operating/diagnostic cases passed. The isolated live-base release passed 19 cases before this repair; with the added case there are 20 distinct applicable scenarios, not 30 independent tests. Final isolated release types/build and main-branch type checking passed. Production has not been promoted by these checks.
 
 1. Person editor grouping/guidance completed in Dispatch44: compact explicit positions, position-change review beside the choices, expandable optional history/support selection, visible selected/unavailable links and same-name store identification. Save/assignment/access safeguards remain unchanged.
-2. Apply the same contact-first hierarchy to list/grid cards and search results after these detail views are accepted.
+2. List/grid/search cleanup completed in Dispatch45: full store contacts, linked assignments, historical contact qualifications, keyboard opening and full accessible descriptions. Synthetic desktop/mobile checks pass; signed-in production card inspection remains unconfirmed because the dedicated Google popup stalled.
 3. Review Organization settings, correction forms and empty/error states for consistent labels and concise task guidance.
 4. Add real provider freshness/status evidence only when the integration supports it; never replace an unknown result with a decorative success badge.

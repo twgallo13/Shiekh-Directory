@@ -22,7 +22,7 @@ interface PersonEditorFormProps {
   onCancel: () => void; registerClose?: (close: (() => void) | null) => void; footerTarget?: HTMLElement | null; children?: React.ReactNode;
 }
 const inputClass = 'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500';
-const sectionClass = 'space-y-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4';
+const sectionClass = 'space-y-3 border-b border-neutral-200 pb-5';
 const text = (value: unknown) => typeof value === 'string' ? value : '';
 function TextField({ id, label, value, onChange, required = false }: { id: string; label: string; value: string; onChange: (value: string) => void; required?: boolean }) {
   return <div><FormLabel required={required} htmlFor={id}>{label}</FormLabel><input id={id} required={required} value={value} onChange={event => onChange(event.target.value)} className={inputClass} /></div>;
@@ -107,48 +107,67 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
         <section className={sectionClass} aria-label="Profile and positions">
           <h3 className="font-semibold text-neutral-900">Profile & positions</h3>
           <TextField id={id + '-name'} label="Full Name" required value={draft.fullName} onChange={value => edit('fullName', value)} />
-          <fieldset className="space-y-2"><legend className="text-xs font-semibold text-neutral-700">Linked positions</legend>
-            <p className="text-xs text-neutral-600">Select every position intentionally held. This does not assign stores, Districts or account permissions.</p>
-            <div className="grid gap-2 sm:grid-cols-2">{PERSON_POSITIONS.map(p => <label key={p.id} className={'flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-xs ' + (draft.positionIds.includes(p.id) ? 'border-red-200 bg-red-50' : 'border-neutral-200 bg-white')}>
-              <input type="checkbox" checked={draft.positionIds.includes(p.id)} onChange={e => edit('positionIds', e.target.checked ? [...draft.positionIds, p.id] : draft.positionIds.filter(value => value !== p.id))} className="mt-0.5 accent-red-700" /><span>{p.label}</span></label>)}</div>
-            {person && positionState.source !== 'controlled' && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><p>{positionState.source === 'invalid' ? 'Saved position mapping needs review.' : 'Legacy title suggestion only—not an explicitly saved mapping.'} Unrelated edits preserve existing data.</p><Button size="sm" className="mt-2" onClick={() => edit('positionIds', [...draft.positionIds])}>Review and link these positions</Button></div>}
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-semibold text-neutral-700">Linked positions</legend>
+            <p className="text-xs text-neutral-500">Choose every position this person holds. Assign stores and districts separately.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {PERSON_POSITIONS.map(p => <label key={p.id} className={'flex min-h-11 cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs ' + (draft.positionIds.includes(p.id) ? 'border-red-200 bg-red-50' : 'border-neutral-200 bg-white')}>
+                <input type="checkbox" checked={draft.positionIds.includes(p.id)} onChange={e => edit('positionIds', e.target.checked ? [...draft.positionIds, p.id] : draft.positionIds.filter(value => value !== p.id))} className="mt-0.5 accent-red-700" /><span>{p.label}</span>
+              </label>)}
+            </div>
+            {person && positionState.source !== 'controlled' && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+              <p>{positionState.source === 'invalid' ? 'Saved positions need review.' : 'These positions are suggestions from the historical title.'} Confirm them before changing positions.</p>
+              <Button size="sm" className="mt-2" onClick={() => edit('positionIds', [...draft.positionIds])}>Review and link these positions</Button>
+            </div>}
           </fieldset>
-          <div className="grid gap-3 sm:grid-cols-2"><TextField id={id + '-title'} label="Display title (optional)" value={draft.jobTitle} onChange={value => edit('jobTitle', value)} /><TextField id={id + '-department'} label="Department" value={draft.department} onChange={value => edit('department', value)} /></div>
-          <p className="text-xs text-neutral-500">Display title and department are descriptive text, not linked hierarchy or assignment authority.</p>
-          {person?.role && person.role !== person.jobTitle && <p className="break-words text-xs text-amber-900">Historical role alias retained for review: {person.role}. Display-title edits do not overwrite it.</p>}
-        </section>
-        <section className={sectionClass} aria-label="Contact and privacy">
-          <h3 className="font-semibold text-neutral-900">Contact & privacy</h3>
-          <div className="grid gap-3 sm:grid-cols-[1fr_8rem]"><TextField id={id + '-phone'} label="Work Phone" value={draft.phone} onChange={value => edit('phone', value)} /><TextField id={id + '-extension'} label="Extension" value={draft.extension} onChange={value => edit('extension', value)} /></div>
-          <TextField id={id + '-email'} label="Individual work email (optional)" value={draft.email} onChange={value => edit('email', value)} />
-          <p className="text-xs text-neutral-500">Leave blank if no individual address is assigned. Most SM/AMs use their store inbox; a few also have their own company address. Contact only—not sign-in, identity or mailbox permission.</p>
-          {legacyEmailCandidate && !personEmailEditChangesValue(person, draft.email) && <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
-            <p>{mappedLegacyEmail ? 'Email mapping staged, not saved. Save Person to confirm it; the historical source stays unchanged.' : 'This address is saved only in the historical email field. Unrelated edits and retyping it do not map it automatically.'}</p>
-            {mappedLegacyEmail ? <Button size="sm" onClick={() => { setMappedLegacyEmail(null); setDraft(previous => ({ ...previous, email: email.value })); setTouched(previous => { const next = new Set(previous); next.delete('email'); return next; }); setError(''); }}>Undo email mapping</Button> : <Button size="sm" onClick={() => setEmailMappingReview(true)}>Use as individual work email</Button>}
-          </div>}
-          {person?.email && Object.hasOwn(person, 'workEmail') && person.email.trim().toLowerCase() !== (person.workEmail || '').trim().toLowerCase() && <p className="break-all text-xs text-amber-900">Historical email alias retained for review: {person.email}</p>}
-          {sharedPersonEmailKind(draft.email, locations) && <p className="text-xs text-amber-900">Saved or entered contact is a shared store inbox, not an individual address. Unrelated edits preserve the legacy value. Clear or replace it intentionally; the Location inbox and assignments are not changed.</p>}
-          <div><FormLabel htmlFor={id + '-privacy'}>Phone visibility</FormLabel><select id={id + '-privacy'} value={draft.privacy} onChange={e => edit('privacy', e.target.value as ContactPrivacyLevel)} className={inputClass}>{!['Public', 'Internal', 'Restricted'].includes(draft.privacy) && <option value={draft.privacy}>Historical value (review)</option>}{['Public', 'Internal', 'Restricted'].map(value => <option key={value}>{value}</option>)}</select></div>
-        </section>
-        <PersonInboxResponsibilities person={person} locations={locations} />
-        <section className={sectionClass}><PersonLocationRelationshipFields locations={locations} primaryLocationId={draft.primaryLocationId} supportedLocationIds={draft.supportedLocationIds} onPrimaryLocationChange={value => edit('primaryLocationId', value)} onSupportedLocationIdsChange={value => edit('supportedLocationIds', value)} /></section>
-        <section className={sectionClass} aria-label="Management responsibilities">
-          <h3 className="font-semibold text-neutral-900">Management responsibilities</h3>
-          <p className="text-xs text-neutral-600">Linked records, not typed titles. Change a District's DM once in Organization settings; its retail stores inherit that DM. Links open separately to keep this draft.</p>
-          {impact.responsibilities.length ? <ul className="space-y-2">{impact.responsibilities.map(row => <li key={row.key} className="rounded-lg border border-neutral-200 bg-white p-3 text-xs"><a href={row.href} target="_blank" rel="noopener noreferrer" className="font-semibold text-red-700 underline">{row.label}</a><p className="mt-1 text-neutral-500">{row.source}</p></li>)}</ul> : <p className="text-xs text-neutral-500">No linked management responsibilities.</p>}
-          {impact.issues.map(issue => <p key={issue} className="text-xs text-amber-900">{issue}</p>)}
-          {person?.district && <p className="break-words rounded-lg bg-white p-3 text-xs text-neutral-500">Legacy territory/district text (reference only): {person.district}. Not an assignment; preserved.</p>}
-          <a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="inline-block text-xs font-semibold text-red-700 underline">Open Organization & leadership settings</a>
           {positionChanged && <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><h4 className="font-semibold">Review position change</h4><p>Selected: {PERSON_POSITIONS.filter(p => draft.positionIds.includes(p.id)).map(p => p.label).join(', ') || 'No positions'}. Existing assignments and accounts stay unchanged.</p>
             {conflicts.map(row => <p key={row.key} role="alert">Retain {PERSON_POSITIONS.find(p => p.id === row.requiredPosition)!.label} or reassign/vacate: {row.label}.</p>)}
             <label className="flex items-start gap-2"><input type="checkbox" checked={reviewed} onChange={e => setReviewed(e.target.checked)} className="mt-0.5 accent-red-700" />I reviewed the responsibilities. Save positions only; do not change assignments or access.</label>
           </div>}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField id={id + '-title'} label="Display title (optional)" value={draft.jobTitle} onChange={value => edit('jobTitle', value)} />
+            <TextField id={id + '-department'} label="Department" value={draft.department} onChange={value => edit('department', value)} />
+          </div>
+          <p className="text-xs text-neutral-500">Optional display labels. Linked positions above determine assignment eligibility.</p>
+          {person?.role && person.role !== person.jobTitle && <details className="text-xs text-neutral-500"><summary className="cursor-pointer">Historical title</summary><p className="mt-2 break-words">Historical role alias retained for review: {person.role}. Display-title edits do not overwrite it.</p></details>}
+        </section>
+        <section className={sectionClass} aria-label="Contact and privacy">
+          <h3 className="font-semibold text-neutral-900">Contact details</h3>
+          <div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-3 sm:grid-cols-[minmax(0,1fr)_5rem_8rem]">
+            <TextField id={id + '-phone'} label="Work Phone" value={draft.phone} onChange={value => edit('phone', value)} />
+            <TextField id={id + '-extension'} label="Extension" value={draft.extension} onChange={value => edit('extension', value)} />
+            <div className="col-span-2 sm:col-span-1"><FormLabel htmlFor={id + '-privacy'}>Phone visibility</FormLabel><select id={id + '-privacy'} value={draft.privacy} onChange={e => edit('privacy', e.target.value as ContactPrivacyLevel)} className={inputClass}>{!['Public', 'Internal', 'Restricted'].includes(draft.privacy) && <option value={draft.privacy}>Historical value (review)</option>}{['Public', 'Internal', 'Restricted'].map(value => <option key={value}>{value}</option>)}</select></div>
+          </div>
+          <TextField id={id + '-email'} label="Individual work email (optional)" value={draft.email} onChange={value => edit('email', value)} />
+          <p className="text-xs text-neutral-500">Optional individual company address, separate from the shared store inbox.</p>
+          {legacyEmailCandidate && !personEmailEditChangesValue(person, draft.email) && <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+            <p>{mappedLegacyEmail ? 'Email mapping staged, not saved. Save Person to apply it.' : 'Historical contact. It stays unchanged unless you explicitly map it below.'}</p>
+            {mappedLegacyEmail ? <Button size="sm" onClick={() => { setMappedLegacyEmail(null); setDraft(previous => ({ ...previous, email: email.value })); setTouched(previous => { const next = new Set(previous); next.delete('email'); return next; }); setError(''); }}>Undo email mapping</Button> : <Button size="sm" onClick={() => setEmailMappingReview(true)}>Use as individual work email</Button>}
+          </div>}
+          {person?.email && Object.hasOwn(person, 'workEmail') && person.email.trim().toLowerCase() !== (person.workEmail || '').trim().toLowerCase() && <details className="text-xs text-neutral-500"><summary className="cursor-pointer">Historical email</summary><p className="mt-2 break-all">Historical email alias retained for review: {person.email}</p></details>}
+          {sharedPersonEmailKind(draft.email, locations) && <p className="text-xs text-amber-900">This is a shared store inbox, not an individual address. Keep it unchanged, or clear/replace it intentionally. Store inboxes and assignments are unaffected.</p>}
+          <PersonInboxResponsibilities person={person} locations={locations} compact />
+        </section>
+        <section className={sectionClass}>
+          <PersonLocationRelationshipFields locations={locations} primaryLocationId={draft.primaryLocationId} supportedLocationIds={draft.supportedLocationIds} onPrimaryLocationChange={value => edit('primaryLocationId', value)} onSupportedLocationIdsChange={value => edit('supportedLocationIds', value)} />
+        </section>
+        <section className={sectionClass} aria-label="Management responsibilities">
+          <h3 className="font-semibold text-neutral-900">Management responsibilities</h3>
+          <p className="text-xs text-neutral-500">Change a district's manager once in Organization settings. Its stores inherit that manager.</p>
+          {impact.responsibilities.length ? <details open={positionChanged} className="rounded-lg border border-neutral-200 p-3 text-xs">
+            <summary className="cursor-pointer font-medium text-neutral-700">Current management assignments · {impact.responsibilities.length}</summary>
+            <ul className="mt-3 divide-y divide-neutral-100">{impact.responsibilities.map(row => <li key={row.key} className="py-2"><a href={row.href} target="_blank" rel="noopener noreferrer" className="font-semibold text-red-700 underline">{row.label}</a><p className="mt-1 text-neutral-500">{row.source}</p></li>)}</ul>
+          </details> : <p className="text-xs text-neutral-500">No linked management assignments.</p>}
+          {impact.issues.map(issue => <p key={issue} className="text-xs text-amber-900">{issue}</p>)}
+          {person?.district && <details className="text-xs text-neutral-500"><summary className="cursor-pointer">Historical territory note</summary><p className="mt-2 break-words">Legacy territory/district text (reference only): {person.district}. Not an assignment; preserved.</p></details>}
+          <a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="inline-block py-1 text-xs font-semibold text-red-700 underline">Open Organization & leadership settings</a>
         </section>
         <section className={sectionClass} aria-label="Lifecycle and account access">
-          <h3 className="font-semibold text-neutral-900">Lifecycle & account access</h3>
+          <h3 className="font-semibold text-neutral-900">Status & linked accounts</h3>
           <div><FormLabel htmlFor={id + '-status'}>Active Status</FormLabel><select id={id + '-status'} value={draft.status} onChange={e => edit('status', e.target.value)} className={inputClass}>{draft.status === 'Unknown' && <option value="Unknown" disabled>Needs lifecycle review (preserved)</option>}<option>Active</option><option>Inactive</option></select></div>
-          <p className="text-xs text-neutral-600">Inactivation is not account revocation. Reassign/vacate management links and review linked accounts first. This form never changes account permissions.</p>
-          {impact.accounts.length ? <ul className="space-y-1 text-xs">{impact.accounts.map(account => <li key={account.id}>{account.name} · {account.role} · {account.status}</li>)}</ul> : <p className="text-xs text-neutral-500">No linked Directory account found in loaded data.</p>}
+          <p className="text-xs text-neutral-600">Making someone inactive does not disable their login. Review assignments and linked accounts first.</p>
+          {impact.accounts.length ? <ul className="space-y-1 text-xs">{impact.accounts.map(account => <li key={account.id}>{account.name} · {account.role} · {account.status}</li>)}</ul> : <p className="text-xs text-neutral-500">No linked Directory account found.</p>}
         </section>
         {children}
       </fieldset>

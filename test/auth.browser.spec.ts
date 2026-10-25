@@ -40,6 +40,7 @@ for (const width of [390, 1280]) {
     await expect(card).toContainText('123 Long Shopping Center Boulevard');
     await expect(card).toContainText('store001@example.test');
     await expect(card).toContainText('District Manager: Synthetic Profile Manager');
+    await expect(card).toHaveAccessibleDescription(/123 Long Shopping Center Boulevard.*Level 2, Suite 007.*store001@example.test.*District Manager: Synthetic Profile Manager/);
     await expect(card).not.toContainText('Wrong copied manager');
     await page.getByRole('checkbox', { name: 'Select store #001 Bootstrap Store 1', exact: true }).check();
     await expect(page.getByRole('button', { name: 'Configure Bulk Hours & Holiday Exception' })).toBeEnabled();
@@ -61,6 +62,7 @@ for (const width of [390, 1280]) {
     await expect(card).toContainText('Shared store contact');
     await expect(card).toContainText('Store Manager · District Manager');
     await expect(card).toContainText('District: North District');
+    await expect(card).toHaveAccessibleDescription(/Store Manager.*District Manager.*Shared store contact.*District: North District/);
     await expect(card).toContainText('Works at: #001 Bootstrap Store 1');
     await expect(card).not.toContainText('Legacy territory note');
     await expect(card).toContainText('Internal');
@@ -85,6 +87,7 @@ for (const width of [390, 1280]) {
     await dialog.getByLabel('Search directory records').fill('Suite 007');
     const location = dialog.getByRole('button', { name: 'Open store #001 Bootstrap Store 1', exact: true });
     await expect(location).toContainText('123 Shopping Boulevard, Suite 007');
+    await expect(location).toHaveAccessibleDescription(/123 Shopping Boulevard, Suite 007/);
     expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('directory-search.png'), fullPage: true });
     await dialog.getByLabel('Search directory records').fill('regional manager');
@@ -92,6 +95,10 @@ for (const width of [390, 1280]) {
     await expect(person).toContainText('Regional Manager');
     await expect(person).not.toContainText('Outdated display title');
     await expect(person).not.toContainText('Legacy territory note');
+    await expect(person).toHaveAccessibleDescription(/Regional Manager.*District: North District/);
+    await dialog.getByLabel('Search directory records').fill('Outdated display title');
+    await expect(person).toContainText('Display title: Outdated display title');
+    await expect(person).toContainText('Regional Manager');
     await person.focus(); await page.keyboard.press('Enter');
     await expect(dialog).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Edit Person', exact: true })).toBeVisible();

@@ -38,4 +38,3 @@ Use the already approved isolated emulator at exact `127.0.0.1:8089`, project `d
 5. Add the separate opt-in consumer schema/scopes and pinned-snapshot sync contract. Preserve current v1/v2/v3 responses, credentials/grants and LP/Dynamic QR behavior.
 
 No merge, deployment, production activation, data reset, account/contact/credential changes or other-app changes are claimed by this dispatch.
-

@@ -36,14 +36,42 @@ test('activated reads establish complete bounded assignment identities without c
   await assert.rejects(readOrganizationGuardState(f.firestore, f.transaction, f.state.units));
 });
 
-test('generic writes cannot activate, downgrade, edit or delete an activated unit', () => {
+test('generic writes cannot activate, downgrade or change managed staffing/parents', () => {
   const f = fixture();
-  for (const changes of [{ name: 'Renamed' }, { leadershipModelVersion: undefined }, { leadershipModelVersion: 0 }, { districtManagerId: 'new-hire' }, { status: 'Retired' }]) {
+  for (const changes of [{ leadershipModelVersion: undefined }, { leadershipModelVersion: 0 }, { districtManagerId: 'new-hire' }, { regionId: 'other' }, { arbitrary: true }]) {
     const w = f.write('districts', '01', changes);
     assert.throws(() => validate([w.value], [w.before], f.state, f.people), /organization workflow/);
   }
   const region = f.write('regions', '01', { leadershipModelVersion: 1, leadershipVersion: 1 });
   assert.throws(() => validate([region.value], [region.before], f.state, f.people), /server-command/);
+});
+
+test('managed renames preserve stable references and reject unsafe names and combined writes', () => {
+  const f = fixture(), w = f.write('districts', '01', { name: 'Renamed' });
+  assert.doesNotThrow(() => validate([w.value], [w.before], f.state, f.people));
+  for (const name of ['', ' ', 'a\u0000b', 'x'.repeat(1001)]) {
+    const bad = f.write('districts', '01', { name });
+    assert.throws(() => validate([bad.value], [bad.before], f.state, f.people), /organization workflow/);
+  }
+  assert.throws(() => validate([w.value, w.value], [w.before, w.before], f.state, f.people), /organization workflow/);
+  assert.throws(() => validate([{ collection: 'districts', id: '01', operation: 'delete' }], [w.before], f.state, f.people), /organization workflow/);
+});
+
+test('managed retirement requires vacancy and retired vacant units remain valid dormant sources', () => {
+  const f = fixture(), occupied = f.write('districts', '01', { status: 'Retired' });
+  assert.throws(() => validate([occupied.value], [occupied.before], f.state, f.people), /Primary\/Additional/);
+  f.state.assignments = [];
+  const district = f.state.units.find(u => u.unitType === 'district')!;
+  district.data.districtManagerId = null;
+  const vacant = f.write('districts', '01', { status: 'Retired' });
+  assert.doesNotThrow(() => validate([vacant.value], [vacant.before], f.state, f.people));
+  district.data.status = 'Retired';
+  f.state.units.find(u => u.unitType === 'region')!.data.status = 'Retired';
+  assert.doesNotThrow(() => validate([], [], f.state, f.people));
+  const reactivate = f.write('districts', '01', { status: 'Active' });
+  assert.throws(() => validate([reactivate.value], [reactivate.before], f.state, f.people), /active parent Region/);
+  district.data.districtManagerId = 'incumbent';
+  assert.throws(() => validate([], [], f.state, f.people), /roster/);
 });
 
 test('Additional manager deletion, inactivation, position removal and renaming require roster-aware review', () => {

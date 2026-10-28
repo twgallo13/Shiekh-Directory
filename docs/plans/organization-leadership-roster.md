@@ -65,4 +65,8 @@ Meaningful unit and actual SDK/emulator race/recovery tests, affected browser ch
 
 ## Current production boundary
 
+### Managed registry metadata checkpoint
+
+Managed Region/District names and vacant-unit retirement/reactivation now use the existing versioned registry save path with a live administrator authority read, preserved server-owned model/pointers and mandatory bounded server audit. This narrowly supersedes the earlier blanket managed-unit metadata restriction; it does not permit parent changes, staffing changes, arbitrary fields, combined writes or store moves. Existing registry dependency checks still block retirement with linked Locations or active child Districts. Reactivation preserves vacancy, never recreating a tenure. See [Dispatch 51](../dispatches/dispatch-51-managed-unit-metadata.md). This backend acceptance does not complete all registry UX, Person transitions or activation gates.
+
 The [runbook](../cloud-run-deployment-runbook.md) records the isolated `ux74-c7d1938` source `c7d19381a2d0573941eb5175fcea4d2c2ee862f0`. Main includes newer backend work not all deployed/enabled. No production roster, identity, secret, client grant or business data is changed by slice 1.

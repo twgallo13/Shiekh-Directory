@@ -59,6 +59,8 @@ The next bounded staff-review slice is built: [Dispatch52](../dispatches/dispatc
 
 ### 4. Versioned consumer contract
 
+The assigned-manager name gap now has a bounded implementation: [Dispatch53](../dispatches/dispatch-53-managed-person-name-sync.md). It uses the existing atomic profile/copy save, proves a complete name-only manifest against current Location inventory, preserves IDs/staffing/contact/access and requires live administrator authority plus mandatory bounded audit. This supersedes earlier blanket name-edit restrictions for the supported clearly Active, bounded name-only path. Wider staged lifecycle, moves, source acceptance and release gates remain open; this is not production activation.
+
 Opt-in organization units/assignments/location hierarchy from one pinned snapshot; existing v3 stays Primary-only. Eligibility discovery is separate from assigned leadership. Any new scopes/contacts require a concrete reviewed policy; do not widen existing grants. Consumer access and sales aggregation remain consumer-owned: aggregate one store/transaction before joining a multi-manager roster. Update OpenAPI/guides/Admin links and migration examples together.
 
 ### 5. Acceptance and bounded release

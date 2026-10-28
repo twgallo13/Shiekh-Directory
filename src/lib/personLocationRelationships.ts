@@ -1,5 +1,6 @@
 import type { DistrictRecord, LocationRecord, PersonRecord, UserProfile } from '../types';
 import { isRetailHierarchyType } from './hierarchyResolution';
+import { DirectoryCommitError } from './directoryClient';
 
 export type PersonLocationRelationshipLabel =
   | 'Primary workplace'
@@ -104,6 +105,27 @@ export function reconcileLocationLeadershipCopy(
     || location.assistantStoreManagerIds?.includes(personId) || location.keyHolderIds?.includes(personId);
   const copiesNameOrContact = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
   if (!affected || !copiesNameOrContact) return location;
+
+  // A name-only save must not rewrite contact data or another manager's copied name.
+  if (updatedFields.includes('fullName') && updatedFields.every(field => field === 'fullName' || field === 'name')) {
+    const copyList = (ids: string[], names: string[] | undefined) => {
+      if (new Set(ids).size !== ids.length) throw new DirectoryCommitError('Resolve duplicate leadership members before renaming. No changes were sent.', 'invalid_metadata');
+      if (names?.length === ids.length) return ids.map((id, index) => id === personId ? updatedPerson.fullName : names[index]);
+      // Legacy lists can be rebuilt only from a complete exact-ID name lookup. Never filter a
+      // missing member away or silently retain a stale/missing copy. The managed server path
+      // independently rejects ambiguous saved arrays until their source is explicitly repaired.
+      const resolved = ids.map(id => id === personId ? updatedPerson.fullName : resolvePersonName(id));
+      if (resolved.some(name => typeof name !== 'string' || !name.trim())) throw new DirectoryCommitError('Reload and resolve every linked leadership member before renaming. No changes were sent.', 'invalid_metadata');
+      return resolved as string[];
+    };
+    return { ...location,
+      ...(location.storeManagerId === personId ? { storeManagerName: updatedPerson.fullName } : {}),
+      ...(location.districtManagerId === personId ? { districtManagerName: updatedPerson.fullName } : {}),
+      ...(location.regionalManagerId === personId ? { regionalManagerName: updatedPerson.fullName } : {}),
+      ...(location.assistantStoreManagerIds?.includes(personId) ? { assistantStoreManagerNames: copyList(location.assistantStoreManagerIds, location.assistantStoreManagerNames) } : {}),
+      ...(location.keyHolderIds?.includes(personId) ? { keyHolderNames: copyList(location.keyHolderIds, location.keyHolderNames) } : {}),
+    };
+  }
 
   return {
     ...location,

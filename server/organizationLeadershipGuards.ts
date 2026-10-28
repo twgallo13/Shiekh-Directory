@@ -7,6 +7,7 @@ import { leadershipUnitKey, type LeadershipUnitSource } from './organizationLead
 import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { personLifecycle } from '../src/lib/personLifecycle';
 import { classifyHierarchyLocationType } from '../src/lib/hierarchyResolution';
+import { validateManagedPersonRename } from './managedPersonRename';
 
 interface Assignment { id: string; unitType: 'district' | 'region'; unitId: string; personId: string; status: 'active' | 'ended' }
 export interface OrganizationGuardState { units: LeadershipUnitSource[]; assignments: Assignment[] }
@@ -74,7 +75,7 @@ export function assertOrganizationTransitionCompatibility(state: OrganizationGua
  * It never accepts a bypass boolean or mutates an assignment. Private command/receipt collections are
  * not generic Directory collections. Retained unresolved incumbents remain editable for contact-only changes.
  */
-export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], previous: (Record<string, unknown> | undefined)[], state: OrganizationGuardState, people: Record<string, unknown>[]) {
+export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], previous: (Record<string, unknown> | undefined)[], state: OrganizationGuardState, people: Record<string, unknown>[], locations?: Record<string, unknown>[]) {
   const controlled = state.units.filter(activated), active = state.assignments.filter(a => a.status === 'active');
   const byKey = new Map(state.units.map(u => [leadershipUnitKey(u.unitType, u.id), u]));
   if (byKey.size !== state.units.length || new Set(state.assignments.map(a => a.id)).size !== state.assignments.length) deny('Duplicate leadership source identity.');
@@ -87,6 +88,10 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
       || (rows.length ? !canonicalId(primary) || !rows.some(a => a.personId === primary) : primary !== null)) deny('Resolve the activated leadership roster before linked saves.');
   }
   if (active.some(a => !byKey.has(leadershipUnitKey(a.unitType, a.unitId)) || !activated(byKey.get(leadershipUnitKey(a.unitType, a.unitId))!))) deny('Active leadership rows require an activated canonical unit.');
+  const renames = writes.filter((write, index) => write.collection === 'people' && write.operation === 'set' && previous[index]
+    && active.some(a => a.personId === write.id) && !isDeepStrictEqual(previous[index]!.fullName, write.data?.fullName));
+  if (renames.length > 1) deny('Review one manager name change at a time.');
+  const rename = renames.length ? validateManagedPersonRename(writes, previous, renames[0].id, locations) : null;
   const managed = (type: 'district' | 'region', id: unknown) => typeof id === 'string' && controlled.find(u => u.unitType === type && u.id === id);
   const regionFor = (data: Record<string, unknown>) => byKey.get(leadershipUnitKey('district', String(data.districtId)))?.data.regionId ?? data.regionId;
   for (const [index, write] of writes.entries()) {
@@ -107,7 +112,7 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
       const responsibilities = active.filter(a => a.personId === write.id);
       if (!responsibilities.length) continue;
       if (!before || write.operation === 'delete' || !after) deny('End or reassign organization responsibilities before deleting this Person.');
-      if (!isDeepStrictEqual(after.fullName, before.fullName)) deny('Review compatibility updates before renaming an assigned organization manager.');
+      if (!isDeepStrictEqual(after.fullName, before.fullName) && rename?.personId !== write.id) deny('Review compatibility updates before renaming an assigned organization manager.');
       const eligibilityChanged = ['positionIds', 'status', 'activeStatus'].some(field => !isDeepStrictEqual(after[field], before[field]));
       if (eligibilityChanged && responsibilities.some(a => personLifecycle(after) !== 'active' || !allowsLeadershipPosition(after, a.unitType === 'district' ? 'District Manager' : 'Regional Manager'))) deny('End or reassign every affected Primary/Additional responsibility before removing a position or inactivating this Person.');
     }
@@ -126,7 +131,8 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
       // Authority remains the activated unit's null pointer; absence on the unit is still invalid.
       const copied = after[field] === undefined || after[field] === '' ? null : after[field];
       if (copied !== primary || primary !== null && (!person || typeof person.fullName !== 'string' || !person.fullName.trim())
-        || (after[field.replace(/Id$/, 'Name')] ?? '') !== (primary === null ? '' : person!.fullName)) deny('Store leadership must match its canonical District/Region Primary Manager. Refresh the organization data.');
+        || (after[field.replace(/Id$/, 'Name')] ?? '') !== (primary === null ? '' : rename?.personId === primary ? rename.fullName : person!.fullName)) deny('Store leadership must match its canonical District/Region Primary Manager. Refresh the organization data.');
     }
   }
+  return rename;
 }

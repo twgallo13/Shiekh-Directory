@@ -163,3 +163,27 @@ test('old signed Person commands cannot bypass Additional, District or Region ow
   assert.throws(() => assertOrganizationTransitionCompatibility(f.state, { personId: 'other', responsibilities: [{ owner: 'locations', id: '007', field: 'regionalManagerId' }] }, [{ id: '007', data: f.records.get('locations/007') }]), /canonical Region/);
   assert.doesNotThrow(() => assertOrganizationTransitionCompatibility(f.state, { personId: 'other', responsibilities: [{ owner: 'locations', id: '007', field: 'storeManagerId' }] }, []));
 });
+
+test('reviewed Person transitions may preserve rosters while adding/removing unrelated positions', () => {
+  const f = fixture();
+  const intent = { personId: 'incumbent', lifecycle: 'keep', positionIds: ['district-manager', 'store-manager'], responsibilities: [{ owner: 'districts', id: '01', field: 'districtManagerId', action: 'retain' }] };
+  assert.doesNotThrow(() => assertOrganizationTransitionCompatibility(f.state, intent, []));
+  assert.doesNotThrow(() => assertOrganizationTransitionCompatibility(f.state, { ...intent, positionIds: ['district-manager'] }, []));
+  for (const change of [{ positionIds: ['store-manager'] }, { lifecycle: 'inactive' }, { positionIds: undefined }]) {
+    assert.throws(() => assertOrganizationTransitionCompatibility(f.state, { ...intent, ...change }, []), /roster-aware/);
+  }
+  assert.throws(() => assertOrganizationTransitionCompatibility(f.state, { ...intent, responsibilities: [{ ...intent.responsibilities[0], action: 'vacate' }] }, []), /organization workflow/);
+});
+
+test('Additional and concurrent Region responsibilities retain their own required position', () => {
+  const f = fixture();
+  f.state.assignments.push({ id: 'additional', unitType: 'district', unitId: '01', personId: 'new-hire', status: 'active' });
+  const region = f.state.units.find(u => u.unitType === 'region')!;
+  Object.assign(region.data, { leadershipModelVersion: 1, leadershipVersion: 1, regionalManagerId: 'new-hire' });
+  f.state.assignments.push({ id: 'rm', unitType: 'region', unitId: '01', personId: 'new-hire', status: 'active' });
+  f.records.get('locations/007').regionalManagerId = 'new-hire';
+  const intent = { personId: 'new-hire', lifecycle: 'keep', positionIds: ['district-manager', 'regional-manager', 'store-manager'], responsibilities: [{ owner: 'locations', id: '007', field: 'regionalManagerId', action: 'retain' }] };
+  assert.doesNotThrow(() => assertOrganizationTransitionCompatibility(f.state, intent, [{ id: '007', data: f.records.get('locations/007') }]));
+  for (const positions of [['district-manager'], ['regional-manager']]) assert.throws(() => assertOrganizationTransitionCompatibility(f.state, { ...intent, positionIds: positions }, []), /roster-aware/);
+  assert.throws(() => assertOrganizationTransitionCompatibility(f.state, { ...intent, responsibilities: [{ ...intent.responsibilities[0], action: 'replace' }] }, [{ id: '007', data: f.records.get('locations/007') }]), /canonical Region/);
+});

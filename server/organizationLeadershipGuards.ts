@@ -44,19 +44,29 @@ export async function readOrganizationGuardState(db: Firestore, tx: Transaction,
   return state;
 }
 
-/** The older signed Person workflow does not understand Additional rosters or Region ownership.
- * Block overlapping commands at preview AND commit, while immutable receipt recovery remains available.
+/** The signed Person workflow may preserve organization responsibilities, never mutate their ownership.
+ * Rechecked at preview AND commit: every active roster still requires its final controlled position.
+ * Ending/reassigning canonical responsibilities happens through the organization workflow first.
  */
-export function assertOrganizationTransitionCompatibility(state: OrganizationGuardState, intent: { personId: string; responsibilities: { owner: string; id: string; field: string }[] }, locations: { id: string; data: Record<string, unknown> | null }[]) {
+export function assertOrganizationTransitionCompatibility(state: OrganizationGuardState, intent: { personId: string; lifecycle?: string; positionIds?: unknown; responsibilities: { owner: string; id: string; field: string; action?: string }[] }, locations: { id: string; data: Record<string, unknown> | null }[]) {
+  validateOrganizationLeadershipWrites([], [], state, []);
   const controlled = state.units.filter(activated);
   const managed = (type: 'district' | 'region', id: unknown) => controlled.some(u => u.unitType === type && u.id === id);
-  if (state.assignments.some(a => a.status === 'active' && a.personId === intent.personId)) deny('This Person has organization responsibilities. Use the roster-aware review workflow.');
+  const responsibilities = state.assignments.filter(a => a.status === 'active' && a.personId === intent.personId);
+  if (responsibilities.some(a => intent.lifecycle !== 'keep' || !allowsLeadershipPosition({ positionIds: intent.positionIds }, a.unitType === 'district' ? 'District Manager' : 'Regional Manager'))) deny('End or reassign affected organization responsibilities in the roster-aware review workflow before removing a required position or inactivating this Person.');
   for (const action of intent.responsibilities) {
-    if (action.owner === 'districts' && managed('district', action.id)) deny('This District uses the roster-aware organization workflow.');
+    if (action.owner === 'districts' && managed('district', action.id)) {
+      if (action.action !== 'retain') deny('This District uses the roster-aware organization workflow.');
+      if (controlled.find(u => u.unitType === 'district' && u.id === action.id)!.data.districtManagerId !== intent.personId) deny('Refresh the canonical District responsibility before reviewing this Person.');
+    }
     if (action.owner !== 'locations' || action.field !== 'regionalManagerId') continue;
     const location = locations.find(l => l.id === action.id)?.data;
     const district = state.units.find(u => u.unitType === 'district' && u.id === location?.districtId);
-    if (location && managed('region', district?.data.regionId ?? location.regionId)) deny('Regional Manager responsibility belongs to the canonical Region, not an individual store.');
+    const region = location && controlled.find(u => u.unitType === 'region' && u.id === (district?.data.regionId ?? location.regionId));
+    if (region) {
+      if (action.action !== 'retain') deny('Regional Manager responsibility belongs to the canonical Region, not an individual store.');
+      if (region.data.regionalManagerId !== intent.personId || location!.regionalManagerId !== intent.personId) deny('Refresh the canonical Region responsibility before reviewing this Person.');
+    }
   }
 }
 

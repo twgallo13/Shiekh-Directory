@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
+import { prepareNewLocationLeadership } from '../../lib/newLocationLeadership';
 import { 
   FileSpreadsheet, 
   Globe, 
@@ -159,6 +160,7 @@ export const AdminIntegrationsView: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [pendingExport, setPendingExport] = useState<(LocationExportMetadata & { token: string }) | null>(null);
   const [isAddStoreOpen, setIsAddStoreOpen] = useState(false);
+  const [isCreatingStore, setIsCreatingStore] = useState(false), [createStoreError, setCreateStoreError] = useState('');
   const [newStoreForm, setNewStoreForm] = useState({
     storeNumber: '',
     name: '',
@@ -177,6 +179,11 @@ export const AdminIntegrationsView: React.FC = () => {
   const quickAddActiveRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort((left, right) => left.name.localeCompare(right.name)), [regions]);
   const quickAddActiveDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === newStoreForm.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, newStoreForm.regionId]);
   const quickAddRetailType = !canSelectNotApplicableHierarchy(newStoreForm.type);
+  const quickAddLeadership = useMemo(() => {
+    if (!quickAddRetailType || !newStoreForm.districtId) return null;
+    try { return { value: prepareNewLocationLeadership({ ...newStoreForm, id: 'unsaved-preview', recordStatus: 'Active' } as unknown as LocationRecord, districts, regions, people), error: '' }; }
+    catch (e) { return { value: null, error: e instanceof Error ? e.message : 'Review manager setup before creating this store.' }; }
+  }, [newStoreForm, quickAddRetailType, districts, regions, people]);
 
   // GBP Tab State
   const [isSyncingGbp, setIsSyncingGbp] = useState(false);
@@ -221,7 +228,7 @@ export const AdminIntegrationsView: React.FC = () => {
   useDialogFocus(isTemplateModalOpen, () => setIsTemplateModalOpen(false), templateDialogRef);
   useDialogFocus(isHolidayModalOpen, () => setIsHolidayModalOpen(false), holidayDialogRef);
   useDialogFocus(isUserModalOpen, () => setIsUserModalOpen(false), userDialogRef);
-  useDialogFocus(isAddStoreOpen, () => setIsAddStoreOpen(false), addStoreDialogRef);
+  useDialogFocus(isAddStoreOpen, () => { if (!isCreatingStore) setIsAddStoreOpen(false); }, addStoreDialogRef);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [userSaveError, setUserSaveError] = useState('');
@@ -270,24 +277,28 @@ export const AdminIntegrationsView: React.FC = () => {
   };
 
   // Quick Add Store Handler
-  const handleCreateStoreSubmit = (e: React.FormEvent) => {
+  const handleCreateStoreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCreatingStore) return;
+    setCreateStoreError('');
     if (!newStoreForm.storeNumber || !newStoreForm.name) return;
+    if (![newStoreForm.address, newStoreForm.city, newStoreForm.state, newStoreForm.zipCode].every(v => v.trim())) { setCreateStoreError('Enter the actual street address, city, state and ZIP code.'); return; }
     const phone = normalizeUsPhone(newStoreForm.phone);
     const googleReviewUrl = newStoreForm.googleReviewUrl ? normalizeWebUrl(newStoreForm.googleReviewUrl) : '';
     const storePageUrl = newStoreForm.storePageUrl ? normalizeWebUrl(newStoreForm.storePageUrl) : '';
     if (!phone || (newStoreForm.googleReviewUrl && !googleReviewUrl) || (newStoreForm.storePageUrl && !storePageUrl)) {
-      setCsvError(!phone ? 'Enter a valid US phone number, such as (555) 123-4567.' : 'Enter a valid HTTP or HTTPS URL.');
+      setCreateStoreError(!phone ? 'Enter a valid US phone number, such as (555) 123-4567.' : 'Enter a valid HTTP or HTTPS URL.');
       return;
     }
-    createLocation({
+    setIsCreatingStore(true);
+    try { await createLocation({
       storeNumber: newStoreForm.storeNumber.padStart(2, '0'),
       name: newStoreForm.name,
       type: newStoreForm.type,
-      address: newStoreForm.address || '100 Main St',
-      city: newStoreForm.city || 'Los Angeles',
-      state: newStoreForm.state || 'CA',
-      zipCode: newStoreForm.zipCode || '90001',
+      address: newStoreForm.address,
+      city: newStoreForm.city,
+      state: newStoreForm.state,
+      zipCode: newStoreForm.zipCode,
       phone: phone.e164,
       ...(phone.extension ? { phoneExtension: phone.extension } : {}),
       phonePrivacy: 'Public',
@@ -318,6 +329,8 @@ export const AdminIntegrationsView: React.FC = () => {
       storePageUrl: ''
     });
     setCsvStatus(`Created new store #${newStoreForm.storeNumber}.`);
+    } catch (error) { setCreateStoreError(error instanceof Error ? error.message : 'The save could not be confirmed. Check saved stores before trying again.'); }
+    finally { setIsCreatingStore(false); }
   };
 
   // Google Business Profile Sync
@@ -1802,13 +1815,13 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* MODAL: + Add Store Location (CUD) */}
       {/* ======================================================== */}
       {isAddStoreOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && setIsAddStoreOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !isCreatingStore && setIsAddStoreOpen(false)}>
           <div ref={addStoreDialogRef} role="dialog" aria-modal="true" aria-label="Add new store location" tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">Add New Store Location</h3>
               <button
                 type="button"
-                onClick={() => setIsAddStoreOpen(false)}
+                onClick={() => setIsAddStoreOpen(false)} disabled={isCreatingStore}
                 className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-100"
               >
                 <X className="w-5 h-5" />
@@ -1816,6 +1829,8 @@ export const AdminIntegrationsView: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateStoreSubmit} className="p-5 space-y-4 text-xs">
+              {createStoreError && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{createStoreError}</p>}
+              <fieldset disabled={isCreatingStore} className="min-w-0 space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Store # *</label>
@@ -1823,6 +1838,7 @@ export const AdminIntegrationsView: React.FC = () => {
                     type="text"
                     required
                     placeholder="99"
+                    aria-label="Store number"
                     value={newStoreForm.storeNumber}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, storeNumber: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 font-mono font-bold focus:outline-none focus:border-red-500"
@@ -1834,6 +1850,7 @@ export const AdminIntegrationsView: React.FC = () => {
                     type="text"
                     required
                     placeholder="Shiekh Shoes — Glendale Galleria"
+                    aria-label="Store name"
                     value={newStoreForm.name}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, name: e.target.value })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500"
@@ -1845,6 +1862,7 @@ export const AdminIntegrationsView: React.FC = () => {
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Location Type</label>
                   <select
+                    aria-label="Location type"
                     value={newStoreForm.type}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, type: e.target.value as any })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
@@ -1858,6 +1876,7 @@ export const AdminIntegrationsView: React.FC = () => {
                     type="text"
                     required
                     placeholder="(818) 555-0199"
+                    aria-label="Phone number"
                     value={newStoreForm.phone}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, phone: e.target.value })}
                     onBlur={(event) => { const phone = normalizeUsPhone(event.target.value); if (phone) setNewStoreForm({ ...newStoreForm, phone: phone.display }); }}
@@ -1866,10 +1885,11 @@ export const AdminIntegrationsView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Region</label>
                   <select
+                    aria-label="Region"
                     value={newStoreForm.regionId}
                     onChange={(e) => setNewStoreForm(applyQuickAddRegionSelection(newStoreForm, e.target.value))}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
@@ -1881,6 +1901,7 @@ export const AdminIntegrationsView: React.FC = () => {
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">District</label>
                   <select
+                    aria-label="District"
                     value={newStoreForm.districtId}
                     disabled={!newStoreForm.regionId}
                     onChange={(e) => setNewStoreForm(applyQuickAddDistrictSelection(newStoreForm, e.target.value))}
@@ -1893,6 +1914,7 @@ export const AdminIntegrationsView: React.FC = () => {
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Retail hierarchy</label>
                   <select
+                    aria-label="Retail hierarchy"
                     value={newStoreForm.hierarchyApplicability}
                     onChange={(e) => setNewStoreForm({ ...newStoreForm, hierarchyApplicability: e.target.value as typeof newStoreForm.hierarchyApplicability })}
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none cursor-pointer"
@@ -1908,10 +1930,11 @@ export const AdminIntegrationsView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-neutral-700 font-semibold mb-1">Street Address</label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-neutral-700 font-semibold mb-1">Street Address *</label>
                   <input
+                    aria-label="Street address" required
                     type="text"
                     placeholder="100 W Broadway"
                     value={newStoreForm.address}
@@ -1920,8 +1943,9 @@ export const AdminIntegrationsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-neutral-700 font-semibold mb-1">City</label>
+                  <label className="block text-neutral-700 font-semibold mb-1">City *</label>
                   <input
+                    aria-label="City" required
                     type="text"
                     placeholder="Glendale"
                     value={newStoreForm.city}
@@ -1929,6 +1953,13 @@ export const AdminIntegrationsView: React.FC = () => {
                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-300 rounded-lg text-neutral-900 focus:outline-none focus:border-red-500"
                   />
                 </div>
+              </div>
+
+              {quickAddLeadership && <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">{quickAddLeadership.error ? <p role="alert" className="text-amber-950">{quickAddLeadership.error}</p> : <><p className="font-semibold text-neutral-900">Inherited managers</p><dl className="mt-2 space-y-1"><div className="flex flex-wrap justify-between gap-2"><dt>District Manager</dt><dd>{quickAddLeadership.value?.districtManagerName || 'Unassigned'}</dd></div><div className="flex flex-wrap justify-between gap-2"><dt>Regional Manager</dt><dd>{quickAddLeadership.value?.regionalManagerName || 'Unassigned'}</dd></div></dl></>}</div>}
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block font-semibold text-neutral-700">State *<input required maxLength={2} value={newStoreForm.state} onChange={e => setNewStoreForm({ ...newStoreForm, state: e.target.value.toUpperCase() })} className="mt-1 w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2" /></label>
+                <label className="block font-semibold text-neutral-700">ZIP code *<input required value={newStoreForm.zipCode} onChange={e => setNewStoreForm({ ...newStoreForm, zipCode: e.target.value })} className="mt-1 w-full rounded-lg border border-neutral-300 bg-neutral-50 px-3 py-2" /></label>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1969,9 +2000,10 @@ export const AdminIntegrationsView: React.FC = () => {
                   className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Create Location</span>
+                  <span>{isCreatingStore ? 'Creating…' : 'Create Location'}</span>
                 </button>
               </div>
+              </fieldset>
             </form>
           </div>
         </div>

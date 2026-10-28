@@ -4,7 +4,7 @@ October 28, 2026 Pacific. Owner approved autonomous continuation of the Primary/
 
 ## Local implementation
 
-Branch `codex/organization-leadership-roster`, based on `21af8c9c08e6c9bdf63ab449ef34d2f37deee1`. No repository AGENTS.md or applicable ancestor AGENTS.md was found. The working tree was clean before this slice.
+Branch `codex/organization-leadership-roster`, based on `21af8c9c08e6c9bdfbf63ab449ef34d2f37deee1`. No repository AGENTS.md or applicable ancestor AGENTS.md was found. The working tree was clean before this slice.
 
 Added an internal pure planner and meaningful synthetic tests. It establishes explicit unit-scoped Primary/Additional rosters, eligibility, legacy activation, history-preserving tenure changes, bounded compatibility patches and full-query/version fingerprints. It refuses silent promotion, bad/incomplete source, stale versions, oversized changes and uncertain-operation reuse. No current app/server route imports it and no production path is enabled.
 
@@ -20,3 +20,7 @@ See [the maintained implementation plan](../plans/organization-leadership-roster
 ## Review and release state
 
 Implemented and locally validated; external review pending. Not merged, deployed, enabled or accepted in production. No real records, contacts, accounts, API credentials/grants, IAM, cloud settings or other apps changed. The previously published runtime and all staffing enablement gates remain unchanged.
+
+## PR #76 review follow-up
+
+Verified the Codex eligibility finding against the storage contract. Retained unresolved incumbents now remain in the review with a warning; they do not block adding an eligible Additional manager. New assignments and Primary promotions still require an exact Active Person with the matching controlled position and name. Explicit demotion may retain an unresolved outgoing manager as Additional. No automatic reassignment or record repair occurs. Added two regression cases; all 24 planner tests pass. Exported strict intent normalization for the next internal source adapter. Corrected the recorded base SHA after verifying it resolves. Transaction, UI and deployment acceptance remain pending.

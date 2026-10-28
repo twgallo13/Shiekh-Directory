@@ -64,7 +64,7 @@ const digest = (value: unknown) => createHash('sha256').update(canonical(value))
 function exactKeys(value: unknown, keys: readonly string[]) {
   if (!plain(value) || Object.keys(value).length !== keys.length || keys.some(k => !own(value, k))) fail('invalid_input', 'Use only the documented fields.');
 }
-function parseIntent(value: unknown): OrganizationLeadershipIntent {
+export function normalizeOrganizationLeadershipIntent(value: unknown): OrganizationLeadershipIntent {
   exactKeys(value, ['operationId', 'units']);
   const input = value as Record<string, unknown>;
   if (!canonicalId(input.operationId) || !Array.isArray(input.units) || !input.units.length || input.units.length > ORGANIZATION_LEADERSHIP_LIMITS.units) fail('invalid_input', 'Provide an operation ID and one to five units.');
@@ -120,14 +120,14 @@ function validateSource(snapshot: OrganizationLeadershipSnapshot, now: string) {
  * Never expose raw patches/preconditions to consumers or treat this plan as a commit capability.
  */
 export function planOrganizationLeadership(raw: unknown, snapshot: OrganizationLeadershipSnapshot, now: string) {
-  const intent = parseIntent(raw);
+  const intent = normalizeOrganizationLeadershipIntent(raw);
   if (!utcInstant(now)) fail('invalid_input', 'Use an authoritative UTC commit time.');
   validateSource(snapshot, now);
   const patches = new Map<string, LeadershipPatch>();
   const readUnits = new Map<string, LeadershipUnitSource>();
   const readPeople = new Map<string, SourceRecord>();
   const readLocations = new Map<string, SourceRecord>();
-  const review: { unitType: LeadershipUnitType; unitId: string; name: string; reason: string; activating: boolean; beforePrimaryPersonId: string | null; primaryPersonId: string | null; added: string[]; ended: string[]; members: { personId: string; fullName: string; isPrimary: boolean }[]; compatibilityStores: number }[] = [];
+  const review: { unitType: LeadershipUnitType; unitId: string; name: string; reason: string; activating: boolean; beforePrimaryPersonId: string | null; primaryPersonId: string | null; added: string[]; ended: string[]; members: { personId: string; fullName: string; isPrimary: boolean; eligibilityIssue?: string }[]; compatibilityStores: number }[] = [];
   const findUnit = (type: LeadershipUnitType, id: string) => {
     const r = snapshot.units.find(u => u.unitType === type && u.id === id);
     if (!r) fail('incomplete_source', 'Exact unit dependency is missing.');
@@ -175,8 +175,12 @@ export function planOrganizationLeadership(raw: unknown, snapshot: OrganizationL
       const p = snapshot.people.find(p => p.id === id);
       if (!p) fail('incomplete_source', 'Exact Person dependency is missing.');
       readPeople.set(id, p);
-      if (personLifecycle(p.data) !== 'active' || !allowsLeadershipPosition(p.data, label(u.unitType)) || !text(p.data.fullName)) fail('ineligible', 'Every selected manager needs the explicit matching position, Active lifecycle and a name.');
-      return { personId: id, fullName: p.data.fullName as string, isPrimary: id === u.primaryPersonId };
+      const eligible = personLifecycle(p.data) === 'active' && allowsLeadershipPosition(p.data, label(u.unitType)) && text(p.data.fullName);
+      // Preserve unresolved incumbents as explicit review warnings. A retained tenure is not a new
+      // assignment; adding or promoting someone still requires current controlled eligibility.
+      if (!eligible && (added.includes(id) || primaryChanged && id === u.primaryPersonId)) fail('ineligible', 'New managers and Primary promotions require the matching position, Active lifecycle and a name.');
+      return { personId: id, fullName: text(p.data.fullName) ? p.data.fullName : id, isPrimary: id === u.primaryPersonId,
+        ...(!eligible ? { eligibilityIssue: 'Existing assignment needs review: current position, Active status or name is unresolved.' } : {}) };
     });
     for (const a of removed) put('leadership_assignments', a, { status: 'ended', endedAt: now });
     for (const id of added) {
@@ -212,7 +216,7 @@ export function planOrganizationLeadership(raw: unknown, snapshot: OrganizationL
   if (writes.length > ORGANIZATION_LEADERSHIP_LIMITS.writes) fail('capacity', 'This selection exceeds the bounded atomic change limit. Select fewer units; nothing was saved.');
   const preconditions = {
     units: [...readUnits].map(([key, r]) => ({ key, version: version(r.data.version), fingerprint: digest(r.data) })),
-    people: [...readPeople].map(([id, p]) => ({ id, version: version(p.data.version), fingerprint: digest({ fullName: p.data.fullName, positionIds: p.data.positionIds, status: p.data.status ?? null, activeStatus: p.data.activeStatus ?? null }) })),
+    people: [...readPeople].map(([id, p]) => ({ id, version: version(p.data.version), fingerprint: digest({ fullName: p.data.fullName ?? null, positionIds: p.data.positionIds ?? null, status: p.data.status ?? null, activeStatus: p.data.activeStatus ?? null }) })),
     unitAssignments: intent.units.map(u => ({ key: leadershipUnitKey(u.unitType, u.unitId), fingerprint: digest(snapshot.assignments.filter(a => a.data.unitType === u.unitType && a.data.unitId === u.unitId).sort((a, b) => a.id.localeCompare(b.id))) })),
     storeMembership: digest(snapshot.locations.map(l => ({ id: l.id, version: version(l.data.version), districtId: l.data.districtId ?? null, regionId: l.data.regionId ?? null, type: l.data.type ?? null, hierarchyApplicability: l.data.hierarchyApplicability ?? null })).sort((a, b) => a.id.localeCompare(b.id))),
     changedLocations: [...readLocations].map(([id, l]) => ({ id, version: version(l.data.version), fingerprint: digest(l.data) })),

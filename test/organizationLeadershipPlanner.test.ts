@@ -40,6 +40,32 @@ test('additional DM without a workplace preserves Primary, store membership, con
   assert.equal(snapshot.people[1].data.primaryLocationId, undefined);
 });
 
+test('unresolved retained incumbents warn without blocking an eligible Additional manager', () => {
+  for (const change of [{ status: 'Inactive', activeStatus: false }, { positionIds: [] }, { fullName: '' }]) {
+    const { snapshot, intent } = fixture();
+    Object.assign(snapshot.people[0].data, change);
+    const result = planOrganizationLeadership(intent, snapshot, now);
+    assert.match(result.review[0].members[0].eligibilityIssue!, /Existing assignment needs review/);
+    assert.equal(result.review[0].members[0].isPrimary, true);
+    assert.equal(result.writes.some(w => w.collection === 'locations'), false);
+    assert.equal(result.review[0].members[1].eligibilityIssue, undefined);
+  }
+});
+
+test('an unresolved existing Additional cannot be promoted; an inactive incumbent can be demoted and retained', () => {
+  const { snapshot, intent } = fixture();
+  snapshot.assignments.push({ id: 'additional', data: { unitType: 'district', unitId: '01', personId: 'new-hire', status: 'active', startedAt: '2026-10-01T00:00:00.000Z', endedAt: null, version: 1 } });
+  snapshot.people[1].data.status = 'Inactive';
+  intent.units[0].primaryPersonId = 'new-hire'; intent.units[0].reason = 'Reviewed handover';
+  code(() => planOrganizationLeadership(intent, snapshot, now), 'ineligible');
+  snapshot.people[1].data.status = 'Active';
+  snapshot.people[0].data.status = 'Inactive'; snapshot.people[0].data.activeStatus = false;
+  const result = planOrganizationLeadership(intent, snapshot, now);
+  assert.equal(result.review[0].members[0].isPrimary, false);
+  assert.match(result.review[0].members[0].eligibilityIssue!, /Existing assignment/);
+  assert.equal(result.review[0].members[1].isPrimary, true);
+});
+
 test('explicit Primary handover retains the outgoing manager as additional and patches only compatibility fields', () => {
   const { snapshot, intent } = fixture();
   intent.units[0].primaryPersonId = 'new-hire'; intent.units[0].reason = 'Approved handover';

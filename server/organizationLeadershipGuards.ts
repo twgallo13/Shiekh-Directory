@@ -48,12 +48,12 @@ export async function readOrganizationGuardState(db: Firestore, tx: Transaction,
  * Rechecked at preview AND commit: every active roster still requires its final controlled position.
  * Ending/reassigning canonical responsibilities happens through the organization workflow first.
  */
-export function assertOrganizationTransitionCompatibility(state: OrganizationGuardState, intent: { personId: string; lifecycle?: string; positionIds?: unknown; responsibilities: { owner: string; id: string; field: string; action?: string }[] }, locations: { id: string; data: Record<string, unknown> | null }[]) {
+export function assertOrganizationTransitionCompatibility(state: OrganizationGuardState, intent: { personId: string; lifecycle?: string; positionIds?: unknown; responsibilities: { owner: string; id: string; field: string; action?: string }[] }, locations: { id: string; data: Record<string, unknown> | null }[], subject?: Record<string, unknown> | null) {
   validateOrganizationLeadershipWrites([], [], state, []);
   const controlled = state.units.filter(activated);
   const managed = (type: 'district' | 'region', id: unknown) => controlled.some(u => u.unitType === type && u.id === id);
   const responsibilities = state.assignments.filter(a => a.status === 'active' && a.personId === intent.personId);
-  if (responsibilities.some(a => intent.lifecycle !== 'keep' || !allowsLeadershipPosition({ positionIds: intent.positionIds }, a.unitType === 'district' ? 'District Manager' : 'Regional Manager'))) deny('End or reassign affected organization responsibilities in the roster-aware review workflow before removing a required position or inactivating this Person.');
+  if (responsibilities.some(a => !subject || personLifecycle(subject) !== 'active' || intent.lifecycle !== 'keep' || !allowsLeadershipPosition({ positionIds: intent.positionIds }, a.unitType === 'district' ? 'District Manager' : 'Regional Manager'))) deny('End or reassign affected organization responsibilities in the roster-aware review workflow before removing a required position, changing an inactive/unresolved assigned Person or inactivating this Person.');
   for (const action of intent.responsibilities) {
     if (action.owner === 'districts' && managed('district', action.id)) {
       if (action.action !== 'retain') deny('This District uses the roster-aware organization workflow.');

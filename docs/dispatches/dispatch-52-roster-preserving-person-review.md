@@ -28,4 +28,8 @@ The read hook fences results by Person, actor, auth generation, admission and re
 
 ## Still required
 
+### PR82 inactive-Additional review repair
+
+Verified the reported P2: intent lifecycle `keep` does not prove the saved Person is Active. The command source now passes the exact current subject projection to organization compatibility validation at preview and commit. Retained active tenures require `personLifecycle(subject) === active`; missing, inactive, contradictory and unresolved lifecycle sources fail closed. Required-position checks still use final intent positions. The strengthened focused transition/guard set passed 31 cases and the actual SDK/emulator set passed 6 cases, including an inactive Additional manager with no legacy responsibility slots. TypeScript passed. Earlier full-suite/build/browser results remain historical and are reused for unaffected behavior; no broad rerun or production activation.
+
 Coordinated manager-name propagation; broader staged lifecycle/position-removal journeys across Region, store slots, linked accounts and pending corrections; supported parent/store membership moves; activated imports/corrections and wider races; opt-in consumer schema/scopes; exact-source independent review and release/rollback acceptance. Do not activate units while required supported paths are missing. Preserve default-off flags and do not deploy main wholesale.

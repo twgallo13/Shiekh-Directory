@@ -98,3 +98,17 @@ test('SDK commit rejects a new required Region responsibility acquired after pre
     assert.equal((await f.db.collection('audit_logs').get()).size, 1);
   } finally { await f.db.terminate(); }
 });
+
+test('SDK signed preview rejects keep-status position edits for an inactive Additional manager', { timeout: 90_000 }, async () => {
+  const f = await fixture();
+  try {
+    await f.db.doc('locations/corporate').update({ storeNumber: 'CORP' });
+    await f.db.doc('people/new-hire').update({ status: 'Inactive', activeStatus: false });
+    const signer = new PersonTransitionReviewSigner({ activeKeyId: 'synthetic', keys: [{ id: 'synthetic', secret: Buffer.alloc(32, 0x71).toString('base64url') }] });
+    const intent = { schemaVersion: 1, personId: 'new-hire', positionIds: ['district-manager', 'regional-manager', 'store-manager'], lifecycle: 'keep', reason: 'Synthetic position extension', responsibilities: [], primaryWorkplace: { action: 'retain' }, supports: { action: 'retain' }, acknowledgedRequestIds: [] };
+    await assert.rejects(previewPersonTransitionCommand(f.db, intent, actor, signer, f.clock), /roster-aware/);
+    assert.equal((await f.db.doc('people/new-hire').get()).data()!.version, 1);
+    assert.equal((await f.db.collection('audit_logs').get()).size, 1);
+    assert.equal((await f.db.collection('person_transition_operations').get()).size, 0);
+  } finally { await f.db.terminate(); }
+});

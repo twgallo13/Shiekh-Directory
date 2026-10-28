@@ -100,7 +100,7 @@ export async function readPersonTransitionCommandPlan(firestore: Firestore, tran
       ...snapshot.regions.map(row => ({ unitType: 'region' as const, id: row.id, data: row.data! })),
       ...snapshot.districts.map(row => ({ unitType: 'district' as const, id: row.id, data: row.data! })),
     ]);
-    assertOrganizationTransitionCompatibility(organizationState, intent, snapshot.locations);
+    assertOrganizationTransitionCompatibility(organizationState, intent, snapshot.locations, snapshot.people.find(row => row.id === intent.personId)?.data);
     return planPersonTransition(intent, snapshot);
 }
 

@@ -10,6 +10,7 @@ import { useOrganizationCapabilityState } from '../people/useOrganizationCapabil
 import { OrganizationResponsibilities } from '../people/OrganizationResponsibilities';
 import { OrganizationMoves } from './OrganizationMoves';
 import { Modal } from '../common/Modal';
+import { requiresManagedHierarchyReview } from '../../lib/managedHierarchyEditing';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 type Feedback = { tone: 'pending' | 'success' | 'error'; message: string; dependencies?: DirectoryDependency[]; correction?: string; refresh?: boolean };
@@ -178,7 +179,7 @@ export function HierarchyRegistryPanel() {
     {moveOpen && <Modal isOpen title="Organization move" size="lg" footer={<div ref={setMoveFooter} className="w-full" />} onClose={() => moveClose.current?.()}><OrganizationMoves footerTarget={moveFooter} registerClose={close => { moveClose.current = close; }} onClose={() => setMoveOpen(false)} /></Modal>}
     <div className="flex items-start gap-3 border-b border-neutral-200 pb-4">
       <Building2 className="h-5 w-5 text-red-700" aria-hidden="true" />
-      <div><h2 className="text-lg font-semibold text-neutral-900">Regions & Districts</h2><p className="mt-1 text-sm text-neutral-600">Region → District → Store. Manage the District Manager on the District; stores inherit that assignment.</p><p className="mt-2 text-xs text-neutral-500">Permanent IDs keep this directory and connected applications linked. Changing a District&apos;s parent does not move its stores.</p></div>
+      <div><h2 className="text-lg font-semibold text-neutral-900">Regions & Districts</h2><p className="mt-1 text-sm text-neutral-600">Region → District → Store. Manage the District Manager on the District; stores inherit that assignment.</p><p className="mt-2 text-xs text-neutral-500">{organization?.catalogEnabled ? 'Use Store & District moves to change hierarchy and review every affected store together.' : 'Permanent IDs keep this directory and connected applications linked. Changing a legacy District’s parent does not move its stores.'}</p></div>
     </div>
     {feedback && <FeedbackMessage feedback={feedback} onRefresh={() => void refreshConflict()} disabled={busy} />}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(240px,1fr)_minmax(0,2fr)]">
@@ -250,6 +251,7 @@ function RegistryActions({ editButtonRef, busy, status, onEdit, onStatus }: { ed
 }
 
 function RegistryEditForm({ editing, regions, activeRegions, busy, onChange, onSave, onCancel, onDiscard, onReapply }: { editing: RegistryEditState; regions: RegionRecord[]; activeRegions: RegionRecord[]; busy: boolean; onChange: (value: RegistryEditState) => void; onSave: () => Promise<void>; onCancel: () => void; onDiscard: () => void; onReapply: () => void }) {
+  const managed = requiresManagedHierarchyReview(editing.original) || requiresManagedHierarchyReview(editing.review?.latest);
   const currentParent = editing.kind === 'district' ? regions.find(region => region.id === editing.regionId) : undefined;
   const missingCurrentParent = editing.kind === 'district' && !currentParent;
   const regionOptions = editing.kind === 'district' && !activeRegions.some(region => region.id === editing.regionId)
@@ -259,7 +261,8 @@ function RegistryEditForm({ editing, regions, activeRegions, busy, onChange, onS
   return <div className="space-y-2">
     <label className="block font-medium text-neutral-700">{editing.kind === 'region' ? 'Region' : 'District'} ID<input value={editing.id} readOnly aria-readonly="true" className="mt-1 w-full rounded-md border border-neutral-200 bg-neutral-100 px-3 py-2 font-mono text-sm text-neutral-600" /></label>
     <label className="block font-medium text-neutral-700">Name<input autoFocus value={editing.name} disabled={busy} onChange={event => onChange({ ...editing, name: event.target.value })} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm" /></label>
-    {editing.kind === 'district' && <label className="block font-medium text-neutral-700">Parent Region<select value={editing.regionId} disabled={busy || Boolean(editing.review)} onChange={event => onChange({ ...editing, regionId: event.target.value })} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm">{regionOptions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id}){missingCurrentParent && region.id === editing.regionId ? ' - Missing/unavailable' : region.status === 'Retired' ? ' - Retired/unavailable' : ''}</option>)}</select></label>}
+    {editing.kind === 'district' && <label className="block font-medium text-neutral-700">Parent Region<select aria-label="Parent Region" value={editing.regionId} disabled={busy || Boolean(editing.review) || managed} onChange={event => onChange({ ...editing, regionId: event.target.value })} className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm disabled:bg-neutral-50">{regionOptions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id}){missingCurrentParent && region.id === editing.regionId ? ' - Missing/unavailable' : region.status === 'Retired' ? ' - Retired/unavailable' : ''}</option>)}</select>{managed && <span className="mt-1 block text-xs font-normal text-neutral-500">To change Region, finish this name edit and use Store & District moves above.</span>}</label>}
+    {editing.kind === 'district' && managed && editing.regionId !== editing.original.regionId && <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-950"><p>This parent change requires a separate move review. Your name draft can still be saved.</p><button type="button" disabled={busy || Boolean(editing.review)} onClick={() => onChange({ ...editing, regionId: editing.original.regionId })} className="mt-2 font-semibold underline disabled:opacity-50">Keep saved Region and name draft</button></div>}
     {editing.review && <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950" role="status">
       {latest ? <><p className="font-semibold">A newer saved version is available.</p><dl className="grid grid-cols-[auto_1fr] gap-x-2"><dt>Saved name</dt><dd>{latest.name}</dd>{editing.kind === 'district' && 'regionId' in latest && <><dt>Saved parent</dt><dd>{latest.regionId}</dd></>}</dl><p>Your draft remains: {editing.name}{editing.kind === 'district' ? ` (${editing.regionId})` : ''}.</p></> : <p className="font-semibold">This record is no longer available. It cannot be updated or recreated from this edit.</p>}
       <div className="flex flex-wrap gap-3"><button type="button" disabled={busy} onClick={onDiscard} className="font-semibold underline">Discard draft and use latest</button>{latest && <button type="button" disabled={busy} onClick={onReapply} className="font-semibold underline">Reapply draft to latest version</button>}</div>

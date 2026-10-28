@@ -22,7 +22,7 @@ Initial work is immediate-only. Scheduled/acting automation remains explicitly u
 
 ## Implementation slices and evidence
 
-Current source checkpoint: organization roster adapters/initial UX, bounded metadata/name edits and staged SDK staff acceptance are built for review. Move planner, coherent source, internal save/recovery, gated Store/HTTP adapters, strict browser transport/controller and registry move selection/review screens are built. Isolated desktop/mobile component journeys passed; production/provider acceptance is not claimed. Finish entry-point/alternate-writer UX alignment, independent dependency review, remaining correction/import/consumer acceptance and guarded release/rollback. All new production activation gates stay off. See Dispatches 55–60 for the move boundary.
+Current source checkpoint: organization roster adapters/initial UX, bounded metadata/name edits and staged SDK staff acceptance are built for review. Move planner, coherent source, internal save/recovery, gated Store/HTTP adapters, strict browser controller and registry move screens are built. Existing managed Store hierarchy/inherited-manager controls and District parent metadata controls are now read-only with move-review guidance; metadata-name/store-staff edits remain available. Isolated component desktop/mobile journeys passed; production/provider acceptance is not claimed. Finish creation/type/retirement/delete and alternate-writer UX, independent dependency review, remaining correction/import/consumer acceptance and guarded release/rollback. All new production activation gates stay off. See Dispatches 55–61 for this boundary.
 
 ### 1. Pure assignment planner — merged foundation, not enabled in production
 

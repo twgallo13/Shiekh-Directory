@@ -9,8 +9,29 @@ import {
   reviewRegistryConflict,
 } from '../src/lib/hierarchyRegistryEditing';
 import { buildRegistryWrite, fetchHierarchyRegistry } from '../src/lib/directoryClient';
+import { requiresManagedHierarchyReview } from '../src/lib/managedHierarchyEditing';
 
 describe('hierarchy registry edit sessions', () => {
+  it('keeps managed and unknown future parent edits out of generic metadata saves', () => {
+    for (const model of [1, 2, null, undefined]) {
+      const record = { id: '01', name: 'Central', regionId: 'west', status: 'Active' as const, version: 3, leadershipModelVersion: model };
+      assert.equal(requiresManagedHierarchyReview(record), true);
+      const draft = { ...beginDistrictEdit(record), name: 'Central Coast' };
+      assert.equal(registryEditRecord(draft).name, 'Central Coast');
+      assert.throws(() => registryEditRecord({ ...draft, regionId: 'east' }), /reviewed District move/);
+    }
+    assert.equal(requiresManagedHierarchyReview({ id: 'legacy' }), false);
+  });
+
+  it('does not replay a legacy parent draft after the District becomes managed', () => {
+    const draft = { ...beginDistrictEdit({ id: '01', name: 'Central', regionId: 'west', status: 'Active', version: 1 }), name: 'Draft name', regionId: 'east' };
+    const latest = { ...draft.original, version: 2, leadershipModelVersion: 1 };
+    const review = reviewRegistryConflict(draft, latest), reapplied = reapplyRegistryDraft(review)!;
+    assert(reapplied.kind === 'district');
+    assert.throws(() => registryEditRecord(reapplied), /reviewed District move/);
+    assert.equal(reapplied.name, 'Draft name');
+    assert.equal(registryEditRecord({ ...reapplied, regionId: 'west' }).name, 'Draft name');
+  });
   it('preserves a draft and its opening version while reviewing a conflict', () => {
     const editing = { ...beginRegionEdit({ id: 'west', name: 'West', status: 'Active', version: 2 }), name: 'Western' };
     const reviewing = reviewRegistryConflict(editing, { id: 'west', name: 'West Coast', status: 'Active', version: 3 });

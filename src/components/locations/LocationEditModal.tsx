@@ -11,6 +11,7 @@ import { normalizeAddressValues } from '../../lib/locationAddress';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
+import { requiresManagedHierarchyReview } from '../../lib/managedHierarchyEditing';
 import { hasDistrictLeadership, inheritDistrictLeader, isDistrictLeadershipMember } from '../../lib/districtLeadership';
 import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, isRetailHierarchyType, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
@@ -129,6 +130,10 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const activeDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === formData?.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, formData?.regionId]);
   const currentRegion = regions.find(region => region.id === formData?.regionId);
   const currentDistrict = districts.find(district => district.id === formData?.districtId);
+  // Consult the saved hierarchy, not an editable draft that could remove its own protection.
+  const savedDistrict = districts.find(d => d.id === baselineRef.current?.districtId);
+  const savedRegion = regions.find(r => r.id === baselineRef.current?.regionId);
+  const managedHierarchy = !isCreating && (requiresManagedHierarchyReview(savedDistrict) || requiresManagedHierarchyReview(savedRegion));
   const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
   const normalizedInbox = formData?.locationInboxEmail == null ? null : normalizeLocationInboxEmail(formData.locationInboxEmail);
   const inboxConflicts = normalizedInbox
@@ -916,7 +921,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="District Manager"
-                      disabled={retailDistrictDm || districtOwnsDm}
+                      disabled={retailDistrictDm || districtOwnsDm || managedHierarchy}
                       value={currentDmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -950,6 +955,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="Region Name"
+                      disabled={managedHierarchy}
                       value={formData.regionId || ''}
                       onChange={(e) => setFormData(applyLocationRegionSelection(formData, e.target.value))}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
@@ -960,7 +966,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       )}
                       {activeRegions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id})</option>)}
                     </select>
-                    <p className="mt-1 text-[11px] text-neutral-500">The selected value is the permanent Region ID.</p>
+                    <p className="mt-1 text-[11px] text-neutral-500">{managedHierarchy ? 'To change this store’s hierarchy, finish this edit and use Admin → Regions & Districts → Store & District moves.' : 'The selected value is the permanent Region ID.'}</p>
                   </div>
 
                   <div>
@@ -970,7 +976,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <select
                       aria-label="District Name"
                       value={formData.districtId || ''}
-                      disabled={!formData.regionId}
+                      disabled={!formData.regionId || managedHierarchy}
                       onChange={(e) => {
                         setFormData(applyLocationDistrictSelection(formData, e.target.value));
                       }}
@@ -994,6 +1000,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       value={formData.hierarchyApplicability || ''}
+                      disabled={managedHierarchy}
                       onChange={(e) => setFormData({ ...formData, hierarchyApplicability: (e.target.value || undefined) as typeof formData.hierarchyApplicability })}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600"
                     >
@@ -1021,6 +1028,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="Regional Manager"
+                      disabled={managedHierarchy}
                       value={currentRmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -1036,6 +1044,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <option value="">-- Unassigned / Vacant --</option>
                       {leadershipOptions('Regional Manager', currentRmId, formData.regionalManagerName)}
                     </select>
+                    {managedHierarchy && <p className="mt-1 text-xs text-neutral-600">Inherited from the Region’s Primary Manager. Update management responsibilities in Admin.</p>}
                   </div>
 
                   <div>

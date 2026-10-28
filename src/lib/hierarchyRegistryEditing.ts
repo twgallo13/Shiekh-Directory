@@ -1,4 +1,5 @@
 import type { DistrictRecord, RegionRecord } from '../types';
+import { requiresManagedHierarchyReview } from './managedHierarchyEditing';
 
 type RegistryRecord = RegionRecord | DistrictRecord;
 
@@ -72,5 +73,6 @@ export function registryEditRecord(editing: RegistryEditState): RegionRecord | D
   if (editing.kind === 'region') {
     return { ...editing.original, id: editing.id, name: editing.name.trim() };
   }
+  if (requiresManagedHierarchyReview(editing.original) && editing.regionId !== editing.original.regionId) throw new Error('Use the reviewed District move to change its Region. Your name draft is kept.');
   return { ...editing.original, id: editing.id, name: editing.name.trim(), regionId: editing.regionId };
 }

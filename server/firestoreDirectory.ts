@@ -19,7 +19,7 @@ import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { readOrganizationGuardState, validateOrganizationLeadershipWrites } from './organizationLeadershipGuards';
 import { readPersonTransitionAuthority } from './personTransitionAuthority';
-import { normalizeLocationCreationCommand, assertLocationCreationActor, prepareLocationCreation, readLocationCreation, cancelLocationCreation, listLocationCreations, readLocationCreationCommit, finishLocationCreationCommit, locationCreationAuditId, type LocationCreationCommand } from './locationCreationRecovery';
+import { normalizeLocationCreationCommand, assertLocationCreationActor, prepareLocationCreation, readLocationCreation, cancelLocationCreation, listLocationCreations, locationCreationLegacyAllowed, readLocationCreationCommit, finishLocationCreationCommit, locationCreationAuditId, type LocationCreationCommand } from './locationCreationRecovery';
 import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
 import { readOrganizationCatalog } from './organizationLeadershipCatalog';
 import { prepareOrganizationLeadership, commitOrganizationLeadership, readOrganizationLeadershipOperation, cancelOrganizationLeadershipOperation, listOrganizationLeadershipOperations } from './organizationLeadershipOperations';
@@ -96,6 +96,7 @@ export interface DirectoryReader {
 
 export interface DirectoryWriter {
   locationCreationCapabilities?(): ReturnType<typeof organizationLeadershipCapabilities>;
+  locationCreationLegacyAllowed?(actor: Account): Promise<boolean>;
   prepareLocationCreation?(input: unknown, actor: Account): ReturnType<typeof prepareLocationCreation>;
   commitLocationCreation?(input: unknown, actor: Account): ReturnType<typeof readLocationCreation>;
   readLocationCreation?(input: unknown, actor: Account): ReturnType<typeof readLocationCreation>;
@@ -186,6 +187,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   cancelOperating(input: unknown, actor: Account) { return cancelOperating(this.firestore, input, actor); }
 
   locationCreationCapabilities() { return organizationLeadershipCapabilities(); }
+  locationCreationLegacyAllowed(actor: Account) { return locationCreationLegacyAllowed(this.firestore, actor); }
   prepareLocationCreation(input: unknown, actor: Account) { return prepareLocationCreation(this.firestore, input, actor); }
   readLocationCreation(input: unknown, actor: Account) { return readLocationCreation(this.firestore, input, actor); }
   cancelLocationCreation(input: unknown, actor: Account) { return cancelLocationCreation(this.firestore, input, actor); }

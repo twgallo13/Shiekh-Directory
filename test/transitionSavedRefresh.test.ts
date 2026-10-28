@@ -10,6 +10,11 @@ function fixture() {
   return { session, fence, generation: () => { generation++; }, applied: () => applied, read: (fn: typeof read) => { read = fn; }, options: { session: () => session, generation: () => generation, fence: () => fence, read: () => read(), apply: () => { applied++; } } };
 }
 test('strict saved refresh applies complete current state once and preserves zero-padded store identity', async () => { const f = fixture(); await refreshTransitionSavedState(f.options); assert.equal(f.applied(), 1); assert.equal(parseTransitionDirectory(body()).locations[0].storeNumber, '007'); });
+
+test('creation refresh admits only current Company-wide writers without loosening administrator workflows',async()=>{
+  for(const role of ['Editor','Directory Data Steward']){const f=fixture();f.session.account.role=role;await assert.rejects(refreshTransitionSavedState(f.options));await refreshTransitionSavedState({...f.options,purpose:'location-creation'});assert.equal(f.applied(),1);}
+  for(const change of [(s:any)=>s.account.role='Viewer',(s:any)=>s.account.accessScope='Assigned locations',(s:any)=>s.account.status='Inactive']){const f=fixture();change(f.session);await assert.rejects(refreshTransitionSavedState({...f.options,purpose:'location-creation'}));assert.equal(f.applied(),0);}
+});
 test('failed/incomplete/duplicate/invalid-version refresh rejects without applying', async () => {
   for (const change of [(b: any) => { delete b.people; }, (b: any) => { b.people.push(b.people[0]); }, (b: any) => { b.people[0].version = -1; }, (b: any) => { b.serverNow = 'invalid'; }, (b: any) => { delete b.people[0].fullName; }, (b: any) => { delete b.locations[0].name; }, (b: any) => { b.locations[0].storeNumber = 7; }]) { const f = fixture(), b = body(); change(b); f.read(async () => b); await assert.rejects(refreshTransitionSavedState(f.options)); assert.equal(f.applied(), 0); }
   const f = fixture(); f.read(async () => { throw new Error('Synthetic outage'); }); await assert.rejects(refreshTransitionSavedState(f.options)); assert.equal(f.applied(), 0);

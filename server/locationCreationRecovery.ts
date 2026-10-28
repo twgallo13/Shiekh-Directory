@@ -136,3 +136,10 @@ export async function listLocationCreations(db:Firestore,actor:Account){
   requireOrganizationLeadershipAdmission('recovery');assertLocationCreationActor(actor);
   return db.runTransaction(async tx=>{await authority(db,tx,actor);const a=await admission(db,tx,actor,true);return {schemaVersion:1 as const,complete:true as const,operations:a.receipts.map(outcome).sort((a,b)=>a.locationId.localeCompare(b.locationId))};},{readOnly:true});
 }
+
+/** All-off compatibility is safe only when this actor has no unresolved server creation.
+ * This read-only admission probe remains available while recovery itself is paused. */
+export async function locationCreationLegacyAllowed(db:Firestore,actor:Account){
+  assertLocationCreationActor(actor);
+  return db.runTransaction(async tx=>{await authority(db,tx,actor);const a=await admission(db,tx,actor,true);return a.count===0;},{readOnly:true});
+}

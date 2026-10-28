@@ -13,6 +13,7 @@ import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadersh
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
 import { requiresManagedHierarchyReview } from '../../lib/managedHierarchyEditing';
 import { prepareNewLocationLeadership } from '../../lib/newLocationLeadership';
+import { useLocationCreation } from './useLocationCreation';
 import { hasDistrictLeadership, inheritDistrictLeader, isDistrictLeadershipMember } from '../../lib/districtLeadership';
 import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, isRetailHierarchyType, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
@@ -72,6 +73,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 }) => {
   const { 
     saveLocationRecord,
+    buildLocationCreationCommand,
     customFieldDefinitions,
     hoursTemplates, 
     corporateHolidays,
@@ -84,7 +86,6 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const [formData, setFormData] = useState<LocationRecord | null>(() => location ? normalizeLocation(location) : null);
   const baselineRef = useRef<LocationRecord | null>(location ? structuredClone(location) : null);
   const expectedVersionRef = useRef(location?.version ?? 0);
-  const [createId] = useState(() => `loc-${crypto.randomUUID()}`);
   const [acknowledgedInboxDigest, setAcknowledgedInboxDigest] = useState('');
   const [activeTab, setActiveTab] = useState<EditModalTab>('details');
   const [confirmation, setConfirmation] = useState<'discard' | 'retire' | 'reactivate' | null>(null);
@@ -93,6 +94,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const [contactErrors, setContactErrors] = useState<Record<string, string>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
   const isCreating = mode === 'create';
+  const creation=useLocationCreation(isCreating&&!!location,()=>{onSaved?.('Location creation confirmed.');onClose();},()=>{setFormData(null);baselineRef.current=null;setSaveError('');});
+  const createId=creation.draftId;
+  const creationLocked=isCreating&&!creation.ready;
 
   useEffect(() => {
     if (location) {
@@ -113,13 +117,13 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   }, [formData]);
 
   const requestClose = useCallback(() => {
-    if (saving) return;
+    if (saving || isCreating&&creation.busy) return;
     if (isDirty) {
       setConfirmation('discard');
       return;
     }
     onClose();
-  }, [isDirty, onClose, saving]);
+  }, [isDirty, onClose, saving, isCreating, creation.busy]);
 
   useDialogFocus(Boolean(location) && confirmation === null, requestClose, dialogRef);
 
@@ -228,7 +232,11 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
     setSaving(true); setSaveError('');
     try {
       sanitizedData.customMetadata = validateCustomMetadata(sanitizedData.customMetadata || {}, customFieldDefinitions, baseline.customMetadata || {});
-      await saveLocationRecord(sanitizedData, isCreating, baseline.customMetadata || {}, expectedVersionRef.current, inboxAcknowledgment);
+      if(isCreating){
+        await creation.submit(()=>buildLocationCreationCommand(sanitizedData,baseline.customMetadata||{},inboxAcknowledgment),()=>saveLocationRecord(sanitizedData,true,baseline.customMetadata||{},expectedVersionRef.current,inboxAcknowledgment));
+        return;
+      }
+      await saveLocationRecord(sanitizedData, false, baseline.customMetadata || {}, expectedVersionRef.current, inboxAcknowledgment);
       onSaved?.(`Store #${sanitizedData.storeNumber} was ${isCreating ? 'created' : 'saved'}.`);
       onClose();
     } catch (error) { setSaveError(error instanceof Error ? error.message : 'The location could not be saved.'); }
@@ -578,7 +586,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
 
         {/* Scrollable Form Body: Flat, clean white background and minimal borders */}
         <form id="location-edit-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto bg-white p-5 sm:p-6">
-          <fieldset disabled={saving} className="min-w-0">
+          {isCreating&&creation.panel}
+          <fieldset disabled={saving||creationLocked} className="min-w-0">
           
           {/* Lifecycle / Status Notice if Retired */}
           {formData.recordStatus === 'Retired' && (
@@ -1580,7 +1589,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
             <button
               type="submit"
               form="location-edit-form"
-              disabled={saving}
+              disabled={saving||creationLocked}
               className="flex cursor-pointer items-center gap-2 rounded-md bg-red-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-800 sm:px-5"
             >
               <Save className="w-4 h-4" />
@@ -1595,17 +1604,17 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       <ConfirmDialog
         isOpen={confirmation !== null}
         title={confirmation === 'discard'
-          ? 'Discard unsaved changes?'
+          ? isCreating&&creation.state?.locationId ? 'Close this creation?' : 'Discard unsaved changes?'
           : confirmation === 'retire'
           ? 'Retire this store?'
           : 'Reactivate this store?'}
         description={confirmation === 'discard'
-          ? 'Your changes have not been saved and will be permanently discarded.'
+          ? isCreating&&creation.state?.locationId ? `${creation.state.confirmedState==='committed'?'The location was created, but saved information still needs to refresh.':'The save result is still unresolved.'} Closing discards this form draft, but keeps its recovery identity. Reopen Create Location to check the original result before adding another location.` : 'Your changes have not been saved and will be permanently discarded.'
           : confirmation === 'retire'
           ? 'The store will be marked permanently closed and hidden from the active directory after you save the record.'
           : 'The store will return to the active directory with normal operating status after you save the record.'}
         confirmLabel={confirmation === 'discard'
-          ? 'Discard changes'
+          ? isCreating&&creation.state?.locationId ? 'Close and keep recovery' : 'Discard changes'
           : confirmation === 'retire'
           ? 'Retire store'
           : 'Reactivate store'}

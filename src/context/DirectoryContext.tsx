@@ -41,12 +41,16 @@ import type { OperatingPreview } from '../../server/firestoreOperating';
 import type { OperatingState } from '../lib/operatingState';
 import { refreshTransitionSavedState } from '../lib/transitionSavedRefresh';
 import { clearLegacyDirectoryCaches } from '../lib/personTransitionRecovery';
+import type { LocationCreationCommand } from '../lib/locationCreationContract';
+import { isLocationCreationCommand } from '../lib/locationCreationClient';
 
 interface DirectoryContextType {
   operatingNow: Date;
   operatingRefreshError: string | null;
   refreshOperatingDirectory: () => Promise<void>;
   refreshTransitionDirectory: (read: () => Promise<unknown>) => Promise<void>;
+  refreshCreationDirectory: (read: () => Promise<unknown>) => Promise<void>;
+  buildLocationCreationCommand: (location: LocationRecord, expectedCustomMetadata?: Record<string, CustomFieldValue>, acknowledgment?: LocationInboxAcknowledgment) => LocationCreationCommand;
   previewOperatingUpdate: (locationId: string, action: OperatingCommand['action']) => Promise<OperatingPreview>;
   saveOperatingUpdate: (command: OperatingCommand) => Promise<{ replayed: boolean; state: OperatingState }>;
   cancelOperatingUpdate: (command: OperatingCommand) => Promise<boolean>;
@@ -145,11 +149,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
   const writeFence = useRef({ epoch: 0, pending: 0 });
   const polling = useRef(false);
 
-  const refreshTransitionDirectory = async (read: () => Promise<unknown>) => {
+  const refreshSavedDirectory = async (read: () => Promise<unknown>, purpose?: 'location-creation') => {
     if (polling.current || writeFence.current.pending) throw new Error('A Directory refresh or save is still running. Keep this operation and retry recovery.');
     polling.current = true; writeFence.current.epoch++;
     try {
-      await refreshTransitionSavedState({ session: currentSession, generation: sessionGeneration, fence: () => writeFence.current, read, apply: body => {
+      await refreshTransitionSavedState({ session: currentSession, generation: sessionGeneration, fence: () => writeFence.current, read, purpose, apply: body => {
         const canonical = canonicalDirectoryBootstrap(body.locations, body.people, body.hoursTemplates);
         setLocations(canonical.locations); setPeople(canonical.people); setHoursTemplates(body.hoursTemplates);
         setDistricts(body.districts); setRegions(body.regions); setUsers(body.users); setRequests(body.requests);
@@ -159,6 +163,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       } });
     } finally { polling.current = false; }
   };
+  const refreshTransitionDirectory = (read: () => Promise<unknown>) => refreshSavedDirectory(read);
+  const refreshCreationDirectory = (read: () => Promise<unknown>) => refreshSavedDirectory(read, 'location-creation');
 
   const refreshOperatingDirectory = async (fullReconciliation = false) => {
     if (polling.current || writeFence.current.pending) return;
@@ -346,6 +352,16 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     });
     setCustomFieldDefinitions(fields => [...fields.filter(field => field.id !== definition.id), definition]);
     addAuditLog(previous ? 'Custom Field Updated' : 'Custom Field Created', 'Setting', definition.id, definition.label, `Saved custom field ${definition.id}.`, previous, definition);
+  };
+
+  const buildLocationCreationCommand = (location: LocationRecord, expectedCustomMetadata: Record<string, CustomFieldValue> = {}, acknowledgment?: LocationInboxAcknowledgment): LocationCreationCommand => {
+    const timestamp = new Date().toISOString();
+    const saved = prepareNewLocationLeadership({ ...location, createdAt: timestamp, updatedAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name }, districts, regions, people);
+    // Freeze the actual JSON wire projection once for both prepare and commit. Optional undefined
+    // record properties are omitted just as in the ordinary writer; drafts never enter storage.
+    const command = JSON.parse(JSON.stringify({write:{collection:'locations',id:saved.id,operation:'set',expectedVersion:null,data:serializeLocationReferenceClears(saved, undefined),expectedCustomMetadata,...(acknowledgment?{locationInboxAcknowledgment:acknowledgment}:{})}}));
+    if(!isLocationCreationCommand(command))throw new Error('Review the store details before creating it.');
+    return command;
   };
 
   const saveLocationRecord = async (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>, expectedVersion?: number, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => {
@@ -1000,6 +1016,8 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
         operatingRefreshError,
         refreshOperatingDirectory: () => refreshOperatingDirectory(true),
         refreshTransitionDirectory,
+        refreshCreationDirectory,
+        buildLocationCreationCommand,
         previewOperatingUpdate,
         saveOperatingUpdate,
         cancelOperatingUpdate,

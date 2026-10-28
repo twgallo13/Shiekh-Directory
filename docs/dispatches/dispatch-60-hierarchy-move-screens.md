@@ -1,0 +1,24 @@
+# Dispatch60 — Reviewed Store and District move screens
+
+The registry now has a capability-gated dedicated move window. Source implementation and isolated component journeys are ready for review, not production activation. It builds on PR89 including the reviewed recovery-state repair.
+
+## Behavior
+
+Choose a Store, a destination Region, then a District belonging to that Region. Changing the Region clears the District selection. No destination is preselected. Alternatively choose a District and a different parent Region. Only active units with completed managed setup appear as destinations. A strict saved Directory read supplies exact Location versions; the server still rereads and validates the complete dependencies before preparation and commit. Existing generic managed moves stay blocked.
+
+The server-prepared review shows current/future hierarchy, District and Regional Primary Managers (including explicit vacancy), affected stores and lifecycle, reason and excluded non-retail count. A District parent move preserves its District Manager/roster. Store staff, contacts, workplace and account access are not edited. The modal uses the existing focus/scroll/footer components, responsive stacked comparisons and plain-language actions.
+
+Back to selection cancels/seals the prepared identity and strictly refreshes saved records. Choices/reason remain in memory, but another review requires explicit acknowledgment against the fresh source. Closing unsubmitted choices asks before discarding them. Prepared/unknown reviews retain their durable actor/operation identity across closure. Failed saved refresh presents the known terminal outcome without inviting another save. Session/access loss clears local choices, Location source and protected catalog/review projections. Runtime dependencies are explicit for isolated acceptance; the production wrapper uses the existing fenced `refreshTransitionDirectory`.
+
+## Evidence
+
+- One complete ordinary run passed **870/870**, zero failures/skips, after screen integration. Three new selection cases verify exact saved versions/leading zeros, deliberate dependent destination, Region-version parent moves, no-op/reason rejection and invalid/legacy source. Existing tests cover controller, transport, adapters and native boundary helpers.
+- PR89 review found stale `confirmedState` when switching recovery operations. Fixed in `026d110` and covered for both prepared and missing next operations; **18/18 focused controller cases passed** afterward. This is a narrow follow-up, not a second complete-suite total. No unresolved inline threads remained across PR77–89 at the latest read; that is not completed independent approval.
+- TypeScript and release build passed. The existing Vite large-chunk advisory remains; no new runtime dependency was added.
+- Actual component/Modal local fixture through the browser passed desktop Store dependent selection and server-shaped before/after, explicit cancellation/draft retention/reapplication and draft exit confirmation. A synthetic lost commit reply entered recovery, then status confirmed the saved Location version rather than another commit. These browser responses/auth are mocked; the actual SDK lost-reply test remains separately recorded in Dispatch59.
+- At 360×800 the District parent selection/review stacked legibly with accessible fixed footer actions, unchanged District Manager and changed Regional Manager. Confirmation advanced the synthetic Location version once; fixture counts showed one prepare/one commit. Desktop failed post-commit refresh retained recovery, closing/reopening after recovery became available confirmed saved version5 with one prepare/one commit. Ending the synthetic session removed all choices/catalog/Location displays. No real user, provider, cloud or business records were changed.
+- A synthetic alert temporarily blocked the browser; the human dismissed it. The harness now displays counts inline. An empty Vite test-module cache during a file update was cleared by restarting the local preview. These were local harness incidents; no failed product acceptance is hidden or production repair claimed.
+
+## Remaining release work
+
+Align existing Store editor and registry metadata entry points so managed moves lead to the dedicated review rather than generic save rejection; complete linked type/retirement/delete/correction/import constraints and diagnostics. Finish wider native concurrency/alternate-writer and consumer compatibility acceptance, independent exact-source reviews, activation manifest and migration/rollback/release evidence. Production provider/browser acceptance remains required. Keep all activation flags off and avoid wholesale main deployment. No LP changes, restoration of business data, IAM/grants/tokens/credentials or expanded account authority.

@@ -19,7 +19,7 @@ import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { readOrganizationGuardState, validateOrganizationLeadershipWrites } from './organizationLeadershipGuards';
 import { readPersonTransitionAuthority } from './personTransitionAuthority';
-import { normalizeLocationCreationCommand, assertLocationCreationActor, prepareLocationCreation, readLocationCreation, cancelLocationCreation, listLocationCreations, locationCreationLegacyAllowed, readLocationCreationCommit, finishLocationCreationCommit, locationCreationAuditId, type LocationCreationCommand } from './locationCreationRecovery';
+import { normalizeLocationCreationCommand, assertLocationCreationActor, prepareLocationCreation, readLocationCreation, cancelLocationCreation, listLocationCreations, locationCreationLegacyAllowed, readLocationCreationCommit, finishLocationCreationCommit, readLegacyLocationCreationAdmission, finishLegacyLocationCreationAdmission, locationCreationAuditId, type LocationCreationCommand } from './locationCreationRecovery';
 import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
 import { readOrganizationCatalog } from './organizationLeadershipCatalog';
 import { prepareOrganizationLeadership, commitOrganizationLeadership, readOrganizationLeadershipOperation, cancelOrganizationLeadershipOperation, listOrganizationLeadershipOperations } from './organizationLeadershipOperations';
@@ -209,6 +209,8 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const creation = creationCommand ? await readLocationCreationCommit(this.firestore, transaction, creationCommand, actor) : null;
       if (creation?.replayed) return { records: [], replayed: true };
       const snapshots = await Promise.all(writes.map(write => transaction.get(this.firestore.collection(write.collection).doc(write.id))));
+      const legacyCreation=!creation&&writes.some((write,index)=>write.collection==='locations'&&write.operation==='set'&&!snapshots[index].exists)
+        ?await readLegacyLocationCreationAdmission(this.firestore,transaction,actor):null;
       // The request itself is the durable receipt. Retained after review and never deleted.
       const submission = writes.length === 1 && writes[0].collection === 'requests' && writes[0].operation === 'set' && writes[0].data?.status === 'Pending';
       const digest = submission ? submissionDigest(writes[0].data!) : undefined;
@@ -350,6 +352,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         else transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
       }
       if (creation) finishLocationCreationCommit(transaction, creation, actor);
+      if (legacyCreation) finishLegacyLocationCreationAdmission(transaction, legacyCreation, actor);
       return { records: committedRecords };
     });
   }

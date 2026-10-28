@@ -111,10 +111,10 @@ export async function listOrganizationLeadershipOperations(db: Firestore, actor:
   }, { readOnly: true });
 }
 
-/** Unwired internal service. Trusted HTTP callers MUST authenticate Firebase first. Live authority is
+/** Internal service behind disabled-by-default HTTP/Store admission. Trusted callers MUST authenticate Firebase first. Live authority is
  * rechecked in every transaction. A private server-written preparation binds actor + exact review;
  * no signing secret, caller-provided patches or browser completeness claims are accepted.
- * Do not expose/activate until alternate-writer guards and actual SDK race acceptance are complete.
+ * Keep production admission off until the maintained plan's workflow, compatibility and release gates pass.
  */
 export async function prepareOrganizationLeadership(db: Firestore, raw: unknown, actor: Account, clock = () => new Date()) {
   assertPersonTransitionActor(actor);

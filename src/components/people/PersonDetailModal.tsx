@@ -17,6 +17,8 @@ import { personProfileImpact } from '../../lib/personProfileImpact';
 import { PersonInboxResponsibilities } from './PersonInboxResponsibilities';
 import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
 import { PersonTransitionReview } from './PersonTransitionReview';
+import { useOrganizationCapabilities } from './useOrganizationCapabilities';
+import { OrganizationResponsibilities } from './OrganizationResponsibilities';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -35,6 +37,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 }) => {
   const { locations, districts, regions, users, requests, currentUser, updatePerson, deletePerson } = useDirectory();
   const [isEditing, setIsEditing] = useState(false);
+  const [isManaging, setIsManaging] = useState(false);
+  const organization = useOrganizationCapabilities();
   const editorClose = useRef<(() => void) | null>(null);
   const [editorFooter, setEditorFooter] = useState<HTMLDivElement | null>(null);
   const [pendingAction, setPendingAction] = useState<'inactivate' | 'delete' | null>(null);
@@ -44,6 +48,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
   useEffect(() => {
     setIsEditing(false);
+    setIsManaging(false);
     setPendingAction(null);
     setConfirmationName('');
     setActionError('');
@@ -118,21 +123,22 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
       isOpen
       title={person.fullName}
       description={personPositionLabel(person)}
-      size={isEditing ? 'lg' : 'md'}
-      onClose={() => isEditing ? editorClose.current?.() : onClose()}
+      size={isEditing || isManaging ? 'lg' : 'md'}
+      onClose={() => isEditing || isManaging ? editorClose.current?.() : onClose()}
       icon={(
         <div className="flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-sm font-bold text-red-700">
           {person.fullName?.[0] || 'P'}
         </div>
       )}
-      footer={isEditing ? <div ref={setEditorFooter} className="w-full" /> : <div className="flex w-full flex-wrap justify-end gap-2">
+      footer={isEditing || isManaging ? <div ref={setEditorFooter} className="w-full" /> : <div className="flex w-full flex-wrap justify-end gap-2">
+        {organization?.catalogEnabled && <Button size="sm" onClick={() => setIsManaging(true)}>Responsibilities</Button>}
         {canEdit && person.status !== 'Inactive' && person.activeStatus !== false && <Button size="sm" variant="danger" onClick={() => setPendingAction('inactivate')}><UserX className="h-3.5 w-3.5" />Inactivate</Button>}
         {canEdit && <Button size="sm" variant="danger" onClick={() => setPendingAction('delete')}><Trash2 className="h-3.5 w-3.5" />Delete</Button>}
         {canEdit && <Button size="sm" variant="primary" onClick={() => setIsEditing(true)}><Pencil className="h-3.5 w-3.5" />Edit Person</Button>}
         <Button size="sm" onClick={onClose}>Close</Button>
       </div>}
     >
-      {isEditing ? (
+      {isManaging ? <OrganizationResponsibilities personId={person.id} registerClose={close => { editorClose.current = close; }} footerTarget={editorFooter} onClose={() => setIsManaging(false)} /> : isEditing ? (
         <PersonEditorForm
           key={person.id}
           person={person}

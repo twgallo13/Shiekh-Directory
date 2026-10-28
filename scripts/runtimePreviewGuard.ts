@@ -102,7 +102,9 @@ export function checkRuntimePreview(input: unknown) {
     const env = at(container, 'env') ?? [];
     fail(Array.isArray(env), 'invalid_environment');
     if (Array.isArray(env)) for (const entry of env) {
-      if (['PERSON_TRANSITION_RECOVERY_ENABLED', 'PERSON_TRANSITION_COMMANDS_ENABLED'].includes(at(entry, 'name') as string)) {
+      if (['PERSON_TRANSITION_RECOVERY_ENABLED', 'PERSON_TRANSITION_COMMANDS_ENABLED',
+        'ORGANIZATION_LEADERSHIP_CATALOG_ENABLED', 'ORGANIZATION_LEADERSHIP_RECOVERY_ENABLED',
+        'ORGANIZATION_LEADERSHIP_COMMANDS_ENABLED'].includes(at(entry, 'name') as string)) {
         fail(at(entry, 'value') === 'false' && at(entry, 'valueFrom') === undefined, 'workflow_activation_or_unknown_flag');
       }
     }

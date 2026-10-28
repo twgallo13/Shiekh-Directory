@@ -22,3 +22,7 @@ The actor-only pending-review list projects metadata, includes expired prepared 
 ## Remaining gates
 
 Private administrator catalog access is not a public consumer endpoint or a new grant for other Directory roles. The opt-in consumer snapshot/scopes/contact policy remain a separate phase. New flags must remain off until reviewed unit/name/membership change paths, roster-aware Person lifecycle UX, activated import/correction/race acceptance, runtime isolation and guarded release checks are complete. Transitional guards currently reject unsupported managed moves/renames rather than silently mutate them. Do not activate live units with those supported paths missing and do not deploy main wholesale.
+
+## PR #79 activation-guard repair
+
+Verified the P2 review finding: identical production/candidate snapshots could carry the new organization flags enabled while the preview checker recognized only older Person flags. The offline checker now covers all three organization flags and requires explicit false when present, with no valueFrom indirection; absent remains disabled. All 42 affected runtime-guard cases passed, including each flag enabled, uppercase/unknown and secret-reference variants in otherwise identical snapshots. No cloud resource, flag or acceptance gate changed. Successful unchanged application/integration results are reused; this script-only change does not require a rebuild.

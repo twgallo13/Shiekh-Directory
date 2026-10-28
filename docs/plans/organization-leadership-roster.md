@@ -57,9 +57,11 @@ Profile → Responsibilities → Review, with optional workplace and Assign late
 
 The next bounded staff-review slice is built: [Dispatch52](../dispatches/dispatch-52-roster-preserving-person-review.md). Signed Person commands may preserve canonical Primary/Additional responsibilities while changing unrelated positions, but cannot remove required eligibility or change managed ownership. Administrator profile/offboarding dialogs now show canonical responsibilities with failed-read protection and a draft-preserving path into responsibility review. This is staged explicit review, not one atomic end-roster-and-inactivate operation. Assigned-manager name propagation and wider lifecycle/position-removal acceptance remain open and block activation.
 
-### 4. Versioned consumer contract
-
 The assigned-manager name gap now has a bounded implementation: [Dispatch53](../dispatches/dispatch-53-managed-person-name-sync.md). It uses the existing atomic profile/copy save, proves a complete name-only manifest against current Location inventory, preserves IDs/staffing/contact/access and requires live administrator authority plus mandatory bounded audit. This supersedes earlier blanket name-edit restrictions for the supported clearly Active, bounded name-only path. Wider staged lifecycle, moves, source acceptance and release gates remain open; this is not production activation.
+
+The integrated SDK journey in [Dispatch54](../dispatches/dispatch-54-staged-staff-acceptance.md) passed for concurrent store/Additional DM/Regional Primary responsibility, explicit handovers and vacancy, required-position removal, separate account review and eventual inactivation with preserved history/IDs. This narrows the staged server acceptance gap; it is not a browser/provider release acceptance or proof that all transitions/moves are delivered.
+
+### 4. Versioned consumer contract
 
 Opt-in organization units/assignments/location hierarchy from one pinned snapshot; existing v3 stays Primary-only. Eligibility discovery is separate from assigned leadership. Any new scopes/contacts require a concrete reviewed policy; do not widen existing grants. Consumer access and sales aggregation remain consumer-owned: aggregate one store/transaction before joining a multi-manager roster. Update OpenAPI/guides/Admin links and migration examples together.
 

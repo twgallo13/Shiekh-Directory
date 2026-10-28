@@ -65,6 +65,8 @@ Managed membership move planning is now detached and tested: [Dispatch55](../dis
 
 ### 4. Versioned consumer contract
 
+The move source adapter now derives complete masked dependencies in one SDK transaction: [Dispatch56](../dispatches/dispatch-56-hierarchy-move-source.md). Six new ordinary and two native move-source cases passed, alongside the affected existing source/operation/native tests. This is still an internal read-only foundation, with trusted caller authority required; move prepare/commit/recovery, API admission and UX remain undelivered. Generic managed moves remain blocked and all activation gates stay in place.
+
 Opt-in organization units/assignments/location hierarchy from one pinned snapshot; existing v3 stays Primary-only. Eligibility discovery is separate from assigned leadership. Any new scopes/contacts require a concrete reviewed policy; do not widen existing grants. Consumer access and sales aggregation remain consumer-owned: aggregate one store/transaction before joining a multi-manager roster. Update OpenAPI/guides/Admin links and migration examples together.
 
 ### 5. Acceptance and bounded release

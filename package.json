@@ -14,6 +14,7 @@
     "test:organization-unit-editing-emulator": "node --import tsx --test test/organizationUnitEditing.emulator.ts",
     "test:managed-person-rename-emulator": "node --import tsx --test test/managedPersonRename.emulator.ts",
     "test:organization-staff-journeys-emulator": "node --import tsx --test test/organizationStaffJourneys.emulator.ts",
+    "test:organization-move-source-emulator": "node --import tsx --test test/organizationMoveSource.emulator.ts",
     "test:organization-api-emulator": "node --import tsx --test test/organizationLeadershipApi.emulator.ts",
     "test:rules-emulator": "node --import tsx --test test/directoryRules.emulator.ts",
     "migrate:firestore": "node --import tsx scripts/migrateFirestoreFromCsv.ts",

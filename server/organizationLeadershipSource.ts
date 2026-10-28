@@ -38,9 +38,8 @@ function assertJson(value: unknown, depth = 0): void {
  * in this same SDK transaction. No reads outside it, browser snapshots, raw paths or caller completeness flags.
  * All query results are bounded with a sentinel extra document; overflow rejects rather than truncates.
  */
-export async function readOrganizationLeadershipPlan(firestore: Firestore, transaction: Transaction, raw: unknown, now: string) {
-  // Validate before an operation ID, unit ID or Person ID can influence a source query.
-  const intent = normalizeOrganizationLeadershipIntent(raw);
+export async function readOrganizationSnapshot(firestore: Firestore, transaction: Transaction,
+  selectUnits: (snapshot: OrganizationLeadershipSnapshot) => { unitType: 'district' | 'region'; unitId: string }[], additionalPeople: string[] = []) {
   const snapshot: OrganizationLeadershipSnapshot = {
     units: [], assignments: [], locations: [], people: [],
     complete: { hierarchy: true, locations: true, assignmentUnits: [] },
@@ -74,7 +73,10 @@ export async function readOrganizationLeadershipPlan(firestore: Firestore, trans
       else snapshot.units.push({ ...record, unitType: collection === 'districts' ? 'district' : 'region' });
     }
   }
-  for (const unit of intent.units) {
+  const requestedUnits = selectUnits(snapshot);
+  if (!requestedUnits.length || requestedUnits.length > 5 || new Set(requestedUnits.map(u => leadershipUnitKey(u.unitType, u.unitId))).size !== requestedUnits.length
+    || requestedUnits.some(u => !['district', 'region'].includes(u.unitType) || !canonicalId(u.unitId)) || additionalPeople.some(id => !canonicalId(id))) incomplete('Invalid internal source dependency selection.');
+  for (const unit of requestedUnits) {
     const rows = await transaction.get(firestore.collection('leadership_assignments')
       .where('unitType', '==', unit.unitType).where('unitId', '==', unit.unitId)
       .select(...fields.leadership_assignments).limit(ORGANIZATION_SOURCE_LIMITS.assignmentsPerUnit + 1));
@@ -88,12 +90,12 @@ export async function readOrganizationLeadershipPlan(firestore: Firestore, trans
     snapshot.complete.assignmentUnits.push(leadershipUnitKey(unit.unitType, unit.unitId));
   }
   // Fetch desired and incumbent people only. Historical ended tenures need no private Person reads.
-  const ids = new Set(intent.units.flatMap(unit => unit.memberPersonIds));
+  const ids = new Set(additionalPeople);
   for (const row of snapshot.assignments) if (row.data.status === 'active') {
     if (!canonicalId(row.data.personId)) incomplete('Active assignment requires a canonical Person ID.');
     ids.add(row.data.personId as string);
   }
-  for (const unit of intent.units) {
+  for (const unit of requestedUnits) {
     const record = snapshot.units.find(row => row.unitType === unit.unitType && row.id === unit.unitId);
     const primary = record?.data[unit.unitType === 'district' ? 'districtManagerId' : 'regionalManagerId'];
     if (primary !== undefined && primary !== null) {
@@ -109,5 +111,12 @@ export async function readOrganizationLeadershipPlan(firestore: Firestore, trans
     if (docs.length !== batch.length || new Set(docs.map(doc => doc.id)).size !== batch.length || docs.some(doc => !batch.includes(doc.id))) incomplete('Exact Person reads are incomplete.');
     for (const doc of docs) snapshot.people.push(source('people', doc));
   }
+  return { snapshot, native };
+}
+
+export async function readOrganizationLeadershipPlan(firestore: Firestore, transaction: Transaction, raw: unknown, now: string) {
+  // Validate before any caller ID can influence a source query.
+  const intent = normalizeOrganizationLeadershipIntent(raw);
+  const { snapshot, native } = await readOrganizationSnapshot(firestore, transaction, () => intent.units, intent.units.flatMap(unit => unit.memberPersonIds));
   return { intent, plan: planOrganizationLeadership(intent, snapshot, now), native };
 }

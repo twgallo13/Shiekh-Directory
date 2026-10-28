@@ -9,7 +9,7 @@ const instant = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d
 const integer = (v: unknown, max: number) => Number.isSafeInteger(v) && Number(v) >= 0 && Number(v) <= max;
 const hash = (v: unknown): v is string => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 function invalid(): never { throw new OrganizationTransportError('The move review could not be verified. Keep its identity and check recovery.'); }
-function intentValid(v: OrganizationMoveIntent) {
+export function isOrganizationMoveIntent(v: unknown): v is OrganizationMoveIntent {
   return exact(v, ['schemaVersion', 'operationId', 'kind', 'id', 'expectedVersion', 'targetId', 'expectedTargetVersion', 'reason']) && v.schemaVersion === 1 && id(v.operationId)
     && ['store', 'district'].includes(v.kind) && id(v.id) && id(v.targetId) && integer(v.expectedVersion, Number.MAX_SAFE_INTEGER) && integer(v.expectedTargetVersion, Number.MAX_SAFE_INTEGER) && text(v.reason, 500) && v.reason.trim().length >= 5;
 }
@@ -19,7 +19,7 @@ export function parseOrganizationMoveOutcome(v: unknown, operationId: string) {
   return value;
 }
 export function parseOrganizationMovePreparation(v: unknown, intent: OrganizationMoveIntent): OrganizationMovePreparation {
-  if (!intentValid(intent)) invalid();
+  if (!isOrganizationMoveIntent(intent)) invalid();
   if (!object(v) || v.state !== 'prepared') return parseOrganizationMoveOutcome(v, intent.operationId);
   if (!exact(v, ['schemaVersion', 'operationId', 'state', 'updatedAt', 'expiresAt', 'reviewHash', 'review']) || v.schemaVersion !== 1 || v.operationId !== intent.operationId
     || !instant(v.updatedAt) || !instant(v.expiresAt) || Date.parse(v.expiresAt) - Date.parse(v.updatedAt) !== 600_000 || !hash(v.reviewHash)) invalid();
@@ -47,7 +47,7 @@ export function createOrganizationMoveHttpPort(options: Parameters<typeof create
     catalog: async () => parseOrganizationCatalog(await call('catalog')),
     list: async () => parseOrganizationList(await call('operations')),
     directory: () => call('directory'),
-    prepare: async (intent: OrganizationMoveIntent) => { if (!intentValid(intent)) invalid(); return parseOrganizationMovePreparation(await call('prepare', intent), intent); },
+    prepare: async (intent: OrganizationMoveIntent) => { if (!isOrganizationMoveIntent(intent)) invalid(); return parseOrganizationMovePreparation(await call('prepare', intent), intent); },
     commit: async (operationId: string, reviewHash: string) => { if (!id(operationId) || !hash(reviewHash)) invalid(); return parseOrganizationMoveOutcome(await call('commit', { operationId, reviewHash }), operationId); },
     status: async (operationId: string) => { if (!id(operationId)) invalid(); return parseOrganizationMoveOutcome(await call('status', { operationId }), operationId); },
     cancel: async (operationId: string) => { if (!id(operationId)) invalid(); return parseOrganizationMoveOutcome(await call('cancel', { operationId }), operationId); },

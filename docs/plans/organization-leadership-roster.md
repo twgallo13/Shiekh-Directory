@@ -22,7 +22,7 @@ Initial work is immediate-only. Scheduled/acting automation remains explicitly u
 
 ## Implementation slices and evidence
 
-Current source checkpoint: organization roster adapters/initial UX, bounded metadata/name edits and staged SDK staff acceptance are built for review. Move planner, coherent source, internal save/recovery, gated Store/HTTP adapters and strict browser contracts/transport are built; the move-specific browser recovery controller and UX are still missing. Independent dependency review, remaining correction/import/consumer acceptance and guarded release/rollback remain open. All new production activation gates stay off. See Dispatches 55–58 for the move boundary.
+Current source checkpoint: organization roster adapters/initial UX, bounded metadata/name edits and staged SDK staff acceptance are built for review. Move planner, coherent source, internal save/recovery, gated Store/HTTP adapters, strict browser contracts/transport and the move-specific browser recovery controller are built; move selection/review screens and browser journey acceptance are still missing. Independent dependency review, remaining correction/import/consumer acceptance and guarded release/rollback remain open. All new production activation gates stay off. See Dispatches 55–59 for the move boundary.
 
 ### 1. Pure assignment planner — merged foundation, not enabled in production
 

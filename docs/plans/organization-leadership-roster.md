@@ -37,7 +37,9 @@ This function has **no authentication, transaction, signature, API route, I/O or
 
 Synthetic evidence in `test/organizationLeadershipPlanner.test.ts` covers additional coverage with no workplace, Primary handover, Corporate/Region coverage, namespaces/leading zeros, vacancies/history, explicit activation, controlled eligibility, failed/missing/stale reads, no inference, malformed roster, exact write-cap boundary, overflow, time validity, hierarchy conflicts, idempotency collision and input immutability. The dispatch records actual run results.
 
-### 2. Authoritative loader/preview/commit and alternate-writer guards — next
+### 2. Authoritative loader/preview/commit and alternate-writer guards — in progress, not enabled
+
+The internal bounded source adapter and stateful preparation/commit/status/cancellation service are implemented in `server/organizationLeadershipSource.ts` and `server/organizationLeadershipOperations.ts`. A private server-written preparation receipt binds the actor, exact intent, reviewed changes, dependency fingerprints and expiry. This design uses stored server authority rather than introducing another signing secret; it does not enable or bypass the older signed Person-transition workflow. No HTTP route, Store entry point, frontend import or production activation is provided. See [Dispatch 47](../dispatches/dispatch-47-organization-leadership-operations.md) for validation and remaining gates. Alternate-writer guards and UI/API work below remain outstanding.
 
 - Read complete bounded source queries and exact dependencies; fail closed on query/capacity failures. No contacts/accounts are needed for roster planning.
 - Authenticate existing authorized administrators and re-read Directory role/scope authority at commit; staffing is not authorization.

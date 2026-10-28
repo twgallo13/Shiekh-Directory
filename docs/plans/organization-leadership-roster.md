@@ -22,6 +22,8 @@ Initial work is immediate-only. Scheduled/acting automation remains explicitly u
 
 ## Implementation slices and evidence
 
+Current source checkpoint: organization roster adapters/initial UX, bounded metadata/name edits and staged SDK staff acceptance are built for review. Move planner, coherent source and internal actor-bound save/recovery service are now built; move Store/HTTP admission and UX are still missing. Independent dependency review, remaining correction/import/consumer acceptance and guarded release/rollback remain open. All new production activation gates stay off. See Dispatches 55–57 for the move boundary.
+
 ### 1. Pure assignment planner — merged foundation, not enabled in production
 
 `server/organizationLeadershipPlanner.ts` supplies a detached internal dry run. It accepts a full desired unit roster and explicit Primary, exact expected versions, an operation ID, legacy activation choice and a bounded reason. It:
@@ -62,6 +64,8 @@ The assigned-manager name gap now has a bounded implementation: [Dispatch53](../
 The integrated SDK journey in [Dispatch54](../dispatches/dispatch-54-staged-staff-acceptance.md) passed for concurrent store/Additional DM/Regional Primary responsibility, explicit handovers and vacancy, required-position removal, separate account review and eventual inactivation with preserved history/IDs. This narrows the staged server acceptance gap; it is not a browser/provider release acceptance or proof that all transitions/moves are delivered.
 
 Managed membership move planning is now detached and tested: [Dispatch55](../dispatches/dispatch-55-hierarchy-move-planner.md). It plans store-to-District and District-to-Region changes with inherited canonical leadership and preserved store staffing/rosters. It is not connected to a writer or UI; managed generic moves remain blocked. Complete the source/transaction/review/recovery adapters and UX before enabling this capability. Initial support requires Active managed units and resolved source, with explicit legacy/unresolved repair kept separate.
+
+The move preparation/save/cancellation/status/pending-list service is now internal and tested: [Dispatch57](../dispatches/dispatch-57-hierarchy-move-operations.md). It binds exact actor/intent/review/source, restricts patches to hierarchy inheritance, preserves native records and commits deterministic audit/receipt atomically. Seven actual SDK cases cover duplicate/cancel races, 99→100 admission capacity, changed source and size/authority rejection. It has no Store/HTTP/UI entry point; generic managed moves remain blocked. Build gated adapters and browser recovery/UX before any activation.
 
 ### 4. Versioned consumer contract
 

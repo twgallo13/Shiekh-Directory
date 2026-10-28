@@ -5,6 +5,9 @@ import { validateLocationHierarchyFields, type HierarchyFieldContract, type Hier
 import { hasDistrictLeadership, isDistrictLeadershipMember } from './districtLeadership';
 import { allowsLeadershipPosition, LEADERSHIP_POSITION_FIELDS } from './personPositions';
 import { personLifecycle } from './personLifecycle';
+import { prepareNewLocationLeadership } from './newLocationLeadership';
+import { requiresManagedHierarchyReview } from './managedHierarchyEditing';
+import { classifyHierarchyLocationType } from './hierarchyResolution';
 import {
   LOCATION_HIERARCHY_APPLICABILITY,
   LOCATION_IMPORT_COLUMNS,
@@ -368,6 +371,8 @@ export function buildLocationImportPlan(
     if (intendedAddition) proposed.id = row.LocationId || createLocationId();
     const leadershipDistrict = snapshot.districts.find(d => isDistrictLeadershipMember(proposed, d.id));
     const enteringManagedDistrict = !existing || existing.districtId !== proposed.districtId || !isDistrictLeadershipMember(existing, leadershipDistrict?.id || '');
+    if (enteringManagedDistrict && requiresManagedHierarchyReview(leadershipDistrict) && row.DistrictManagerId && row.DistrictManagerId !== leadershipDistrict?.districtManagerId) issues.push(issue('error', 'invalid_hierarchy', 'DistrictManagerId', row.DistrictManagerId, existing?.districtManagerId ?? null,
+      'This retail store inherits its DM from the managed District. A CSV cannot override that ownership.', 'Use the District’s canonical Primary Manager, or change management responsibilities in Admin and rebuild this preview.'));
     if (hasDistrictLeadership(leadershipDistrict) && !enteringManagedDistrict && row.DistrictManagerId && (proposed.districtManagerId || null) !== leadershipDistrict!.districtManagerId) {
       issues.push(issue('error', 'invalid_hierarchy', 'DistrictManagerId', row.DistrictManagerId, existing?.districtManagerId ?? null,
         'This retail store inherits its DM from the District. A CSV cannot override District ownership.',
@@ -377,6 +382,41 @@ export function buildLocationImportPlan(
       const managerId = leadershipDistrict!.districtManagerId;
       proposed.districtManagerId = managerId || null;
       proposed.districtManagerName = snapshot.people.find(p => p.id === managerId)?.fullName || '';
+    }
+    const leadershipRegion = snapshot.regions.find(r => r.id === proposed.regionId);
+    const managedRegion = classifyHierarchyLocationType(proposed.type) === 'retail' && requiresManagedHierarchyReview(leadershipRegion);
+    const canonicalRegion = leadershipRegion as unknown as Record<string, unknown> | undefined;
+    if (classifyHierarchyLocationType(proposed.type) === 'retail') for (const [unit, pointer] of [[leadershipDistrict, 'districtManagerId'], [leadershipRegion, 'regionalManagerId']] as const) {
+      if (!requiresManagedHierarchyReview(unit)) continue;
+      const raw = unit as unknown as Record<string, unknown>;
+      if (raw.leadershipModelVersion !== 1 || !Number.isSafeInteger(raw.leadershipVersion) || Number(raw.leadershipVersion) < 0 || !Object.hasOwn(raw, pointer)) issues.push(issue('error', 'invalid_hierarchy', 'RegionId / DistrictId', `${row.RegionId || ''} / ${row.DistrictId || ''}`, null,
+        'The selected organization setup is unsupported or incomplete.', 'Review the canonical District/Region setup before importing linked changes.'));
+    }
+    if (managedRegion) {
+      const managerId = canonicalRegion?.regionalManagerId, matches = snapshot.people.filter(p => p.id === managerId);
+      if (canonicalRegion?.leadershipModelVersion !== 1 || !Number.isSafeInteger(canonicalRegion?.leadershipVersion)
+        || Number(canonicalRegion?.leadershipVersion) < 0 || managerId !== null && (typeof managerId !== 'string' || !managerId || matches.length !== 1 || !matches[0].fullName?.trim())) {
+        issues.push(issue('error', 'invalid_hierarchy', 'RegionalManagerId', row.RegionalManagerId, existing?.regionalManagerId ?? null,
+          'The Region’s manager setup needs review.', 'Review the canonical Region and manager records, then rebuild this preview.'));
+      } else {
+        if (row.RegionalManagerId && row.RegionalManagerId !== managerId) issues.push(issue('error', 'invalid_hierarchy', 'RegionalManagerId', row.RegionalManagerId, existing?.regionalManagerId ?? null,
+          'This retail store inherits its Regional Manager from the Region. A CSV cannot override that ownership.', 'Use the Region’s canonical Primary Manager, or change management responsibilities in Admin and rebuild this preview.'));
+        proposed.regionalManagerId = managerId;
+        proposed.regionalManagerName = managerId === null ? '' : matches[0].fullName;
+      }
+    }
+    if (!existing && (requiresManagedHierarchyReview(leadershipDistrict) || managedRegion)) {
+      try { Object.assign(proposed, prepareNewLocationLeadership(proposed as unknown as LocationRecord, snapshot.districts, snapshot.regions, snapshot.people)); }
+      catch (e) { issues.push(issue('error', 'invalid_hierarchy', 'RegionId / DistrictId', `${row.RegionId} / ${row.DistrictId}`, null,
+        e instanceof Error ? e.message : 'Review the manager setup before creating this Location.', 'Repair canonical organization setup and rebuild the preview.')); }
+    }
+    if (existing) {
+      const oldDistrict = snapshot.districts.find(d => d.id === existing.districtId), oldRegion = snapshot.regions.find(r => r.id === (oldDistrict?.regionId ?? existing.regionId));
+      const newDistrict = snapshot.districts.find(d => d.id === proposed.districtId), newRegion = snapshot.regions.find(r => r.id === (newDistrict?.regionId ?? proposed.regionId));
+      const managed = [oldDistrict, oldRegion, newDistrict, newRegion].some(requiresManagedHierarchyReview);
+      const nonRetailOnly = classifyHierarchyLocationType(existing.type) === 'non-retail' && classifyHierarchyLocationType(proposed.type) === 'non-retail';
+      if (managed && !nonRetailOnly && hierarchyFields.some(field => !sameValue(existing[field], proposed[field]))) issues.push(issue('error', 'invalid_hierarchy', 'RegionId / DistrictId / Type', `${row.RegionId || ''} / ${row.DistrictId || ''} / ${row.Type || ''}`, null,
+        'This managed store’s hierarchy or Location type cannot be changed through CSV.', 'Keep the saved hierarchy/type. Use Store & District moves for membership changes; managed Location type changes require a separate supported review.'));
     }
 
     const hierarchyChanged = !existing || hierarchyFields.some(field => !sameValue(existing[field], proposed[field]));
@@ -439,8 +479,8 @@ export function buildLocationImportPlan(
     }
 
     const changes = importedChanges(row, proposed, existing as unknown as Record<string, unknown> | undefined);
-    if (hasDistrictLeadership(leadershipDistrict)) {
-      for (const field of ['districtManagerId', 'districtManagerName']) {
+    if (hasDistrictLeadership(leadershipDistrict) || managedRegion) {
+      for (const field of [...(hasDistrictLeadership(leadershipDistrict) ? ['districtManagerId', 'districtManagerName'] : []), ...(managedRegion ? ['regionalManagerId', 'regionalManagerName'] : [])]) {
         if (!sameValue(existing?.[field as keyof typeof existing], proposed[field]) && !changes.some(change => change.field === field)) {
           changes.push({ field, before: existing?.[field as keyof typeof existing] ?? null, after: proposed[field] ?? null });
         }

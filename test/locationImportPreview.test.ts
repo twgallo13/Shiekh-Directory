@@ -490,6 +490,51 @@ describe('Location CSV import preview', () => {
   });
 });
 
+function managedImportSnapshot() {
+  const saved = structuredClone(snapshot);
+  Object.assign(saved.districts[0], { leadershipModelVersion: 1, leadershipVersion: 1, version: 1, districtManagerId: 'dm' });
+  Object.assign(saved.regions[0], { leadershipModelVersion: 1, leadershipVersion: 1, version: 1, regionalManagerId: 'rm' });
+  saved.people.push({ id:'dm',fullName:'Canonical DM',status:'Active',positionIds:['district-manager'] }, { id:'rm',fullName:'Canonical RM',status:'Active',positionIds:['regional-manager'] });
+  Object.assign(saved.locations[0], { districtManagerId:'dm',districtManagerName:'Canonical DM',regionalManagerId:'rm',regionalManagerName:'Canonical RM' });
+  return saved;
+}
+const managedAddition = { StoreNumber:'008',StoreName:'New managed Store',Type:'Enclosed Mall',Address:'8 Actual Way',City:'Los Angeles',State:'CA',ZipCode:'90008',Phone:'2135550108',TimeZone:'America/Los_Angeles',HierarchyApplicability:'Applicable',RegionId:'reg-west',DistrictId:'dist-1',OperationalStatus:'Open — Normal Operations',RecordStatus:'Active' };
+describe('managed organization CSV alignment',()=>{
+  it('previews both canonical manager copies for new Stores and rejects a Regional override',()=>{
+    const saved=managedImportSnapshot(), plan=buildLocationImportPlan(csvRow(managedAddition),saved,undefined,()=> 'managed-new');
+    assert.equal(plan.preview.rows[0].action,'add',JSON.stringify(plan.preview.rows[0].issues));
+    assert.equal(plan.writes[0].data.districtManagerId,'dm'); assert.equal(plan.writes[0].data.regionalManagerId,'rm'); assert.equal(plan.writes[0].data.regionalManagerName,'Canonical RM');
+    assert(plan.preview.rows[0].changes.some(c=>c.field==='regionalManagerName' && c.after==='Canonical RM'));
+    const rejected=previewLocationImport(csvRow({...managedAddition,RegionalManagerId:'dm'}),saved);
+    assert.equal(rejected.rows[0].action,'blocked'); assert(rejected.rows[0].issues.some(i=>/cannot override/.test(i.reason)));
+    const wrongDm=previewLocationImport(csvRow({...managedAddition,DistrictManagerId:'rm'}),saved);
+    assert.equal(wrongDm.rows[0].action,'blocked'); assert(wrongDm.rows[0].issues.some(i=>/cannot override/.test(i.reason)));
+  });
+  it('allows ordinary fields but blocks managed membership/type edits at preview',()=>{
+    const saved=managedImportSnapshot();
+    const ordinary=previewLocationImport(csvRow({LocationId:baseLocation.id,StoreName:'Updated name'}),saved); assert.equal(ordinary.rows[0].action,'update');
+    const changed=previewLocationImport(csvRow({LocationId:baseLocation.id,Type:'Enclosed Mall'}),saved);
+    assert.equal(changed.rows[0].action,'blocked'); assert(changed.rows[0].issues.some(i=>/cannot be changed through CSV/.test(i.reason)));
+    saved.districts.push({ ...saved.districts[0],id:'dist-other',name:'Other' });
+    const moved=previewLocationImport(csvRow({LocationId:baseLocation.id,DistrictId:'dist-other'}),saved);
+    assert.equal(moved.rows[0].action,'blocked'); assert(moved.rows[0].issues.some(i=>/cannot be changed through CSV/.test(i.reason)));
+  });
+  it('retains legacy Regional editing independently and keeps explicit managed vacancies in the plan',()=>{
+    const saved=managedImportSnapshot(); delete (saved.regions[0] as any).leadershipModelVersion;
+    saved.people.push({id:'other-rm',fullName:'Other Regional Manager',status:'Active',positionIds:['regional-manager']});
+    const legacy=previewLocationImport(csvRow({LocationId:baseLocation.id,RegionalManagerId:'other-rm'}),saved); assert.equal(legacy.rows[0].action,'update');
+    Object.assign(saved.regions[0], {leadershipModelVersion:1,regionalManagerId:null});
+    const vacant=buildLocationImportPlan(csvRow(managedAddition),saved,undefined,()=> 'new-vacant');
+    assert.equal(vacant.preview.rows[0].action,'add',JSON.stringify(vacant.preview.rows[0].issues)); assert.equal(vacant.writes[0].data.regionalManagerName,''); assert.equal(vacant.writes[0].data.regionalManagerId ?? null,null);
+  });
+  it('blocks future Region metadata or inactive canonical managers before confirmation',()=>{
+    const saved=managedImportSnapshot(); (saved.regions[0] as any).leadershipModelVersion=2;
+    assert.equal(previewLocationImport(csvRow(managedAddition),saved).rows[0].action,'blocked');
+    (saved.regions[0] as any).leadershipModelVersion=1; saved.people.find(p=>p.id==='rm')!.status='Inactive';
+    assert.equal(previewLocationImport(csvRow(managedAddition),saved).rows[0].action,'blocked');
+  });
+});
+
 function csvRow(overrides: Partial<Record<typeof LOCATION_IMPORT_COLUMNS[number], string>>) {
   return `${LOCATION_IMPORT_COLUMNS.join(',')}\r\n${values(overrides)}\r\n`;
 }

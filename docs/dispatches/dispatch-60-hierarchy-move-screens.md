@@ -21,4 +21,6 @@ Back to selection cancels/seals the prepared identity and strictly refreshes sav
 
 ## Remaining release work
 
+Review follow-up: multiline/tabbed reason entry is normalized to a single readable line before strict intent validation; other control characters get an actionable error. Recovery-only capability with no pending review now explicitly says no unfinished moves and that new moves are paused, instead of an empty form. The regression and actual component checks are recorded with the follow-up commit; no activation accompanies this fix.
+
 Align existing Store editor and registry metadata entry points so managed moves lead to the dedicated review rather than generic save rejection; complete linked type/retirement/delete/correction/import constraints and diagnostics. Finish wider native concurrency/alternate-writer and consumer compatibility acceptance, independent exact-source reviews, activation manifest and migration/rollback/release evidence. Production provider/browser acceptance remains required. Keep all activation flags off and avoid wholesale main deployment. No LP changes, restoration of business data, IAM/grants/tokens/credentials or expanded account authority.

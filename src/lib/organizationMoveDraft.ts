@@ -40,7 +40,8 @@ export function buildOrganizationMoveDraft(catalog: OrganizationCatalog, locatio
     if (source.regionId === destinationRegion.id) throw new Error('Choose a different Region.');
     expectedVersion = source.version!; targetId = destinationRegion.id; expectedTargetVersion = destinationRegion.version!;
   }
-  const reason = selection.reason.trim();
+  const reason = selection.reason.replace(/\r\n?|\n|\t/g, ' ').replace(/ {2,}/g, ' ').trim();
+  if (/[\u0000-\u001f\u007f]/.test(reason)) throw new Error('Remove unsupported characters from the reason before reviewing.');
   if (reason.length < 5 || reason.length > 500) throw new Error('Add a short reason between 5 and 500 characters.');
   return { schemaVersion: 1, kind: selection.kind, id: selection.id, expectedVersion, targetId, expectedTargetVersion, reason };
 }

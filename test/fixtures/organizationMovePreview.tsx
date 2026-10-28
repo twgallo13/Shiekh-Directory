@@ -20,7 +20,7 @@ window.fetch = async (url, init) => {
   const path = String(url); if (!path.startsWith('/api/')) return nativeFetch(url, init);
   if (path === '/api/auth/bootstrap') return failRefresh && commits > 0 ? reply({}, 503) : reply(bootstrap());
   const mode = path.split('/').at(-1), body = init?.body ? JSON.parse(String(init.body)) : undefined;
-  if (mode === 'capabilities') return reply({ schemaVersion: 1, catalogEnabled: true, newCommandsEnabled: true, recoveryEnabled: true });
+  if (mode === 'capabilities') { const recoveryOnly = new URLSearchParams(window.location.search).has('recoveryOnly'); return reply({ schemaVersion: 1, catalogEnabled: !recoveryOnly, newCommandsEnabled: !recoveryOnly, recoveryEnabled: true }); }
   if (mode === 'catalog') return reply(data.catalog);
   if (mode === 'operations') return reply({ schemaVersion: 1, complete: true, operations: [...ops.values()].filter(o => o.state === 'prepared').map(o => ({ operationId: o.operationId, state: o.state, updatedAt: o.updatedAt, expiresAt: o.expiresAt })) });
   const id = body.operationId, current = ops.get(id);

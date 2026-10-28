@@ -70,7 +70,7 @@ export function OrganizationMovesRuntime({ auth, refreshSavedDirectory, onClose,
   const review = () => { try { if (reapply) throw new Error('Review your retained selection against the refreshed records first.'); const draft = buildOrganizationMoveDraft(catalog!, locations!, selection); act(() => controller.current!.prepare(draft)); } catch (e) { setError((e as Error).message); } };
   const cancel = (op: string) => { setReapply(true); act(() => controller.current!.cancel(op)); };
   let actions: React.ReactNode = <Button disabled={busy} onClick={close}>Close</Button>;
-  if (editing) actions = <><Button disabled={busy} onClick={close}>Close</Button><Button variant="primary" disabled={!canEdit || reapply} onClick={review}>Review move<ArrowRight className="h-4 w-4" /></Button></>;
+  if (editing && catalog) actions = <><Button disabled={busy} onClick={close}>Close</Button><Button variant="primary" disabled={!canEdit || reapply} onClick={review}>Review move<ArrowRight className="h-4 w-4" /></Button></>;
   if (state?.phase === 'review') actions = <><Button disabled={busy} onClick={() => cancel(state.operationId!)}>Back to selection</Button><Button variant="primary" isLoading={busy} onClick={() => act(() => controller.current!.commit())}>Confirm move</Button></>;
   if (state?.phase === 'saved') actions = <Button variant="primary" onClick={onClose}>Done</Button>;
   const footer = <div className="flex flex-wrap justify-end gap-2">{actions}</div>;
@@ -84,6 +84,7 @@ export function OrganizationMovesRuntime({ auth, refreshSavedDirectory, onClose,
       {!state && !error && <p role="status" className="text-sm text-neutral-500">Loading saved organization…</p>}
       {state?.phase === 'blocked' && <Button onClick={() => setAttempt(a => a + 1)}>Reopen review</Button>}
       {state?.phase === 'disabled' && <p className="text-sm text-neutral-600">Organization moves are not available on this release.</p>}
+      {editing && !catalog && <p role="status" className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-600">There are no unfinished moves. New moves are currently paused.</p>}
       {state?.phase === 'saved' && <div role="status" className="flex gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><CheckCircle2 className="h-5 w-5 shrink-0" />The Directory now shows the confirmed hierarchy and inherited managers.</div>}
       {editing && catalog && <>
         {!locations && <div className="text-sm text-neutral-600"><p>Loading saved stores…</p>{error && <Button className="mt-2" onClick={() => setAttempt(a => a + 1)}>Reopen review</Button>}</div>}

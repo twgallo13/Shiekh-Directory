@@ -19,6 +19,7 @@ import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { readOrganizationGuardState, validateOrganizationLeadershipWrites } from './organizationLeadershipGuards';
 import { readPersonTransitionAuthority } from './personTransitionAuthority';
+import { normalizeLocationCreationCommand, assertLocationCreationActor, prepareLocationCreation, readLocationCreation, cancelLocationCreation, listLocationCreations, readLocationCreationCommit, finishLocationCreationCommit, locationCreationAuditId, type LocationCreationCommand } from './locationCreationRecovery';
 import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
 import { readOrganizationCatalog } from './organizationLeadershipCatalog';
 import { prepareOrganizationLeadership, commitOrganizationLeadership, readOrganizationLeadershipOperation, cancelOrganizationLeadershipOperation, listOrganizationLeadershipOperations } from './organizationLeadershipOperations';
@@ -178,8 +179,26 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   commitOperating(input: unknown, actor: Account) { return commitOperating(this.firestore, input, actor); }
   cancelOperating(input: unknown, actor: Account) { return cancelOperating(this.firestore, input, actor); }
 
-  async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account): Promise<DirectoryCommitResult> {
+  prepareLocationCreation(input: unknown, actor: Account) { return prepareLocationCreation(this.firestore, input, actor); }
+  readLocationCreation(input: unknown, actor: Account) { return readLocationCreation(this.firestore, input, actor); }
+  cancelLocationCreation(input: unknown, actor: Account) { return cancelLocationCreation(this.firestore, input, actor); }
+  listLocationCreations(actor: Account) { return listLocationCreations(this.firestore, actor); }
+  async commitLocationCreation(input: unknown, actor: Account) {
+    const command = normalizeLocationCreationCommand(input);
+    await this.commit([command.write], null, actor, command);
+    return readLocationCreation(this.firestore, { locationId: command.write.id }, actor);
+  }
+
+  async commit(writes: DirectoryWrite[], audit: DirectoryAudit | null, actor: Account, creationCommand?: LocationCreationCommand): Promise<DirectoryCommitResult> {
+    if (creationCommand) {
+      requireOrganizationLeadershipAdmission('command'); assertLocationCreationActor(actor);
+      creationCommand = normalizeLocationCreationCommand(creationCommand);
+      if (writes.length !== 1 || !isDeepStrictEqual(writes[0], creationCommand.write)) throw new DirectoryValidationError('Creation proof must match the exact single create-only write.');
+      writes = [structuredClone(creationCommand.write)];
+    }
     return this.firestore.runTransaction(async transaction => {
+      const creation = creationCommand ? await readLocationCreationCommit(this.firestore, transaction, creationCommand, actor) : null;
+      if (creation?.replayed) return { records: [], replayed: true };
       const snapshots = await Promise.all(writes.map(write => transaction.get(this.firestore.collection(write.collection).doc(write.id))));
       // The request itself is the durable receipt. Retained after review and never deleted.
       const submission = writes.length === 1 && writes[0].collection === 'requests' && writes[0].operation === 'set' && writes[0].data?.status === 'Pending';
@@ -232,6 +251,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       if (managedUnitEdit) await readPersonTransitionAuthority(this.firestore, transaction, actor);
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
+      if (creation && (validatedWrites.length !== 1 || validatedWrites[0].data?.version !== 1)) throw new DirectoryValidationError('Creation must save exactly the initial Location version.');
       const managedRename = validateOrganizationLeadershipWrites(validatedWrites, snapshots.map(snapshot => snapshot.data()), organizationState, people, locations);
       if (managedRename) await readPersonTransitionAuthority(this.firestore, transaction, actor);
       validatedWrites.forEach((write, index) => {
@@ -273,7 +293,10 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       }));
       const requestWrite = validatedWrites.find(write => write.collection === 'requests');
       const managedWrite = managedUnitEdit ? validatedWrites[0] : undefined;
-      const storedAudit = managedRename ? {
+      const storedAudit = creation ? {
+        action: 'Location Created', entityType: 'Location', entityId: validatedWrites[0].id, entityName: String(validatedWrites[0].data?.name || validatedWrites[0].id),
+        details: 'Server-confirmed create-only Location with actor-bound recovery. Staffing and app access were not granted.',
+      } : managedRename ? {
         action: 'Manager Name Updated', entityType: 'Person', entityId: managedRename.personId, entityName: managedRename.fullName,
         details: `Server-confirmed name-only update with ${managedRename.affectedLocations} matching Location display-name records. Staffing, contacts and access were preserved.`,
       } : managedWrite ? {
@@ -286,7 +309,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         details: `Server-confirmed ${String(requestWrite.data?.status)} correction for ${String(requestWrite.data?.targetName || requestWrite.data?.targetId || requestWrite.id)}.`,
       } : audit;
       if (storedAudit) {
-        const id = `aud-${Date.now()}-${randomUUID().slice(0, 8)}`;
+        const id = creation ? locationCreationAuditId(actor, validatedWrites[0].id) : `aud-${Date.now()}-${randomUUID().slice(0, 8)}`;
         const previousState = snapshots.length === 1 && snapshots[0].exists ? snapshots[0].data() : undefined;
         const nextState = validatedWrites.length === 1 && validatedWrites[0].operation === "set" ? { ...validatedWrites[0].data, id: validatedWrites[0].id } : undefined;
         const previousStates = snapshots.map((snapshot, index) => ({
@@ -313,9 +336,11 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           previousStates,
           newStates,
         };
-        if (managedRename || managedUnitEdit || writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
-        transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
+        if (creation || managedRename || managedUnitEdit || writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
+        if (creation) transaction.create(this.firestore.collection("audit_logs").doc(id), auditRecord);
+        else transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
       }
+      if (creation) finishLocationCreationCommit(transaction, creation, actor);
       return { records: committedRecords };
     });
   }

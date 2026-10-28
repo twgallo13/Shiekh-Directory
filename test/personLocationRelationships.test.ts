@@ -28,10 +28,20 @@ test('employment selectors include all non-retired company Location types and re
     onSupportedLocationIdsChange() {},
   }));
 
-  for (const text of ['Works at', 'Supports', 'Corporate Office', 'Distribution Center', 'Retail Store', 'Other Site', 'Retired Store', 'missing-location', 'Unavailable']) {
+  for (const text of ['Works at', 'Choose support locations', 'Corporate Office', 'Distribution Center', 'Retail Store', 'Other Site', 'Retired Store', 'missing-location', 'Unavailable']) {
     assert.ok(html.includes(text), text);
   }
   assert.equal(html.includes('value="retired-1" selected=""'), true);
+});
+
+test('a new company Person can leave workplace unassigned while Corporate remains available', () => {
+  const html = renderToStaticMarkup(React.createElement(PersonLocationRelationshipFields, {
+    locations: [{ id: 'hq', storeNumber: 'HQ', name: 'Corporate', type: 'Corporate Office', recordStatus: 'Active' }] as LocationRecord[],
+    supportedLocationIds: [], onPrimaryLocationChange() {}, onSupportedLocationIdsChange() {},
+  }));
+  assert.match(html, /<option value="" selected="">Unassigned<\/option>/);
+  assert.match(html, /<option value="hq">/);
+  assert.equal(/<select[^>]*\brequired(?:=|\s|>)/.test(html), false);
 });
 
 test('Person Locations groups one Location row with every employment and leadership label', () => {

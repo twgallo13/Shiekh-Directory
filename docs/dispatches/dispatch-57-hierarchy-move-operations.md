@@ -1,0 +1,23 @@
+# Dispatch57 — Actor-bound hierarchy move preparation, save and recovery
+
+Internal service implemented and locally accepted for review. No Store/HTTP adapter, browser workflow or production activation is added. Generic managed moves remain blocked.
+
+## Protocol and scope
+
+The service adapts the established stateful organization receipt/admission protocol into a separate move domain. Private `organization_move_operations` receipts and `organization_move_admission` actor barriers are distinct from leadership assignment operations. A server-written ten-minute preparation binds actor, normalized fixed move intent, exact reviewed before/after and complete source fingerprints. Same-ID exact preparation is idempotent; changed content is rejected. No caller patches or signing secret are accepted.
+
+Every preparation, save, status, cancellation and pending-list read requires current Active Company-wide System Administrator authority re-read in its SDK transaction. Trusted future adapters still must authenticate Firebase and apply disabled-by-default admission first. This module alone confers no caller/HTTP authority. Repository database rules remain default-deny for client SDKs; private collections are absent from generic Directory writes. No cloud rule, IAM, access grant or environment change is performed.
+
+Confirmation re-reads/recomputes the plan, requires the exact prepared review hash and matching reviewed dependencies, then reads complete changed documents. A strict server-only allowlist permits only District parent and Location hierarchy/inherited-name fields plus versions/timestamps; no creation/deletion, Person, roster, contact, workplace, account or other field changes. Native update-time/projection/version checks preserve unrelated SDK values. Existing per-document, business-record, audit, receipt and aggregate conservative byte bounds apply before writes. Atomic save writes business patches, one deterministic audit and a committed receipt together.
+
+Status returns compact actor-only outcome metadata. Immutable committed success can be recovered after expiry or later business changes, with fresh authority. Cancellation seals an unknown/uncommitted ID and cannot undo success. Expired prepared reviews remain listed until explicitly cancelled. A shared per-actor admission document serializes competing preparations at the 100-review recovery bound, including empty-query phantoms. No automatic retry of new browser intent is introduced.
+
+## Evidence
+
+- **49 affected ordinary cases passed:** ten new move-operation cases, six move-source, eleven move-planner and 22 existing shared source/operation cases. Coverage includes private/idempotent preparation, inheritance-only writes, District parent change, exact confirmation, changed source/eligibility/rosters, authority loss, cross-actor isolation, cancellation, expiry/backwards clocks, saved-record capacity/unsupported values and atomic rollback.
+- **7/7 actual SDK/local-emulator cases passed:** concurrent duplicate confirmation with one audit and native Timestamp/GeoPoint/reference preservation; parent/retail update with Corporate/tenures unchanged; membership/eligibility changes after preparation; prepare/cancel race; save/cancel race; competing preparations at 99→100 capacity with only one admitted; revoked authority and oversized preserved documents without domain writes. Capacity setup clones a genuinely prepared receipt with correctly recomputed actor-domain intent/review bindings, rather than malformed dummy operations.
+- Final TypeScript passed. Earlier whole-suite/build/source evidence is reused where unchanged; no new whole-suite/build/HTTP/provider/production acceptance is claimed. A test initially used a 500KB record below the conservative document limit; it was corrected to an actually oversized 900001-byte payload before passing. The loopback-only emulator and isolated named demo databases use synthetic records/authority; the emulator is stopped after acceptance.
+
+## Required continuation
+
+Gated Store/HTTP capability/catalog/prepare/commit/cancel/status/list adapters, strict browser DTOs, durable actor/operation marker and session/tab fencing, unknown-outcome recovery, retained drafts, Region/District-dependent move selection, exact affected-store before/after review and desktop/mobile acceptance. Then remaining activated correction/import, wider races, independent exact-source dependency reviews, opt-in consumer contract, migration/rollback and guarded production release checks. Preserve signing/runtime/security/access/activation gates; do not deploy main wholesale. No LP work, business data restoration, credential/token/grant or expanded authority changes.

@@ -9,7 +9,9 @@ import { LeadershipPlanError, normalizeOrganizationLeadershipIntent, type Organi
 import { readOrganizationLeadershipPlan } from './organizationLeadershipSource';
 
 export const ORGANIZATION_OPERATION_COLLECTION = 'organization_leadership_operations';
+export const ORGANIZATION_ADMISSION_COLLECTION = 'organization_leadership_admission';
 export const ORGANIZATION_REVIEW_TTL_MS = 10 * 60_000;
+export const ORGANIZATION_PENDING_LIMIT = 100;
 type Plan = Awaited<ReturnType<typeof readOrganizationLeadershipPlan>>['plan'];
 interface Receipt {
   schemaVersion: 1;
@@ -37,7 +39,7 @@ function canonical(value: unknown, depth = 0): string {
 const hash = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
 const conflict = (message: string): never => { throw new LeadershipPlanError('conflict', message); };
 const keyFor = (actorUid: string, operationId: string) => hash(['organization-leadership-v1', actorUid, operationId]);
-function marker(raw: unknown): { operationId: string; reviewHash?: string } {
+export function normalizeOrganizationOperationMarker(raw: unknown): { operationId: string; reviewHash?: string } {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(k => !['operationId', 'reviewHash'].includes(k))
     || !canonicalId((raw as any).operationId) || (Object.hasOwn(raw, 'reviewHash') && !/^[a-f0-9]{64}$/.test((raw as any).reviewHash))) throw new LeadershipPlanError('invalid_input', 'Invalid leadership operation marker.');
   return raw as { operationId: string; reviewHash?: string };
@@ -85,6 +87,30 @@ async function readReceipt(db: Firestore, tx: Transaction, actor: Account, opera
   return { reference, current: doc.exists ? receipt(doc.data(), actor, operationId) : undefined };
 }
 
+async function readOutstanding(db: Firestore, tx: Transaction, actor: Account) {
+  const rows = await tx.get(db.collection(ORGANIZATION_OPERATION_COLLECTION).where('actorUid', '==', actor.uid).where('state', '==', 'prepared')
+    .select('schemaVersion', 'actorUid', 'operationId', 'state', 'createdAt', 'expiresAt', 'updatedAt').limit(ORGANIZATION_PENDING_LIMIT + 1));
+  if (rows.size !== rows.docs.length || rows.size > ORGANIZATION_PENDING_LIMIT) throw new LeadershipPlanError('capacity', 'Outstanding reviews exceed recovery capacity.');
+  return rows.docs.map(doc => {
+    const r = doc.data();
+    if (!doc.exists || !doc.updateTime || !r || r.schemaVersion !== 1 || r.actorUid !== actor.uid || r.state !== 'prepared' || !canonicalId(r.operationId)
+      || doc.ref.path !== `${ORGANIZATION_OPERATION_COLLECTION}/${keyFor(actor.uid, r.operationId)}`
+      || ![r.createdAt, r.expiresAt, r.updatedAt].every(Number.isSafeInteger) || r.createdAt < 0 || r.expiresAt !== r.createdAt + ORGANIZATION_REVIEW_TTL_MS || r.updatedAt < r.createdAt
+      || !Number.isFinite(new Date(r.expiresAt).getTime())) throw new Error('Invalid outstanding leadership review metadata.');
+    return { operationId: r.operationId as string, state: 'prepared' as const, updatedAt: new Date(r.updatedAt).toISOString(), expiresAt: new Date(r.expiresAt).toISOString() };
+  }).sort((a, b) => a.operationId.localeCompare(b.operationId));
+}
+
+/** Private actor-only recovery list includes expired prepared reviews so they can be cancelled.
+ * A preview has no business effect; cancellation retains its receipt and never undoes a commit. */
+export async function listOrganizationLeadershipOperations(db: Firestore, actor: Account) {
+  assertPersonTransitionActor(actor);
+  return db.runTransaction(async tx => {
+    await readPersonTransitionAuthority(db, tx, actor);
+    return { schemaVersion: 1 as const, complete: true as const, operations: await readOutstanding(db, tx, actor) };
+  }, { readOnly: true });
+}
+
 /** Unwired internal service. Trusted HTTP callers MUST authenticate Firebase first. Live authority is
  * rechecked in every transaction. A private server-written preparation binds actor + exact review;
  * no signing secret, caller-provided patches or browser completeness claims are accepted.
@@ -104,12 +130,20 @@ export async function prepareOrganizationLeadership(db: Firestore, raw: unknown,
       }
       return prepared(current);
     }
+    // A shared actor document serializes distinct concurrent preparations, including empty-query
+    // phantoms. Query size checks alone are not the cross-request admission barrier.
+    const admission = db.collection(ORGANIZATION_ADMISSION_COLLECTION).doc(hash(['organization-leadership-admission-v1', actor.uid]));
+    const admissionDoc = await tx.get(admission), admissionData = admissionDoc.data();
+    if (admissionDoc.ref.path !== admission.path || admissionDoc.exists && (!admissionDoc.updateTime || admissionData?.schemaVersion !== 1 || admissionData.actorUid !== actor.uid || !Number.isSafeInteger(admissionData?.version) || admissionData.version < 1 || admissionData.version >= Number.MAX_SAFE_INTEGER)) throw new Error('Invalid leadership admission source.');
+    if ((await readOutstanding(db, tx, actor)).length >= ORGANIZATION_PENDING_LIMIT) throw new LeadershipPlanError('capacity', 'Cancel an outstanding review before preparing another.');
     const { plan } = await readOrganizationLeadershipPlan(db, tx, intent, new Date(started).toISOString());
     const now = instant(clock);
     if (now < started || now >= started + ORGANIZATION_REVIEW_TTL_MS) conflict('The review expired while loading. Nothing was prepared.');
     const r: Receipt = { schemaVersion: 1, actorUid: actor.uid, operationId: intent.operationId, state: 'prepared', createdAt: started, expiresAt: started + ORGANIZATION_REVIEW_TTL_MS, updatedAt: started,
       intent, intentHash, review: plan.review, preconditions: plan.preconditions, reviewHash: hash([intentHash, plan.review, plan.preconditions]) };
     if (savedBytes(r) >= 900_000) throw new LeadershipPlanError('capacity', 'Leadership review receipt exceeds capacity.');
+    if (admissionDoc.exists) tx.update(admission, { version: admissionData!.version + 1 }, { lastUpdateTime: admissionDoc.updateTime! });
+    else tx.create(admission, { schemaVersion: 1, actorUid: actor.uid, version: 1 });
     tx.create(reference, r);
     return prepared(r);
   });
@@ -117,7 +151,7 @@ export async function prepareOrganizationLeadership(db: Firestore, raw: unknown,
 
 export async function commitOrganizationLeadership(db: Firestore, raw: unknown, actor: Account, clock = () => new Date()) {
   assertPersonTransitionActor(actor);
-  const command = marker(raw);
+  const command = normalizeOrganizationOperationMarker(raw);
   if (!command.reviewHash) throw new LeadershipPlanError('invalid_input', 'Confirm the exact prepared review.');
   return db.runTransaction(async tx => {
     const { reference, current } = await readReceipt(db, tx, actor, command.operationId);
@@ -171,7 +205,7 @@ export async function commitOrganizationLeadership(db: Firestore, raw: unknown, 
 
 export async function readOrganizationLeadershipOperation(db: Firestore, raw: unknown, actor: Account) {
   assertPersonTransitionActor(actor);
-  const command = marker(raw);
+  const command = normalizeOrganizationOperationMarker(raw);
   return db.runTransaction(async tx => {
     const { current } = await readReceipt(db, tx, actor, command.operationId);
     return current ? outcome(current) : { schemaVersion: 1 as const, operationId: command.operationId, state: 'missing' as const };
@@ -180,7 +214,7 @@ export async function readOrganizationLeadershipOperation(db: Firestore, raw: un
 
 export async function cancelOrganizationLeadershipOperation(db: Firestore, raw: unknown, actor: Account, clock = () => new Date()) {
   assertPersonTransitionActor(actor);
-  const command = marker(raw);
+  const command = normalizeOrganizationOperationMarker(raw);
   return db.runTransaction(async tx => {
     const { reference, current } = await readReceipt(db, tx, actor, command.operationId);
     if (current && current.state !== 'prepared') return outcome(current);

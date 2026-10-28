@@ -12,6 +12,7 @@ import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts'
 import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
 import { requiresManagedHierarchyReview } from '../../lib/managedHierarchyEditing';
+import { prepareNewLocationLeadership } from '../../lib/newLocationLeadership';
 import { hasDistrictLeadership, inheritDistrictLeader, isDistrictLeadershipMember } from '../../lib/districtLeadership';
 import { applyLocationDistrictSelection, applyLocationRegionSelection, canSelectNotApplicableHierarchy, isRetailHierarchyType, resolveLocationHierarchy } from '../../lib/hierarchyResolution';
 import { locationInboxConflictDigest, normalizeLocationInboxEmail, suggestedLocationInboxEmail, type LocationInboxConflictMember } from '../../lib/locationInboxEmail';
@@ -133,7 +134,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   // Consult the saved hierarchy, not an editable draft that could remove its own protection.
   const savedDistrict = districts.find(d => d.id === baselineRef.current?.districtId);
   const savedRegion = regions.find(r => r.id === baselineRef.current?.regionId);
-  const managedRegion = !isCreating && requiresManagedHierarchyReview(savedRegion);
+  const managedRegion = isRetailHierarchyType(isCreating ? formData?.type : baselineRef.current?.type) && requiresManagedHierarchyReview(isCreating ? currentRegion : savedRegion);
   const managedHierarchy = !isCreating && (requiresManagedHierarchyReview(savedDistrict) || managedRegion);
   const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
   const normalizedInbox = formData?.locationInboxEmail == null ? null : normalizeLocationInboxEmail(formData.locationInboxEmail);
@@ -195,7 +196,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
       holidayHours: (formData.holidayHours || []).filter(h => h.holidayName.trim().length > 0 || h.date.trim().length > 0)
     };
     if (!isCreating) sanitizedData = preserveUnchangedStaffing(formData, baseline, sanitizedData);
-    sanitizedData = inheritDistrictLeader(sanitizedData, districts, people);
+    try { sanitizedData = isCreating ? prepareNewLocationLeadership(sanitizedData, districts, regions, people) : inheritDistrictLeader(sanitizedData, districts, people); }
+    catch (error) { setSaveError(error instanceof Error ? error.message : 'Review management setup before creating this store.'); return; }
     if (isCreating) sanitizedData.id = createId;
     const normalizedAddress = normalizeAddressValues(sanitizedData as unknown as Record<string, unknown>, isCreating ? undefined : baseline as unknown as Record<string, unknown>);
     if (normalizedAddress.issues.length) { setSaveError(normalizedAddress.issues.map(issue => issue.message).join(' ')); return; }
@@ -456,7 +458,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const currentDmId = districtOwnsDm ? leadershipDistrict?.districtManagerId || '' : formData.districtManagerId || '';
   const unresolvedLegacyDmName = !districtOwnsDm && !currentDmId ? formData.districtManagerName?.trim() : '';
   const currentSmId = formData.storeManagerId || '';
-  const currentRmId = formData.regionalManagerId || '';
+  const currentRmId = isCreating && managedRegion ? String((currentRegion as unknown as Record<string, unknown>)?.regionalManagerId || '') : formData.regionalManagerId || '';
   const currentStoreManager = people.find(person => person.id === currentSmId);
   const activeHoursTemplate = hoursTemplates.find(template => template.id === formData.hoursTemplateId);
   const recommendedHoursTemplate = hoursTemplates.find(template =>

@@ -14,6 +14,7 @@
     "test:organization-unit-editing-emulator": "node --import tsx --test test/organizationUnitEditing.emulator.ts",
     "test:managed-person-rename-emulator": "node --import tsx --test test/managedPersonRename.emulator.ts",
     "test:organization-staff-journeys-emulator": "node --import tsx --test test/organizationStaffJourneys.emulator.ts",
+    "test:managed-store-creation-emulator": "node --import tsx --test test/managedStoreCreation.emulator.ts",
     "test:organization-move-source-emulator": "node --import tsx --test test/organizationMoveSource.emulator.ts",
     "test:organization-move-emulator": "node --import tsx --test test/organizationMoveAtomic.emulator.ts",
     "test:organization-move-api-emulator": "node --import tsx --test test/organizationMoveApi.emulator.ts",

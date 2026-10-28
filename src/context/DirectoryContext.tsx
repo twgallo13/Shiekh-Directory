@@ -22,6 +22,7 @@ import type { DirectorySeed } from '../lib/directorySeed';
 import type { LocationInboxAcknowledgment } from '../lib/locationInboxEmail';
 import { canonicalDirectoryBootstrap } from '../lib/canonicalDirectoryBootstrap';
 import { validPersonCommit } from '../lib/personCommit';
+import { validLocationCreationCommit } from '../lib/locationCreationCommit';
 import { DirectoryCommitError } from '../lib/directoryClient';
 import { applyCorrection, correctionReview } from '../lib/correctionRequest';
 import { buildRegistryWrite, commitDirectory, fetchHierarchyRegistry, type DirectoryAudit, type DirectoryWrite, type DirectoryCommitResult, type HierarchyRegistrySnapshot, type RegistrySaveIntent } from '../lib/directoryClient';
@@ -32,6 +33,7 @@ import { resolvePersonPhone, serializePersonUpdate } from '../lib/personContacts
 import { PERSON_LEADERSHIP_NAME_FIELDS, reconcileLocationLeadershipCopy } from '../lib/personLocationRelationships';
 import { serializeLocationReferenceClears } from '../lib/hierarchyAssignmentContract';
 import { districtLeadershipWrites, inheritDistrictLeader, type DistrictLeadershipPreview } from '../lib/districtLeadership';
+import { prepareNewLocationLeadership } from '../lib/newLocationLeadership';
 import { cancelDirectorySubmission } from '../lib/directoryClient';
 import { fetchOperatingPreview, saveOperatingCommand, cancelOperatingCommand } from '../lib/operatingClient';
 import type { OperatingCommand } from '../../server/operatingCommand';
@@ -73,7 +75,7 @@ interface DirectoryContextType {
   clearPersistenceError: () => void;
   reconcileConfirmedLocations: (records: LocationRecord[]) => void;
   updateLocation: (id: string, updates: Partial<LocationRecord>) => void;
-  createLocation: (location: Omit<LocationRecord, 'id'>) => LocationRecord;
+  createLocation: (location: Omit<LocationRecord, 'id'>) => Promise<LocationRecord>;
   deleteLocation: (id: string) => void;
   retireLocation: (id: string) => void;
   reactivateLocation: (id: string) => void;
@@ -265,6 +267,7 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
     setPersistenceError(null);
     const operation = commitDirectory(user, writes, audit).then(result => {
       if (writes.some(write => write.collection === 'people') && !validPersonCommit(result, writes)) throw new DirectoryCommitError('The Person save response was incomplete or invalid. Check the saved record before starting another change.');
+      if (writes.length === 1 && writes[0].collection === 'locations' && writes[0].operation === 'set' && writes[0].expectedVersion === null && !validLocationCreationCommit(result, writes[0])) throw new DirectoryCommitError('The new store save could not be confirmed. Check saved stores before creating another.');
       reconcileCommittedRecords(result);
       return result;
     });
@@ -347,11 +350,11 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
 
   const saveLocationRecord = async (location: LocationRecord, create: boolean, expectedCustomMetadata: Record<string, CustomFieldValue>, expectedVersion?: number, locationInboxAcknowledgment?: LocationInboxAcknowledgment) => {
     const timestamp = new Date().toISOString();
-    const saved = { ...inheritDistrictLeader(location, districts, people), updatedAt: timestamp, ...(create ? { id: location.id, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
+    const saved = { ...(create ? prepareNewLocationLeadership(location, districts, regions, people) : inheritDistrictLeader(location, districts, people)), updatedAt: timestamp, ...(create ? { id: location.id, createdAt: timestamp, lastVerifiedAt: timestamp, lastVerifiedBy: currentUser.name } : {}) };
     const previous = locations.find(record => record.id === saved.id);
     const serialized = serializeLocationReferenceClears(saved, previous);
     const action = create ? 'Location Created' : 'Location Updated';
-    await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: serialized, expectedCustomMetadata, ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}), ...(!create ? { expectedVersion: expectedVersion ?? expectedVersionOf(previous) } : {}) }], {
+    await persist([{ collection: 'locations', id: saved.id, operation: 'set', data: serialized, expectedCustomMetadata, ...(locationInboxAcknowledgment ? { locationInboxAcknowledgment } : {}), expectedVersion: create ? null : expectedVersion ?? expectedVersionOf(previous) }], {
       action, entityType: 'Location', entityId: saved.id, entityName: `Store #${saved.storeNumber}`, details: 'Saved location record and custom metadata.',
     });
     addAuditLog(action, 'Location', saved.id, `Store #${saved.storeNumber}`, 'Saved location record and custom metadata.', previous, saved);
@@ -368,19 +371,18 @@ export const DirectoryProvider: React.FC<{ children: React.ReactNode; seed: Dire
       .catch(() => setLocations(previous => previous.map(location => location.id === id ? current : location)));
   };
 
-  const createLocation = (newLocData: Omit<LocationRecord, 'id'>): LocationRecord => {
-    const newLoc: LocationRecord = inheritDistrictLeader({
+  const createLocation = async (newLocData: Omit<LocationRecord, 'id'>): Promise<LocationRecord> => {
+    const newLoc: LocationRecord = prepareNewLocationLeadership({
       ...newLocData,
-      id: `loc-${Date.now()}`,
+      id: `loc-${crypto.randomUUID()}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastVerifiedAt: new Date().toISOString(),
       lastVerifiedBy: currentUser.name,
       recordStatus: newLocData.recordStatus || 'Active'
-    }, districts, people);
-    setLocations(prev => [...prev, newLoc]);
+    }, districts, regions, people);
+    await persist([{ collection: 'locations', id: newLoc.id, operation: 'set', data: newLoc as unknown as Record<string, unknown>, expectedVersion: null }], { action: 'Location Created', entityType: 'Location', entityId: newLoc.id, entityName: `Store #${newLoc.storeNumber}`, details: `Created new location: ${newLoc.name}` });
     addAuditLog('Location Created', 'Location', newLoc.id, `Store #${newLoc.storeNumber}`, `Created new location: ${newLoc.name}`, undefined, newLoc);
-    persist([{ collection: 'locations', id: newLoc.id, operation: 'set', data: newLoc as unknown as Record<string, unknown> }], { action: 'Location Created', entityType: 'Location', entityId: newLoc.id, entityName: `Store #${newLoc.storeNumber}`, details: `Created new location: ${newLoc.name}` });
     return newLoc;
   };
 

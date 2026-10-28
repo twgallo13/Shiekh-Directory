@@ -22,6 +22,7 @@ import { readPersonTransitionAuthority } from './personTransitionAuthority';
 import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
 import { readOrganizationCatalog } from './organizationLeadershipCatalog';
 import { prepareOrganizationLeadership, commitOrganizationLeadership, readOrganizationLeadershipOperation, cancelOrganizationLeadershipOperation, listOrganizationLeadershipOperations } from './organizationLeadershipOperations';
+import { prepareOrganizationMove, commitOrganizationMove, readOrganizationMoveOperation, cancelOrganizationMoveOperation, listOrganizationMoveOperations } from './organizationMoveOperations';
 import { previewOperating, commitOperating, cancelOperating, type OperatingPreview } from './firestoreOperating';
 import { previewPersonTransition } from './personTransitionPreview';
 import { previewPersonTransitionCommand } from './personTransitionCommandPreview';
@@ -100,6 +101,13 @@ export interface DirectoryWriter {
   readOrganizationLeadershipOperation?(input: unknown, actor: Account): ReturnType<typeof readOrganizationLeadershipOperation>;
   cancelOrganizationLeadershipOperation?(input: unknown, actor: Account): ReturnType<typeof cancelOrganizationLeadershipOperation>;
   listOrganizationLeadershipOperations?(actor: Account): ReturnType<typeof listOrganizationLeadershipOperations>;
+  organizationMoveCapabilities?(): ReturnType<typeof organizationLeadershipCapabilities>;
+  readOrganizationMoveCatalog?(actor: Account): ReturnType<typeof readOrganizationCatalog>;
+  prepareOrganizationMove?(input: unknown, actor: Account): ReturnType<typeof prepareOrganizationMove>;
+  commitOrganizationMove?(input: unknown, actor: Account): ReturnType<typeof commitOrganizationMove>;
+  readOrganizationMoveOperation?(input: unknown, actor: Account): ReturnType<typeof readOrganizationMoveOperation>;
+  cancelOrganizationMoveOperation?(input: unknown, actor: Account): ReturnType<typeof cancelOrganizationMoveOperation>;
+  listOrganizationMoveOperations?(actor: Account): ReturnType<typeof listOrganizationMoveOperations>;
   personTransitionCapabilities?(): ReturnType<typeof personTransitionCapabilities>;
   preparePersonTransitionCommand?(command: unknown, actor: Account): ReturnType<typeof preparePersonTransitionRecovery>;
   commitPersonTransitionCommand?(command: unknown, actor: Account): ReturnType<typeof commitPersonTransitionAtomic>;
@@ -126,6 +134,13 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   readOrganizationLeadershipOperation(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return readOrganizationLeadershipOperation(this.firestore, input, actor); }
   cancelOrganizationLeadershipOperation(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return cancelOrganizationLeadershipOperation(this.firestore, input, actor); }
   listOrganizationLeadershipOperations(actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return listOrganizationLeadershipOperations(this.firestore, actor); }
+  organizationMoveCapabilities() { return organizationLeadershipCapabilities(); }
+  readOrganizationMoveCatalog(actor: Account) { requireOrganizationLeadershipAdmission('catalog'); return readOrganizationCatalog(this.firestore, actor); }
+  prepareOrganizationMove(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('command'); return prepareOrganizationMove(this.firestore, input, actor); }
+  commitOrganizationMove(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('command'); return commitOrganizationMove(this.firestore, input, actor); }
+  readOrganizationMoveOperation(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return readOrganizationMoveOperation(this.firestore, input, actor); }
+  cancelOrganizationMoveOperation(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return cancelOrganizationMoveOperation(this.firestore, input, actor); }
+  listOrganizationMoveOperations(actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return listOrganizationMoveOperations(this.firestore, actor); }
 
   personTransitionCapabilities() { return personTransitionCapabilities(); }
   preparePersonTransitionCommand(command: unknown, actor: Account) { requirePersonTransitionAdmission('command'); return preparePersonTransitionRecovery(this.firestore, command, actor, loadPersonTransitionReviewSigner()); }

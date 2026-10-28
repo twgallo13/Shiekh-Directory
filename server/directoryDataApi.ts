@@ -5,6 +5,7 @@ import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type
 import type { LocationInboxAcknowledgment } from "../src/lib/locationInboxEmail";
 import { createPersonTransitionCommandPreviewRouter } from './personTransitionCommandApi';
 import { createOrganizationLeadershipRouter } from './organizationLeadershipApi';
+import { createOrganizationMoveRouter } from './organizationMoveApi';
 
 const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   locations: ["System Administrator", "Directory Data Steward", "Editor"],
@@ -31,6 +32,7 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
   router.use(rateLimit({ limit: 120, windowMs: 60_000, standardHeaders: "draft-8", legacyHeaders: false }));
   router.use('/person-transitions', createPersonTransitionCommandPreviewRouter(authenticate, store));
   router.use('/organization-leadership', createOrganizationLeadershipRouter(authenticate, store));
+  router.use('/organization-moves', createOrganizationMoveRouter(authenticate, store));
   // Scoped to Directory commits, not a global increase for authentication or other APIs.
   router.use((request, response, next) => json({ limit: '1mb' })(request, response, (error?: unknown) => {
     if (error) {

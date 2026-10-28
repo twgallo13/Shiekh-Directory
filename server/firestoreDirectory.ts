@@ -18,6 +18,7 @@ import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { readOrganizationGuardState, validateOrganizationLeadershipWrites } from './organizationLeadershipGuards';
+import { readPersonTransitionAuthority } from './personTransitionAuthority';
 import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
 import { readOrganizationCatalog } from './organizationLeadershipCatalog';
 import { prepareOrganizationLeadership, commitOrganizationLeadership, readOrganizationLeadershipOperation, cancelOrganizationLeadershipOperation, listOrganizationLeadershipOperations } from './organizationLeadershipOperations';
@@ -211,6 +212,9 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         ...(hierarchySnapshot?.[0].docs.map(document => ({ unitType: 'region' as const, id: document.id, data: document.data() })) || []),
         ...(hierarchySnapshot?.[1].docs.map(document => ({ unitType: 'district' as const, id: document.id, data: document.data() })) || []),
       ]);
+      const managedUnitEdit = writes.some(write => (write.collection === 'regions' || write.collection === 'districts')
+        && organizationState.units.some(unit => unit.unitType === (write.collection === 'regions' ? 'region' : 'district') && unit.id === write.id && unit.data.leadershipModelVersion === 1));
+      if (managedUnitEdit) await readPersonTransitionAuthority(this.firestore, transaction, actor);
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
       validateOrganizationLeadershipWrites(validatedWrites, snapshots.map(snapshot => snapshot.data()), organizationState, people);
@@ -252,7 +256,12 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         data: write.operation === "set" ? { ...write.data, id: write.id } : null,
       }));
       const requestWrite = validatedWrites.find(write => write.collection === 'requests');
-      const storedAudit = requestWrite ? {
+      const managedWrite = managedUnitEdit ? validatedWrites[0] : undefined;
+      const storedAudit = managedWrite ? {
+        action: 'Hierarchy Registry Updated', entityType: managedWrite.collection === 'regions' ? 'Region' : 'District',
+        entityId: managedWrite.id, entityName: String(managedWrite.data?.name || managedWrite.id),
+        details: 'Server-confirmed managed unit name/status update. IDs, hierarchy membership and leadership responsibilities were preserved.',
+      } : requestWrite ? {
         action: requestWrite.data?.status === 'Approved' ? 'Request Approved' : requestWrite.data?.status === 'Rejected' ? 'Request Rejected' : 'Request Submitted',
         entityType: 'Request', entityId: requestWrite.id, entityName: String(requestWrite.data?.changeType || 'Correction'),
         details: `Server-confirmed ${String(requestWrite.data?.status)} correction for ${String(requestWrite.data?.targetName || requestWrite.data?.targetId || requestWrite.id)}.`,
@@ -285,7 +294,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           previousStates,
           newStates,
         };
-        if (writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
+        if (managedUnitEdit || writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
         transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
       }
       return { records: committedRecords };
@@ -551,7 +560,10 @@ export function validateMetadataWrites(
     if (write.collection === 'regions' || write.collection === 'districts') {
       if (actor.role !== 'System Administrator') throw new DirectoryWriteDenied('Only system administrators can manage hierarchy registry records.');
       if (write.operation !== 'set') throw new DirectoryValidationError('Retire hierarchy registry records instead of deleting them.');
-      const data: Record<string, unknown> = { ...write.data, version: ((current?.version as number) || 0) + 1, updatedAt: new Date().toISOString() };
+      const managed = current?.leadershipModelVersion === 1;
+      if (managed && (actor.status !== 'Active' || actor.accessScope !== 'Company-wide')) throw new DirectoryWriteDenied('Current Company-wide Active administrator is required.');
+      if (managed && (!Number.isSafeInteger(current.version) || Number(current.version) < 1 || Number(current.version) >= Number.MAX_SAFE_INTEGER)) throw new DirectoryConflict('Resolve the managed unit version before saving.');
+      const data: Record<string, unknown> = { ...(managed ? current : {}), ...write.data, version: ((current?.version as number) || 0) + 1, updatedAt: new Date().toISOString() };
       if (Object.hasOwn(data, 'id') && data.id !== write.id) throw new DirectoryValidationError('Hierarchy registry IDs cannot be changed.');
       data.id = write.id;
       if (typeof data.name !== 'string' || !data.name.trim()) throw new DirectoryValidationError('Hierarchy registry records require a name.');

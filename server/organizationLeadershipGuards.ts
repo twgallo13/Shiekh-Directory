@@ -14,6 +14,13 @@ const deny = (message: string): never => { throw new DirectoryValidationError(me
 const modelFields = ['leadershipModelVersion', 'leadershipVersion'];
 const pointer = (unit: LeadershipUnitSource) => unit.unitType === 'district' ? 'districtManagerId' : 'regionalManagerId';
 const activated = (unit: LeadershipUnitSource) => Object.hasOwn(unit.data, 'leadershipModelVersion');
+/** Names and empty-unit status are ordinary registry metadata, never staffing/parent authority.
+ * Normalization preserves server fields first; this final comparison rejects every other change. */
+export function isManagedUnitMetadataEdit(before: Record<string, unknown>, after: Record<string, unknown>) {
+  const immutable = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([key]) => !['id', 'name', 'status', 'version', 'updatedAt'].includes(key)));
+  return before.leadershipModelVersion === 1 && typeof after.name === 'string' && after.name.trim().length > 0 && after.name.length <= 1000 && !/[\u0000-\u001f\u007f]/.test(after.name)
+    && ['Active', 'Retired'].includes(after.status as string) && (before.name !== after.name || before.status !== after.status) && isDeepStrictEqual(immutable(before), immutable(after));
+}
 
 /** Reuse complete hierarchy already read by the caller's transaction. Legacy-only saves add no query.
  * Once any unit is activated, read complete bounded tenure identities, not contact/person details.
@@ -63,7 +70,8 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
   if (byKey.size !== state.units.length || new Set(state.assignments.map(a => a.id)).size !== state.assignments.length) deny('Duplicate leadership source identity.');
   for (const unit of controlled) {
     const rows = active.filter(a => a.unitType === unit.unitType && a.unitId === unit.id), primary = unit.data[pointer(unit)];
-    if (unit.data.status !== 'Active' || unit.unitType === 'district' && !state.units.some(r => r.unitType === 'region' && r.id === unit.data.regionId && r.data.status === 'Active')
+    if (!['Active', 'Retired'].includes(unit.data.status as string) || unit.data.status === 'Retired' && (rows.length > 0 || primary !== null)
+      || unit.unitType === 'district' && !state.units.some(r => r.unitType === 'region' && r.id === unit.data.regionId && (unit.data.status === 'Retired' || r.data.status === 'Active'))
       || unit.data.leadershipModelVersion !== 1 || !Number.isSafeInteger(unit.data.leadershipVersion) || Number(unit.data.leadershipVersion) < 0
       || rows.length > 25 || new Set(rows.map(a => a.personId)).size !== rows.length
       || (rows.length ? !canonicalId(primary) || !rows.some(a => a.personId === primary) : primary !== null)) deny('Resolve the activated leadership roster before linked saves.');
@@ -75,10 +83,13 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
     const before = previous[index], after = write.data;
     if (write.collection === 'districts' || write.collection === 'regions') {
       const type = write.collection === 'districts' ? 'district' : 'region', current = byKey.get(leadershipUnitKey(type, write.id));
-      if (current && activated(current)) deny('Use the reviewed organization workflow to edit or retire this activated unit.');
-      if (after && modelFields.some(field => Object.hasOwn(after, field))) deny('Leadership model/version fields are server-command owned.');
+      if (current && activated(current)) {
+        if (writes.length !== 1 || write.operation !== 'set' || !before || !after || !isManagedUnitMetadataEdit(before, after)) deny('Only a managed unit name or empty-unit status can be edited here. Use the organization workflow for leadership or parent changes.');
+        if (after.status === 'Retired' && active.some(a => a.unitType === type && a.unitId === write.id)) deny('End or reassign every Primary/Additional responsibility before retiring this unit.');
+        if (type === 'district' && after.status === 'Active' && !state.units.some(u => u.unitType === 'region' && u.id === after.regionId && u.data.status === 'Active')) deny('Active Districts require an active parent Region.');
+      } else if (after && modelFields.some(field => Object.hasOwn(after, field))) deny('Leadership model/version fields are server-command owned.');
       if (type === 'region' && after && Object.hasOwn(after, 'regionalManagerId') && !isDeepStrictEqual(after.regionalManagerId, before?.regionalManagerId)) deny('Regional Manager ownership requires the reviewed organization workflow.');
-      if (type === 'region' && controlled.some(u => u.unitType === 'district' && u.data.regionId === write.id)
+      if (type === 'region' && controlled.some(u => u.unitType === 'district' && u.data.regionId === write.id && u.data.status === 'Active')
         && (write.operation === 'delete' || after?.status !== 'Active')) deny('An activated District requires its Active parent Region.');
       if (type === 'district' && before && !isDeepStrictEqual(after?.regionId, before.regionId) && (managed('region', before.regionId) || managed('region', after?.regionId))) deny('Review District moves between managed Regions in the organization workflow.');
     }

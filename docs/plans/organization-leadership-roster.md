@@ -61,6 +61,8 @@ The assigned-manager name gap now has a bounded implementation: [Dispatch53](../
 
 The integrated SDK journey in [Dispatch54](../dispatches/dispatch-54-staged-staff-acceptance.md) passed for concurrent store/Additional DM/Regional Primary responsibility, explicit handovers and vacancy, required-position removal, separate account review and eventual inactivation with preserved history/IDs. This narrows the staged server acceptance gap; it is not a browser/provider release acceptance or proof that all transitions/moves are delivered.
 
+Managed membership move planning is now detached and tested: [Dispatch55](../dispatches/dispatch-55-hierarchy-move-planner.md). It plans store-to-District and District-to-Region changes with inherited canonical leadership and preserved store staffing/rosters. It is not connected to a writer or UI; managed generic moves remain blocked. Complete the source/transaction/review/recovery adapters and UX before enabling this capability. Initial support requires Active managed units and resolved source, with explicit legacy/unresolved repair kept separate.
+
 ### 4. Versioned consumer contract
 
 Opt-in organization units/assignments/location hierarchy from one pinned snapshot; existing v3 stays Primary-only. Eligibility discovery is separate from assigned leadership. Any new scopes/contacts require a concrete reviewed policy; do not widen existing grants. Consumer access and sales aggregation remain consumer-owned: aggregate one store/transaction before joining a multi-manager roster. Update OpenAPI/guides/Admin links and migration examples together.

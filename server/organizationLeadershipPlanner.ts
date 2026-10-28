@@ -111,6 +111,7 @@ function validateSource(snapshot: OrganizationLeadershipSnapshot, now: string) {
  * Loader completeness and every precondition must be rechecked by a future transactional writer.
  * Never expose raw patches/preconditions to consumers or treat this plan as a commit capability.
  */
+export { validateSource as validateOrganizationSource };
 export function planOrganizationLeadership(raw: unknown, snapshot: OrganizationLeadershipSnapshot, now: string) {
   const intent = normalizeOrganizationLeadershipIntent(raw);
   if (!utcInstant(now)) fail('invalid_input', 'Use an authoritative UTC commit time.');

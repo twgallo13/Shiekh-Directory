@@ -13,6 +13,8 @@ import { listedPosition, personPositions, PERSON_POSITIONS, personPositionLabel 
 import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
 import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { personLifecycle } from '../../lib/personLifecycle';
+import { useOrganizationCapabilities } from './useOrganizationCapabilities';
+import { OrganizationResponsibilities } from './OrganizationResponsibilities';
 
 interface PeopleViewProps {
   onSelectPerson: (person: Person) => void;
@@ -24,6 +26,8 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [isAddingPerson, setIsAddingPerson] = useState(false);
+  const [onboardingPerson, setOnboardingPerson] = useState<Person | null>(null);
+  const organization = useOrganizationCapabilities();
   const editorClose = useRef<(() => void) | null>(null);
   const [editorFooter, setEditorFooter] = useState<HTMLDivElement | null>(null);
 
@@ -158,11 +162,15 @@ export const PeopleView: React.FC<PeopleViewProps> = ({ onSelectPerson }) => {
           submitLabel="Save Record"
           onCancel={() => setIsAddingPerson(false)}
           onSubmit={async updates => {
-            await addPerson(updates);
+            const created = await addPerson(updates);
             setIsAddingPerson(false);
+            if (organization?.newCommandsEnabled && personPositions(created).source === 'controlled' && personPositions(created).ids.some(p => p === 'district-manager' || p === 'regional-manager')) setOnboardingPerson(created);
           }}
         />
       </Modal>
+      {onboardingPerson && <Modal isOpen title={onboardingPerson.fullName} description="Complete management setup" size="lg" footer={<div ref={setEditorFooter} className="w-full" />} onClose={() => editorClose.current?.()}>
+        <OrganizationResponsibilities personId={onboardingPerson.id} profileSaved registerClose={close => { editorClose.current = close; }} footerTarget={editorFooter} onClose={() => setOnboardingPerson(null)} />
+      </Modal>}
     </div>
   );
 };

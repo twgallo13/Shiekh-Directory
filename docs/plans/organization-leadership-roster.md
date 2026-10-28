@@ -51,6 +51,8 @@ The bounded source adapter and stateful preparation/commit/status/cancellation s
 
 ### 3. UX and reverse responsibilities
 
+The initial administrator onboarding/profile/registry interface is now built behind capability discovery: [Dispatch 50](../dispatches/dispatch-50-organization-onboarding-ux.md). It shows current canonical Primary/Additional responsibilities, optional assignment after confirmed profile creation, deliberate roster/Primary review, durable unknown-outcome recovery and explicit draft reapplication. Server gates remain off. This does not yet complete roster-aware Person lifecycle/name workflows or reviewed unit/membership edits, and those gaps still block activation.
+
 Profile → Responsibilities → Review, with optional workplace and Assign later. No unit preselected. Preserve concurrent positions. Keep Add manager and Change Primary distinct. Show existing Primary while adding Additional coverage. After save distinguish profile saved, assignment pending, confirmed saved and unknown outcomes. Person and Organization views resolve the same canonical responsibilities. Retain drafts, useful errors, keyboard/mobile access and contact-first lookup. Review before/after screens and real synthetic journeys, not just field presence.
 
 ### 4. Versioned consumer contract

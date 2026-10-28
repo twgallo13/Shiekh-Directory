@@ -133,7 +133,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   // Consult the saved hierarchy, not an editable draft that could remove its own protection.
   const savedDistrict = districts.find(d => d.id === baselineRef.current?.districtId);
   const savedRegion = regions.find(r => r.id === baselineRef.current?.regionId);
-  const managedHierarchy = !isCreating && (requiresManagedHierarchyReview(savedDistrict) || requiresManagedHierarchyReview(savedRegion));
+  const managedRegion = !isCreating && requiresManagedHierarchyReview(savedRegion);
+  const managedHierarchy = !isCreating && (requiresManagedHierarchyReview(savedDistrict) || managedRegion);
   const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
   const normalizedInbox = formData?.locationInboxEmail == null ? null : normalizeLocationInboxEmail(formData.locationInboxEmail);
   const inboxConflicts = normalizedInbox
@@ -1028,7 +1029,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="Regional Manager"
-                      disabled={managedHierarchy}
+                      disabled={managedRegion}
                       value={currentRmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -1044,7 +1045,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <option value="">-- Unassigned / Vacant --</option>
                       {leadershipOptions('Regional Manager', currentRmId, formData.regionalManagerName)}
                     </select>
-                    {managedHierarchy && <p className="mt-1 text-xs text-neutral-600">Inherited from the Region’s Primary Manager. Update management responsibilities in Admin.</p>}
+                    {managedRegion && <p className="mt-1 text-xs text-neutral-600">Inherited from the Region’s Primary Manager. Update management responsibilities in Admin.</p>}
                   </div>
 
                   <div>

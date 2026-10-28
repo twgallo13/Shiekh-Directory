@@ -17,6 +17,9 @@ const location: any = { id:'007',storeNumber:'007',name:'Southland Mall',type:'E
 const seed: any = { locations:[location],people:[{ id:'manager',fullName:'Current Manager',version:1,status:'Active',activeStatus:true,positionIds:['district-manager','regional-manager'] }],users:[],hoursTemplates:[],corporateHolidays:[],emailTemplates:[],notificationRules:[],outboxLogs:[],sopRunbooks:[],customFieldDefinitions:[],requests:[],auditLogs:[],serverNow:new Date().toISOString(),
   regions:[{ id:'01',name:'West',status:'Active',version:1,leadershipModelVersion:1,leadershipVersion:1,regionalManagerId:'manager' }],districts:[{ id:'01',name:'Central',regionId:'01',status:'Active',version:3,leadershipModelVersion:1,leadershipVersion:1,districtManagerId:'manager' }] };
 const nativeFetch = window.fetch.bind(window);
+if (new URLSearchParams(window.location.search).has('legacyRegion')) {
+  delete seed.regions[0].leadershipModelVersion; delete seed.regions[0].leadershipVersion; delete seed.regions[0].regionalManagerId;
+}
 window.fetch = async (url, init) => {
   if (!String(url).startsWith('/api/')) return nativeFetch(url,init);
   if (String(url).endsWith('/capabilities')) return Response.json({ schemaVersion:1,catalogEnabled:true,recoveryEnabled:true,newCommandsEnabled:true });

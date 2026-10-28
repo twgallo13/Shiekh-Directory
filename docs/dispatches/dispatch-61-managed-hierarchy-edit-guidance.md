@@ -15,4 +15,6 @@ The District metadata form keeps a managed parent read-only while allowing a nam
 
 ## Required continuation
 
+Review correction: District and Region activation are independent. The RM control/explanation now depend specifically on saved Region ownership; a managed District with a legacy Region still allows its legacy store-owned RM to be edited. The combined hierarchy selection protection remains in place whenever either owner is managed. Mixed-model actual component acceptance is recorded with the repair; no authority change is involved.
+
 Audit new Store creation into managed units, linked location type/retirement/delete changes, correction approvals and imports for a supported path or actionable fail-closed UX. Complete wider native concurrency and opt-in consumer compatibility, exact-source independent reviews, bounded activation manifest, migration/rollback and guarded production/provider/browser acceptance. This remains a source stack, not a completed roadmap/release. All organization activation flags remain off; no whole-main deployment, LP or Dynamic QR changes, data restoration, IAM/grants/tokens/credentials or expanded authority.

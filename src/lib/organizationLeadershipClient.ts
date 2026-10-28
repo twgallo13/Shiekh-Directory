@@ -73,7 +73,8 @@ export function parseOrganizationList(v: unknown): OrganizationOperationList {
 
 /** Bound to one synchronous auth generation, with deadlines and no automatic retries.
  * UI must durably retain an operation marker BEFORE calling any mutating method. */
-export function createOrganizationHttpPort(options: { session(): SessionState; generation(): number; request: typeof fetch; timeoutMs?: number }) {
+export function createOrganizationSessionTransport(options: { session(): SessionState; generation(): number; request: typeof fetch; timeoutMs?: number }, family: 'leadership' | 'moves') {
+  if (family !== 'leadership' && family !== 'moves') throw new OrganizationTransportError();
   const initial = options.session(), uid = initial.user?.uid, generation = options.generation();
   let disposed = false; const active = new Set<AbortController>();
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -84,6 +85,7 @@ export function createOrganizationHttpPort(options: { session(): SessionState; g
     return s.user;
   };
   const call = async (mode: string, body?: unknown) => {
+    if (!['capabilities', 'catalog', 'operations', 'prepare', 'commit', 'status', 'cancel', 'directory'].includes(mode)) throw new OrganizationTransportError();
     const user = check(), abort = new AbortController(); active.add(abort);
     let rejectAbort: () => void;
     const expired = new Promise<never>((_, reject) => { rejectAbort = () => reject(new OrganizationTransportError()); abort.signal.addEventListener('abort', rejectAbort, { once: true }); });
@@ -93,7 +95,7 @@ export function createOrganizationHttpPort(options: { session(): SessionState; g
       if (abort.signal.aborted || typeof token !== 'string' || !token.length || token.length > 8192 || /\s/.test(token)) throw new OrganizationTransportError();
       const encoded = body === undefined ? undefined : JSON.stringify(body);
       if (encoded && new TextEncoder().encode(encoded).byteLength > 32 * 1024) throw new OrganizationTransportError('This review is too large. Select fewer units.', 413);
-      const response = await options.request(mode === 'directory' ? '/api/auth/bootstrap' : `/api/directory/organization-leadership/${mode}`, { method: body === undefined ? 'GET' : 'POST', cache: 'no-store', redirect: 'error', signal: abort.signal,
+      const response = await options.request(mode === 'directory' ? '/api/auth/bootstrap' : `/api/directory/${family === 'moves' ? 'organization-moves' : 'organization-leadership'}/${mode}`, { method: body === undefined ? 'GET' : 'POST', cache: 'no-store', redirect: 'error', signal: abort.signal,
         headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(encoded === undefined ? {} : { body: encoded }) });
       check();
       if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) throw new OrganizationTransportError(undefined, response.status);
@@ -109,6 +111,11 @@ export function createOrganizationHttpPort(options: { session(): SessionState; g
     catch (error) { abort.abort(); throw error instanceof OrganizationTransportError ? error : new OrganizationTransportError(); }
     finally { clearTimeout(timer); abort.signal.removeEventListener('abort', rejectAbort!); active.delete(abort); }
   };
+  return { call, dispose() { disposed = true; for (const a of active) a.abort(); } };
+}
+
+export function createOrganizationHttpPort(options: Parameters<typeof createOrganizationSessionTransport>[0]) {
+  const { call, dispose } = createOrganizationSessionTransport(options, 'leadership');
   return {
     capabilities: async () => parseOrganizationCapabilities(await call('capabilities')),
     catalog: async () => parseOrganizationCatalog(await call('catalog')),
@@ -118,6 +125,6 @@ export function createOrganizationHttpPort(options: { session(): SessionState; g
     commit: async (operationId: string, reviewHash: string) => { if (!id(operationId) || !/^[a-f0-9]{64}$/.test(reviewHash)) invalid(); return parseOrganizationOutcome(await call('commit', { operationId, reviewHash }), operationId); },
     status: async (operationId: string) => { if (!id(operationId)) invalid(); return parseOrganizationOutcome(await call('status', { operationId }), operationId); },
     cancel: async (operationId: string) => { if (!id(operationId)) invalid(); return parseOrganizationOutcome(await call('cancel', { operationId }), operationId); },
-    dispose() { disposed = true; for (const a of active) a.abort(); },
+    dispose,
   };
 }

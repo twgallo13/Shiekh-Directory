@@ -7,7 +7,8 @@ import { personLifecycle } from '../src/lib/personLifecycle';
 import { canonicalId } from './personnelProjection';
 import { LeadershipPlanError, leadershipUnitKey, validateOrganizationSource, type OrganizationLeadershipSnapshot, type LeadershipUnitSource, type LeadershipPatch } from './organizationLeadershipPlanner';
 
-export interface OrganizationMoveIntent { schemaVersion: 1; operationId: string; kind: 'store' | 'district'; id: string; expectedVersion: number; targetId: string; expectedTargetVersion: number; reason: string }
+import type { OrganizationMoveIntent, OrganizationMoveReview } from '../src/lib/organizationMoveContract';
+export type { OrganizationMoveIntent } from '../src/lib/organizationMoveContract';
 const fail = (code: LeadershipPlanError['code'], message: string): never => { throw new LeadershipPlanError(code, message); };
 const version = (value: unknown) => value === undefined ? 0 : Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : fail('incomplete_source', 'Resolve source versions before reviewing a move.');
 const hash = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
@@ -84,9 +85,9 @@ export function planOrganizationMove(raw: unknown, snapshot: OrganizationLeaders
   if (intent.kind === 'district') put('districts', district, { regionId: targetRegion.id });
   if (writes.length > 200) fail('capacity', 'The reviewed move exceeds atomic planning capacity. Nothing was saved.');
   writes.sort((a, b) => `${a.collection}/${a.id}`.localeCompare(`${b.collection}/${b.id}`));
-  const review = { kind: intent.kind, id: intent.id, name: source.data.name as string, reason: intent.reason.trim(),
-    before: { districtId: district.id, districtName: district.data.name, regionId: oldRegion.id, regionName: oldRegion.data.name, districtManager: oldDM, regionalManager: oldRM },
-    after: { districtId: targetDistrict.id, districtName: targetDistrict.data.name, regionId: targetRegion.id, regionName: targetRegion.data.name, districtManager: newDM, regionalManager: newRM },
+  const review: OrganizationMoveReview = { kind: intent.kind, id: intent.id, name: source.data.name as string, reason: intent.reason.trim(),
+    before: { districtId: district.id, districtName: district.data.name as string, regionId: oldRegion.id, regionName: oldRegion.data.name as string, districtManager: oldDM, regionalManager: oldRM },
+    after: { districtId: targetDistrict.id, districtName: targetDistrict.data.name as string, regionId: targetRegion.id, regionName: targetRegion.data.name as string, districtManager: newDM, regionalManager: newRM },
     stores: copies.sort((a, b) => a.id.localeCompare(b.id)), excludedNonRetail, businessDocuments: writes.length };
   const preconditions = {
     units: [...readUnits].map(([key, u]) => ({ key, version: version(u.data.version), fingerprint: hash(u.data) })).sort((a, b) => a.key.localeCompare(b.key)),

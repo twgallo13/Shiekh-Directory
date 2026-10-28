@@ -16,6 +16,7 @@
     "test:organization-staff-journeys-emulator": "node --import tsx --test test/organizationStaffJourneys.emulator.ts",
     "test:organization-move-source-emulator": "node --import tsx --test test/organizationMoveSource.emulator.ts",
     "test:organization-move-emulator": "node --import tsx --test test/organizationMoveAtomic.emulator.ts",
+    "test:organization-move-api-emulator": "node --import tsx --test test/organizationMoveApi.emulator.ts",
     "test:organization-api-emulator": "node --import tsx --test test/organizationLeadershipApi.emulator.ts",
     "test:rules-emulator": "node --import tsx --test test/directoryRules.emulator.ts",
     "migrate:firestore": "node --import tsx scripts/migrateFirestoreFromCsv.ts",

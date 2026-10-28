@@ -4,6 +4,7 @@ import { AccessDenied, APPLICATION_ROLES, AuthenticationUnavailable, type Accoun
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryAudit, type DirectoryCollection, type DirectoryWrite, type DirectoryWriter } from "./firestoreDirectory";
 import type { LocationInboxAcknowledgment } from "../src/lib/locationInboxEmail";
 import { createPersonTransitionCommandPreviewRouter } from './personTransitionCommandApi';
+import { createOrganizationLeadershipRouter } from './organizationLeadershipApi';
 
 const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   locations: ["System Administrator", "Directory Data Steward", "Editor"],
@@ -29,6 +30,7 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
   router.use((_request, response, next) => { response.set("Cache-Control", "no-store"); next(); });
   router.use(rateLimit({ limit: 120, windowMs: 60_000, standardHeaders: "draft-8", legacyHeaders: false }));
   router.use('/person-transitions', createPersonTransitionCommandPreviewRouter(authenticate, store));
+  router.use('/organization-leadership', createOrganizationLeadershipRouter(authenticate, store));
   // Scoped to Directory commits, not a global increase for authentication or other APIs.
   router.use((request, response, next) => json({ limit: '1mb' })(request, response, (error?: unknown) => {
     if (error) {

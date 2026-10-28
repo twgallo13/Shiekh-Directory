@@ -4,6 +4,8 @@ import {
   prepareOrganizationLeadership as prepare, commitOrganizationLeadership as commit,
   readOrganizationLeadershipOperation as status, cancelOrganizationLeadershipOperation as cancel,
   ORGANIZATION_OPERATION_COLLECTION, ORGANIZATION_REVIEW_TTL_MS,
+  ORGANIZATION_ADMISSION_COLLECTION,
+  listOrganizationLeadershipOperations as list,
 } from '../server/organizationLeadershipOperations';
 import { leadershipFixture, leadershipActor as actor, leadershipNow } from './helpers/organizationLeadershipFixture';
 
@@ -23,7 +25,7 @@ test('preparation persists only private review state; repeated exact preparation
   const reordered = { units: f.intent.units.map(unit => Object.fromEntries(Object.entries(unit).reverse())), operationId: f.intent.operationId };
   assert.deepEqual(await prepare(f.firestore, reordered, actor, clock), first);
   assert.equal(receipts(f).length, 1);
-  assert.deepEqual([...f.records].filter(([path]) => !path.startsWith(ORGANIZATION_OPERATION_COLLECTION + '/')), before);
+  assert.deepEqual([...f.records].filter(([path]) => ![ORGANIZATION_OPERATION_COLLECTION, ORGANIZATION_ADMISSION_COLLECTION].some(c => path.startsWith(c + '/'))), before);
   assert.doesNotMatch(JSON.stringify(first), /PRIVATE|preconditions|patches|actorUid/);
   assert.doesNotMatch(JSON.stringify(receipts(f)), /PRIVATE_CONTACT|PRIVATE_ACCOUNT|PRIVATE_ADDRESS/);
 });
@@ -143,4 +145,26 @@ test('malformed markers, unsupported actor roles and tampered private receipt ar
   await assert.rejects(prepare(f.firestore, f.intent, { ...actor, role: 'Viewer' }, clock));
   receipts(f)[0][1].review[0].primaryPersonId = 'other';
   await assert.rejects(commit(f.firestore, command, actor, clock), /binding/);
+});
+
+test('actor-only outstanding list is redacted and retains expired previews for safe cancellation', async () => {
+  const f = leadershipFixture(), command = await prepared(f);
+  const r = await list(f.firestore, actor);
+  assert.equal(r.complete, true); assert.equal(r.operations.length, 1);
+  assert.equal(r.operations[0].operationId, command.operationId);
+  assert.doesNotMatch(JSON.stringify(r), /reviewHash|Current Manager|PRIVATE|preconditions|intent/);
+  f.records.set('users/other', { ...f.records.get('users/admin'), firebaseUid: 'other' });
+  assert.deepEqual((await list(f.firestore, { ...actor, uid: 'other' })).operations, []);
+  await cancel(f.firestore, command, actor, () => new Date(time + ORGANIZATION_REVIEW_TTL_MS + 1));
+  assert.deepEqual((await list(f.firestore, actor)).operations, []);
+});
+
+test('pending preparation cap prevents an unlistable backlog; exact replay and cancellation remain possible', async () => {
+  const f = leadershipFixture();
+  for (let i = 0; i < 100; i++) await prepare(f.firestore, { ...f.intent, operationId: `review-${i}` }, actor, clock);
+  assert.equal((await list(f.firestore, actor)).operations.length, 100);
+  await assert.rejects(prepare(f.firestore, { ...f.intent, operationId: 'overflow' }, actor, clock), /outstanding review/);
+  assert.equal((await prepare(f.firestore, { ...f.intent, operationId: 'review-0' }, actor, clock)).state, 'prepared');
+  await cancel(f.firestore, { operationId: 'review-0' }, actor, clock);
+  assert.equal((await prepare(f.firestore, { ...f.intent, operationId: 'after-cancel' }, actor, clock)).state, 'prepared');
 });

@@ -18,6 +18,9 @@ import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { readOrganizationGuardState, validateOrganizationLeadershipWrites } from './organizationLeadershipGuards';
+import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
+import { readOrganizationCatalog } from './organizationLeadershipCatalog';
+import { prepareOrganizationLeadership, commitOrganizationLeadership, readOrganizationLeadershipOperation, cancelOrganizationLeadershipOperation, listOrganizationLeadershipOperations } from './organizationLeadershipOperations';
 import { previewOperating, commitOperating, cancelOperating, type OperatingPreview } from './firestoreOperating';
 import { previewPersonTransition } from './personTransitionPreview';
 import { previewPersonTransitionCommand } from './personTransitionCommandPreview';
@@ -89,6 +92,13 @@ export interface DirectoryReader {
 }
 
 export interface DirectoryWriter {
+  organizationLeadershipCapabilities?(): ReturnType<typeof organizationLeadershipCapabilities>;
+  readOrganizationCatalog?(actor: Account): ReturnType<typeof readOrganizationCatalog>;
+  prepareOrganizationLeadership?(input: unknown, actor: Account): ReturnType<typeof prepareOrganizationLeadership>;
+  commitOrganizationLeadership?(input: unknown, actor: Account): ReturnType<typeof commitOrganizationLeadership>;
+  readOrganizationLeadershipOperation?(input: unknown, actor: Account): ReturnType<typeof readOrganizationLeadershipOperation>;
+  cancelOrganizationLeadershipOperation?(input: unknown, actor: Account): ReturnType<typeof cancelOrganizationLeadershipOperation>;
+  listOrganizationLeadershipOperations?(actor: Account): ReturnType<typeof listOrganizationLeadershipOperations>;
   personTransitionCapabilities?(): ReturnType<typeof personTransitionCapabilities>;
   preparePersonTransitionCommand?(command: unknown, actor: Account): ReturnType<typeof preparePersonTransitionRecovery>;
   commitPersonTransitionCommand?(command: unknown, actor: Account): ReturnType<typeof commitPersonTransitionAtomic>;
@@ -107,6 +117,14 @@ export interface DirectoryWriter {
 
 export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter {
   constructor(private readonly firestore: Firestore) {}
+
+  organizationLeadershipCapabilities() { return organizationLeadershipCapabilities(); }
+  readOrganizationCatalog(actor: Account) { requireOrganizationLeadershipAdmission('catalog'); return readOrganizationCatalog(this.firestore, actor); }
+  prepareOrganizationLeadership(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('command'); return prepareOrganizationLeadership(this.firestore, input, actor); }
+  commitOrganizationLeadership(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('command'); return commitOrganizationLeadership(this.firestore, input, actor); }
+  readOrganizationLeadershipOperation(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return readOrganizationLeadershipOperation(this.firestore, input, actor); }
+  cancelOrganizationLeadershipOperation(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return cancelOrganizationLeadershipOperation(this.firestore, input, actor); }
+  listOrganizationLeadershipOperations(actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return listOrganizationLeadershipOperations(this.firestore, actor); }
 
   personTransitionCapabilities() { return personTransitionCapabilities(); }
   preparePersonTransitionCommand(command: unknown, actor: Account) { requirePersonTransitionAdmission('command'); return preparePersonTransitionRecovery(this.firestore, command, actor, loadPersonTransitionReviewSigner()); }

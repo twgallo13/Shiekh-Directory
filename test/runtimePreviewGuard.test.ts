@@ -29,6 +29,22 @@ test('unchanged private preview passes mechanical checks but never authorizes re
   assert.equal(result.mechanicalChecksPassed, true); assert.equal(result.releaseAuthorized, false);
   assert.deepEqual(input, saved); assert(!JSON.stringify(result).includes('synthetic-sensitive-value'));
 });
+for (const name of ['ORGANIZATION_LEADERSHIP_CATALOG_ENABLED', 'ORGANIZATION_LEADERSHIP_RECOVERY_ENABLED', 'ORGANIZATION_LEADERSHIP_COMMANDS_ENABLED']) {
+  test(`private runtime preview admits only an explicit false or absent ${name}`, () => {
+    for (const entry of [{ name, value: 'true' }, { name, value: 'TRUE' }, { name, valueFrom: { secretKeyRef: { name: 'synthetic', key: 'latest' } } }, { name, value: 'false', valueFrom: {} }]) {
+      const input = fixture();
+      // Equal snapshots bypass drift detection: workflow admission itself must reject activation/unknown values.
+      for (const s of [input.productionBefore, input.productionAfter, input.candidate]) s.spec.template.spec.containers[0].env.push(entry as any);
+      const result = checkRuntimePreview(input);
+      assert.equal(result.mechanicalChecksPassed, false); assert(result.errors.includes('workflow_activation_or_unknown_flag'));
+      assert.equal(result.releaseAuthorized, false);
+    }
+    const disabled = fixture();
+    for (const s of [disabled.productionBefore, disabled.productionAfter, disabled.candidate]) s.spec.template.spec.containers[0].env.push({ name, value: 'false' });
+    assert.equal(checkRuntimePreview(disabled).mechanicalChecksPassed, true);
+    assert.equal(checkRuntimePreview(fixture()).mechanicalChecksPassed, true);
+  });
+}
 const cases: [string, (f: ReturnType<typeof fixture>) => void][] = [
   ['production traffic change', f => { f.productionAfter.status.traffic[0].percent = 90; }],
   ['historical tag loss', f => { f.productionAfter.status.traffic.pop(); }],

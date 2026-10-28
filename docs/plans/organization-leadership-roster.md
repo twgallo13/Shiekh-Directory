@@ -22,7 +22,7 @@ Initial work is immediate-only. Scheduled/acting automation remains explicitly u
 
 ## Implementation slices and evidence
 
-### 1. Pure assignment planner — implemented locally, not enabled
+### 1. Pure assignment planner — merged foundation, not enabled in production
 
 `server/organizationLeadershipPlanner.ts` supplies a detached internal dry run. It accepts a full desired unit roster and explicit Primary, exact expected versions, an operation ID, legacy activation choice and a bounded reason. It:
 
@@ -33,13 +33,13 @@ Initial work is immediate-only. Scheduled/acting automation remains explicitly u
 - refuses no-ops, ambiguous/future/invalid source, unknown input fields, duplicates, unsafe version increments and oversize operations;
 - bounds proposals to five units, 25 active members/unit and 200 business-document changes, with an 8,000,000-byte planning envelope limit.
 
-This function has **no authentication, transaction, signature, API route, I/O or commit capability**. Completeness attestations and raw preconditions are internal; a future loader/writer must establish/recheck them. The byte estimate is not final SDK/audit capacity proof. Do not send internal patches/preconditions to consumers. No existing runtime path imports it.
+This function has **no authentication, transaction, signature, API route, I/O or commit capability of its own**. Its completeness attestations and raw preconditions remain internal. The later loader/writer establishes/rechecks them, and gated adapters now import the foundation. The planning byte estimate is not final SDK/audit capacity proof. Do not send internal patches/preconditions to consumers. PR #76 merged; production activation remains off.
 
 Synthetic evidence in `test/organizationLeadershipPlanner.test.ts` covers additional coverage with no workplace, Primary handover, Corporate/Region coverage, namespaces/leading zeros, vacancies/history, explicit activation, controlled eligibility, failed/missing/stale reads, no inference, malformed roster, exact write-cap boundary, overflow, time validity, hierarchy conflicts, idempotency collision and input immutability. The dispatch records actual run results.
 
 ### 2. Authoritative loader/preview/commit and alternate-writer guards — in progress, not enabled
 
-The internal bounded source adapter and stateful preparation/commit/status/cancellation service are implemented in `server/organizationLeadershipSource.ts` and `server/organizationLeadershipOperations.ts`. A private server-written preparation receipt binds the actor, exact intent, reviewed changes, dependency fingerprints and expiry. This design uses stored server authority rather than introducing another signing secret; it does not enable or bypass the older signed Person-transition workflow. No HTTP route, Store entry point, frontend import or production activation is provided. See [Dispatch 47](../dispatches/dispatch-47-organization-leadership-operations.md) for validation and remaining gates. Alternate-writer guards and UI/API work below remain outstanding.
+The bounded source adapter and stateful preparation/commit/status/cancellation service are implemented in `server/organizationLeadershipSource.ts` and `server/organizationLeadershipOperations.ts`. A private server-written preparation receipt binds actor, exact intent, reviewed changes, dependency fingerprints and expiry. This uses stored server authority rather than another signing secret; it does not enable or bypass the older signed Person workflow. Transitional guards are implemented in PR #78. The subsequent private HTTP/Store adapters, canonical administrator catalog and pending-review listing are built behind new disabled-by-default server gates; [Dispatch 49](../dispatches/dispatch-49-organization-workflow-adapters.md) records scope/evidence. No production activation or scope/grant changes occur. See Dispatches 47–49 for historical checkpoints and remaining release gates.
 
 - Read complete bounded source queries and exact dependencies; fail closed on query/capacity failures. No contacts/accounts are needed for roster planning.
 - Authenticate existing authorized administrators and re-read Directory role/scope authority at commit; staffing is not authorization.

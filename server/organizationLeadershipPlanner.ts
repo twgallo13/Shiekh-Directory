@@ -15,17 +15,9 @@ export interface OrganizationLeadershipSnapshot {
   /** Internal loader attestation, not a client-controlled completeness assertion. */
   complete: { hierarchy: true; locations: true; assignmentUnits: string[] };
 }
-export interface LeadershipUnitIntent {
-  unitType: LeadershipUnitType;
-  unitId: string;
-  expectedVersion: number;
-  expectedLeadershipVersion: number;
-  activateLegacy: boolean;
-  memberPersonIds: string[];
-  primaryPersonId: string | null;
-  reason: string;
-}
-export interface OrganizationLeadershipIntent { operationId: string; units: LeadershipUnitIntent[] }
+import type { OrganizationLeadershipIntent } from '../src/lib/organizationLeadershipContract';
+export type { OrganizationLeadershipIntent } from '../src/lib/organizationLeadershipContract';
+export type LeadershipUnitIntent = OrganizationLeadershipIntent['units'][number];
 export interface LeadershipPatch {
   collection: 'districts' | 'regions' | 'leadership_assignments' | 'locations';
   id: string;

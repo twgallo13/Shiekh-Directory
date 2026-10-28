@@ -3,6 +3,7 @@ import { rateLimit } from 'express-rate-limit';
 import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticate } from './authAuthority';
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryWriter } from './firestoreDirectory';
 import { assertLocationCreationActor, normalizeLocationCreationCommand, normalizeLocationCreationMarker } from './locationCreationRecovery';
+import { organizationLegacyCreationEnabled } from './organizationLeadershipConfiguration';
 
 /** Private Firebase-authenticated Company-wide writer endpoints. Store admission and live
  * authority are checked again; no generic commit fallback or consumer scope enables this route. */
@@ -23,7 +24,7 @@ export function createLocationCreationRouter(authenticate: Authenticate | null, 
     const recoveryEnabled = c?.schemaVersion === 1 && c.recoveryEnabled === true && !!store.readLocationCreation && !!store.cancelLocationCreation && !!store.listLocationCreations;
     const catalogEnabled = c?.schemaVersion === 1 && c.catalogEnabled === true;
     const completeAdapter = !!store.prepareLocationCreation && !!store.commitLocationCreation && !!store.readLocationCreation && !!store.cancelLocationCreation && !!store.listLocationCreations;
-    const legacyCreationEnabled = completeAdapter && c?.schemaVersion === 1 && c.catalogEnabled === false && c.recoveryEnabled === false && c.newCommandsEnabled === false;
+    const legacyCreationEnabled = organizationLegacyCreationEnabled() && completeAdapter && c?.schemaVersion === 1 && c.catalogEnabled === false && c.recoveryEnabled === false && c.newCommandsEnabled === false;
     return { schemaVersion: 1 as const, catalogEnabled, recoveryEnabled, newCommandsEnabled: catalogEnabled && recoveryEnabled && c.newCommandsEnabled === true && !!store.prepareLocationCreation && !!store.commitLocationCreation, legacyCreationEnabled };
   };
   const unavailable = (res: Response, e?: unknown) => {

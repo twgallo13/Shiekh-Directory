@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { normalizeLocationCreationCommand, normalizeLocationCreationMarker, assertLocationCreationActor, locationCreationKey, locationCreationAuditId, prepareLocationCreation } from '../server/locationCreationRecovery';
 import { FirestoreDirectoryStore } from '../server/firestoreDirectory';
 import { leadershipActor as actor } from './helpers/organizationLeadershipFixture';
+import { organizationLegacyCreationEnabled } from '../server/organizationLeadershipConfiguration';
 const command=()=>({write:{collection:'locations',id:'loc-new',operation:'set',expectedVersion:null,data:{storeNumber:'008',name:'New Store',standardHours:{monday:{open:'10:00',close:'20:00',isClosed:false}}}}});
+
+test('legacy admission requires every raw control off, including command-only partial setup',()=>{
+  assert.equal(organizationLegacyCreationEnabled({}),true);
+  for(const key of ['ORGANIZATION_LEADERSHIP_CATALOG_ENABLED','ORGANIZATION_LEADERSHIP_RECOVERY_ENABLED','ORGANIZATION_LEADERSHIP_COMMANDS_ENABLED'])assert.equal(organizationLegacyCreationEnabled({[key]:'true'}),false);
+});
 test('creation normalization admits only a bounded exact single create-only JSON command and detaches it',()=>{
   const input=command(), before=structuredClone(input), normalized=normalizeLocationCreationCommand(input);
   assert.deepEqual(input,before); normalized.write.data.name='Changed';assert.equal(input.write.data.name,'New Store');

@@ -13,7 +13,7 @@ const baseLocation: LocationRecord = {
 const person: PersonRecord = { id: 'person-1', fullName: 'Updated Name', status: 'Active', district: 'Some Territory Text' } as PersonRecord;
 
 test('copies leadership name/phone fields but never writes district or canonical hierarchy references', () => {
-  const updated = reconcileLocationLeadershipCopy(baseLocation, 'person-1', person, '555-0199', () => undefined, ['fullName']);
+  const updated = reconcileLocationLeadershipCopy(baseLocation, 'person-1', person, '555-0199', () => undefined, ['fullName', 'workPhone']);
   assert.equal(updated.storeManagerName, 'Updated Name');
   assert.equal(updated.storeManagerPhone, '555-0199');
   assert.equal(updated.district, 'Legacy District Text');

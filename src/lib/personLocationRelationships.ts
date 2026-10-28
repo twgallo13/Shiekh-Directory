@@ -105,6 +105,19 @@ export function reconcileLocationLeadershipCopy(
   const copiesNameOrContact = PERSON_LEADERSHIP_NAME_FIELDS.some(field => updatedFields.includes(field));
   if (!affected || !copiesNameOrContact) return location;
 
+  // A name-only save must not rewrite contact data or another manager's copied name.
+  if (updatedFields.includes('fullName') && updatedFields.every(field => field === 'fullName' || field === 'name')) {
+    const copyList = (ids: string[], names: string[] | undefined) => names?.length === ids.length
+      ? ids.map((id, index) => id === personId ? updatedPerson.fullName : names[index]) : names;
+    return { ...location,
+      ...(location.storeManagerId === personId ? { storeManagerName: updatedPerson.fullName } : {}),
+      ...(location.districtManagerId === personId ? { districtManagerName: updatedPerson.fullName } : {}),
+      ...(location.regionalManagerId === personId ? { regionalManagerName: updatedPerson.fullName } : {}),
+      ...(location.assistantStoreManagerIds?.includes(personId) && location.assistantStoreManagerNames ? { assistantStoreManagerNames: copyList(location.assistantStoreManagerIds, location.assistantStoreManagerNames) } : {}),
+      ...(location.keyHolderIds?.includes(personId) && location.keyHolderNames ? { keyHolderNames: copyList(location.keyHolderIds, location.keyHolderNames) } : {}),
+    };
+  }
+
   return {
     ...location,
     ...(location.storeManagerId === personId ? {

@@ -81,7 +81,8 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     const changingAuthority = positionChanged || touched.has('status') || touched.has('fullName');
     if (changingAuthority && organization.review && ['loading', 'unavailable'].includes(organization.review.phase)) { setError('Check management responsibilities before changing this person’s name, positions or status. Your draft is kept.'); return; }
     if (positionChanged && organizationPositionConflicts(organization.review?.units || [], draft.positionIds).length) { setError('Reassign or end the affected District/Region responsibilities first. Your selected positions are kept in this draft.'); return; }
-    if (organization.review?.units.length && (touched.has('status') && draft.status !== 'Active' || touched.has('fullName') && draft.fullName.trim() !== person?.fullName)) { setError('Review management responsibilities before inactivation. Assigned manager name changes also require a coordinated update; no changes were sent. Your draft is kept.'); return; }
+    if (organization.review?.units.length && touched.has('status') && draft.status !== 'Active') { setError('Review management responsibilities before inactivation. Your draft is kept.'); return; }
+    if (organization.review?.units.length && touched.has('fullName') && draft.fullName.trim() !== person?.fullName && [...touched].some(field => field !== 'fullName')) { setError('Save a manager name change separately from other profile edits so its linked display names can be checked together. Your draft is kept.'); return; }
     if (!draft.fullName.trim()) { setError('Enter a full name.'); return; }
     if (!person && !draft.positionIds.length) { setError('Select a position, including Other / corporate if appropriate.'); return; }
     if (conflicts.length) { setError('Retain the listed positions explicitly, or reassign/vacate their responsibilities before changing positions.'); return; }

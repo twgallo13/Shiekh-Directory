@@ -217,7 +217,8 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       if (managedUnitEdit) await readPersonTransitionAuthority(this.firestore, transaction, actor);
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
-      validateOrganizationLeadershipWrites(validatedWrites, snapshots.map(snapshot => snapshot.data()), organizationState, people);
+      const managedRename = validateOrganizationLeadershipWrites(validatedWrites, snapshots.map(snapshot => snapshot.data()), organizationState, people, locations);
+      if (managedRename) await readPersonTransitionAuthority(this.firestore, transaction, actor);
       validatedWrites.forEach((write, index) => {
         if (write.collection === 'requests' && write.operation === 'set' && !snapshots[index].exists) Object.assign(write.data!, { submissionDigest: submissionDigest(writes[index].data!), submissionActor: actor.uid });
       });
@@ -257,7 +258,10 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       }));
       const requestWrite = validatedWrites.find(write => write.collection === 'requests');
       const managedWrite = managedUnitEdit ? validatedWrites[0] : undefined;
-      const storedAudit = managedWrite ? {
+      const storedAudit = managedRename ? {
+        action: 'Manager Name Updated', entityType: 'Person', entityId: managedRename.personId, entityName: managedRename.fullName,
+        details: `Server-confirmed name-only update with ${managedRename.affectedLocations} matching Location display-name records. Staffing, contacts and access were preserved.`,
+      } : managedWrite ? {
         action: 'Hierarchy Registry Updated', entityType: managedWrite.collection === 'regions' ? 'Region' : 'District',
         entityId: managedWrite.id, entityName: String(managedWrite.data?.name || managedWrite.id),
         details: 'Server-confirmed managed unit name/status update. IDs, hierarchy membership and leadership responsibilities were preserved.',
@@ -294,7 +298,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           previousStates,
           newStates,
         };
-        if (managedUnitEdit || writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
+        if (managedRename || managedUnitEdit || writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
         transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
       }
       return { records: committedRecords };

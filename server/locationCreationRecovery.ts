@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto';
 import type { Firestore, Transaction } from '@google-cloud/firestore';
 import type { Account } from './authAuthority';
-import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryWrite } from './firestoreDirectory';
+import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied } from './firestoreDirectory';
+import type { LocationCreationCommand } from '../src/lib/locationCreationContract';
+export type { LocationCreationCommand } from '../src/lib/locationCreationContract';
 import { requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
 
 export const LOCATION_CREATION_RECEIPTS = 'location_creation_operations';
 export const LOCATION_CREATION_ADMISSION = 'location_creation_admission';
 export const LOCATION_CREATION_TTL = 600_000;
 export const LOCATION_CREATION_PENDING_LIMIT = 100;
-type CreationWrite = Omit<DirectoryWrite, 'collection' | 'operation' | 'expectedVersion' | 'data'> & { collection: 'locations'; operation: 'set'; expectedVersion: null; data: Record<string, unknown> };
-export interface LocationCreationCommand { write: CreationWrite }
 export interface LocationCreationReceipt {
   schemaVersion: 1; actorUid: string; locationId: string; state: 'prepared' | 'committed' | 'cancelled';
   createdAt: number; expiresAt: number; updatedAt: number; intentHash?: string; pendingActorKey?: string; auditId?: string; createdVersion?: number;

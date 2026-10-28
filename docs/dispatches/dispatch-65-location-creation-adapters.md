@@ -1,0 +1,25 @@
+# Dispatch65 — Private creation adapters and strict session client
+
+The server receipt foundation is connected through gated private HTTP endpoints and a bounded client contract/transport. No creation screen imports the client yet; browser recovery and production activation remain incomplete. PR94’s complete-admission repair is included in the base.
+
+## Contract and admission
+
+`/api/directory/location-creations` offers capabilities, prepare, commit, status, cancel and pending operations. Firebase authentication and the existing Active Company-wide Location writer roles apply; the Store repeats flag/live-authority/intent checks. Partial implementations cannot advertise new commands or fall back to generic commit. Commands require all existing organization gates; recovery remains available when commands pause. No new flag, grant, secret or consumer scope is introduced.
+
+Capabilities include explicit `legacyCreationEnabled`: only a verified all-disabled rollout can admit the older UI path. Missing capability support, request failure, partial rollout or paused recovery is not permission to fall back. This field does not perform a generic save; future form integration must also check retained local/server operations and must never replace an attempted private mutation with a different generic one. Rollback continues to require the pending-operation/activation manifest gates.
+
+Routes use server-resolved actors, fixed paths, actor and existing parent IP rate limits, no-store responses and successful JSON without ETag/304. Body parsing and exact normalization enforce bounded commands/identity-only recovery; known validation/conflict messages are actionable, while raw infrastructure/access details are not returned. There is no generic commit/read fallback. The shared private DTO describes only metadata outcomes, ten-minute prepared expiry, exact identity/audit namespace/version and a complete bounded unique pending list. Public v1/v2/v3 and CSV contracts are unchanged.
+
+The session transport now has a fixed creation family. Only that family admits the same Company-wide writer roles; existing roster/move transports still require administrators. Token/session-generation checks, deadlines/disposal/abort, no-store/redirect rejection, fixed modes and no automatic retries remain. Creation commands have a 200KB UTF-8 bound; non-bootstrap creation responses have a 128KB bound. DTO parsing rejects enrichment, identity/version/domain mismatch, invalid expiry, incomplete or duplicate pending lists and ambiguous legacy admission. Full Directory refresh remains its existing separate bounded route. Workflow code must verify the actor-specific audit digest before resolving a marker; the transport validates the namespace, not that final binding.
+
+## Evidence
+
+- Complete ordinary run passed **898/898**, zero failures/skips, after shared transport/API integration. Then explicit legacy-admission discovery was added and the final focused API/client run passed **14/14** (overlapping prior cases, not additive). The initial focused run also covered unchanged move/roster transport behavior. Final TypeScript/release build passed; existing Vite chunk advisory remains.
+- One final client → HTTP → Store → actual SDK/emulator journey passed: default-off refusal without receipt, preparation/paused-command status/cancellation/list, fresh creation with deliberately dropped successful commit reply, terminal status recovery with exactly one commit/Location/audit, and live authority loss. Provider auth is mocked in that isolated harness; live Directory authority uses actual SDK reads. Process-only flags are restored. No browser/provider/production acceptance is claimed.
+- PR94’s review repair passed 10/10 native cases, including undercounted/overcounted admission before both terminal paths. Its inline finding is resolved; no approval review as Theo was submitted.
+
+## Required continuation
+
+Persist an actor-scoped creation marker before preparation, hold a tab lease, fence auth/late callbacks, discover pending operations, reconcile/cancel missing or unknown outcomes and verify exact actor audit proof. Strict saved-state refresh must support these existing Company-wide writer roles without loosening the older administrator-only transition refresh. Both create forms need stable wire intent, no private-to-generic fallback after mutation, retained drafts/reapplication, known-saved/record-no-longer-available states, and interrupted/reopen desktop/mobile acceptance. Routine cache cleanup must preserve the new marker; explicit sign-out keeps the established protected-storage policy and server discovery must support returning users.
+
+All linked type/removal/lifecycle/correction work, wider import/concurrency/consumer acceptance, independent exact-source reviews, activation manifest/migration/rollback and guarded release/provider/browser acceptance remain. Keep all activation/security/access/signing/runtime/release gates in place. No whole-main deployment, LP/Dynamic QR work, live-data restoration, IAM/grants/tokens/credentials or expanded authority.

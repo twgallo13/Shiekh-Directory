@@ -20,4 +20,8 @@ The client name-only copy function now preserves Store Manager phone/privacy and
 
 ## Remaining release gates
 
+### PR83 legacy copied-list repair
+
+Verified the reported P2: name-only updates on legacy People outside an active organization roster could retain absent/misaligned assistant/key-holder name arrays. Such lists are now rebuilt in ID order only when every member has an exact resolved name; otherwise a known invalid_metadata preflight error stops before optimistic state or any request. Aligned arrays preserve unrelated saved names. The managed server path still independently rejects ambiguous stored arrays rather than treating a browser reconstruction as repair authority. All 17 focused copy/rename/contact cases passed, including both list roles, missing/wrong-length arrays and unresolved-member rejection; TypeScript passed. Earlier successful full/build/SDK results are reused for unchanged behavior, not reported as a new broad run.
+
 Wider staged offboarding/position-removal journeys, parent/store moves, activated imports/corrections and broader races, exact-source independent reviews, opt-in consumer contract and migration/release/rollback acceptance remain open. Unresolved assigned-manager lifecycle/data can still require explicit repair before renaming; this path does not guess staffing or restore business data. All organization flags remain off. No production, LP/Dynamic QR, IAM, tokens/grants or business data changed. Do not deploy main wholesale.

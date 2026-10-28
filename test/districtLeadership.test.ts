@@ -22,7 +22,7 @@ function fixture() {
     doc(id: string) { return { path: `${this.name}/${id}` }; }
     limit(max: number) { this.max = max; return this; }
     where(field: string, _op: string, value: unknown) { this.field = field; this.value = value; return this; }
-    async get() { return { docs: [...records].filter(([path, data]) => path.startsWith(`${this.name}/`) && (!this.field || data[this.field] === this.value)).slice(0, this.max).map(([path]) => snapshot(path)) }; }
+    async get() { const docs=[...records].filter(([path, data]) => path.startsWith(`${this.name}/`) && (!this.field || data[this.field] === this.value)).slice(0, this.max).map(([path]) => snapshot(path));return {docs,size:docs.length}; }
   }
   const db = { collection: (name: string) => new Query(name), async runTransaction(fn: (t: unknown) => Promise<unknown>) {
     const pending: (() => void)[] = [];

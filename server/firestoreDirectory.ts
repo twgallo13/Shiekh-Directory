@@ -318,7 +318,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       } : managedLifecycle.length ? {
         action: 'Location Lifecycle Updated', entityType: 'Location', entityId: managedLifecycle[0].id,
         entityName: String(managedLifecycle[0].data?.name || managedLifecycle[0].id),
-        details: `Server-confirmed lifecycle/retail-format update for ${managedLifecycle.length} Location(s). Canonical hierarchy and District/Region leadership were preserved.`,
+        details: `Server-confirmed lifecycle/retail-format update for ${managedLifecycle.length} Location(s). Managed hierarchy ownership was preserved.`,
       } : requestWrite ? {
         action: requestWrite.data?.status === 'Approved' ? 'Request Approved' : requestWrite.data?.status === 'Rejected' ? 'Request Rejected' : 'Request Submitted',
         entityType: 'Request', entityId: requestWrite.id, entityName: String(requestWrite.data?.changeType || 'Correction'),

@@ -24,6 +24,8 @@ Cancellation never undoes a saved creation. Cancelling a prepared or missing ide
 
 ## Required continuation
 
+Review repair: commit and prepared cancellation now validate the complete bounded pending inventory and current receipt membership before decrementing admission. Final native repair run passed 10/10, including both an undercount and overcount with two preparations: neither action may change a receipt/counter, create a Location or write an audit. This supersedes the earlier count-only terminal-path check and the initial nine-case native total.
+
 Add private exact-schema authenticated/rate-limited/no-store adapters, capability discovery and strict bounded session transport. Then persist an actor-scoped marker before preparing, hold a tab lease, retain/recover/cancel missing or unknown outcomes, strictly refresh saved Directory before resolving terminal state, and connect both create forms with retained-draft/reapplication and desktop/mobile interrupted/reopen acceptance. Existing browser creation still uses the older generic path until that work is complete. Do not claim recovery delivered or enable the gates early.
 
 Continue linked type/removal/lifecycle and correction paths, wider import/concurrency/consumer acceptance, independent exact-source reviews, activation manifest/migration/rollback and guarded release/provider/browser acceptance. No whole-main deployment, LP/Dynamic QR work, live data restoration, IAM/grants/tokens/credentials, expanded authority or approval as Theo.

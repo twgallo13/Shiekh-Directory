@@ -108,7 +108,7 @@ export async function readLocationCreationCommit(db: Firestore, tx: Transaction,
   const r=receipt(saved.data(),actor,locationId);if(r.intentHash!==hash(command)||r.state==='cancelled')return conflict('This creation was changed or safely cancelled.');
   if(r.state==='committed')return {replayed:true as const,ref,receipt:r};
   const now=instant(clock);if(now<r.createdAt||now>=r.expiresAt)return conflict('This creation review expired. Recover or cancel it before preparing another.');
-  const a=await admission(db,tx,actor);if(a.count<1)throw new Error('Creation admission is incomplete.');
+  const a=await admission(db,tx,actor,true);if(a.count<1 || !a.receipts.some(p=>p.locationId===locationId))throw new Error('Creation admission is incomplete.');
   return {replayed:false as const,ref,receipt:r,admission:a,now};
 }
 export function finishLocationCreationCommit(tx: Transaction, proof: Awaited<ReturnType<typeof readLocationCreationCommit>>, actor: Account) {
@@ -126,7 +126,7 @@ export async function cancelLocationCreation(db: Firestore,input:unknown,actor:A
   return db.runTransaction(async tx=>{
     await authority(db,tx,actor);const ref=db.collection(LOCATION_CREATION_RECEIPTS).doc(locationCreationKey(actor,locationId)),saved=await tx.get(ref),r=saved.exists?receipt(saved.data(),actor,locationId):null;
     if(r && r.state!=='prepared')return outcome(r);
-    const a=r?await admission(db,tx,actor):null,now=instant(clock);if(r && now<r.updatedAt)throw new Error('Creation clock moved backwards.');
+    const a=r?await admission(db,tx,actor,true):null,now=instant(clock);if(r && (!a?.receipts.some(p=>p.locationId===locationId) || now<r.updatedAt))throw new Error('Creation admission or clock is unavailable.');
     const {pendingActorKey:_pending,...base}=r??{schemaVersion:1 as const,actorUid:actor.uid,locationId,createdAt:now,expiresAt:now+LOCATION_CREATION_TTL,pendingActorKey:undefined};
     const next:LocationCreationReceipt={...base,state:'cancelled',updatedAt:now};
     if(a)changeAdmission(tx,a,actor,-1);tx.set(ref,next);return outcome(next);

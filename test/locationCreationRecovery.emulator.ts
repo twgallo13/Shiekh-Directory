@@ -92,3 +92,17 @@ test('SDK: audit size refusal rolls back queued business writes and retains the 
     assert.equal((await f.store.readLocationCreation({locationId:'loc-new'},actor)).state,'prepared');
   }finally{await f.close();}
 });
+test('SDK: undercounted and overcounted admission block both save and cancellation without changing either receipt', {timeout:90000},async()=>{
+  for(const pending of [1,3]){
+    const f=await fixture();try{
+      await f.store.prepareLocationCreation(command(),actor);await f.store.prepareLocationCreation(command('other-location','009'),actor);
+      const admission=(await f.db.collection(LOCATION_CREATION_ADMISSION).get()).docs[0];await admission.ref.update({pending});
+      await assert.rejects(f.store.commitLocationCreation(command(),actor),/incomplete/);
+      await assert.rejects(f.store.cancelLocationCreation({locationId:'loc-new'},actor),/incomplete/);
+      assert.equal((await f.store.readLocationCreation({locationId:'loc-new'},actor)).state,'prepared');
+      assert.equal((await f.store.readLocationCreation({locationId:'other-location'},actor)).state,'prepared');
+      assert.equal((await admission.ref.get()).data()!.pending,pending);
+      assert.equal((await f.db.doc('locations/loc-new').get()).exists,false);assert.equal((await f.db.collection('audit_logs').get()).size,0);
+    }finally{await f.close();}
+  }
+});

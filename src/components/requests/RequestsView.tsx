@@ -157,7 +157,7 @@ export const RequestsView: React.FC<RequestsViewProps> = ({ onOpenNewRequest }) 
       {announcement && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{announcement}</p>}
       <PageHeader
         title="Store Change & Correction Requests"
-        description="Governance workflow for phone numbers, manager changes, and operating status"
+        description="Review contact, address, Store Manager and hours corrections. Report temporary closures directly from the store card."
         actions={(
           <Button variant="primary" size="sm" onClick={onOpenNewRequest}>
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />

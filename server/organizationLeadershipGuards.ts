@@ -122,7 +122,8 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
     if (!oldManaged && !newManaged) continue;
     const oldKind = before && classifyHierarchyLocationType(before.type), newKind = after && classifyHierarchyLocationType(after.type);
     if (oldKind === 'non-retail' && (!after || newKind === 'non-retail') || !before && newKind === 'non-retail') continue;
-    if (write.operation === 'delete' || before && (before.districtId !== after?.districtId || before.regionId !== after?.regionId || before.type !== after?.type || before.hierarchyApplicability !== after?.hierarchyApplicability)) deny('Review managed store moves, type changes or removal in the organization workflow.');
+    const retailFormatOnly = oldKind === 'retail' && newKind === 'retail';
+    if (write.operation === 'delete' || before && (before.districtId !== after?.districtId || before.regionId !== after?.regionId || before.type !== after?.type && !retailFormatOnly || before.hierarchyApplicability !== after?.hierarchyApplicability)) deny('Review managed store moves, retail/non-retail conversion or removal separately. Use Store & District moves for membership changes; retire a store to preserve its history.');
     if (!after || newKind !== 'retail') deny('Classify managed stores before saving.');
     for (const unit of [managed('district', after.districtId), managed('region', regionFor(after))]) {
       if (!unit) continue;
@@ -135,4 +136,16 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
     }
   }
   return rename;
+}
+
+/** Accepted lifecycle/format edits preserve ownership and require a bounded server audit. */
+export function managedLocationLifecycleChanges(writes: DirectoryWrite[], previous: (Record<string,unknown>|undefined)[], state:OrganizationGuardState){
+  return writes.filter((write,index)=>{
+    const before=previous[index],after=write.data;
+    if(write.collection!=='locations'||write.operation!=='set'||!before||!after||classifyHierarchyLocationType(before.type)!=='retail')return false;
+    const district=state.units.find(u=>u.unitType==='district'&&u.id===before.districtId);
+    const regionId=district?.data.regionId??before.regionId;
+    const controlled=state.units.some(u=>activated(u)&&(u.unitType==='district'&&u.id===before.districtId||u.unitType==='region'&&u.id===regionId));
+    return controlled&&(before.recordStatus!==after.recordStatus||before.type!==after.type);
+  });
 }

@@ -11,7 +11,7 @@ import { normalizeAddressValues } from '../../lib/locationAddress';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
-import { requiresManagedHierarchyReview } from '../../lib/managedHierarchyEditing';
+import { requiresManagedHierarchyReview, preservesLocationClassification } from '../../lib/managedHierarchyEditing';
 import { prepareNewLocationLeadership } from '../../lib/newLocationLeadership';
 import { useLocationCreation } from './useLocationCreation';
 import { hasDistrictLeadership, inheritDistrictLeader, isDistrictLeadershipMember } from '../../lib/districtLeadership';
@@ -139,7 +139,9 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const savedDistrict = districts.find(d => d.id === baselineRef.current?.districtId);
   const savedRegion = regions.find(r => r.id === baselineRef.current?.regionId);
   const managedRegion = isRetailHierarchyType(isCreating ? formData?.type : baselineRef.current?.type) && requiresManagedHierarchyReview(isCreating ? currentRegion : savedRegion);
-  const managedHierarchy = !isCreating && (requiresManagedHierarchyReview(savedDistrict) || managedRegion);
+  const managedHierarchy = !isCreating && isRetailHierarchyType(baselineRef.current?.type) && (requiresManagedHierarchyReview(savedDistrict) || managedRegion);
+  const managedTypeBoundary = !isCreating && [savedDistrict,savedRegion,currentDistrict,currentRegion,regions.find(r=>r.id===savedDistrict?.regionId),regions.find(r=>r.id===currentDistrict?.regionId)].some(requiresManagedHierarchyReview);
+  const canChooseType=(type:unknown)=>!managedTypeBoundary||preservesLocationClassification(baselineRef.current?.type,type);
   const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
   const normalizedInbox = formData?.locationInboxEmail == null ? null : normalizeLocationInboxEmail(formData.locationInboxEmail);
   const inboxConflicts = normalizedInbox
@@ -161,6 +163,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return;
+    if(!canChooseType(formData.type)){setSaveError('Keep this location’s current retail or non-retail use. Conversion requires a separate hierarchy review.');return;}
     const normalizedPhone = normalizeUsPhone(formData.phone);
     const baseline = baselineRef.current || location;
     const legacyPhoneUnchanged = !normalizedPhone && formData.phone === formatUsPhone(baseline.phone, baseline.phoneExtension);
@@ -656,17 +659,19 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       Location Type
                     </label>
                     <select
+                      aria-label="Location type"
                       value={formData.type || 'Enclosed Mall'}
                       onChange={(e) => setFormData({ ...formData, type: e.target.value as LocationType })}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
                     >
-                      <option value="Enclosed Mall">Enclosed Mall</option>
-                      <option value="Strip Center / Shopping Center">Strip Center / Shopping Center</option>
-                      <option value="Street / Standalone Location">Street / Standalone Location</option>
-                      <option value="Corporate Office">Corporate Office</option>
-                      <option value="Warehouse / Distribution Center">Warehouse / Distribution Center</option>
-                      <option value="Other Company Location">Other Company Location</option>
+                      <option value="Enclosed Mall" disabled={!canChooseType('Enclosed Mall')}>Enclosed Mall</option>
+                      <option value="Strip Center / Shopping Center" disabled={!canChooseType('Strip Center / Shopping Center')}>Strip Center / Shopping Center</option>
+                      <option value="Street / Standalone Location" disabled={!canChooseType('Street / Standalone Location')}>Street / Standalone Location</option>
+                      <option value="Corporate Office" disabled={!canChooseType('Corporate Office')}>Corporate Office</option>
+                      <option value="Warehouse / Distribution Center" disabled={!canChooseType('Warehouse / Distribution Center')}>Warehouse / Distribution Center</option>
+                      <option value="Other Company Location" disabled={!canChooseType('Other Company Location')}>Other Company Location</option>
                     </select>
+                    {managedTypeBoundary&&<p className="mt-1.5 text-xs text-neutral-500">Change the format within this location’s current use. Conversion between a store and a non-retail location requires a separate hierarchy review.{managedHierarchy?' For a store closure, use Retire Store.':''}</p>}
                   </div>
 
                   <div>

@@ -293,7 +293,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
             >
               <option value="Phone Number Correction">Phone Number Correction</option>
               <option value="Address Update">Address &amp; Finding the Store</option>
-              <option value="Store Manager Change">Store Manager Leadership Change</option>
+              <option value="Store Manager Change">Store Manager Assignment</option>
               <option value="Operational Status Change">Lifecycle / Hours Modifier & Notice (approval required)</option>
               <option value="Standard Hours Adjustment">Standard Hours Adjustment</option>
               <option value="Other Store Info Update">Other Store Info Update (including shared inbox)</option>
@@ -333,6 +333,7 @@ export const NewRequestModal: React.FC<NewRequestModalProps> = ({ location, onCl
                 onChange={(p) => { setNewManager(p); setFormError(''); }}
                 required
               />
+              <p className="mt-2 text-xs text-neutral-500">This changes the Store Manager only. District and Regional Managers are assigned to their District or Region in Admin and inherited by stores.</p>
             </div>
           )}
 

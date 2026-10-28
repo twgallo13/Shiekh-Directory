@@ -15,6 +15,7 @@
     "test:managed-person-rename-emulator": "node --import tsx --test test/managedPersonRename.emulator.ts",
     "test:organization-staff-journeys-emulator": "node --import tsx --test test/organizationStaffJourneys.emulator.ts",
     "test:managed-store-creation-emulator": "node --import tsx --test test/managedStoreCreation.emulator.ts",
+    "test:managed-location-lifecycle-emulator": "node --import tsx --test test/managedLocationLifecycle.emulator.ts",
     "test:managed-location-import-emulator": "node --import tsx --test test/managedLocationImport.emulator.ts",
     "test:location-creation-recovery-emulator": "node --import tsx --test test/locationCreationRecovery.emulator.ts",
     "test:location-creation-api-emulator": "node --import tsx --test test/locationCreationApi.emulator.ts",

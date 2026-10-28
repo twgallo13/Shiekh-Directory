@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, Building2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { DirectoryCommitError, type DirectoryDependency } from '../../lib/directoryClient';
@@ -6,7 +6,7 @@ import { beginDistrictEdit, beginRegionEdit, discardRegistryDraft, reapplyRegist
 import type { DistrictRecord, RegionRecord } from '../../types';
 import { DistrictLeadershipPanel } from './DistrictLeadershipPanel';
 import { hasDistrictLeadership, isDistrictLeadershipMember } from '../../lib/districtLeadership';
-import { useOrganizationCapabilities } from '../people/useOrganizationCapabilities';
+import { useOrganizationCapabilityState } from '../people/useOrganizationCapabilities';
 import { OrganizationResponsibilities } from '../people/OrganizationResponsibilities';
 import { Modal } from '../common/Modal';
 
@@ -14,7 +14,7 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 type Feedback = { tone: 'pending' | 'success' | 'error'; message: string; dependencies?: DirectoryDependency[]; correction?: string; refresh?: boolean };
 
 export function HierarchyRegistryPanel() {
-  const organization = useOrganizationCapabilities();
+  const organizationState = useOrganizationCapabilityState(), organization = organizationState.capabilities;
   const [organizationOpen, setOrganizationOpen] = useState(false);
   const [organizationFooter, setOrganizationFooter] = useState<HTMLDivElement | null>(null);
   const organizationClose = useRef<(() => void) | null>(null);
@@ -36,6 +36,8 @@ export function HierarchyRegistryPanel() {
   const sortedDistricts = useMemo(() => [...districts].sort(compareRegistryRecords), [districts]);
   const visibleDistricts = sortedDistricts.filter(district => !regionFilter || district.regionId === regionFilter);
   const busy = Boolean(pending) || leadershipBusy || organizationOpen;
+  const legacyLeadershipEnabled = organization?.catalogEnabled === false;
+  useEffect(() => { if (!legacyLeadershipEnabled) setLeadershipId(null); }, [legacyLeadershipEnabled]);
 
   if (currentUser.role !== 'System Administrator') {
     return <p className="text-sm text-neutral-600">Only System Administrators can manage Regions and Districts.</p>;
@@ -165,6 +167,8 @@ export function HierarchyRegistryPanel() {
   };
 
   return <section className="space-y-5" aria-label="Region and District registry">
+    {organizationState.status === 'loading' && <p role="status" className="text-sm text-neutral-500">Checking management settings…</p>}
+    {organizationState.status === 'unavailable' && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>Management settings could not be checked.</p><button type="button" onClick={organizationState.retry} className="rounded-md border border-amber-300 bg-white px-3 py-2 font-semibold">Retry management check</button></div>}
     {organization?.catalogEnabled && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"><div><h3 className="text-sm font-semibold text-neutral-900">Management responsibilities</h3><p className="mt-1 text-xs text-neutral-500">Primary and Additional managers across Regions and Districts.</p></div><button type="button" disabled={busy || Boolean(editing) || Boolean(leadershipId)} onClick={() => setOrganizationOpen(true)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50">Manage responsibilities</button></div>}
     {organizationOpen && <Modal isOpen title="Management responsibilities" size="lg" footer={<div ref={setOrganizationFooter} className="w-full" />} onClose={() => organizationClose.current?.()}><OrganizationResponsibilities footerTarget={organizationFooter} registerClose={close => { organizationClose.current = close; }} onClose={() => setOrganizationOpen(false)} /></Modal>}
     <div className="flex items-start gap-3 border-b border-neutral-200 pb-4">
@@ -211,10 +215,10 @@ export function HierarchyRegistryPanel() {
               <dl className="grid grid-cols-[auto_1fr] gap-x-2 text-neutral-600"><dt>Region ID</dt><dd className="font-mono text-neutral-900">{district.regionId}</dd><dt>Region Name</dt><dd>{parent ? `${parent.name}${parent.status === 'Retired' ? ' - Retired/unavailable' : ''}` : 'Missing registry record - Unavailable'}</dd></dl>
               <div className={`rounded-lg px-3 py-2 ${owned ? 'bg-neutral-50' : 'bg-amber-50'}`}><p className="text-xs font-medium text-neutral-500">District Manager</p><p className="mt-1 font-medium text-neutral-900">{owned ? (district.districtManagerId ? manager?.fullName || `Unresolved person [${district.districtManagerId}]` : 'Vacant') : 'District assignment needs setup'}</p><p className="mt-1 text-xs text-neutral-600">{locations.filter(location => isDistrictLeadershipMember(location, district.id)).length} linked retail stores · {owned ? 'Inherited by stores' : 'Existing store assignments preserved until reviewed'}</p></div>
               <div className="flex flex-wrap items-center gap-4">
-                {!organization?.catalogEnabled && <button type="button" aria-expanded={leadershipId === district.id} disabled={busy || Boolean(editing) || Boolean(leadershipId && leadershipId !== district.id) || district.status !== 'Active' || parent?.status !== 'Active'} onClick={() => setLeadershipId(leadershipId === district.id ? null : district.id)} className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50">{leadershipId === district.id ? 'Close manager settings' : owned ? 'Change District Manager' : 'Set up District Manager'}</button>}
+                {legacyLeadershipEnabled && <button type="button" aria-expanded={leadershipId === district.id} disabled={busy || Boolean(editing) || Boolean(leadershipId && leadershipId !== district.id) || district.status !== 'Active' || parent?.status !== 'Active'} onClick={() => setLeadershipId(leadershipId === district.id ? null : district.id)} className="rounded-md border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50">{leadershipId === district.id ? 'Close manager settings' : owned ? 'Change District Manager' : 'Set up District Manager'}</button>}
                 <RegistryActions editButtonRef={element => { if (element) editButtonRefs.current.set(`district-${district.id}`, element); else editButtonRefs.current.delete(`district-${district.id}`); }} busy={busy || Boolean(leadershipId) || Boolean(editing)} status={district.status} onEdit={() => setEditing(beginDistrictEdit(district))} onStatus={status => void setDistrictStatus(district, status)} />
               </div>
-              {leadershipId === district.id && <DistrictLeadershipPanel key={district.id} districtId={district.id} onBusyChange={setLeadershipBusy} />}
+              {legacyLeadershipEnabled && leadershipId === district.id && <DistrictLeadershipPanel key={district.id} districtId={district.id} onBusyChange={setLeadershipBusy} />}
             </>}
           </div>;
         })}{editing?.kind === 'district' && editing.review?.latest === null && !districts.some(district => district.id === editing.id) && <div className="py-3 text-xs"><RegistryEditForm editing={editing} regions={regions} activeRegions={activeRegions} busy={Boolean(pending)} onChange={setEditing} onSave={saveEdit} onCancel={() => finishEditing(editing)} onDiscard={discardDraft} onReapply={reapplyDraft} /></div>}</div>

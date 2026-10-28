@@ -95,6 +95,12 @@ export interface DirectoryReader {
 }
 
 export interface DirectoryWriter {
+  locationCreationCapabilities?(): ReturnType<typeof organizationLeadershipCapabilities>;
+  prepareLocationCreation?(input: unknown, actor: Account): ReturnType<typeof prepareLocationCreation>;
+  commitLocationCreation?(input: unknown, actor: Account): ReturnType<typeof readLocationCreation>;
+  readLocationCreation?(input: unknown, actor: Account): ReturnType<typeof readLocationCreation>;
+  cancelLocationCreation?(input: unknown, actor: Account): ReturnType<typeof cancelLocationCreation>;
+  listLocationCreations?(actor: Account): ReturnType<typeof listLocationCreations>;
   organizationLeadershipCapabilities?(): ReturnType<typeof organizationLeadershipCapabilities>;
   readOrganizationCatalog?(actor: Account): ReturnType<typeof readOrganizationCatalog>;
   prepareOrganizationLeadership?(input: unknown, actor: Account): ReturnType<typeof prepareOrganizationLeadership>;
@@ -179,6 +185,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   commitOperating(input: unknown, actor: Account) { return commitOperating(this.firestore, input, actor); }
   cancelOperating(input: unknown, actor: Account) { return cancelOperating(this.firestore, input, actor); }
 
+  locationCreationCapabilities() { return organizationLeadershipCapabilities(); }
   prepareLocationCreation(input: unknown, actor: Account) { return prepareLocationCreation(this.firestore, input, actor); }
   readLocationCreation(input: unknown, actor: Account) { return readLocationCreation(this.firestore, input, actor); }
   cancelLocationCreation(input: unknown, actor: Account) { return cancelLocationCreation(this.firestore, input, actor); }

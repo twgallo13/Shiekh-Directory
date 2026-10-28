@@ -73,19 +73,19 @@ export function parseOrganizationList(v: unknown): OrganizationOperationList {
 
 /** Bound to one synchronous auth generation, with deadlines and no automatic retries.
  * UI must durably retain an operation marker BEFORE calling any mutating method. */
-export function createOrganizationSessionTransport(options: { session(): SessionState; generation(): number; request: typeof fetch; timeoutMs?: number }, family: 'leadership' | 'moves') {
-  if (family !== 'leadership' && family !== 'moves') throw new OrganizationTransportError();
+export function createOrganizationSessionTransport(options: { session(): SessionState; generation(): number; request: typeof fetch; timeoutMs?: number }, family: 'leadership' | 'moves' | 'creation') {
+  if (!['leadership','moves','creation'].includes(family)) throw new OrganizationTransportError();
   const initial = options.session(), uid = initial.user?.uid, generation = options.generation();
   let disposed = false; const active = new Set<AbortController>();
   const timeoutMs = options.timeoutMs ?? 10_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw new OrganizationTransportError();
   const check = () => {
     const s = options.session();
-    if (disposed || s.status !== 'authorized' || !s.user || s.user.uid !== uid || s.account?.uid !== uid || s.account.role !== 'System Administrator' || s.account.status !== 'Active' || s.account.accessScope !== 'Company-wide' || options.generation() !== generation) throw new OrganizationTransportError('Your session changed. Sign in and check recovery before continuing.', 403);
+    if (disposed || s.status !== 'authorized' || !s.user || s.user.uid !== uid || s.account?.uid !== uid || !(family === 'creation' ? ['System Administrator','Directory Data Steward','Editor'].includes(s.account.role) : s.account.role === 'System Administrator') || s.account.status !== 'Active' || s.account.accessScope !== 'Company-wide' || options.generation() !== generation) throw new OrganizationTransportError('Your session changed. Sign in and check recovery before continuing.', 403);
     return s.user;
   };
   const call = async (mode: string, body?: unknown) => {
-    if (!['capabilities', 'catalog', 'operations', 'prepare', 'commit', 'status', 'cancel', 'directory'].includes(mode)) throw new OrganizationTransportError();
+    if (!['capabilities', 'catalog', 'operations', 'prepare', 'commit', 'status', 'cancel', 'directory'].includes(mode) || family === 'creation' && mode === 'catalog') throw new OrganizationTransportError();
     const user = check(), abort = new AbortController(); active.add(abort);
     let rejectAbort: () => void;
     const expired = new Promise<never>((_, reject) => { rejectAbort = () => reject(new OrganizationTransportError()); abort.signal.addEventListener('abort', rejectAbort, { once: true }); });
@@ -94,15 +94,16 @@ export function createOrganizationSessionTransport(options: { session(): Session
       const token = await user.getIdToken(); check();
       if (abort.signal.aborted || typeof token !== 'string' || !token.length || token.length > 8192 || /\s/.test(token)) throw new OrganizationTransportError();
       const encoded = body === undefined ? undefined : JSON.stringify(body);
-      if (encoded && new TextEncoder().encode(encoded).byteLength > 32 * 1024) throw new OrganizationTransportError('This review is too large. Select fewer units.', 413);
-      const response = await options.request(mode === 'directory' ? '/api/auth/bootstrap' : `/api/directory/${family === 'moves' ? 'organization-moves' : 'organization-leadership'}/${mode}`, { method: body === undefined ? 'GET' : 'POST', cache: 'no-store', redirect: 'error', signal: abort.signal,
+      if (encoded && new TextEncoder().encode(encoded).byteLength > (family === 'creation' ? 200_000 : 32 * 1024)) throw new OrganizationTransportError(family === 'creation' ? 'This store draft is too large. Remove some optional information.' : 'This review is too large. Select fewer units.', 413);
+      const response = await options.request(mode === 'directory' ? '/api/auth/bootstrap' : `/api/directory/${family === 'creation' ? 'location-creations' : family === 'moves' ? 'organization-moves' : 'organization-leadership'}/${mode}`, { method: body === undefined ? 'GET' : 'POST', cache: 'no-store', redirect: 'error', signal: abort.signal,
         headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(encoded === undefined ? {} : { body: encoded }) });
       check();
       if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) throw new OrganizationTransportError(undefined, response.status);
       const raw = await response.text(); if (raw.length > 8_000_000) invalid();
+      if (family === 'creation' && mode !== 'directory' && new TextEncoder().encode(raw).byteLength > 128_000) invalid();
       const value = JSON.parse(raw); check();
       if (!response.ok) {
-        const safe = [400, 409, 413, 422].includes(response.status) && object(value.error) && /^organization_(?:invalid_input|conflict|ineligible|capacity)$/.test(value.error.code) && text(value.error.message);
+        const safe = [400, 409, 413, 422].includes(response.status) && object(value.error) && (/^organization_(?:invalid_input|conflict|ineligible|capacity)$/.test(value.error.code) || family === 'creation' && /^location_creation_(?:invalid_input|conflict|capacity)$/.test(value.error.code)) && text(value.error.message);
         throw new OrganizationTransportError(safe ? value.error.message : undefined, response.status);
       }
       return value;

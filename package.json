@@ -17,6 +17,7 @@
     "test:managed-store-creation-emulator": "node --import tsx --test test/managedStoreCreation.emulator.ts",
     "test:managed-location-import-emulator": "node --import tsx --test test/managedLocationImport.emulator.ts",
     "test:location-creation-recovery-emulator": "node --import tsx --test test/locationCreationRecovery.emulator.ts",
+    "test:location-creation-api-emulator": "node --import tsx --test test/locationCreationApi.emulator.ts",
     "test:organization-move-source-emulator": "node --import tsx --test test/organizationMoveSource.emulator.ts",
     "test:organization-move-emulator": "node --import tsx --test test/organizationMoveAtomic.emulator.ts",
     "test:organization-move-api-emulator": "node --import tsx --test test/organizationMoveApi.emulator.ts",

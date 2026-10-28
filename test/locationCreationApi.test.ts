@@ -34,6 +34,10 @@ test('legacy admission requires an explicit all-disabled rollout; unavailable or
     const h=await harness(options);try{const caps=await(await h.request('capabilities')).json();assert.equal(caps.legacyCreationEnabled,!!options.flags && options.flags.catalogEnabled===false);assert.equal(h.calls.length,0);}finally{await h.close();}
   }
 });
+test('all-off partial adapter never advertises legacy admission',async()=>{
+  for(const omit of ['prepareLocationCreation','commitLocationCreation','readLocationCreation','cancelLocationCreation','listLocationCreations']){const h=await harness({omit,flags:{catalogEnabled:false,recoveryEnabled:false,newCommandsEnabled:false}});try{assert.equal((await(await h.request('capabilities')).json()).legacyCreationEnabled,false);}finally{await h.close();}}
+});
+
 test('creation API validates exact commands/markers and body bounds before Store calls',async()=>{
   const h=await harness();try{
     assert.equal((await h.request('prepare',{...command(),token:'bad'})).status,400);assert.equal((await h.request('status',{locationId:'loc-new',data:{}})).status,400);

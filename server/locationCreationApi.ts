@@ -22,7 +22,8 @@ export function createLocationCreationRouter(authenticate: Authenticate | null, 
     const c = store.locationCreationCapabilities?.();
     const recoveryEnabled = c?.schemaVersion === 1 && c.recoveryEnabled === true && !!store.readLocationCreation && !!store.cancelLocationCreation && !!store.listLocationCreations;
     const catalogEnabled = c?.schemaVersion === 1 && c.catalogEnabled === true;
-    const legacyCreationEnabled = c?.schemaVersion === 1 && c.catalogEnabled === false && c.recoveryEnabled === false && c.newCommandsEnabled === false;
+    const completeAdapter = !!store.prepareLocationCreation && !!store.commitLocationCreation && !!store.readLocationCreation && !!store.cancelLocationCreation && !!store.listLocationCreations;
+    const legacyCreationEnabled = completeAdapter && c?.schemaVersion === 1 && c.catalogEnabled === false && c.recoveryEnabled === false && c.newCommandsEnabled === false;
     return { schemaVersion: 1 as const, catalogEnabled, recoveryEnabled, newCommandsEnabled: catalogEnabled && recoveryEnabled && c.newCommandsEnabled === true && !!store.prepareLocationCreation && !!store.commitLocationCreation, legacyCreationEnabled };
   };
   const unavailable = (res: Response, e?: unknown) => {

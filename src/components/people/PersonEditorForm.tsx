@@ -17,6 +17,9 @@ import { PersonInboxResponsibilities } from './PersonInboxResponsibilities';
 import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
 import { useAuth } from '../../context/AuthContext';
 import { PositionRemovalReview } from './PositionRemovalReview';
+import { OrganizationResponsibilities } from './OrganizationResponsibilities';
+import { useOrganizationPersonReview } from './useOrganizationPersonReview';
+import { organizationPositionConflicts } from '../../lib/organizationPersonReview';
 
 interface PersonEditorFormProps {
   person?: PersonRecord; locations: LocationRecord[]; submitLabel: string;
@@ -38,6 +41,9 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
   const canCoordinate = account?.role === 'System Administrator' && account.accessScope === 'Company-wide';
   const [removalOpen, setRemovalOpen] = useState(false), [recoveryOnly, setRecoveryOnly] = useState(false);
   const removalClose = useRef<(() => void) | null>(null);
+  const [organizationOpen, setOrganizationOpen] = useState(false);
+  const organizationClose = useRef<(() => void) | null>(null);
+  const organization = useOrganizationPersonReview(person?.id, Boolean(person));
   const phone = resolvePersonPhone(person), email = resolvePersonEmail(person), positionState = personPositions(person || {});
   const [expectedVersion] = useState(person?.version ?? 0);
   const [draft, setDraft] = useState(() => ({
@@ -66,12 +72,16 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     if (field === 'email') setMappedLegacyEmail(null);
     setDraft(previous => ({ ...previous, [field]: value })); setTouched(previous => new Set(previous).add(field)); setReviewed(false); setError('');
   };
-  const cancel = () => { if (removalOpen) { removalClose.current?.(); return; } if (busy.current) return; if (emailMappingReview) { setEmailMappingReview(false); return; } if (touched.size || uncertain) setDiscard(true); else onCancel(); };
+  const cancel = () => { if (organizationOpen) { organizationClose.current?.(); return; } if (removalOpen) { removalClose.current?.(); return; } if (busy.current) return; if (emailMappingReview) { setEmailMappingReview(false); return; } if (touched.size || uncertain) setDiscard(true); else onCancel(); };
   useEffect(() => { registerClose?.(cancel); return () => registerClose?.(null); });
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy.current || uncertain || emailMappingReview) return;
+    const changingAuthority = positionChanged || touched.has('status') || touched.has('fullName');
+    if (changingAuthority && organization.review && ['loading', 'unavailable'].includes(organization.review.phase)) { setError('Check management responsibilities before changing this person’s name, positions or status. Your draft is kept.'); return; }
+    if (positionChanged && organizationPositionConflicts(organization.review?.units || [], draft.positionIds).length) { setError('Reassign or end the affected District/Region responsibilities first. Your selected positions are kept in this draft.'); return; }
+    if (organization.review?.units.length && (touched.has('status') && draft.status !== 'Active' || touched.has('fullName') && draft.fullName.trim() !== person?.fullName)) { setError('Review management responsibilities before inactivation. Assigned manager name changes also require a coordinated update; no changes were sent. Your draft is kept.'); return; }
     if (!draft.fullName.trim()) { setError('Enter a full name.'); return; }
     if (!person && !draft.positionIds.length) { setError('Select a position, including Other / corporate if appropriate.'); return; }
     if (conflicts.length) { setError('Retain the listed positions explicitly, or reassign/vacate their responsibilities before changing positions.'); return; }
@@ -112,6 +122,7 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
     if (!recover && (draft.status !== 'Active' || personLifecycle(person) !== 'active')) { setError('Resolve Active Status before a position handover. This review does not inactivate people or change account access.'); return; }
     setRecoveryOnly(recover); setRemovalOpen(true);
   };
+  if (organizationOpen && person) return <OrganizationResponsibilities personId={person.id} footerTarget={footerTarget} registerClose={close => { organizationClose.current = close; }} onClose={() => { setOrganizationOpen(false); setReviewed(false); organization.refresh(); }} />;
   if (removalOpen && person) return <PositionRemovalReview footerTarget={footerTarget} personId={person.id} expectedVersion={expectedVersion} originalPositions={[...positionState.ids]} desiredPositions={draft.positionIds} recoveryOnly={recoveryOnly} registerClose={close => { removalClose.current = close; }} onClose={() => setRemovalOpen(false)} onSaved={onCancel} />;
   const actions = <div className="flex flex-wrap justify-end gap-2"><Button size="sm" disabled={saving} onClick={cancel}>Cancel</Button>{conflicts.length > 0 && canCoordinate ? <Button size="sm" variant="primary" disabled={saving || uncertain} onClick={() => openRemoval()}>Review replacement or vacancy</Button> : <Button form={id + '-form'} type="submit" size="sm" variant="primary" isLoading={saving} disabled={uncertain}>{submitLabel}</Button>}</div>;
   return <>
@@ -122,6 +133,14 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
           <TextField id={id + '-name'} label="Full Name" required value={draft.fullName} onChange={value => edit('fullName', value)} />
           <fieldset className="space-y-2">
             <legend className="text-xs font-semibold text-neutral-700">Linked positions</legend>
+            {organization.review && <div className="space-y-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs">
+              {organization.review.phase === 'loading' ? <p role="status">Checking management responsibilities…</p> : organization.review.phase === 'unavailable' ? <><p role="alert">Management responsibilities could not be checked. Your draft is kept.</p><Button size="sm" onClick={organization.refresh}>Retry responsibility check</Button></> : organization.review.phase === 'ready' ? <>
+                <p className="font-semibold">District & Region responsibilities</p>
+                {organization.review.units.length ? organization.review.units.map(unit => <p key={JSON.stringify([unit.unitType, unit.id])}>{unit.name} · {unit.unitType === 'district' ? 'District' : 'Region'} · {unit.members.find(m => m.personId === person?.id)?.isPrimary ? 'Primary' : 'Additional'}</p>) : <p>No current District or Region assignments.</p>}
+                <p>Positions determine eligibility. Ending a responsibility is a separate reviewed change.</p>
+                <Button size="sm" onClick={() => setOrganizationOpen(true)}>Review management responsibilities</Button>
+              </> : <p>District & Region roster management is not enabled on this release.</p>}
+            </div>}
             <p className="text-xs text-neutral-500">Choose every position this person holds. Assign stores and districts separately.</p>
             <div className="grid grid-cols-2 gap-2">
               {PERSON_POSITIONS.map(p => <label key={p.id} className={'flex min-h-11 cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs ' + (draft.positionIds.includes(p.id) ? 'border-red-200 bg-red-50' : 'border-neutral-200 bg-white')}>
@@ -166,12 +185,12 @@ export function PersonEditorForm({ person, locations, submitLabel, onSubmit, onC
           <PersonLocationRelationshipFields locations={locations} primaryLocationId={draft.primaryLocationId} supportedLocationIds={draft.supportedLocationIds} onPrimaryLocationChange={value => edit('primaryLocationId', value)} onSupportedLocationIdsChange={value => edit('supportedLocationIds', value)} />
         </section>
         <section className={sectionClass} aria-label="Management responsibilities">
-          <h3 className="font-semibold text-neutral-900">Management responsibilities</h3>
-          <p className="text-xs text-neutral-500">Change a district's manager once in Organization settings. Its stores inherit that manager.</p>
+          <h3 className="font-semibold text-neutral-900">{organization.review?.phase === 'ready' ? 'Store & saved leadership references' : 'Management responsibilities'}</h3>
+          <p className="text-xs text-neutral-500">{organization.review?.phase === 'ready' ? 'District and Region responsibilities are reviewed above. Store assignments are managed separately.' : "Change a district's manager once in Organization settings. Its stores inherit that manager."}</p>
           {impact.responsibilities.length ? <details open={positionChanged} className="rounded-lg border border-neutral-200 p-3 text-xs">
             <summary className="cursor-pointer font-medium text-neutral-700">Current management assignments · {impact.responsibilities.length}</summary>
             <ul className="mt-3 divide-y divide-neutral-100">{impact.responsibilities.map(row => <li key={row.key} className="py-2"><a href={row.href} target="_blank" rel="noopener noreferrer" className="font-semibold text-red-700 underline">{row.label}</a><p className="mt-1 text-neutral-500">{row.source}</p></li>)}</ul>
-          </details> : <p className="text-xs text-neutral-500">No linked management assignments.</p>}
+          </details> : <p className="text-xs text-neutral-500">{organization.review?.phase === 'ready' ? 'No other saved leadership references.' : 'No linked management assignments.'}</p>}
           {impact.issues.map(issue => <p key={issue} className="text-xs text-amber-900">{issue}</p>)}
           {person?.district && <details className="text-xs text-neutral-500"><summary className="cursor-pointer">Historical territory note</summary><p className="mt-2 break-words">Legacy territory/district text (reference only): {person.district}. Not an assignment; preserved.</p></details>}
           <a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="inline-block py-1 text-xs font-semibold text-red-700 underline">Open Organization & leadership settings</a>

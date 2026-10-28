@@ -19,6 +19,7 @@ import { sharedPersonEmailKind } from '../../lib/personInboxResponsibilities';
 import { PersonTransitionReview } from './PersonTransitionReview';
 import { useOrganizationCapabilities } from './useOrganizationCapabilities';
 import { OrganizationResponsibilities } from './OrganizationResponsibilities';
+import { useOrganizationPersonReview } from './useOrganizationPersonReview';
 
 interface PersonDetailModalProps {
   person: PersonRecord | null;
@@ -45,6 +46,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   const [confirmationName, setConfirmationName] = useState('');
   const [actionError, setActionError] = useState('');
   const [isActionPending, setIsActionPending] = useState(false);
+  const organizationAction = useOrganizationPersonReview(person?.id, Boolean(pendingAction));
 
   useEffect(() => {
     setIsEditing(false);
@@ -72,7 +74,8 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
   const canEdit = currentUser.role === 'Directory Data Steward' || currentUser.role === 'System Administrator';
   const impact = personProfileImpact(person, locations, districts, regions, users);
   const ownedDistricts = districts.filter(d => d.districtManagerId === person.id);
-  const hasBlockers = blockers.locations.length > 0 || blockers.users.length > 0 || ownedDistricts.length > 0;
+  const organizationBlocked = Boolean(organizationAction.review && (['loading', 'unavailable'].includes(organizationAction.review.phase) || organizationAction.review.units.length));
+  const hasBlockers = blockers.locations.length > 0 || blockers.users.length > 0 || ownedDistricts.length > 0 || organizationBlocked;
 
   const closeAction = () => {
     if (isActionPending) return;
@@ -103,6 +106,9 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
 
   const blockerDetails = hasBlockers ? (
     <div className="mt-4 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+      {organizationAction.review?.phase === 'loading' && <p role="status">Checking District & Region responsibilities…</p>}
+      {organizationAction.review?.phase === 'unavailable' && <div className="space-y-2"><p>Management responsibilities could not be checked. This action remains unavailable.</p><Button size="sm" onClick={organizationAction.refresh}>Retry responsibility check</Button></div>}
+      {!!organizationAction.review?.units.length && <div className="space-y-2"><p className="font-semibold">Reassign or end these responsibilities first:</p>{organizationAction.review.units.map(unit => <p key={JSON.stringify([unit.unitType, unit.id])}>{unit.name} · {unit.unitType === 'district' ? 'District' : 'Region'} · {unit.members.find(m => m.personId === person.id)?.isPrimary ? 'Primary' : 'Additional'}</p>)}<Button size="sm" disabled={isActionPending} onClick={() => { closeAction(); setIsManaging(true); }}>Review management responsibilities</Button></div>}
       {ownedDistricts.length > 0 && <div><p className="font-semibold">Reassign or vacate District leadership first:</p>{ownedDistricts.map(d => <p key={d.id}>{d.name} · {d.status}</p>)}<a href="/admin?tab=hierarchy-registry" target="_blank" rel="noopener noreferrer" className="underline">Open Organization & leadership settings</a></div>}
       {blockers.locations.length > 0 && <div className="space-y-1.5"><p className="font-semibold">Clear these leadership assignments first:</p>{blockers.locations.map(row => (
         <button key={row.locationId} type="button" disabled={!row.location || !onEditLocation} onClick={() => row.location && onEditLocation?.(row.location)} className="flex w-full items-center justify-between rounded border border-amber-200 bg-white px-2 py-1.5 text-left hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-70">

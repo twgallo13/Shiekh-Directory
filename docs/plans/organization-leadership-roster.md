@@ -46,6 +46,7 @@ The internal bounded source adapter and stateful preparation/commit/status/cance
 - Prepare a redacted review, bind its intent/versions to the actor/session, and persist idempotent operation/receipt state. Reconcile unknown outcomes before retry.
 - Recompute in one transaction and bound actual complete documents/audit/receipt bytes, not only patches. Cover phantom membership inserts and eligibility changes with transaction/query/native preconditions.
 - Guard generic District/Region/Person/Location writes, correction approvals, imports, retirement and the unpublished position-removal writer against bypassing activated roster ownership.
+- Transitional guards are now implemented for shared Store commits/import manifests and the older signed Person-command source adapter. Activated-unit metadata/pointers cannot be edited independently; active Additional memberships block unsafe Person removal; managed retail copies must match both canonical owners. Managed-unit edits, store moves/type changes/deletion and assigned-manager renames currently fail closed pending their roster-aware review path. These restrictions are implementation safeguards, not the final UX; do not activate units while that supported workflow is missing. See [Dispatch 48](../dispatches/dispatch-48-organization-leadership-guards.md).
 - Review activation/rollback compatibility before any unit migration. Preserve non-retail and existing live data. Reuse existing recovery foundations only where their gates/contracts are actually applicable.
 
 ### 3. UX and reverse responsibilities

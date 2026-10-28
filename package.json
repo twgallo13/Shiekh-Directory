@@ -10,6 +10,7 @@
     "test:api": "node --import tsx --test test/*.test.ts",
     "test:transition-emulator": "node --import tsx --test test/personTransitionAtomic.emulator.ts",
     "test:organization-emulator": "node --import tsx --test test/organizationLeadershipAtomic.emulator.ts",
+    "test:organization-guards-emulator": "node --import tsx --test test/organizationLeadershipGuards.emulator.ts",
     "test:rules-emulator": "node --import tsx --test test/directoryRules.emulator.ts",
     "migrate:firestore": "node --import tsx scripts/migrateFirestoreFromCsv.ts",
     "start": "node dist/server.cjs",

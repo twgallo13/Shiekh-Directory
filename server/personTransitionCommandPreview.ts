@@ -7,14 +7,15 @@ import { assertPersonTransitionActor, readPersonTransitionAuthority } from './pe
 import { planPersonTransition, type TransitionPlannerSnapshot, type TransitionSourceDocument } from './personTransitionPlanner';
 import { LEADERSHIP_POSITION_FIELDS } from '../src/lib/personPositions';
 import { TRANSITION_REVIEW_TTL_MS, type PersonTransitionReviewSigner } from './personTransitionReviewEnvelope';
+import { readOrganizationGuardState, assertOrganizationTransitionCompatibility } from './organizationLeadershipGuards';
 
 const leaders = Object.keys(LEADERSHIP_POSITION_FIELDS);
 export const COMMAND_PREVIEW_LIMITS = { locations: 1000, districts: 500, regions: 100, users: 5000, requests: 1000 } as const;
 const fields = {
   locations: ['id', 'version', 'storeNumber', 'name', 'type', 'recordStatus', 'hierarchyApplicability', 'districtId', 'regionId', ...leaders,
     'storeManagerName', 'districtManagerName', 'regionalManagerName', 'assistantStoreManagerNames', 'keyHolderNames'],
-  districts: ['id', 'version', 'name', 'regionId', 'status', 'districtManagerId'],
-  regions: ['id', 'version', 'name', 'status'],
+  districts: ['id', 'version', 'name', 'regionId', 'status', 'districtManagerId', 'leadershipModelVersion', 'leadershipVersion'],
+  regions: ['id', 'version', 'name', 'status', 'regionalManagerId', 'leadershipModelVersion', 'leadershipVersion'],
   users: ['id', 'version', 'personId', 'role', 'status'],
   requests: ['id', 'version', 'status', 'targetType', 'targetId', 'changeType', ...['requestedChanges', 'currentSnapshot'].flatMap(parent => leaders.map(field => `${parent}.${field}`))],
 };
@@ -95,6 +96,11 @@ export async function readPersonTransitionCommandPlan(firestore: Firestore, tran
       if (rows.length !== batch.length || new Set(rows.map(d => d.id)).size !== batch.length || rows.some(d => !batch.includes(d.id))) throw new Error('Incomplete exact Person reads.');
       snapshot.people.push(...rows.map(doc => source('people', doc, selected)));
     }
+    const organizationState = await readOrganizationGuardState(firestore, transaction, [
+      ...snapshot.regions.map(row => ({ unitType: 'region' as const, id: row.id, data: row.data! })),
+      ...snapshot.districts.map(row => ({ unitType: 'district' as const, id: row.id, data: row.data! })),
+    ]);
+    assertOrganizationTransitionCompatibility(organizationState, intent, snapshot.locations);
     return planPersonTransition(intent, snapshot);
 }
 

@@ -17,6 +17,7 @@ import { validatePersonPositionState } from './personPositionValidation';
 import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
+import { readOrganizationGuardState, validateOrganizationLeadershipWrites } from './organizationLeadershipGuards';
 import { previewOperating, commitOperating, cancelOperating, type OperatingPreview } from './firestoreOperating';
 import { previewPersonTransition } from './personTransitionPreview';
 import { previewPersonTransitionCommand } from './personTransitionCommandPreview';
@@ -188,8 +189,13 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         regions: hierarchySnapshot?.[0].docs.map(document => ({ id: document.id, name: String(document.data().name || ""), status: document.data().status })) || [],
         districts: hierarchySnapshot?.[1].docs.map(document => ({ ...document.data(), id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })) || [],
       };
+      const organizationState = await readOrganizationGuardState(this.firestore, transaction, [
+        ...(hierarchySnapshot?.[0].docs.map(document => ({ unitType: 'region' as const, id: document.id, data: document.data() })) || []),
+        ...(hierarchySnapshot?.[1].docs.map(document => ({ unitType: 'district' as const, id: document.id, data: document.data() })) || []),
+      ]);
       applyHierarchyRegistryWrites(hierarchyRegistry, writes);
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
+      validateOrganizationLeadershipWrites(validatedWrites, snapshots.map(snapshot => snapshot.data()), organizationState, people);
       validatedWrites.forEach((write, index) => {
         if (write.collection === 'requests' && write.operation === 'set' && !snapshots[index].exists) Object.assign(write.data!, { submissionDigest: submissionDigest(writes[index].data!), submissionActor: actor.uid });
       });
@@ -364,6 +370,11 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         districts: districtSnapshot.docs.map(document => ({ ...document.data(), id: document.id, name: String(document.data().name || ""), regionId: String(document.data().regionId || ""), status: document.data().status })),
       };
       const validatedWrites = validateMetadataWrites(writes, targetSnapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, [], hierarchyRegistry);
+      const organizationState = await readOrganizationGuardState(this.firestore, transaction, [
+        ...regionSnapshot.docs.map(document => ({ unitType: 'region' as const, id: document.id, data: document.data() })),
+        ...districtSnapshot.docs.map(document => ({ unitType: 'district' as const, id: document.id, data: document.data() })),
+      ]);
+      validateOrganizationLeadershipWrites(validatedWrites, targetSnapshots.map(snapshot => snapshot.data()), organizationState, people);
       validateLocationInboxConflicts(validatedWrites, locations);
       const committedAt = new Date().toISOString();
       const savedLocations = validatedWrites.map(write => {

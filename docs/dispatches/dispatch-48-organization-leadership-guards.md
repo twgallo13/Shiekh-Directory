@@ -1,0 +1,29 @@
+# Dispatch 48 — Transitional organization writer protections
+
+October 28, 2026 Pacific. Branch `codex/organization-leadership-guards`, dependent on [PR #77](https://github.com/twgallo13/Shiekh-Directory/pull/77), head `559221b9ba254eb6cc1bbb92cb65e4ba66b9f51d`. The pure foundation [PR #76](https://github.com/twgallo13/Shiekh-Directory/pull/76) merged as `a2b51c17c6c009c75ab72f2f5d4e54cc641c23b5`; PR #77 was retargeted to main without source changes. No deployment or unit activation occurred.
+
+## Protected paths
+
+`organizationLeadershipGuards.ts` now runs before writes in ordinary `FirestoreDirectoryStore.commit` and confirmed Location-import manifests. Correction approval uses the same commit path. The older signed Person-command source loader invokes the overlap guard at both preview and atomic commit, while immutable success/recovery remains available. No generic write access was added to assignment/operation collections.
+
+- A legacy-only transaction adds no assignment query and retains existing District handover behavior.
+- Once any unit is activated, the same transaction reads complete bounded masked assignment identities: at most 15,000 history rows and 8,000,000 estimated bytes. Failures, missing native metadata, malformed identities, duplicate members, unsupported models, invalid parents and pointer/roster disagreement reject linked saves rather than guess.
+- Generic writes cannot activate/downgrade model metadata, edit/retire an activated unit independently or mint a Region owner. Parent retirement and District moves across managed Regions require the reviewed organization path.
+- Active Primary **and Additional** responsibilities block deletion, inactivation or loss of the matching controlled position. Contact-only edits may preserve unresolved incumbents; adding another position is allowed when existing responsibilities remain eligible. Assigned-manager name changes need a compatibility review.
+- Retail-store copies must match the canonical managed District and Region Primary pointers/names. New stores must supply both owners from current canonical state; Corporate/non-retail remains separate. Managed store moves, type/applicability changes and deletion fail closed pending their explicit workflow. No silent hierarchy move or Person reassignment occurs.
+- The older signed Person workflow cannot operate on a roster-assigned subject, an activated District or a store-owned RM slot under a managed Region. It does not understand Additional coverage and must not bypass the new model.
+
+These are **transitional safeguards**, not completion of the final editing experience. Do not activate any live unit until the new reviewed unit/name/membership workflow and compatible UI exist. The current legacy production remains unchanged.
+
+## Validation
+
+- Complete ordinary regression suite: **744/744 passed**, 0 failed/skipped, after shared Store/source integration. Log retained outside the repository in the task outputs. Reuse these results for unchanged source; do not repeat the full suite for documentation-only updates.
+- Twelve focused guard tests cover legacy compatibility, bounded masked reads/failure, metadata tampering, Additional membership, retained unresolved contacts, concurrent positions, parent retirement/reparenting, retail inheritance/overrides, explicit vacancy normalization, non-retail separation, store moves and old-command overlap. Self-review after the full run found that an explicit unit vacancy must accept the existing empty/absent Location copy, while the canonical unit pointer must remain null; that safeguard and its targeted case were added afterward. The first targeted run had two test-harness defects: the injected-fault object was shadowed by the guard state, and a message assertion was incorrectly case-sensitive. Both were corrected before the passing full suite. No product assertion was removed. The final targeted guard run covers the vacancy fix; the unchanged full-suite results are reused, not represented as a new 745-case full run.
+- Three actual SDK/emulator integration tests passed: shared Store deletion of an Additional manager rejects without extra audit; generic Region activation rejects; old signed preview rejects an assigned roster subject. Same isolated exact-loopback/demo-project safeguards as Dispatch 47; unique named synthetic databases, no production fallback/credentials, every SDK instance terminated and the owned emulator stopped afterward.
+- Final TypeScript check passed after fixing the test-harness property reference. Application build passed; existing Vite chunk-size advisory remains. No browser interaction or live data mutation was needed for these server-only safeguards.
+
+## Outstanding acceptance and next work
+
+The native guard tests do not yet prove an activated-unit confirmed import/correction end-to-end journey or all concurrent membership writers. Add that acceptance with the reviewed membership commands; existing legacy import/correction regressions pass. No production index/IAM/sign-in proof is implied. Complete authenticated/gated adapters, read projections, the Profile → Responsibilities → Review onboarding/Organization UX and recovery feedback, then the separately opt-in consumer contract. Preserve Primary/Additional, optional Corporate workplace, stable IDs, current API shapes/grants and other apps. Do not deploy main wholesale.
+
+PR #77's security review completed on its current head without findings; its code review was still running at the last checkpoint. CodeRabbit initially skipped its non-default base; after PR #76 merged the base was retargeted to main. No advisory approval is inferred and no manual/paid review or configuration change was triggered. This dispatch does not claim PR #77/this branch merged, deployed, activated or production-accepted.

@@ -21,11 +21,12 @@ export function parseTransitionDirectory(body: any): DirectorySeed {
 export async function refreshTransitionSavedState(options: {
   session(): SessionState; generation(): number; fence(): { epoch: number; pending: number };
   read(): Promise<unknown>; apply(seed: DirectorySeed): void;
+  purpose?: 'location-creation';
 }) {
   const session = options.session(), uid = session.user?.uid, generation = options.generation(), epoch = options.fence().epoch;
   const check = () => {
     const s = options.session(), fence = options.fence();
-    if (!uid || s.status !== 'authorized' || s.user?.uid !== uid || s.account?.uid !== uid || s.account.role !== 'System Administrator' || s.account.status !== 'Active' || s.account.accessScope !== 'Company-wide'
+    if (!uid || s.status !== 'authorized' || s.user?.uid !== uid || s.account?.uid !== uid || !(options.purpose === 'location-creation' ? ['System Administrator', 'Directory Data Steward', 'Editor'].includes(s.account.role) : s.account.role === 'System Administrator') || s.account.status !== 'Active' || s.account.accessScope !== 'Company-wide'
       || options.generation() !== generation || fence.epoch !== epoch || fence.pending) fail();
   };
   check(); const raw = await options.read(); check(); const body = parseTransitionDirectory(raw);

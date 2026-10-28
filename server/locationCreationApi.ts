@@ -3,6 +3,7 @@ import { rateLimit } from 'express-rate-limit';
 import { AccessDenied, AuthenticationUnavailable, type Account, type Authenticate } from './authAuthority';
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryWriter } from './firestoreDirectory';
 import { assertLocationCreationActor, normalizeLocationCreationCommand, normalizeLocationCreationMarker } from './locationCreationRecovery';
+import { organizationLegacyCreationEnabled } from './organizationLeadershipConfiguration';
 
 /** Private Firebase-authenticated Company-wide writer endpoints. Store admission and live
  * authority are checked again; no generic commit fallback or consumer scope enables this route. */
@@ -23,7 +24,7 @@ export function createLocationCreationRouter(authenticate: Authenticate | null, 
     const recoveryEnabled = c?.schemaVersion === 1 && c.recoveryEnabled === true && !!store.readLocationCreation && !!store.cancelLocationCreation && !!store.listLocationCreations;
     const catalogEnabled = c?.schemaVersion === 1 && c.catalogEnabled === true;
     const completeAdapter = !!store.prepareLocationCreation && !!store.commitLocationCreation && !!store.readLocationCreation && !!store.cancelLocationCreation && !!store.listLocationCreations;
-    const legacyCreationEnabled = completeAdapter && c?.schemaVersion === 1 && c.catalogEnabled === false && c.recoveryEnabled === false && c.newCommandsEnabled === false;
+    const legacyCreationEnabled = organizationLegacyCreationEnabled() && completeAdapter && c?.schemaVersion === 1 && c.catalogEnabled === false && c.recoveryEnabled === false && c.newCommandsEnabled === false;
     return { schemaVersion: 1 as const, catalogEnabled, recoveryEnabled, newCommandsEnabled: catalogEnabled && recoveryEnabled && c.newCommandsEnabled === true && !!store.prepareLocationCreation && !!store.commitLocationCreation, legacyCreationEnabled };
   };
   const unavailable = (res: Response, e?: unknown) => {
@@ -34,7 +35,11 @@ export function createLocationCreationRouter(authenticate: Authenticate | null, 
   const send = (res: Response, value: unknown) => res.type('application/json').end(JSON.stringify(value));
   const admit = (command: boolean): RequestHandler => (_req, res, next) => { try { const c = capabilities(); if (!(command ? c.newCommandsEnabled : c.recoveryEnabled)) return void unavailable(res); next(); } catch { unavailable(res); } };
   const bounded: RequestHandler = (req, res, next) => json({ limit: 220_000 })(req, res, (e?: unknown) => { if (e) return void res.status((e as { type?: string }).type === 'entity.too.large' ? 413 : 400).json({ error: { code: 'invalid_location_creation_body' } }); next(); });
-  router.get('/capabilities', authorize, readLimit, (_req, res) => { try { return send(res, capabilities()); } catch { return unavailable(res); } });
+  router.get('/capabilities', authorize, readLimit, async (_req, res) => { try {
+    const c=capabilities();
+    c.legacyCreationEnabled=c.legacyCreationEnabled && await store.locationCreationLegacyAllowed?.(res.locals.locationCreationActor)===true;
+    return send(res,c);
+  } catch { return unavailable(res); } });
   router.get('/operations', authorize, readLimit, admit(false), async (_req, res) => { try { return send(res, await store.listLocationCreations!(res.locals.locationCreationActor)); } catch (e) { return unavailable(res, e); } });
   for (const mode of ['prepare', 'commit', 'status', 'cancel'] as const) router.post(`/${mode}`, authorize, mode === 'prepare' || mode === 'commit' ? commandLimit : readLimit, admit(mode === 'prepare' || mode === 'commit'), bounded, async (req, res) => {
     let input: unknown;

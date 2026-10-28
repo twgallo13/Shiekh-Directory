@@ -4,7 +4,7 @@ import type { Account } from './authAuthority';
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied } from './firestoreDirectory';
 import type { LocationCreationCommand } from '../src/lib/locationCreationContract';
 export type { LocationCreationCommand } from '../src/lib/locationCreationContract';
-import { requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
+import { requireOrganizationLeadershipAdmission, organizationLegacyCreationEnabled } from './organizationLeadershipConfiguration';
 
 export const LOCATION_CREATION_RECEIPTS = 'location_creation_operations';
 export const LOCATION_CREATION_ADMISSION = 'location_creation_admission';
@@ -135,4 +135,25 @@ export async function cancelLocationCreation(db: Firestore,input:unknown,actor:A
 export async function listLocationCreations(db:Firestore,actor:Account){
   requireOrganizationLeadershipAdmission('recovery');assertLocationCreationActor(actor);
   return db.runTransaction(async tx=>{await authority(db,tx,actor);const a=await admission(db,tx,actor,true);return {schemaVersion:1 as const,complete:true as const,operations:a.receipts.map(outcome).sort((a,b)=>a.locationId.localeCompare(b.locationId))};},{readOnly:true});
+}
+
+/** All-off compatibility is safe only when this actor has no unresolved server creation.
+ * This read-only admission probe remains available while recovery itself is paused. */
+export async function locationCreationLegacyAllowed(db:Firestore,actor:Account){
+  assertLocationCreationActor(actor);
+  return db.runTransaction(async tx=>{await authority(db,tx,actor);const a=await admission(db,tx,actor,true);return a.count===0;},{readOnly:true});
+}
+
+/** The capability GET is only a hint. A generic create must read AND write this shared actor
+ * admission document in its own business transaction, serializing against every prepare. */
+export async function readLegacyLocationCreationAdmission(db:Firestore,tx:Transaction,actor:Account){
+  if(!organizationLegacyCreationEnabled())return invalid('Use the protected Location creation workflow.');
+  assertLocationCreationActor(actor);
+  const a=await admission(db,tx,actor,true);
+  if(a.count!==0)return conflict('Recover or cancel pending Location creation before creating another.');
+  return a;
+}
+export function finishLegacyLocationCreationAdmission(tx:Transaction,a:Awaited<ReturnType<typeof readLegacyLocationCreationAdmission>>,actor:Account){
+  if(!organizationLegacyCreationEnabled()||a.count!==0)return invalid('Use the protected Location creation workflow.');
+  tx.set(a.ref,{schemaVersion:1,actorUid:actor.uid,pending:0,version:a.version+1});
 }

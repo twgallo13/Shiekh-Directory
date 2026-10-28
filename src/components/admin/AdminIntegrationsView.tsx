@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useDirectory } from '../../context/DirectoryContext';
 import { prepareNewLocationLeadership } from '../../lib/newLocationLeadership';
+import { useLocationCreation } from '../locations/useLocationCreation';
 import { 
   FileSpreadsheet, 
   Globe, 
@@ -95,7 +96,8 @@ export const AdminIntegrationsView: React.FC = () => {
     emailTemplates,
     notificationRules,
     outboxLogs,
-    createLocation,
+    saveLocationRecord,
+    buildLocationCreationCommand,
     reconcileConfirmedLocations,
     updateLocation,
     createHoursTemplate,
@@ -176,6 +178,9 @@ export const AdminIntegrationsView: React.FC = () => {
     googleReviewUrl: '',
     storePageUrl: ''
   });
+  const resetStoreDraft=()=>{setNewStoreForm({storeNumber:'',name:'',type:'Strip Center / Shopping Center',address:'',city:'',state:'CA',zipCode:'',phone:'',regionId:'',districtId:'',hierarchyApplicability:'',googleReviewUrl:'',storePageUrl:''});setCreateStoreError('');};
+  const creation=useLocationCreation(isAddStoreOpen,()=>{setIsAddStoreOpen(false);resetStoreDraft();setCsvStatus('Location creation confirmed.');},resetStoreDraft);
+  const storeBusy=isCreatingStore||creation.busy;
   const quickAddActiveRegions = useMemo(() => regions.filter(region => region.status === 'Active').sort((left, right) => left.name.localeCompare(right.name)), [regions]);
   const quickAddActiveDistricts = useMemo(() => districts.filter(district => district.status === 'Active' && district.regionId === newStoreForm.regionId).sort((left, right) => left.name.localeCompare(right.name)), [districts, newStoreForm.regionId]);
   const quickAddRetailType = !canSelectNotApplicableHierarchy(newStoreForm.type);
@@ -228,7 +233,7 @@ export const AdminIntegrationsView: React.FC = () => {
   useDialogFocus(isTemplateModalOpen, () => setIsTemplateModalOpen(false), templateDialogRef);
   useDialogFocus(isHolidayModalOpen, () => setIsHolidayModalOpen(false), holidayDialogRef);
   useDialogFocus(isUserModalOpen, () => setIsUserModalOpen(false), userDialogRef);
-  useDialogFocus(isAddStoreOpen, () => { if (!isCreatingStore) setIsAddStoreOpen(false); }, addStoreDialogRef);
+  useDialogFocus(isAddStoreOpen, () => { if (!storeBusy) setIsAddStoreOpen(false); }, addStoreDialogRef);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [userSaveError, setUserSaveError] = useState('');
@@ -279,7 +284,7 @@ export const AdminIntegrationsView: React.FC = () => {
   // Quick Add Store Handler
   const handleCreateStoreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isCreatingStore) return;
+    if (storeBusy||!creation.ready) return;
     setCreateStoreError('');
     if (!newStoreForm.storeNumber || !newStoreForm.name) return;
     if (![newStoreForm.address, newStoreForm.city, newStoreForm.state, newStoreForm.zipCode].every(v => v.trim())) { setCreateStoreError('Enter the actual street address, city, state and ZIP code.'); return; }
@@ -291,7 +296,7 @@ export const AdminIntegrationsView: React.FC = () => {
       return;
     }
     setIsCreatingStore(true);
-    try { await createLocation({
+    try { const draft={
       storeNumber: newStoreForm.storeNumber.padStart(2, '0'),
       name: newStoreForm.name,
       type: newStoreForm.type,
@@ -301,34 +306,18 @@ export const AdminIntegrationsView: React.FC = () => {
       zipCode: newStoreForm.zipCode,
       phone: phone.e164,
       ...(phone.extension ? { phoneExtension: phone.extension } : {}),
-      phonePrivacy: 'Public',
+      phonePrivacy: 'Public' as const,
       timeZone: 'America/Los_Angeles',
-      operationalStatus: 'Open — Normal Operations',
+      operationalStatus: 'Open — Normal Operations' as const,
       standardHours: DEFAULT_WEEKLY_HOURS,
-      recordStatus: 'Active',
+      recordStatus: 'Active' as const,
       ...(newStoreForm.regionId ? { regionId: newStoreForm.regionId } : {}),
       ...(newStoreForm.districtId ? { districtId: newStoreForm.districtId } : {}),
       ...(newStoreForm.hierarchyApplicability ? { hierarchyApplicability: newStoreForm.hierarchyApplicability } : {}),
       googleReviewUrl,
       storePageUrl
-    });
-    setIsAddStoreOpen(false);
-    setNewStoreForm({
-      storeNumber: '',
-      name: '',
-      type: 'Strip Center / Shopping Center',
-      address: '',
-      city: '',
-      state: 'CA',
-      zipCode: '',
-      phone: '',
-      regionId: '',
-      districtId: '',
-      hierarchyApplicability: '',
-      googleReviewUrl: '',
-      storePageUrl: ''
-    });
-    setCsvStatus(`Created new store #${newStoreForm.storeNumber}.`);
+    };
+    await creation.submit(()=>buildLocationCreationCommand({...draft,id:creation.draftId}),()=>saveLocationRecord({...draft,id:creation.draftId},true,{}));
     } catch (error) { setCreateStoreError(error instanceof Error ? error.message : 'The save could not be confirmed. Check saved stores before trying again.'); }
     finally { setIsCreatingStore(false); }
   };
@@ -1815,22 +1804,24 @@ export const AdminIntegrationsView: React.FC = () => {
       {/* MODAL: + Add Store Location (CUD) */}
       {/* ======================================================== */}
       {isAddStoreOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !isCreatingStore && setIsAddStoreOpen(false)}>
-          <div ref={addStoreDialogRef} role="dialog" aria-modal="true" aria-label="Add new store location" tabIndex={-1} className="bg-white border border-neutral-200 rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="p-5 border-b border-neutral-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4" onMouseDown={(event) => event.target === event.currentTarget && !storeBusy && setIsAddStoreOpen(false)}>
+          <div ref={addStoreDialogRef} role="dialog" aria-modal="true" aria-label="Add new store location" tabIndex={-1} className="flex min-h-0 flex-col bg-white border border-neutral-200 rounded-xl max-w-lg w-full max-h-[90vh] overflow-hidden shadow-2xl">
+            <div className="shrink-0 p-5 border-b border-neutral-200 flex items-center justify-between">
               <h3 className="text-sm font-bold text-neutral-900">Add New Store Location</h3>
               <button
                 type="button"
-                onClick={() => setIsAddStoreOpen(false)} disabled={isCreatingStore}
+                aria-label="Close store creation"
+                onClick={() => setIsAddStoreOpen(false)} disabled={storeBusy}
                 className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-100"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateStoreSubmit} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleCreateStoreSubmit} className="min-h-0 overflow-y-auto p-5 space-y-4 text-xs">
+              {creation.panel}
               {createStoreError && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">{createStoreError}</p>}
-              <fieldset disabled={isCreatingStore} className="min-w-0 space-y-4">
+              <fieldset disabled={storeBusy||!creation.ready} className="min-w-0 space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-neutral-700 font-semibold mb-1">Store # *</label>
@@ -1987,23 +1978,25 @@ export const AdminIntegrationsView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-4 bg-neutral-50 -mx-5 -mb-5 mt-5 border-t border-neutral-200 flex justify-end gap-2">
+              </fieldset>
+              <div className="sticky bottom-0 z-10 p-4 bg-neutral-50 -mx-5 -mb-5 mt-5 border-t border-neutral-200 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsAddStoreOpen(false)}
+                  disabled={storeBusy}
                   className="px-4 py-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-lg font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
+                  disabled={storeBusy||!creation.ready}
                   className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{isCreatingStore ? 'Creating…' : 'Create Location'}</span>
                 </button>
               </div>
-              </fieldset>
             </form>
           </div>
         </div>

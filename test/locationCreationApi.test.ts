@@ -6,9 +6,10 @@ import { createDirectoryDataRouter } from '../server/directoryDataApi';
 import { DirectoryConflict, DirectoryValidationError, DirectoryWriteDenied, type DirectoryWriter } from '../server/firestoreDirectory';
 import { leadershipActor as actor } from './helpers/organizationLeadershipFixture';
 const command=()=>({write:{collection:'locations',operation:'set',expectedVersion:null,id:'loc-new',data:{storeNumber:'008',name:'Store'}}});
-async function harness(options:{actor?:any;flags?:any;omit?:string;fail?:Error}={}){
+async function harness(options:{actor?:any;flags?:any;omit?:string;fail?:Error;legacyAllowed?:boolean}={}){
   const calls:any[]=[];const record=async(mode:string,input:unknown,resolved:unknown)=>{calls.push({mode,input,actor:resolved});if(options.fail)throw options.fail;return{schemaVersion:1,locationId:'loc-new',state:'cancelled',updatedAt:'2026-10-28T12:00:00.000Z'};};
   const store:any={commit:async()=>assert.fail('No generic fallback'),locationCreationCapabilities:()=>({schemaVersion:1,catalogEnabled:true,recoveryEnabled:true,newCommandsEnabled:true,...options.flags}),prepareLocationCreation:(i:unknown,a:unknown)=>record('prepare',i,a),commitLocationCreation:(i:unknown,a:unknown)=>record('commit',i,a),readLocationCreation:(i:unknown,a:unknown)=>record('status',i,a),cancelLocationCreation:(i:unknown,a:unknown)=>record('cancel',i,a),listLocationCreations:async(a:unknown)=>{await record('list',undefined,a);return{schemaVersion:1,complete:true,operations:[]};}};
+  store.locationCreationLegacyAllowed=async()=>options.legacyAllowed!==false;
   if(options.omit)delete store[options.omit];const app=express();app.use('/api/directory',createDirectoryDataRouter(async token=>{assert.equal(token,'synthetic-token');return options.actor??actor;},store as DirectoryWriter));
   const server=app.listen(0,'127.0.0.1');await once(server,'listening');
   const request=(mode:string,body?:unknown,extra:RequestInit={})=>fetch(`http://127.0.0.1:${(server.address() as any).port}/api/directory/location-creations/${mode}`,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer synthetic-token','Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),...extra});
@@ -34,6 +35,10 @@ test('legacy admission requires an explicit all-disabled rollout; unavailable or
     const h=await harness(options);try{const caps=await(await h.request('capabilities')).json();assert.equal(caps.legacyCreationEnabled,!!options.flags && options.flags.catalogEnabled===false);assert.equal(h.calls.length,0);}finally{await h.close();}
   }
 });
+test('all-off legacy permission requires an explicit successful server pending-operation check',async()=>{
+  for(const change of [{legacyAllowed:false},{omit:'locationCreationLegacyAllowed'}]){const h=await harness({...change,flags:{catalogEnabled:false,recoveryEnabled:false,newCommandsEnabled:false}});try{assert.equal((await(await h.request('capabilities')).json()).legacyCreationEnabled,false);}finally{await h.close();}}
+});
+
 test('all-off partial adapter never advertises legacy admission',async()=>{
   for(const omit of ['prepareLocationCreation','commitLocationCreation','readLocationCreation','cancelLocationCreation','listLocationCreations']){const h=await harness({omit,flags:{catalogEnabled:false,recoveryEnabled:false,newCommandsEnabled:false}});try{assert.equal((await(await h.request('capabilities')).json()).legacyCreationEnabled,false);}finally{await h.close();}}
 });

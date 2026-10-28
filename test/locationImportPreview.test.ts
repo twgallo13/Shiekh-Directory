@@ -510,11 +510,13 @@ describe('managed organization CSV alignment',()=>{
     const wrongDm=previewLocationImport(csvRow({...managedAddition,DistrictManagerId:'rm'}),saved);
     assert.equal(wrongDm.rows[0].action,'blocked'); assert(wrongDm.rows[0].issues.some(i=>/cannot override/.test(i.reason)));
   });
-  it('allows ordinary fields but blocks managed membership/type edits at preview',()=>{
+  it('allows ordinary fields and retail formats but blocks managed membership/classification edits at preview',()=>{
     const saved=managedImportSnapshot();
     const ordinary=previewLocationImport(csvRow({LocationId:baseLocation.id,StoreName:'Updated name'}),saved); assert.equal(ordinary.rows[0].action,'update');
     const changed=previewLocationImport(csvRow({LocationId:baseLocation.id,Type:'Enclosed Mall'}),saved);
-    assert.equal(changed.rows[0].action,'blocked'); assert(changed.rows[0].issues.some(i=>/cannot be changed through CSV/.test(i.reason)));
+    assert.equal(changed.rows[0].action,'update',JSON.stringify(changed.rows[0].issues));
+    const converted=previewLocationImport(csvRow({LocationId:baseLocation.id,Type:'Corporate Office'}),saved);
+    assert.equal(converted.rows[0].action,'blocked');assert(converted.rows[0].issues.some(i=>/cannot be changed through CSV/.test(i.reason)));
     saved.districts.push({ ...saved.districts[0],id:'dist-other',name:'Other' });
     const moved=previewLocationImport(csvRow({LocationId:baseLocation.id,DistrictId:'dist-other'}),saved);
     assert.equal(moved.rows[0].action,'blocked'); assert(moved.rows[0].issues.some(i=>/cannot be changed through CSV/.test(i.reason)));

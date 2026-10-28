@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { DirectoryWrite } from '../server/firestoreDirectory';
-import { assertOrganizationTransitionCompatibility, readOrganizationGuardState, validateOrganizationLeadershipWrites as validate, type OrganizationGuardState } from '../server/organizationLeadershipGuards';
+import { assertOrganizationTransitionCompatibility, readOrganizationGuardState, validateOrganizationLeadershipWrites as validate, managedLocationLifecycleChanges, type OrganizationGuardState } from '../server/organizationLeadershipGuards';
 import { leadershipFixture } from './helpers/organizationLeadershipFixture';
 
 function fixture() {
@@ -144,6 +144,18 @@ test('store moves, type changes and deletion cannot bypass reviewed membership c
     assert.throws(() => validate([w.value], [w.before], f.state, f.people), /managed store/);
   }
   assert.throws(() => validate([{ collection: 'locations', id: '007', operation: 'delete' }], [f.records.get('locations/007')], f.state, f.people), /managed store/);
+});
+
+test('retail-format and retire/reactivate edits preserve managed membership and require audit selection',()=>{
+  const f=fixture();
+  for(const change of [{type:'Street / Standalone Location'},{type:'Strip Center / Shopping Center'},{recordStatus:'Retired',operationalStatus:'Permanently Closed'},{recordStatus:'Active'}]){
+    const w=f.write('locations','007',change);if(change.recordStatus==='Active')w.before={...w.before,recordStatus:'Retired'};
+    assert.doesNotThrow(()=>validate([w.value],[w.before],f.state,f.people));
+    assert.equal(managedLocationLifecycleChanges([w.value],[w.before],f.state).length,1);
+    assert.equal(w.value.data!.districtId,w.before.districtId);assert.equal(w.value.data!.regionId,w.before.regionId);assert.equal(w.value.data!.districtManagerId,w.before.districtManagerId);
+  }
+  const ordinary=f.write('locations','007',{name:'Updated store'});assert.equal(managedLocationLifecycleChanges([ordinary.value],[ordinary.before],f.state).length,0);
+  const mixed=f.write('locations','007',{type:'Street / Standalone Location',districtId:'other'});assert.throws(()=>validate([mixed.value],[mixed.before],f.state,f.people),/managed store/);
 });
 
 test('unsupported models, duplicated members and pointer/roster disagreement fail closed', () => {

@@ -139,7 +139,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const savedDistrict = districts.find(d => d.id === baselineRef.current?.districtId);
   const savedRegion = regions.find(r => r.id === baselineRef.current?.regionId);
   const managedRegion = isRetailHierarchyType(isCreating ? formData?.type : baselineRef.current?.type) && requiresManagedHierarchyReview(isCreating ? currentRegion : savedRegion);
-  const managedHierarchy = !isCreating && (requiresManagedHierarchyReview(savedDistrict) || managedRegion);
+  const managedHierarchy = !isCreating && isRetailHierarchyType(baselineRef.current?.type) && (requiresManagedHierarchyReview(savedDistrict) || managedRegion);
   const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
   const normalizedInbox = formData?.locationInboxEmail == null ? null : normalizeLocationInboxEmail(formData.locationInboxEmail);
   const inboxConflicts = normalizedInbox
@@ -656,6 +656,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       Location Type
                     </label>
                     <select
+                      aria-label="Location type"
                       value={formData.type || 'Enclosed Mall'}
                       onChange={(e) => setFormData({ ...formData, type: e.target.value as LocationType })}
                       className="w-full px-3 py-2 bg-white border border-neutral-300 rounded-md text-neutral-900 text-sm focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 cursor-pointer"
@@ -663,10 +664,11 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <option value="Enclosed Mall">Enclosed Mall</option>
                       <option value="Strip Center / Shopping Center">Strip Center / Shopping Center</option>
                       <option value="Street / Standalone Location">Street / Standalone Location</option>
-                      <option value="Corporate Office">Corporate Office</option>
-                      <option value="Warehouse / Distribution Center">Warehouse / Distribution Center</option>
-                      <option value="Other Company Location">Other Company Location</option>
+                      <option value="Corporate Office" disabled={managedHierarchy}>Corporate Office</option>
+                      <option value="Warehouse / Distribution Center" disabled={managedHierarchy}>Warehouse / Distribution Center</option>
+                      <option value="Other Company Location" disabled={managedHierarchy}>Other Company Location</option>
                     </select>
+                    {managedHierarchy&&<p className="mt-1.5 text-xs text-neutral-500">Change the retail format here. For a store closure, use Retire Store; conversion to a non-retail location requires a separate hierarchy review.</p>}
                   </div>
 
                   <div>

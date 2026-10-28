@@ -415,8 +415,9 @@ export function buildLocationImportPlan(
       const newDistrict = snapshot.districts.find(d => d.id === proposed.districtId), newRegion = snapshot.regions.find(r => r.id === (newDistrict?.regionId ?? proposed.regionId));
       const managed = [oldDistrict, oldRegion, newDistrict, newRegion].some(requiresManagedHierarchyReview);
       const nonRetailOnly = classifyHierarchyLocationType(existing.type) === 'non-retail' && classifyHierarchyLocationType(proposed.type) === 'non-retail';
-      if (managed && !nonRetailOnly && hierarchyFields.some(field => !sameValue(existing[field], proposed[field]))) issues.push(issue('error', 'invalid_hierarchy', 'RegionId / DistrictId / Type', `${row.RegionId || ''} / ${row.DistrictId || ''} / ${row.Type || ''}`, null,
-        'This managed store’s hierarchy or Location type cannot be changed through CSV.', 'Keep the saved hierarchy/type. Use Store & District moves for membership changes; managed Location type changes require a separate supported review.'));
+      const retailFormatOnly = classifyHierarchyLocationType(existing.type) === 'retail' && classifyHierarchyLocationType(proposed.type) === 'retail';
+      if (managed && !nonRetailOnly && hierarchyFields.some(field => !(field==='type'&&retailFormatOnly) && !sameValue(existing[field], proposed[field]))) issues.push(issue('error', 'invalid_hierarchy', 'RegionId / DistrictId / Type', `${row.RegionId || ''} / ${row.DistrictId || ''} / ${row.Type || ''}`, null,
+        'This managed store’s hierarchy or retail/non-retail classification cannot be changed through CSV.', 'Keep the saved hierarchy and retail classification. Retail formats may change; use Store & District moves for membership changes and retire closed stores to preserve history.'));
     }
 
     const hierarchyChanged = !existing || hierarchyFields.some(field => !sameValue(existing[field], proposed[field]));

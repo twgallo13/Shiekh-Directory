@@ -17,7 +17,7 @@ import { validatePersonPositionState } from './personPositionValidation';
 import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
-import { readOrganizationGuardState, validateOrganizationLeadershipWrites } from './organizationLeadershipGuards';
+import { readOrganizationGuardState, validateOrganizationLeadershipWrites, managedLocationLifecycleChanges } from './organizationLeadershipGuards';
 import { readPersonTransitionAuthority } from './personTransitionAuthority';
 import { normalizeLocationCreationCommand, assertLocationCreationActor, prepareLocationCreation, readLocationCreation, cancelLocationCreation, listLocationCreations, locationCreationLegacyAllowed, readLocationCreationCommit, finishLocationCreationCommit, locationCreationAuditId, type LocationCreationCommand } from './locationCreationRecovery';
 import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
@@ -262,6 +262,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const validatedWrites = validateMetadataWrites(writes, snapshots.map(snapshot => snapshot.data()), definitions, actor, people, locations, users, hierarchyRegistry);
       if (creation && (validatedWrites.length !== 1 || validatedWrites[0].data?.version !== 1)) throw new DirectoryValidationError('Creation must save exactly the initial Location version.');
       const managedRename = validateOrganizationLeadershipWrites(validatedWrites, snapshots.map(snapshot => snapshot.data()), organizationState, people, locations);
+      const managedLifecycle = managedLocationLifecycleChanges(validatedWrites, snapshots.map(snapshot => snapshot.data()), organizationState);
       if (managedRename) await readPersonTransitionAuthority(this.firestore, transaction, actor);
       validatedWrites.forEach((write, index) => {
         if (write.collection === 'requests' && write.operation === 'set' && !snapshots[index].exists) Object.assign(write.data!, { submissionDigest: submissionDigest(writes[index].data!), submissionActor: actor.uid });
@@ -312,6 +313,10 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
         action: 'Hierarchy Registry Updated', entityType: managedWrite.collection === 'regions' ? 'Region' : 'District',
         entityId: managedWrite.id, entityName: String(managedWrite.data?.name || managedWrite.id),
         details: 'Server-confirmed managed unit name/status update. IDs, hierarchy membership and leadership responsibilities were preserved.',
+      } : managedLifecycle.length ? {
+        action: 'Location Lifecycle Updated', entityType: 'Location', entityId: managedLifecycle[0].id,
+        entityName: String(managedLifecycle[0].data?.name || managedLifecycle[0].id),
+        details: `Server-confirmed lifecycle/retail-format update for ${managedLifecycle.length} Location(s). Canonical hierarchy and District/Region leadership were preserved.`,
       } : requestWrite ? {
         action: requestWrite.data?.status === 'Approved' ? 'Request Approved' : requestWrite.data?.status === 'Rejected' ? 'Request Rejected' : 'Request Submitted',
         entityType: 'Request', entityId: requestWrite.id, entityName: String(requestWrite.data?.changeType || 'Correction'),
@@ -345,7 +350,7 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
           previousStates,
           newStates,
         };
-        if (creation || managedRename || managedUnitEdit || writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
+        if (creation || managedRename || managedUnitEdit || managedLifecycle.length || writes.some(write => write.districtLeadershipMembers !== undefined)) assertDistrictHandoverAuditSize(auditRecord);
         if (creation) transaction.create(this.firestore.collection("audit_logs").doc(id), auditRecord);
         else transaction.set(this.firestore.collection("audit_logs").doc(id), auditRecord);
       }

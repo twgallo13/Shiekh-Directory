@@ -47,18 +47,19 @@ window.fetch = async (url, init) => {
   if (String(url).endsWith('/capabilities')) return Response.json({ schemaVersion:1,catalogEnabled:true,recoveryEnabled:true,newCommandsEnabled:true });
   if (init?.method === 'POST') {
     const view = new URLSearchParams(window.location.search).get('view');
-    if (!['create','quick'].includes(view ?? '') || !String(url).endsWith('/commit')) throw new Error('This entry-point fixture never writes.');
+    if (!['create','quick','store'].includes(view ?? '') || !String(url).endsWith('/commit')) throw new Error('This entry-point fixture never writes.');
     if (failCreate) { failCreate = false; return Response.json({error:{code:'validation_error',message:'Synthetic create rejected. Your draft is kept.'}},{status:400}); }
     const body=JSON.parse(String(init.body));
-    return Response.json({records:body.writes.map((w:any)=>({...w,data:{...w.data,id:w.id,version:1}}))});
+    const records=[];for(const w of body.writes){const existing=seed.locations.find((l:any)=>l.id===w.id);if(w.collection!=='locations'||w.operation!=='set'||existing&&(existing.version??0)!==w.expectedVersion)return Response.json({error:{code:'conflict'}},{status:409});const data={...w.data,id:w.id,version:existing?existing.version+1:1};seed.locations=seed.locations.filter((l:any)=>l.id!==w.id);seed.locations.push(data);records.push({...w,data});}commits++;count();return Response.json({records});
   }
   return Response.json(seed);
 };
 function Preview() {
   const view=new URLSearchParams(locationSearch()).get('view'), [open,setOpen] = useState(view === 'store' || view === 'create');
-  return <AuthContext.Provider value={auth}><DirectoryProvider seed={seed}><main className="mx-auto max-w-5xl space-y-4 p-5 font-sans"><h1 className="text-lg font-semibold">Synthetic managed hierarchy editing</h1><CreationCounts /><CreatedLocations />{view==='quick'?<AdminIntegrationsView />:<><button onClick={()=>setOpen(true)}>Open store editor</button><HierarchyRegistryPanel />{open && <LocationEditModal mode={view==='create'?'create':'edit'} location={location} onClose={()=>setOpen(false)} />}</>}</main></DirectoryProvider></AuthContext.Provider>;
+  return <AuthContext.Provider value={auth}><DirectoryProvider seed={seed}><main className="mx-auto max-w-5xl space-y-4 p-5 font-sans"><h1 className="text-lg font-semibold">Synthetic managed hierarchy editing</h1><CreationCounts /><CreatedLocations />{view==='quick'?<AdminIntegrationsView />:<><button onClick={()=>setOpen(true)}>Open store editor</button><HierarchyRegistryPanel />{open && <CurrentEditor create={view==='create'} onClose={()=>setOpen(false)} />}</>}</main></DirectoryProvider></AuthContext.Provider>;
 }
+function CurrentEditor({create,onClose}:{create:boolean;onClose():void}){const {locations}=useDirectory();return <LocationEditModal mode={create?'create':'edit'} location={create?location:locations.find(l=>l.id==='007')??null} onClose={onClose}/>;}
 function CreationCounts(){const [counts,setCounts]=useState([prepares,commits]);useEffect(()=>{const update=()=>setCounts([prepares,commits]);window.addEventListener('creation-count',update);return()=>window.removeEventListener('creation-count',update);},[]);return <output>Prepares {counts[0]} · Commits {counts[1]}</output>;}
-function CreatedLocations(){ const {locations}=useDirectory(); return <ul aria-label="Synthetic confirmed locations">{locations.filter(l=>l.id!=='007').map(l=><li key={l.id}>#{l.storeNumber} {l.name} · DM: {l.districtManagerName || 'Vacant'} · RM: {l.regionalManagerName || 'Vacant'} · Version {l.version}</li>)}</ul>; }
+function CreatedLocations(){ const {locations}=useDirectory(); return <ul aria-label="Synthetic confirmed locations">{locations.map(l=><li key={l.id}>#{l.storeNumber} {l.name} · {l.recordStatus} · {l.type} · DM: {l.districtManagerName || 'Vacant'} · RM: {l.regionalManagerName || 'Vacant'} · Version {l.version}</li>)}</ul>; }
 function locationSearch() { return window.location.search; }
 createRoot(document.getElementById('root')!).render(<React.StrictMode><Preview /></React.StrictMode>);

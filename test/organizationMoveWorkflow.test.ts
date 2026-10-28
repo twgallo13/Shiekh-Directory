@@ -183,3 +183,18 @@ test('cancel refresh failure retains terminal identity until saved Location vers
     assert.equal(f.calls.filter(call => call === 'prepare').length, 1); assert.equal(f.calls.filter(call => call === 'commit').length, 0);
   } finally { c.dispose(); }
 });
+
+test('adopting another pending move clears the previous cancellation confirmation', async () => {
+  for (const nextState of ['prepared', 'missing'] as const) {
+    const f = fixture(), c = await f.open();
+    try {
+      await c.prepare(f.units()); const first = c.snapshot().operationId!;
+      f.setPending([{ operationId: 'other-review', state: 'prepared', updatedAt: leadershipNow, expiresAt: leadershipNow }]);
+      await c.cancel(first); assert.equal(c.snapshot().confirmedState, 'cancelled');
+      f.setStatus({ schemaVersion: 1, operationId: 'other-review', state: nextState, updatedAt: leadershipNow });
+      await c.recover('other-review');
+      assert.equal(c.snapshot().phase, 'recovery'); assert.equal(c.snapshot().operationId, 'other-review');
+      assert.equal(c.snapshot().confirmedState, null); assert.equal(c.snapshot().preparation, null);
+    } finally { c.dispose(); }
+  }
+});

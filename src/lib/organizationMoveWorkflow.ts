@@ -113,11 +113,11 @@ export async function openOrganizationMoveWorkflow(options: {
     }),
     recover: (operationId: string) => run(async () => {
       if (!state.capabilities!.recoveryEnabled) throw new Error('Recovery is unavailable.');
-      marker.persist(operationId); publish({ operationId }); await terminal(await port.status(operationId));
+      marker.persist(operationId); publish({ operationId, ...(state.operationId !== operationId ? { confirmedState: null, preparation: null } : {}) }); await terminal(await port.status(operationId));
     }),
     cancel: (operationId: string) => run(async () => {
       if (!state.capabilities!.recoveryEnabled) throw new Error('Recovery is unavailable.');
-      marker.persist(operationId); publish({ operationId }); await terminal(await port.cancel(operationId));
+      marker.persist(operationId); publish({ operationId, ...(state.operationId !== operationId ? { confirmedState: null, preparation: null } : {}) }); await terminal(await port.cancel(operationId));
     }),
   };
 }

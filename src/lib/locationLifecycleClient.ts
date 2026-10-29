@@ -1,4 +1,4 @@
-import type { LocationLifecycleIntent,LocationLifecycleReview } from './locationLifecycleContract';
+import type { LocationLifecycleIntent,LocationLifecycleReview,LocationLifecyclePreparation } from './locationLifecycleContract';
 import { classifyHierarchyLocationType } from './hierarchyResolution';
 import { createOrganizationSessionTransport,OrganizationTransportError,parseOrganizationCapabilities,parseOrganizationCatalog,parseOrganizationList,parseOrganizationOutcome } from './organizationLeadershipClient';
 
@@ -55,7 +55,7 @@ export function parseLocationLifecycleReview(v:unknown,intent:LocationLifecycleI
 export function parseLocationLifecycleOutcome(v:unknown,operationId:string){
   const r=parseOrganizationOutcome(v,operationId);if(r.state==='committed'&&(!/^location-lifecycle-[a-f0-9]{64}$/.test(r.auditId)||r.changedRecords!==1))invalid();return r;
 }
-export function parseLocationLifecyclePreparation(v:unknown,intent:LocationLifecycleIntent){
+export function parseLocationLifecyclePreparation(v:unknown,intent:LocationLifecycleIntent):LocationLifecyclePreparation{
   if(!isLocationLifecycleIntent(intent))invalid();
   if(!object(v)||v.state!=='prepared')return parseLocationLifecycleOutcome(v,intent.operationId);
   if(!exact(v,['schemaVersion','operationId','state','updatedAt','expiresAt','reviewHash','review'])||v.schemaVersion!==1||v.operationId!==intent.operationId||!instant(v.updatedAt)||!instant(v.expiresAt)||Date.parse(v.expiresAt)-Date.parse(v.updatedAt)!==600_000||!hash(v.reviewHash))invalid();

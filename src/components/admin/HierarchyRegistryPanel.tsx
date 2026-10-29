@@ -11,6 +11,7 @@ import { OrganizationResponsibilities } from '../people/OrganizationResponsibili
 import { OrganizationMoves } from './OrganizationMoves';
 import { Modal } from '../common/Modal';
 import { requiresManagedHierarchyReview } from '../../lib/managedHierarchyEditing';
+import { LocationLifecycleLauncher } from './LocationLifecycleLauncher';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 type Feedback = { tone: 'pending' | 'success' | 'error'; message: string; dependencies?: DirectoryDependency[]; correction?: string; refresh?: boolean };
@@ -22,6 +23,7 @@ export function HierarchyRegistryPanel() {
   const organizationClose = useRef<(() => void) | null>(null);
   const [moveOpen, setMoveOpen] = useState(false), [moveFooter, setMoveFooter] = useState<HTMLDivElement | null>(null);
   const moveClose = useRef<(() => void) | null>(null);
+  const [locationUseOpen,setLocationUseOpen]=useState(false);
   const { currentUser, regions, districts, people, locations, saveRegion, saveDistrict, refreshHierarchyRegistry } = useDirectory();
   const [regionFilter, setRegionFilter] = useState('');
   const [leadershipId, setLeadershipId] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export function HierarchyRegistryPanel() {
   const sortedRegions = useMemo(() => [...regions].sort(compareRegistryRecords), [regions]);
   const sortedDistricts = useMemo(() => [...districts].sort(compareRegistryRecords), [districts]);
   const visibleDistricts = sortedDistricts.filter(district => !regionFilter || district.regionId === regionFilter);
-  const busy = Boolean(pending) || leadershipBusy || organizationOpen || moveOpen;
+  const busy = Boolean(pending) || leadershipBusy || organizationOpen || moveOpen || locationUseOpen;
   const legacyLeadershipEnabled = organization?.catalogEnabled === false;
   useEffect(() => { if (!legacyLeadershipEnabled) setLeadershipId(null); }, [legacyLeadershipEnabled]);
 
@@ -177,9 +179,10 @@ export function HierarchyRegistryPanel() {
     {organizationOpen && <Modal isOpen title="Management responsibilities" size="lg" footer={<div ref={setOrganizationFooter} className="w-full" />} onClose={() => organizationClose.current?.()}><OrganizationResponsibilities footerTarget={organizationFooter} registerClose={close => { organizationClose.current = close; }} onClose={() => setOrganizationOpen(false)} /></Modal>}
     {(organization?.catalogEnabled || organization?.recoveryEnabled) && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4"><div><h3 className="text-sm font-semibold text-neutral-900">Store & District moves</h3><p className="mt-1 text-xs text-neutral-500">Review destination hierarchy and inherited managers together.</p></div><button type="button" disabled={busy || Boolean(editing) || Boolean(leadershipId)} onClick={() => setMoveOpen(true)} className="rounded-lg border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50">Move store or District</button></div>}
     {moveOpen && <Modal isOpen title="Organization move" size="lg" footer={<div ref={setMoveFooter} className="w-full" />} onClose={() => moveClose.current?.()}><OrganizationMoves footerTarget={moveFooter} registerClose={close => { moveClose.current = close; }} onClose={() => setMoveOpen(false)} /></Modal>}
-    <div className="flex items-start gap-3 border-b border-neutral-200 pb-4">
+    <div className="flex flex-wrap items-start gap-3 border-b border-neutral-200 pb-4">
       <Building2 className="h-5 w-5 text-red-700" aria-hidden="true" />
-      <div><h2 className="text-lg font-semibold text-neutral-900">Regions & Districts</h2><p className="mt-1 text-sm text-neutral-600">Region → District → Store. Manage the District Manager on the District; stores inherit that assignment.</p><p className="mt-2 text-xs text-neutral-500">{organization?.catalogEnabled ? 'Use Store & District moves to change hierarchy and review every affected store together.' : 'Permanent IDs keep this directory and connected applications linked. Changing a legacy District’s parent does not move its stores.'}</p></div>
+      <div className="min-w-0 flex-1 basis-64"><h2 className="text-lg font-semibold text-neutral-900">Regions & Districts</h2><p className="mt-1 text-sm text-neutral-600">Region → District → Store. Manage the District Manager on the District; stores inherit that assignment.</p><p className="mt-2 text-xs text-neutral-500">{organization?.catalogEnabled ? 'Use Store & District moves to change hierarchy and review every affected store together.' : 'Permanent IDs keep this directory and connected applications linked. Changing a legacy District’s parent does not move its stores.'}</p></div>
+      <LocationLifecycleLauncher disabled={busy || Boolean(editing) || Boolean(leadershipId)} onOpenChange={setLocationUseOpen}/>
     </div>
     {feedback && <FeedbackMessage feedback={feedback} onRefresh={() => void refreshConflict()} disabled={busy} />}
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(240px,1fr)_minmax(0,2fr)]">

@@ -1,9 +1,11 @@
 export const ORGANIZATION_RECOVERY_PREFIX = 'shiekh_organization_review_v1:';
 export const ORGANIZATION_MOVE_RECOVERY_PREFIX = 'shiekh_organization_move_review_v1:';
 export const LOCATION_CREATION_RECOVERY_PREFIX = 'shiekh_location_creation_v1:';
-type Family = 'leadership' | 'moves' | 'creation';
+export const LOCATION_LIFECYCLE_RECOVERY_PREFIX='shiekh_location_lifecycle_review_v1:';
+type Family = 'leadership' | 'moves' | 'creation' | 'lifecycle';
 function prefix(family: Family) {
   if (family === 'creation') return LOCATION_CREATION_RECOVERY_PREFIX;
+  if(family==='lifecycle')return LOCATION_LIFECYCLE_RECOVERY_PREFIX;
   if (family !== 'leadership' && family !== 'moves') throw new Error('Invalid review family.');
   return family === 'moves' ? ORGANIZATION_MOVE_RECOVERY_PREFIX : ORGANIZATION_RECOVERY_PREFIX;
 }

@@ -1,5 +1,6 @@
 import type { LocationType } from '../types';
 import type { OrganizationMoveHierarchy } from './organizationMoveContract';
+import type { OrganizationOperationOutcome } from './organizationLeadershipContract';
 
 /** Private reviewed Location-use transition; public consumer contracts are unchanged. */
 interface Base { schemaVersion:1; operationId:string; locationId:string; expectedVersion:number; reason:string }
@@ -7,6 +8,9 @@ export type LocationLifecycleIntent = Base & (
   | {action:'convert';type:LocationType;hierarchy:{districtId:string;regionId:string;expectedDistrictVersion:number;expectedRegionVersion:number}|null;releaseStoreStaffing:boolean}
   | {action:'remove';acknowledgeApiRemoval:boolean}
 );
+type WithoutOperation<T>=T extends unknown?Omit<T,'operationId'>:never;
+export type LocationLifecycleDraft=WithoutOperation<LocationLifecycleIntent>;
+export type LocationLifecyclePreparation=OrganizationOperationOutcome&{reviewHash?:string;expiresAt?:string;review?:LocationLifecycleReview};
 export interface LocationLifecycleStaffing { role:'Store Manager'|'Assistant Manager'|'Key Holder';personId:string;fullName:string }
 export interface LocationLifecycleReview {
   action:'convert'|'remove';locationId:string;storeNumber:string;name:string;recordStatus:string;reason:string;

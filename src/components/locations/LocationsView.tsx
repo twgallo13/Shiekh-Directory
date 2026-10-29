@@ -9,6 +9,7 @@ import { normalizeLocationInboxEmail } from '../../lib/locationInboxEmail';
 import { OperationalStatusBadge, PrivacyBadge } from '../common/StatusBadge';
 import { Button } from '../common/Button';
 import { PageHeader } from '../common/PageHeader';
+import { LocationLifecycleLauncher } from '../admin/LocationLifecycleLauncher';
 import { 
   Search, 
   Plus, 
@@ -340,10 +341,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({
         title="Store Locations Directory"
         description={`${activeCount} active location${activeCount === 1 ? '' : 's'}${states.length > 0 ? ` across ${states.join(', ')}` : ''}${retiredCount > 0 ? ` (${retiredCount} retired in archive)` : ''}`}
         actions={canAdd ? (
+          <div className="flex flex-wrap gap-2">
+          <LocationLifecycleLauncher disabled={bulkSaving||isBulkModalOpen}/>
           <Button variant="primary" size="sm" onClick={onAddNewLocation}>
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             Add Store Location
           </Button>
+          </div>
         ) : undefined}
       />
 

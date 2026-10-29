@@ -74,6 +74,10 @@ export function leadershipFixture() {
         if (precondition) assert.deepEqual(precondition, { lastUpdateTime: { seconds: 100, nanoseconds: 1 } });
         pending.push(() => { assert(source.has(ref.path)); source.set(ref.path, { ...source.get(ref.path), ...structuredClone(data) }); });
       },
+      delete:(ref:{path:string},precondition?:any)=>{
+        writing=true;if(precondition)assert.deepEqual(precondition,{lastUpdateTime:{seconds:100,nanoseconds:1}});
+        pending.push(()=>{assert(source.has(ref.path));source.delete(ref.path);});
+      },
       flush: () => { for (const write of pending) write(); if (state.failWrite) throw new Error('Synthetic commit failure'); },
     };
   };

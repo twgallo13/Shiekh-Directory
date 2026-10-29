@@ -29,6 +29,8 @@ test('SDK: two concurrent commits produce one tenure, one audit and identical re
   const f = await fixture();
   try {
     const command = await f.prepared();
+    const reordered=structuredClone(f.intent);reordered.units[0].memberPersonIds.reverse();
+    const retry=await prepare(f.db,reordered,actor,f.clock);assert.equal(retry.state,'prepared');assert.equal('reviewHash' in retry ? retry.reviewHash : '',command.reviewHash);
     const [one, two] = await Promise.all([commit(f.db, command, actor, f.clock), commit(f.db, command, actor, f.clock)]);
     assert.deepEqual(one, two); assert.equal(one.state, 'committed');
     assert.equal((await f.db.doc('districts/01').get()).data()!.version, 4);

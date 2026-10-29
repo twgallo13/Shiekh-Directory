@@ -22,7 +22,7 @@ window.fetch = async (url, init) => {
   const path = String(url); if (!path.startsWith('/api/')) return originalFetch(url, init);
   if (init?.method === 'POST') throw new Error('This visual fixture does not permit server mutations.');
   if (failed) return new Response('{}', { status: 503 });
-  const value = path.endsWith('/capabilities') ? { schemaVersion: 1, catalogEnabled: true, newCommandsEnabled: true, recoveryEnabled: true } : path.endsWith('/catalog') ? catalog : path.endsWith('/operations') ? { schemaVersion: 1, complete: true, operations: [] } : seed;
+  const value = path.endsWith('/capabilities') ? { schemaVersion: 1, catalogEnabled: !new URLSearchParams(window.location.search).has('recoveryOnly'), newCommandsEnabled: !new URLSearchParams(window.location.search).has('recoveryOnly'), recoveryEnabled: true } : path.endsWith('/catalog') ? catalog : path.endsWith('/operations') ? { schemaVersion: 1, complete: true, operations: [] } : seed;
   return new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 };
 function Preview() {

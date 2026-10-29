@@ -208,3 +208,10 @@ test('keep lifecycle is not proof of Active eligibility for an Additional manage
   }
   assert.doesNotThrow(() => assertOrganizationTransitionCompatibility(f.state, intent, [], { status: 'Active', activeStatus: true }));
 });
+
+test('legacy non-retail RM transitions stay separate while lifecycle-owned non-retail remains protected',()=>{
+  const f=fixture();Object.assign(f.state.units[0].data,{leadershipModelVersion:1,leadershipVersion:0,regionalManagerId:null});
+  const location={type:'Corporate Office',districtId:'01',regionId:'01',regionalManagerId:'other'};
+  for(const action of ['retain','replace','vacate'])assert.doesNotThrow(()=>assertOrganizationTransitionCompatibility(f.state,{personId:'other',responsibilities:[{owner:'locations',id:'corp',field:'regionalManagerId',action}]},[{id:'corp',data:location}]));
+  assert.throws(()=>assertOrganizationTransitionCompatibility(f.state,{personId:'other',responsibilities:[{owner:'locations',id:'corp',field:'regionalManagerId',action:'vacate'}]},[{id:'corp',data:{...location,locationLifecycleModelVersion:1}}]),/non-retail/);
+});

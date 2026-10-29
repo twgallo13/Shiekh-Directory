@@ -137,7 +137,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const currentDistrict = districts.find(district => district.id === formData?.districtId);
   // Consult the saved hierarchy, not an editable draft that could remove its own protection.
   const savedDistrict = districts.find(d => d.id === baselineRef.current?.districtId);
-  const savedRegion = regions.find(r => r.id === baselineRef.current?.regionId);
+  const savedRegion = regions.find(r => r.id === (savedDistrict?.regionId ?? baselineRef.current?.regionId));
   const managedRegion = isRetailHierarchyType(isCreating ? formData?.type : baselineRef.current?.type) && requiresManagedHierarchyReview(isCreating ? currentRegion : savedRegion);
   const lifecycleOwned = !isCreating&&requiresLocationLifecycleReview(baselineRef.current);
   const unsupportedLifecycle = lifecycleOwned&&baselineRef.current?.locationLifecycleModelVersion!==1;

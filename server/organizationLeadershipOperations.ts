@@ -37,6 +37,9 @@ function canonical(value: unknown, depth = 0): string {
   throw new Error('Leadership review requires finite JSON values.');
 }
 const hash = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
+// Roster selections are sets. Preserve stored review order and legacy receipt hashes,
+// but compare retry intent independently of unit/member insertion order.
+const leadershipIntentHash = (intent: OrganizationLeadershipIntent) => hash({ ...intent, units: intent.units.map(unit => ({ ...unit, memberPersonIds: [...unit.memberPersonIds].sort() })).sort((a,b) => `${a.unitType}/${a.unitId}`.localeCompare(`${b.unitType}/${b.unitId}`)) });
 const conflict = (message: string): never => { throw new LeadershipPlanError('conflict', message); };
 const keyFor = (actorUid: string, operationId: string) => hash(['organization-leadership-v1', actorUid, operationId]);
 export function normalizeOrganizationOperationMarker(raw: unknown): { operationId: string; reviewHash?: string } {
@@ -55,7 +58,7 @@ function receipt(data: unknown, actor: Account, operationId: string): Receipt {
     || ![r.createdAt, r.expiresAt, r.updatedAt].every(Number.isSafeInteger) || r.createdAt < 0 || r.expiresAt !== r.createdAt + ORGANIZATION_REVIEW_TTL_MS || r.updatedAt < r.createdAt) throw new Error('Invalid leadership operation receipt.');
   if (r.intent) {
     const intent = normalizeOrganizationLeadershipIntent(r.intent);
-    if (intent.operationId !== operationId || hash(intent) !== r.intentHash || !Array.isArray(r.review) || !r.preconditions || hash([r.intentHash, r.review, r.preconditions]) !== r.reviewHash) throw new Error('Invalid leadership review binding.');
+    if (intent.operationId !== operationId || hash(intent) !== r.intentHash && leadershipIntentHash(intent) !== r.intentHash || !Array.isArray(r.review) || !r.preconditions || hash([r.intentHash, r.review, r.preconditions]) !== r.reviewHash) throw new Error('Invalid leadership review binding.');
   } else if (r.state !== 'cancelled') throw new Error('Leadership receipt has no reviewed intent.');
   if (r.state === 'committed' && (r.auditId !== `organization-${keyFor(actor.uid, operationId)}` || !Array.isArray(r.changes) || !r.changes.length)) throw new Error('Incomplete committed leadership receipt.');
   return r;
@@ -118,12 +121,12 @@ export async function listOrganizationLeadershipOperations(db: Firestore, actor:
  */
 export async function prepareOrganizationLeadership(db: Firestore, raw: unknown, actor: Account, clock = () => new Date()) {
   assertPersonTransitionActor(actor);
-  const intent = normalizeOrganizationLeadershipIntent(raw), intentHash = hash(intent), started = instant(clock);
+  const intent = normalizeOrganizationLeadershipIntent(raw), intentHash = leadershipIntentHash(intent), started = instant(clock);
   return db.runTransaction(async tx => {
     const { reference, current } = await readReceipt(db, tx, actor, intent.operationId);
     if (current) {
       if (current.state === 'cancelled') return outcome(current);
-      if (current.intentHash !== intentHash) conflict('This operation ID belongs to a different review.');
+      if (!current.intent || leadershipIntentHash(current.intent) !== intentHash) conflict('This operation ID belongs to a different review.');
       if (current.state === 'prepared') {
         const now = instant(clock);
         if (now < current.createdAt || now >= current.expiresAt) conflict('This review expired or its clock is inconsistent. Start a new operation.');

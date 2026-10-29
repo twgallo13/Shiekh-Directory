@@ -45,5 +45,5 @@ export function validateManagedPersonRename(writes: DirectoryWrite[], previous: 
     }
     if (!isDeepStrictEqual(normalizedLocation(expected), normalizedLocation(target.data))) fail('Manager name changes may update only the matching leadership display names on affected Locations.');
   }
-  return { personId, fullName, affectedLocations: affected.length };
+  return { personId, fullName: fullName as string, affectedLocations: affected.length };
 }

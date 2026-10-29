@@ -23,4 +23,6 @@ This cumulative source slice addresses nine review findings on PR77/78/80/90/91/
 
 ## Remaining gates
 
+PR100's independent code review identified locale-equivalent distinct Unicode unit IDs retaining input order. New intent hashes now compare exact code units. The receipt validator retains both original-order and earlier locale-sorted encodings; retry comparison always uses exact ordering. Sixteen affected operation cases passed after this repair, including distinct NFC/NFD IDs and older receipt recovery. The 945-case suite above is the earlier baseline, not a claimed repeat of the complete suite after this narrow repair. Fresh exact-head review remains required.
+
 Fresh code/security review of this integration repair is required; security passes on old heads do not substitute for fixed-code review. Do not resolve or label old commits clean merely because a later dependent branch contains a repair. Lifecycle source/planner are built, but conversion/removal receipts/commit, transport/recovery/review UI remain. Broader consumer/import acceptance, isolated release construction/migration/runtime/access/signing/rollback and required production acceptance/closeout remain undelivered. All activation gates remain off; do not deploy main wholesale.

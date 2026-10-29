@@ -43,6 +43,18 @@ test('set-equivalent reordered unit/member retries preserve new and legacy revie
   reordered.units[0].reason='Different actual intent';await assert.rejects(prepare(f.firestore,reordered,actor,clock),/different review/);
 });
 
+test('distinct canonically equivalent Unicode IDs use exact ordering for idempotent retries',async()=>{
+  const f=leadershipFixture(),ids=['\u00e9','e\u0301'];
+  for(const id of ids)f.records.set(`regions/${id}`,{name:`Region ${id}`,status:'Active',version:1});
+  f.intent.units=ids.map(unitId=>({unitType:'region',unitId,expectedVersion:1,expectedLeadershipVersion:0,activateLegacy:true,memberPersonIds:['new-hire'],primaryPersonId:'new-hire',reason:'Explicit region setup'}));
+  const first=await prepare(f.firestore,f.intent,actor,clock),reversed=structuredClone(f.intent);reversed.units.reverse();
+  assert.deepEqual(await prepare(f.firestore,reversed,actor,clock),first);assert.equal(receipts(f).length,1);
+  const saved=receipts(f)[0][1],hash=(v:unknown)=>createHash('sha256').update(canonicalTransitionJSON(v)).digest('hex');
+  const legacy={...saved.intent,units:saved.intent.units.map((u:any)=>({...u,memberPersonIds:[...u.memberPersonIds].sort()})).sort((a:any,b:any)=>`${a.unitType}/${a.unitId}`.localeCompare(`${b.unitType}/${b.unitId}`))};
+  saved.intentHash=hash(legacy);saved.reviewHash=hash([saved.intentHash,saved.review,saved.preconditions]);
+  const recovered=await prepare(f.firestore,reversed,actor,clock);assert.equal('reviewHash' in recovered?recovered.reviewHash:'',saved.reviewHash);
+});
+
 test('commit saves complete assignment, unit, audit and receipt atomically and recovers immutable success', async () => {
   const f = leadershipFixture(), command = await prepared(f);
   const result = await commit(f.firestore, command, actor, clock);

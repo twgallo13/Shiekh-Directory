@@ -39,7 +39,8 @@ function canonical(value: unknown, depth = 0): string {
 const hash = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
 // Roster selections are sets. Preserve stored review order and legacy receipt hashes,
 // but compare retry intent independently of unit/member insertion order.
-const leadershipIntentHash = (intent: OrganizationLeadershipIntent) => hash({ ...intent, units: intent.units.map(unit => ({ ...unit, memberPersonIds: [...unit.memberPersonIds].sort() })).sort((a,b) => `${a.unitType}/${a.unitId}`.localeCompare(`${b.unitType}/${b.unitId}`)) });
+const leadershipIntentHash = (intent: OrganizationLeadershipIntent) => hash({ ...intent, units: intent.units.map(unit => ({ ...unit, memberPersonIds: [...unit.memberPersonIds].sort() })).sort((a,b) => { const left=`${a.unitType}/${a.unitId}`,right=`${b.unitType}/${b.unitId}`; return left<right?-1:left>right?1:0; }) });
+const legacyLeadershipIntentHash = (intent: OrganizationLeadershipIntent) => hash({ ...intent, units: intent.units.map(unit=>({...unit,memberPersonIds:[...unit.memberPersonIds].sort()})).sort((a,b)=>`${a.unitType}/${a.unitId}`.localeCompare(`${b.unitType}/${b.unitId}`)) });
 const conflict = (message: string): never => { throw new LeadershipPlanError('conflict', message); };
 const keyFor = (actorUid: string, operationId: string) => hash(['organization-leadership-v1', actorUid, operationId]);
 export function normalizeOrganizationOperationMarker(raw: unknown): { operationId: string; reviewHash?: string } {
@@ -58,7 +59,7 @@ function receipt(data: unknown, actor: Account, operationId: string): Receipt {
     || ![r.createdAt, r.expiresAt, r.updatedAt].every(Number.isSafeInteger) || r.createdAt < 0 || r.expiresAt !== r.createdAt + ORGANIZATION_REVIEW_TTL_MS || r.updatedAt < r.createdAt) throw new Error('Invalid leadership operation receipt.');
   if (r.intent) {
     const intent = normalizeOrganizationLeadershipIntent(r.intent);
-    if (intent.operationId !== operationId || hash(intent) !== r.intentHash && leadershipIntentHash(intent) !== r.intentHash || !Array.isArray(r.review) || !r.preconditions || hash([r.intentHash, r.review, r.preconditions]) !== r.reviewHash) throw new Error('Invalid leadership review binding.');
+    if (intent.operationId !== operationId || ![hash(intent),leadershipIntentHash(intent),legacyLeadershipIntentHash(intent)].includes(r.intentHash!) || !Array.isArray(r.review) || !r.preconditions || hash([r.intentHash, r.review, r.preconditions]) !== r.reviewHash) throw new Error('Invalid leadership review binding.');
   } else if (r.state !== 'cancelled') throw new Error('Leadership receipt has no reviewed intent.');
   if (r.state === 'committed' && (r.auditId !== `organization-${keyFor(actor.uid, operationId)}` || !Array.isArray(r.changes) || !r.changes.length)) throw new Error('Incomplete committed leadership receipt.');
   return r;

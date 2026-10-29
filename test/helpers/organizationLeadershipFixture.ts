@@ -28,7 +28,15 @@ export function leadershipFixture() {
     doc(id: string) { return { id, path: `${this.name}/${id}` }; }
   }
   const document = (path: string, fields: string[], source: Map<string, any>) => {
-    const data = source.get(path), selected = data && (fields.length ? Object.fromEntries(fields.filter(f => Object.hasOwn(data, f)).map(f => [f, data[f]])) : data);
+    const data = source.get(path), selected = data && (fields.length ? fields.reduce((result,field)=>{
+      const [parent,child]=field.split('.');
+      if(!child){if(Object.hasOwn(data,parent))result[parent]=data[parent];}
+      else if(Object.hasOwn(data,parent)){
+        if(data[parent]===null||typeof data[parent]!=='object')result[parent]=data[parent];
+        else if(Object.hasOwn(data[parent],child)){result[parent]??={};result[parent][child]=data[parent][child];}
+      }
+      return result;
+    },{} as Record<string,any>) : data);
     return { id: path.split('/')[1], ref: { path: state.badPath === path ? `other/${path.split('/')[1]}` : path }, exists: source.has(path),
       updateTime: source.has(path) && state.missingTime !== path ? { seconds: 100, nanoseconds: 1 } : undefined,
       data: () => selected && structuredClone(selected) };

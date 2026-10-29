@@ -417,6 +417,12 @@ export function buildLocationImportPlan(
       const lifecycleOwned=requiresLocationLifecycleReview(existing);
       if(lifecycleOwned&&existing.locationLifecycleModelVersion!==1)issues.push(issue('error','invalid_hierarchy','Type',row.Type||'',existing.type,'This Location has unsupported lifecycle ownership.','Review its server-owned model before importing changes.'));
       const nonRetailOnly = classifyHierarchyLocationType(existing.type) === 'non-retail' && classifyHierarchyLocationType(proposed.type) === 'non-retail';
+      if (lifecycleOwned && nonRetailOnly && (
+        ['districtManagerId','districtManagerName','regionalManagerId','regionalManagerName','storeManagerId','storeManagerName','storeManagerPhone'].some(field => proposed[field] !== undefined && proposed[field] !== null && proposed[field] !== '')
+        || ['assistantStoreManagerIds','assistantStoreManagerNames','keyHolderIds','keyHolderNames'].some(field => proposed[field] !== undefined && (!Array.isArray(proposed[field]) || (proposed[field] as unknown[]).length > 0))
+      )) issues.push(issue('error','invalid_hierarchy','Store leadership','',null,
+        'Reviewed non-retail Locations cannot have retail leadership or store staffing.',
+        'Use People workplace/support links for non-retail responsibilities, or review Location conversion separately.'));
       const retailFormatOnly = classifyHierarchyLocationType(existing.type) === 'retail' && classifyHierarchyLocationType(proposed.type) === 'retail';
       if(lifecycleOwned&&hierarchyFields.some(field=>!(field==='type'&&preservesLocationClassification(existing.type,proposed.type))&&!sameValue(existing[field],proposed[field])))issues.push(issue('error','invalid_hierarchy','RegionId / DistrictId / Type',`${row.RegionId||''} / ${row.DistrictId||''} / ${row.Type||''}`,null,'This reviewed Location keeps lifecycle ownership after hierarchy detachment.','Use the separate Location review for conversion or hierarchy changes; ordinary format/contact edits remain available.'));
       if (managed && !nonRetailOnly && hierarchyFields.some(field => !(field==='type'&&retailFormatOnly) && !sameValue(existing[field], proposed[field]))) issues.push(issue('error', 'invalid_hierarchy', 'RegionId / DistrictId / Type', `${row.RegionId || ''} / ${row.DistrictId || ''} / ${row.Type || ''}`, null,

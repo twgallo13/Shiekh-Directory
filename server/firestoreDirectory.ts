@@ -418,6 +418,8 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       if (new Set(reviewedIdentities.map(target => target.id)).size !== reviewedIdentities.length) {
         throw new DirectoryValidationError("Each reviewed Location must appear exactly once.");
       }
+      const removedIdentities=await Promise.all(reviewedIdentities.map(target=>transaction.get(this.firestore.collection(LOCATION_LIFECYCLE_TOMBSTONE_COLLECTION).doc(target.id))));
+      if(removedIdentities.some(doc=>doc.exists))throw new DirectoryValidationError('This Location ID was permanently removed and cannot be reused. Create a new Location identity.');
       const [targetSnapshots, unchangedSnapshots, definitionSnapshot, peopleSnapshot, locationSnapshot, regionSnapshot, districtSnapshot] = await Promise.all([
         Promise.all(writes.map(write => transaction.get(this.firestore.collection("locations").doc(write.id)))),
         Promise.all(manifest.unchanged.map(assertion => transaction.get(this.firestore.collection("locations").doc(assertion.id)))),

@@ -16,7 +16,7 @@ const uid='synthetic-lifecycle-preview',boundary=createSessionBoundary(),params=
 const session={status:'authorized' as const,user:{uid,getIdToken:async()=>'synthetic-token'},account:{uid,role:params.has('nonAdmin')?'Directory Data Steward' as const:'System Administrator' as const,status:'Active' as const,accessScope:'Company-wide',personId:null,email:null,emailVerified:true,name:'Synthetic Admin',authenticationMethod:'test'},error:''};
 boundary.update(session);
 const auth={currentSession:boundary.snapshot,sessionGeneration:boundary.generation,onSessionBoundary:boundary.subscribe};
-let data=lifecycleBrowserFixture(),drop=false,failRefresh=false,commits=0,prepares=0,previews=0;
+let data=lifecycleBrowserFixture(),drop=false,failRefresh=false,commits=0,prepares=0,previews=0,dropPrepare=params.has('losePrepareReply'),dropCancel=params.has('loseCancelReply');
 const ops=new Map<string,any>(),reserved=new Set<string>(),nativeFetch=window.fetch.bind(window);
 if(params.has('pendingOnly')){const at=Date.now();ops.set('server-pending',{schemaVersion:1,operationId:'server-pending',state:'prepared',updatedAt:new Date(at).toISOString(),expiresAt:new Date(at+600000).toISOString()});}
 const reply=(v:unknown,status=200)=>new Response(JSON.stringify(v),{status,headers:{'Content-Type':'application/json'}});
@@ -34,9 +34,9 @@ window.fetch=async(url,init)=>{
   if(mode==='preview'){previews++;changed();return reply({schemaVersion:1,review:lifecycleBrowserReview(body,data,params.has('linkedAccount'))});}
   const id=body.operationId,current=ops.get(id);
   const outcome=(v:any)=>!v?{schemaVersion:1,operationId:id,state:'missing'}:v.state==='committed'?v:{schemaVersion:1,operationId:id,state:v.state,updatedAt:v.updatedAt};
-  if(mode==='prepare'){const review=lifecycleBrowserReview(body,data,params.has('linkedAccount'));if(!review.ready)return reply({},409);prepares++;const at=Date.now(),p={schemaVersion:1,operationId:id,state:'prepared',updatedAt:new Date(at).toISOString(),expiresAt:new Date(at+600000).toISOString(),reviewHash:'a'.repeat(64),review};ops.set(id,{...p,intent:body});changed();return reply(p);}
+  if(mode==='prepare'){const review=lifecycleBrowserReview(body,data,params.has('linkedAccount'));if(!review.ready)return reply({},409);prepares++;const at=Date.now(),p={schemaVersion:1,operationId:id,state:'prepared',updatedAt:new Date(at).toISOString(),expiresAt:new Date(at+600000).toISOString(),reviewHash:'a'.repeat(64),review};ops.set(id,{...p,intent:body});changed();if(dropPrepare){dropPrepare=false;throw new TypeError('Synthetic lost preparation reply');}return reply(p);}
   if(mode==='status')return reply(outcome(current));
-  if(mode==='cancel'){if(current?.state==='committed')return reply(current);const v={schemaVersion:1,operationId:id,state:'cancelled',updatedAt:new Date().toISOString()};ops.set(id,v);changed();return reply(v);}
+  if(mode==='cancel'){if(current?.state==='committed')return reply(current);const v={schemaVersion:1,operationId:id,state:'cancelled',updatedAt:new Date().toISOString()};ops.set(id,v);changed();if(dropCancel){dropCancel=false;throw new TypeError('Synthetic lost cancellation reply');}return reply(v);}
   if(mode==='commit'&&current?.state==='committed')return reply(current);
   if(mode==='commit'&&current?.state==='prepared'&&current.review){
     commits++;const r=current.review,l=data.locations.find(l=>l.id===r.locationId)!;

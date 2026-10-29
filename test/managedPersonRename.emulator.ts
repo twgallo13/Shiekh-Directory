@@ -41,6 +41,20 @@ test('SDK coordinated rename updates Person and all matching names with one mand
     const audits = await f.db.collection('audit_logs').get(); assert.equal(audits.size, 1); assert.equal(audits.docs[0].data().action, 'Manager Name Updated');
   } finally { await f.db.terminate(); }
 });
+
+test('SDK lifecycle-owned retail store permits only complete validated manager-name propagation',{timeout:90_000},async()=>{
+  const f=await fixture();
+  try{
+    await f.db.doc('regions/01').update({leadershipModelVersion:1,leadershipVersion:1,regionalManagerId:null});
+    await f.db.doc('locations/007').update({locationLifecycleModelVersion:1,hierarchyApplicability:'Applicable',regionalManagerId:null,regionalManagerName:''});
+    const manifest=await f.build();
+    await assert.rejects(f.store.commit(manifest.slice(0,1),null,actor),/every affected/);
+    const tampered=structuredClone(manifest);tampered[1].data!.districtManagerId='new-hire';await assert.rejects(f.store.commit(tampered,null,actor));
+    await f.store.commit(manifest,null,actor);
+    const saved=(await f.db.doc('locations/007').get()).data()!;assert.equal(saved.districtManagerName,'Updated Manager');assert.equal(saved.districtManagerId,'incumbent');assert.equal(saved.locationLifecycleModelVersion,1);assert.equal(saved.districtId,'01');assert.equal(saved.regionId,'01');
+    assert.equal((await f.db.collection('audit_logs').get()).size,1);
+  }finally{await f.db.terminate();}
+});
 test('SDK omitted, stale, extra and unauthorized name batches leave every business record unchanged', { timeout: 90_000 }, async () => {
   const f = await fixture();
   try {

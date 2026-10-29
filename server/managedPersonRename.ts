@@ -9,6 +9,9 @@ const lists = ['assistantStoreManagerIds', 'keyHolderIds'] as const;
 const fail = (message: string): never => { throw new DirectoryValidationError(message); };
 const strip = (row: Record<string, unknown>, keys: string[]) => Object.fromEntries(Object.entries(row).filter(([key]) => !keys.includes(key)));
 const metadata = ['id', 'version', 'updatedAt'];
+// Ordinary Location normalization omits empty ID fields. A command-written null vacancy
+// remains the same vacancy; no non-empty relationship may disappear or change here.
+const normalizedLocation=(row:Record<string,unknown>)=>Object.fromEntries(Object.entries(strip(row,metadata)).filter(([key,value])=>!['regionId','districtId',...scalar].includes(key as any)||value!==null&&value!==undefined&&value!==''));
 
 /** Internal proof for a single name-only batch against the complete transaction Location inventory.
  * All authority, generic validation, native transaction and audit capacity checks still apply.
@@ -40,7 +43,7 @@ export function validateManagedPersonRename(writes: DirectoryWrite[], previous: 
       if (!ids.every(canonicalId) || new Set(ids).size !== ids.length || !Array.isArray(names) || names.length !== ids.length || !names.every(n => typeof n === 'string')) fail('Resolve the affected leadership name list before renaming; unrelated names will not be guessed.');
       expected[namesField] = ids.map((id, i) => id === personId ? fullName : names[i]);
     }
-    if (!isDeepStrictEqual(strip(expected, metadata), strip(target.data, metadata))) fail('Manager name changes may update only the matching leadership display names on affected Locations.');
+    if (!isDeepStrictEqual(normalizedLocation(expected), normalizedLocation(target.data))) fail('Manager name changes may update only the matching leadership display names on affected Locations.');
   }
   return { personId, fullName, affectedLocations: affected.length };
 }

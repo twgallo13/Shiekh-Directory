@@ -97,7 +97,7 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
   const regionFor = (data: Record<string, unknown>) => byKey.get(leadershipUnitKey('district', String(data.districtId)))?.data.regionId ?? data.regionId;
   for (const [index, write] of writes.entries()) {
     const before = previous[index], after = write.data;
-    validateLocationLifecycleWrite(write,before,state);
+    validateLocationLifecycleWrite(write,before,state,rename);
     if (write.collection === 'districts' || write.collection === 'regions') {
       const type = write.collection === 'districts' ? 'district' : 'region', current = byKey.get(leadershipUnitKey(type, write.id));
       if (current && activated(current)) {

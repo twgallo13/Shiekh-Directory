@@ -41,3 +41,10 @@ test('ambiguous lists and unsafe versions fail closed; Additional with no Locati
   assert.throws(() => validateManagedPersonRename(f.writes, [{ ...f.person, version: Number.MAX_SAFE_INTEGER }, f.location], 'subject', [f.location]));
   assert.equal(validateManagedPersonRename(f.writes.slice(0, 1), [f.person], 'subject', []).affectedLocations, 0);
 });
+
+test('command-written null vacancy remains equivalent to ordinary omitted ID normalization',()=>{
+  const f=fixture();Object.assign(f.location,{regionalManagerId:null});Object.assign(f.previous[1],{regionalManagerId:null});
+  delete f.writes[1].data!.regionalManagerId;
+  assert.doesNotThrow(()=>validateManagedPersonRename(f.writes,f.previous,'subject',[f.location]));
+  f.writes[1].data!.regionalManagerId='other';assert.throws(()=>validateManagedPersonRename(f.writes,f.previous,'subject',[f.location]));
+});

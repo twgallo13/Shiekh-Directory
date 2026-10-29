@@ -23,6 +23,8 @@ test('SDK: managed CSV plan confirms both Primary copies once and rejects drift 
     const store=new FirestoreDirectoryStore(db), first=manifest('008'), receipt=await store.confirmLocationImport(first,actor);
     assert.equal(receipt.locations[0].record.districtManagerId,'new-hire'); assert.equal(receipt.locations[0].record.regionalManagerId,'new-hire');
     assert.equal((await store.confirmLocationImport(first,actor)).replayed,true);
+    const removed=manifest('010');await db.doc('location_lifecycle_tombstones/imported-010').create({schemaVersion:1,locationId:'imported-010',removedAt:new Date().toISOString()});
+    await assert.rejects(store.confirmLocationImport(removed,actor),/cannot be reused/);assert.equal((await db.doc('locations/imported-010').get()).exists,false);assert.equal((await db.doc(`location_import_receipts/${removed.operationId}`).get()).exists,false);
     const stale=manifest('009'), change=db.batch(); change.update(db.doc('regions/02'),{regionalManagerId:null,leadershipVersion:2,version:2}); change.update(db.doc('leadership_assignments/region-02'),{status:'ended'}); await change.commit();
     await assert.rejects(store.confirmLocationImport(stale,actor),/canonical/);
     assert.equal((await db.doc('locations/imported-009').get()).exists,false);

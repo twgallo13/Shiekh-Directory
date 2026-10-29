@@ -210,6 +210,9 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       const creation = creationCommand ? await readLocationCreationCommit(this.firestore, transaction, creationCommand, actor) : null;
       if (creation?.replayed) return { records: [], replayed: true };
       const snapshots = await Promise.all(writes.map(write => transaction.get(this.firestore.collection(write.collection).doc(write.id))));
+      // Removed permanent Location IDs cannot be reused by a generic/import/creation save.
+      const removedIdentities=await Promise.all(writes.filter(write=>write.collection==='locations').map(write=>transaction.get(this.firestore.collection(LOCATION_LIFECYCLE_TOMBSTONE_COLLECTION).doc(write.id))));
+      if(removedIdentities.some(doc=>doc.exists))throw new DirectoryValidationError('This Location ID was permanently removed and cannot be reused. Create a new Location identity.');
       const legacyCreation=!creation&&writes.some((write,index)=>write.collection==='locations'&&write.operation==='set'&&!snapshots[index].exists)
         ?await readLegacyLocationCreationAdmission(this.firestore,transaction,actor):null;
       // The request itself is the durable receipt. Retained after review and never deleted.
@@ -415,6 +418,8 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
       if (new Set(reviewedIdentities.map(target => target.id)).size !== reviewedIdentities.length) {
         throw new DirectoryValidationError("Each reviewed Location must appear exactly once.");
       }
+      const removedIdentities=await Promise.all(reviewedIdentities.map(target=>transaction.get(this.firestore.collection(LOCATION_LIFECYCLE_TOMBSTONE_COLLECTION).doc(target.id))));
+      if(removedIdentities.some(doc=>doc.exists))throw new DirectoryValidationError('This Location ID was permanently removed and cannot be reused. Create a new Location identity.');
       const [targetSnapshots, unchangedSnapshots, definitionSnapshot, peopleSnapshot, locationSnapshot, regionSnapshot, districtSnapshot] = await Promise.all([
         Promise.all(writes.map(write => transaction.get(this.firestore.collection("locations").doc(write.id)))),
         Promise.all(manifest.unchanged.map(assertion => transaction.get(this.firestore.collection("locations").doc(assertion.id)))),
@@ -1389,3 +1394,4 @@ function toRecord(snapshot: QueryDocumentSnapshot, collection: DirectoryCollecti
   };
   return { ...data, id: snapshot.id };
 }
+import { LOCATION_LIFECYCLE_TOMBSTONE_COLLECTION } from './locationLifecycleIdentity';

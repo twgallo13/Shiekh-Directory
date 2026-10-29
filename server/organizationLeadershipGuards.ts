@@ -8,6 +8,7 @@ import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { personLifecycle } from '../src/lib/personLifecycle';
 import { classifyHierarchyLocationType } from '../src/lib/hierarchyResolution';
 import { validateManagedPersonRename } from './managedPersonRename';
+import { validateLocationLifecycleWrite } from './locationLifecycleGuard';
 
 interface Assignment { id: string; unitType: 'district' | 'region'; unitId: string; personId: string; status: 'active' | 'ended' }
 export interface OrganizationGuardState { units: LeadershipUnitSource[]; assignments: Assignment[] }
@@ -96,6 +97,7 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
   const regionFor = (data: Record<string, unknown>) => byKey.get(leadershipUnitKey('district', String(data.districtId)))?.data.regionId ?? data.regionId;
   for (const [index, write] of writes.entries()) {
     const before = previous[index], after = write.data;
+    validateLocationLifecycleWrite(write,before,state,rename);
     if (write.collection === 'districts' || write.collection === 'regions') {
       const type = write.collection === 'districts' ? 'district' : 'region', current = byKey.get(leadershipUnitKey(type, write.id));
       if (current && activated(current)) {
@@ -142,10 +144,10 @@ export function validateOrganizationLeadershipWrites(writes: DirectoryWrite[], p
 export function managedLocationLifecycleChanges(writes: DirectoryWrite[], previous: (Record<string,unknown>|undefined)[], state:OrganizationGuardState){
   return writes.filter((write,index)=>{
     const before=previous[index],after=write.data;
-    if(write.collection!=='locations'||write.operation!=='set'||!before||!after||classifyHierarchyLocationType(before.type)!=='retail')return false;
+    if(write.collection!=='locations'||write.operation!=='set'||!before||!after)return false;
     const district=state.units.find(u=>u.unitType==='district'&&u.id===before.districtId);
     const regionId=district?.data.regionId??before.regionId;
-    const controlled=state.units.some(u=>activated(u)&&(u.unitType==='district'&&u.id===before.districtId||u.unitType==='region'&&u.id===regionId));
+    const controlled=Object.hasOwn(before,'locationLifecycleModelVersion')||classifyHierarchyLocationType(before.type)==='retail'&&state.units.some(u=>activated(u)&&(u.unitType==='district'&&u.id===before.districtId||u.unitType==='region'&&u.id===regionId));
     return controlled&&(before.recordStatus!==after.recordStatus||before.type!==after.type);
   });
 }

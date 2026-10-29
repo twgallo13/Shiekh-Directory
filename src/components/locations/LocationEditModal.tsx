@@ -11,7 +11,7 @@ import { normalizeAddressValues } from '../../lib/locationAddress';
 import { formatPersonPhone, resolvePersonPhone } from '../../lib/personContacts';
 import { leadershipPickerOptions, type LeadershipRole } from '../../lib/leadershipPicker';
 import { preserveUnchangedStaffing } from '../../lib/locationStaffingEdit';
-import { requiresManagedHierarchyReview, preservesLocationClassification } from '../../lib/managedHierarchyEditing';
+import { requiresManagedHierarchyReview, preservesLocationClassification, requiresLocationLifecycleReview } from '../../lib/managedHierarchyEditing';
 import { prepareNewLocationLeadership } from '../../lib/newLocationLeadership';
 import { useLocationCreation } from './useLocationCreation';
 import { hasDistrictLeadership, inheritDistrictLeader, isDistrictLeadershipMember } from '../../lib/districtLeadership';
@@ -139,8 +139,11 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
   const savedDistrict = districts.find(d => d.id === baselineRef.current?.districtId);
   const savedRegion = regions.find(r => r.id === baselineRef.current?.regionId);
   const managedRegion = isRetailHierarchyType(isCreating ? formData?.type : baselineRef.current?.type) && requiresManagedHierarchyReview(isCreating ? currentRegion : savedRegion);
-  const managedHierarchy = !isCreating && isRetailHierarchyType(baselineRef.current?.type) && (requiresManagedHierarchyReview(savedDistrict) || managedRegion);
-  const managedTypeBoundary = !isCreating && [savedDistrict,savedRegion,currentDistrict,currentRegion,regions.find(r=>r.id===savedDistrict?.regionId),regions.find(r=>r.id===currentDistrict?.regionId)].some(requiresManagedHierarchyReview);
+  const lifecycleOwned = !isCreating&&requiresLocationLifecycleReview(baselineRef.current);
+  const unsupportedLifecycle = lifecycleOwned&&baselineRef.current?.locationLifecycleModelVersion!==1;
+  const noStoreStaffing = lifecycleOwned&&!isRetailHierarchyType(baselineRef.current?.type);
+  const managedHierarchy = !isCreating && (lifecycleOwned||isRetailHierarchyType(baselineRef.current?.type) && (requiresManagedHierarchyReview(savedDistrict) || managedRegion));
+  const managedTypeBoundary = !isCreating && (lifecycleOwned||[savedDistrict,savedRegion,currentDistrict,currentRegion,regions.find(r=>r.id===savedDistrict?.regionId),regions.find(r=>r.id===currentDistrict?.regionId)].some(requiresManagedHierarchyReview));
   const canChooseType=(type:unknown)=>!managedTypeBoundary||preservesLocationClassification(baselineRef.current?.type,type);
   const hierarchy = formData ? resolveLocationHierarchy(formData, { regions, districts }) : undefined;
   const normalizedInbox = formData?.locationInboxEmail == null ? null : normalizeLocationInboxEmail(formData.locationInboxEmail);
@@ -590,7 +593,8 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
         {/* Scrollable Form Body: Flat, clean white background and minimal borders */}
         <form id="location-edit-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto bg-white p-5 sm:p-6">
           {isCreating&&creation.panel}
-          <fieldset disabled={saving||creationLocked} className="min-w-0">
+          {unsupportedLifecycle&&<p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">Location editing is unavailable until its lifecycle setup is reviewed.</p>}
+          <fieldset disabled={saving||creationLocked||unsupportedLifecycle} className="min-w-0">
           
           {/* Lifecycle / Status Notice if Retired */}
           {formData.recordStatus === 'Retired' && (
@@ -671,7 +675,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       <option value="Warehouse / Distribution Center" disabled={!canChooseType('Warehouse / Distribution Center')}>Warehouse / Distribution Center</option>
                       <option value="Other Company Location" disabled={!canChooseType('Other Company Location')}>Other Company Location</option>
                     </select>
-                    {managedTypeBoundary&&<p className="mt-1.5 text-xs text-neutral-500">Change the format within this location’s current use. Conversion between a store and a non-retail location requires a separate hierarchy review.{managedHierarchy?' For a store closure, use Retire Store.':''}</p>}
+                    {managedTypeBoundary&&<p className="mt-1.5 text-xs text-neutral-500">Change the format within this location’s current use. Conversion between a store and a non-retail location requires a separate hierarchy review.{managedHierarchy&&!noStoreStaffing?' For a store closure, use Retire Store.':''}</p>}
                   </div>
 
                   <div>
@@ -983,7 +987,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                       )}
                       {activeRegions.map(region => <option key={region.id} value={region.id}>{region.name} ({region.id})</option>)}
                     </select>
-                    <p className="mt-1 text-[11px] text-neutral-500">{managedHierarchy ? 'To change this store’s hierarchy, finish this edit and use Admin → Regions & Districts → Store & District moves.' : 'The selected value is the permanent Region ID.'}</p>
+                    <p className="mt-1 text-[11px] text-neutral-500">{noStoreStaffing?'Retail hierarchy does not apply here. A conversion requires a separate Location review.':managedHierarchy ? 'To change this store’s hierarchy, finish this edit and use Admin → Regions & Districts → Store & District moves.' : 'The selected value is the permanent Region ID.'}</p>
                   </div>
 
                   <div>
@@ -1045,7 +1049,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="Regional Manager"
-                      disabled={managedRegion}
+                      disabled={managedRegion||noStoreStaffing}
                       value={currentRmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -1070,6 +1074,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     </label>
                     <select
                       aria-label="Store Manager"
+                      disabled={noStoreStaffing}
                       value={currentSmId}
                       onChange={(e) => {
                         const selectedId = e.target.value;
@@ -1125,6 +1130,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <button
                       type="button"
                       onClick={handleAddAssistantManager}
+                      disabled={noStoreStaffing}
                       className="border border-neutral-300 rounded-md px-3 py-1.5 text-xs font-medium hover:bg-neutral-50 flex items-center gap-1.5 cursor-pointer bg-white text-neutral-700 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5 text-neutral-500" />
@@ -1177,6 +1183,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
                     <button
                       type="button"
                       onClick={handleAddKeyHolder}
+                      disabled={noStoreStaffing}
                       className="border border-neutral-300 rounded-md px-3 py-1.5 text-xs font-medium hover:bg-neutral-50 flex items-center gap-1.5 cursor-pointer bg-white text-neutral-700 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5 text-neutral-500" />
@@ -1563,7 +1570,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
               <button
                 type="button"
                 onClick={handleToggleRetire}
-                disabled={saving}
+                disabled={saving||unsupportedLifecycle}
                 className="flex cursor-pointer items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 shadow-2xs transition-colors hover:bg-neutral-100"
               >
                 <Archive className="w-3.5 h-3.5 text-neutral-500" />
@@ -1573,7 +1580,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
               <button
                 type="button"
                 onClick={handleToggleRetire}
-                disabled={saving}
+                disabled={saving||unsupportedLifecycle}
                 className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-md text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
@@ -1594,7 +1601,7 @@ export const LocationEditModal: React.FC<LocationEditModalProps> = ({
             <button
               type="submit"
               form="location-edit-form"
-              disabled={saving||creationLocked}
+              disabled={saving||creationLocked||unsupportedLifecycle}
               className="flex cursor-pointer items-center gap-2 rounded-md bg-red-700 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-800 sm:px-5"
             >
               <Save className="w-4 h-4" />

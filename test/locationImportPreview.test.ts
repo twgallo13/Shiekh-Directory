@@ -537,6 +537,27 @@ describe('managed organization CSV alignment',()=>{
   });
 });
 
+describe('review-owned Location import protection after hierarchy detachment',()=>{
+  const detached=()=>({locations:[{...baseLocation,type:'Corporate Office',hierarchyApplicability:'Not Applicable',regionId:null,districtId:null,districtManagerId:null,districtManagerName:'',regionalManagerId:null,regionalManagerName:'',storeManagerId:null,storeManagerName:'',storeManagerPhone:'',assistantStoreManagerIds:[],assistantStoreManagerNames:[],keyHolderIds:[],keyHolderNames:[],locationLifecycleModelVersion:1}],people:[],regions:[],districts:[]} as any);
+  it('keeps ordinary contacts and non-retail subtypes editable while retaining ownership',()=>{
+    const saved=detached(),plan=buildLocationImportPlan(csvRow({LocationId:baseLocation.id,Type:'Warehouse / Distribution Center'}),saved);
+    assert.equal(plan.preview.rows[0].action,'update',JSON.stringify(plan.preview.rows[0].issues));assert.equal(plan.writes[0].data.locationLifecycleModelVersion,1);
+  });
+  it('blocks crossing use or unsupported ownership without needing any Region/District rows',()=>{
+    const saved=detached(),cross=previewLocationImport(csvRow({LocationId:baseLocation.id,Type:'Enclosed Mall'}),saved);assert.equal(cross.rows[0].action,'blocked');assert(cross.rows[0].issues.some(i=>/lifecycle ownership/.test(i.reason)));
+    saved.locations[0].locationLifecycleModelVersion=99;assert.equal(previewLocationImport(csvRow({LocationId:baseLocation.id,StoreName:'Different name'}),saved).rows[0].action,'blocked');
+  });
+  it('blocks non-retail store staffing before confirmation even when eligible People exist',()=>{
+    for (const [column,position] of [['StoreManagerId','store-manager'],['AssistantStoreManagerIds','assistant-manager'],['KeyHolderIds','key-holder']] as const) {
+      const saved=detached(); saved.people.push({id:'staff-person',fullName:'Eligible Person',status:'Active',positionIds:[position]});
+      const plan=buildLocationImportPlan(csvRow({LocationId:baseLocation.id,[column]:'staff-person'}),saved);
+      assert.equal(plan.preview.rows[0].action,'blocked',JSON.stringify(plan.preview.rows[0].issues));
+      assert(plan.preview.rows[0].issues.some(i=>/cannot have retail leadership or store staffing/.test(i.reason)));
+      assert.equal(plan.writes.length,0);
+    }
+  });
+});
+
 function csvRow(overrides: Partial<Record<typeof LOCATION_IMPORT_COLUMNS[number], string>>) {
   return `${LOCATION_IMPORT_COLUMNS.join(',')}\r\n${values(overrides)}\r\n`;
 }

@@ -104,6 +104,8 @@ export interface TemporaryNotice {
 }
 
 export interface LocationRecord {
+  /** Internal server-owned conversion/removal protection; not a public API field. */
+  locationLifecycleModelVersion?: number;
   id: string;
   version?: number;
   storeNumber: string;

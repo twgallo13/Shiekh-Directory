@@ -6,7 +6,7 @@ import { hasDistrictLeadership, isDistrictLeadershipMember } from './districtLea
 import { allowsLeadershipPosition, LEADERSHIP_POSITION_FIELDS } from './personPositions';
 import { personLifecycle } from './personLifecycle';
 import { prepareNewLocationLeadership } from './newLocationLeadership';
-import { requiresManagedHierarchyReview } from './managedHierarchyEditing';
+import { requiresManagedHierarchyReview, requiresLocationLifecycleReview, preservesLocationClassification } from './managedHierarchyEditing';
 import { classifyHierarchyLocationType } from './hierarchyResolution';
 import {
   LOCATION_HIERARCHY_APPLICABILITY,
@@ -414,8 +414,17 @@ export function buildLocationImportPlan(
       const oldDistrict = snapshot.districts.find(d => d.id === existing.districtId), oldRegion = snapshot.regions.find(r => r.id === (oldDistrict?.regionId ?? existing.regionId));
       const newDistrict = snapshot.districts.find(d => d.id === proposed.districtId), newRegion = snapshot.regions.find(r => r.id === (newDistrict?.regionId ?? proposed.regionId));
       const managed = [oldDistrict, oldRegion, newDistrict, newRegion].some(requiresManagedHierarchyReview);
+      const lifecycleOwned=requiresLocationLifecycleReview(existing);
+      if(lifecycleOwned&&existing.locationLifecycleModelVersion!==1)issues.push(issue('error','invalid_hierarchy','Type',row.Type||'',existing.type,'This Location has unsupported lifecycle ownership.','Review its server-owned model before importing changes.'));
       const nonRetailOnly = classifyHierarchyLocationType(existing.type) === 'non-retail' && classifyHierarchyLocationType(proposed.type) === 'non-retail';
+      if (lifecycleOwned && nonRetailOnly && (
+        ['districtManagerId','districtManagerName','regionalManagerId','regionalManagerName','storeManagerId','storeManagerName','storeManagerPhone'].some(field => proposed[field] !== undefined && proposed[field] !== null && proposed[field] !== '')
+        || ['assistantStoreManagerIds','assistantStoreManagerNames','keyHolderIds','keyHolderNames'].some(field => proposed[field] !== undefined && (!Array.isArray(proposed[field]) || (proposed[field] as unknown[]).length > 0))
+      )) issues.push(issue('error','invalid_hierarchy','Store leadership','',null,
+        'Reviewed non-retail Locations cannot have retail leadership or store staffing.',
+        'Use People workplace/support links for non-retail responsibilities, or review Location conversion separately.'));
       const retailFormatOnly = classifyHierarchyLocationType(existing.type) === 'retail' && classifyHierarchyLocationType(proposed.type) === 'retail';
+      if(lifecycleOwned&&hierarchyFields.some(field=>!(field==='type'&&preservesLocationClassification(existing.type,proposed.type))&&!sameValue(existing[field],proposed[field])))issues.push(issue('error','invalid_hierarchy','RegionId / DistrictId / Type',`${row.RegionId||''} / ${row.DistrictId||''} / ${row.Type||''}`,null,'This reviewed Location keeps lifecycle ownership after hierarchy detachment.','Use the separate Location review for conversion or hierarchy changes; ordinary format/contact edits remain available.'));
       if (managed && !nonRetailOnly && hierarchyFields.some(field => !(field==='type'&&retailFormatOnly) && !sameValue(existing[field], proposed[field]))) issues.push(issue('error', 'invalid_hierarchy', 'RegionId / DistrictId / Type', `${row.RegionId || ''} / ${row.DistrictId || ''} / ${row.Type || ''}`, null,
         'This managed store’s hierarchy or retail/non-retail classification cannot be changed through CSV.', 'Keep the saved hierarchy and retail classification. Retail formats may change; use Store & District moves for membership changes and retire closed stores to preserve history.'));
     }

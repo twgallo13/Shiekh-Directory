@@ -37,6 +37,7 @@ const records: LocationDocument[] = [
       zipCode: "90001",
       phone: "555-0107",
       locationInboxEmail: " Store@example.test ",
+      locationLifecycleModelVersion: 1,
       suite: 'Space 2148',
       wayfindingDirections: 'Second floor, next to Macy’s.',
       phonePrivacy: "Public",
@@ -257,6 +258,7 @@ describe("Directory API location responses", () => {
     assert.equal(body.data[0].phone, "555-0107");
     assert.equal(body.data[1].phone, undefined);
     assert.equal(body.data[0].locationInboxEmail, "Store@example.test");
+    assert.equal(Object.hasOwn(body.data[0],'locationLifecycleModelVersion'),false);
     assert.equal(body.data[1].locationInboxEmail, null);
     assert.equal(body.data[0].regionId, "reg-west");
     assert.equal(body.data[0].regionName, "West Region");

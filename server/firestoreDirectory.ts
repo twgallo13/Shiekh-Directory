@@ -18,6 +18,7 @@ import { allowsLeadershipPosition } from '../src/lib/personPositions';
 import { isRetailHierarchyType } from '../src/lib/hierarchyResolution';
 import { assertDistrictHandoverAuditSize, validateDistrictLeadershipState } from './districtLeadership';
 import { readOrganizationGuardState, validateOrganizationLeadershipWrites, managedLocationLifecycleChanges } from './organizationLeadershipGuards';
+import { preserveLocationLifecycleModel } from './locationLifecycleGuard';
 import { readPersonTransitionAuthority } from './personTransitionAuthority';
 import { normalizeLocationCreationCommand, assertLocationCreationActor, prepareLocationCreation, readLocationCreation, cancelLocationCreation, listLocationCreations, locationCreationLegacyAllowed, readLocationCreationCommit, finishLocationCreationCommit, readLegacyLocationCreationAdmission, finishLegacyLocationCreationAdmission, locationCreationAuditId, type LocationCreationCommand } from './locationCreationRecovery';
 import { organizationLeadershipCapabilities, requireOrganizationLeadershipAdmission } from './organizationLeadershipConfiguration';
@@ -785,6 +786,7 @@ export function validateMetadataWrites(
     if (write.collection !== 'locations' && write.collection !== 'people') normalizePhoneWrite(data, current, 'phone', 'phoneExtension');
 
     if (write.collection === 'locations') {
+      preserveLocationLifecycleModel(data,current);
       if (data.operationalStatus === 'Temporarily Closed — Emergency' && current?.operationalStatus !== data.operationalStatus) throw new DirectoryValidationError('Use Report temporary closure on the Location detail screen; new indefinite emergency statuses are not supported.');
       // The immediate command is the only writer of this server-owned override. Older editors/imports preserve it.
       if (Object.hasOwn(data, 'temporaryClosure') && !isDeepStrictEqual(data.temporaryClosure ?? null, current?.temporaryClosure ?? null)) throw new DirectoryWriteDenied('Use the dedicated temporary operating update command to change closures.');

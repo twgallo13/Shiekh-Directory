@@ -4,6 +4,9 @@ import { classifyHierarchyLocationType } from './hierarchyResolution';
 export function requiresManagedHierarchyReview(unit: unknown): boolean {
   return !!unit && typeof unit === 'object' && Object.hasOwn(unit, 'leadershipModelVersion');
 }
+export function requiresLocationLifecycleReview(location:unknown):boolean{
+  return !!location&&typeof location==='object'&&Object.hasOwn(location,'locationLifecycleModelVersion');
+}
 /** Changing retail format or non-retail subtype keeps use; crossing either boundary needs review. */
 export function preservesLocationClassification(before:unknown,after:unknown):boolean{
   if(before===after)return true;

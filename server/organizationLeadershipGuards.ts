@@ -63,6 +63,10 @@ export function assertOrganizationTransitionCompatibility(state: OrganizationGua
     }
     if (action.owner !== 'locations' || action.field !== 'regionalManagerId') continue;
     const location = locations.find(l => l.id === action.id)?.data;
+    if (location && classifyHierarchyLocationType(location.type) === 'non-retail') {
+      if (Object.hasOwn(location,'locationLifecycleModelVersion')) deny('Reviewed non-retail Locations cannot carry retail leadership. Review Location use separately.');
+      continue; // Legacy non-retail responsibility is location-owned, not an inherited retail copy.
+    }
     const district = state.units.find(u => u.unitType === 'district' && u.id === location?.districtId);
     const region = location && controlled.find(u => u.unitType === 'region' && u.id === (district?.data.regionId ?? location.regionId));
     if (region) {

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { canonicalTransitionJSON } from '../src/lib/personTransitionIntent';
 import {
   prepareOrganizationLeadership as prepare, commitOrganizationLeadership as commit,
   readOrganizationLeadershipOperation as status, cancelOrganizationLeadershipOperation as cancel,
@@ -28,6 +30,29 @@ test('preparation persists only private review state; repeated exact preparation
   assert.deepEqual([...f.records].filter(([path]) => ![ORGANIZATION_OPERATION_COLLECTION, ORGANIZATION_ADMISSION_COLLECTION].some(c => path.startsWith(c + '/'))), before);
   assert.doesNotMatch(JSON.stringify(first), /PRIVATE|preconditions|patches|actorUid/);
   assert.doesNotMatch(JSON.stringify(receipts(f)), /PRIVATE_CONTACT|PRIVATE_ACCOUNT|PRIVATE_ADDRESS/);
+});
+
+test('set-equivalent reordered unit/member retries preserve new and legacy review receipts',async()=>{
+  const f=leadershipFixture();f.intent.units.push({unitType:'region',unitId:'01',expectedVersion:1,expectedLeadershipVersion:0,activateLegacy:true,memberPersonIds:['new-hire'],primaryPersonId:'new-hire',reason:'Explicit region activation'});
+  const first=await prepare(f.firestore,f.intent,actor,clock),reordered=structuredClone(f.intent);reordered.units.reverse();reordered.units.forEach(u=>u.memberPersonIds.reverse());
+  assert.deepEqual(await prepare(f.firestore,reordered,actor,clock),first);
+  const saved=receipts(f)[0][1],hash=(v:unknown)=>createHash('sha256').update(canonicalTransitionJSON(v)).digest('hex');
+  saved.intentHash=hash(saved.intent);saved.reviewHash=hash([saved.intentHash,saved.review,saved.preconditions]);
+  const legacy=await status(f.firestore,{operationId:f.intent.operationId},actor);
+  const retried=await prepare(f.firestore,reordered,actor,clock);assert.equal(retried.state,'prepared');assert.equal((retried as any).reviewHash,saved.reviewHash);assert.equal(legacy.state,'prepared');assert.equal(receipts(f).length,1);
+  reordered.units[0].reason='Different actual intent';await assert.rejects(prepare(f.firestore,reordered,actor,clock),/different review/);
+});
+
+test('distinct canonically equivalent Unicode IDs use exact ordering for idempotent retries',async()=>{
+  const f=leadershipFixture(),ids=['\u00e9','e\u0301'];
+  for(const id of ids)f.records.set(`regions/${id}`,{name:`Region ${id}`,status:'Active',version:1});
+  f.intent.units=ids.map(unitId=>({unitType:'region',unitId,expectedVersion:1,expectedLeadershipVersion:0,activateLegacy:true,memberPersonIds:['new-hire'],primaryPersonId:'new-hire',reason:'Explicit region setup'}));
+  const first=await prepare(f.firestore,f.intent,actor,clock),reversed=structuredClone(f.intent);reversed.units.reverse();
+  assert.deepEqual(await prepare(f.firestore,reversed,actor,clock),first);assert.equal(receipts(f).length,1);
+  const saved=receipts(f)[0][1],hash=(v:unknown)=>createHash('sha256').update(canonicalTransitionJSON(v)).digest('hex');
+  const legacy={...saved.intent,units:saved.intent.units.map((u:any)=>({...u,memberPersonIds:[...u.memberPersonIds].sort()})).sort((a:any,b:any)=>`${a.unitType}/${a.unitId}`.localeCompare(`${b.unitType}/${b.unitId}`))};
+  saved.intentHash=hash(legacy);saved.reviewHash=hash([saved.intentHash,saved.review,saved.preconditions]);
+  const recovered=await prepare(f.firestore,reversed,actor,clock);assert.equal('reviewHash' in recovered?recovered.reviewHash:'',saved.reviewHash);
 });
 
 test('commit saves complete assignment, unit, audit and receipt atomically and recovers immutable success', async () => {

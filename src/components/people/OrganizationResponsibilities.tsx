@@ -29,7 +29,7 @@ export function OrganizationResponsibilitiesRuntime({ auth, refreshSavedDirector
   const [discard, setDiscard] = useState(false), [filter, setFilter] = useState<'all' | 'district' | 'region'>('all');
   const controller = useRef<Controller | null>(null), generation = useRef(0), heading = useRef<HTMLHeadingElement>(null);
   const closeState = useRef({ busy: true, draft: false, phase: 'loading' }); closeState.current = { busy: !state || state.busy, draft: drafts.length > 0, phase: state?.phase ?? 'loading' };
-  const close = () => { if (closeState.current.busy) return; if (closeState.current.draft && closeState.current.phase === 'editing') setDiscard(true); else onClose(); };
+  const close = () => { if (closeState.current.busy) return; if (closeState.current.draft && ['editing','review'].includes(closeState.current.phase)) setDiscard(true); else onClose(); };
   useEffect(() => { registerClose?.(close); return () => registerClose?.(null); });
   useEffect(() => {
     const current = ++generation.current;
@@ -109,7 +109,7 @@ export function OrganizationResponsibilitiesRuntime({ auth, refreshSavedDirector
       </div>}
     </div>
     <div className="mt-5">{footerTarget ? createPortal(footer, footerTarget) : footer}</div>
-    <ConfirmDialog isOpen={discard} title="Leave assignment choices?" description={(personId ? 'The profile is saved. ' : '') + 'These unsubmitted assignment choices will be discarded.'} confirmLabel="Leave choices" onConfirm={onClose} onCancel={() => setDiscard(false)} />
+    <ConfirmDialog isOpen={discard} title="Leave assignment choices?" description={(personId ? 'The profile is saved. ' : '') + (state?.phase === 'review' ? 'These choices will be discarded. The unfinished review will remain available to check or cancel when you return.' : 'These unsubmitted assignment choices will be discarded.')} confirmLabel="Leave choices" onConfirm={onClose} onCancel={() => setDiscard(false)} />
   </>;
 }
 

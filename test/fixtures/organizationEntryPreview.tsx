@@ -21,6 +21,8 @@ if(new URLSearchParams(window.location.search).has('unsupportedLifecycle'))locat
 const seed: any = { locations:[location],people:[{ id:'manager',fullName:'Current Manager',version:1,status:'Active',activeStatus:true,positionIds:['district-manager','regional-manager'] }],users:[],hoursTemplates:[],corporateHolidays:[],emailTemplates:[],notificationRules:[],outboxLogs:[],sopRunbooks:[],customFieldDefinitions:[],requests:[],auditLogs:[],serverNow:new Date().toISOString(),
   regions:[{ id:'01',name:'West',status:'Active',version:1,leadershipModelVersion:1,leadershipVersion:1,regionalManagerId:'manager' }],districts:[{ id:'01',name:'Central',regionId:'01',status:'Active',version:3,leadershipModelVersion:1,leadershipVersion:1,districtManagerId:'manager' }] };
 const nativeFetch = window.fetch.bind(window);
+if(new URLSearchParams(window.location.search).has('legacyDistrict')){delete seed.districts[0].leadershipModelVersion;delete seed.districts[0].leadershipVersion;}
+if(new URLSearchParams(window.location.search).has('staleRegion'))location.regionId='missing-old-region';
 let failCreate = new URLSearchParams(window.location.search).has('failCreate');
 let dropReply=new URLSearchParams(window.location.search).has('dropReply'), failRefresh=new URLSearchParams(window.location.search).has('failRefresh'), prepares=0,commits=0;
 const receipts=new Map<string,any>();
@@ -47,7 +49,8 @@ window.fetch = async (url, init) => {
     throw new Error('Unexpected creation fixture route');
   }
   if(String(url).endsWith('/bootstrap')&&commits&&failRefresh){failRefresh=false;return Response.json({error:'Synthetic refresh outage'},{status:503});}
-  if (String(url).endsWith('/capabilities')) return Response.json({ schemaVersion:1,catalogEnabled:true,recoveryEnabled:true,newCommandsEnabled:true });
+  if (String(url).endsWith('/capabilities')) {const paused=new URLSearchParams(window.location.search).has('recoveryOnly');return Response.json({ schemaVersion:1,catalogEnabled:!paused,recoveryEnabled:true,newCommandsEnabled:!paused });}
+  if(String(url).endsWith('/organization-leadership/operations'))return Response.json({schemaVersion:1,complete:true,operations:[]});
   if (init?.method === 'POST') {
     const view = new URLSearchParams(window.location.search).get('view');
     if (!['create','quick','store'].includes(view ?? '') || !String(url).endsWith('/commit')) throw new Error('This entry-point fixture never writes.');

@@ -68,7 +68,7 @@ export function OrganizationMovesRuntime({ auth, refreshSavedDirectory, onClose,
   const oldDistrict = selection.kind === 'district' ? district : districts.find(u => u.id === store?.districtId);
   const oldRegion = regions.find(u => u.id === oldDistrict?.regionId);
   const review = () => { try { if (reapply) throw new Error('Review your retained selection against the refreshed records first.'); const draft = buildOrganizationMoveDraft(catalog!, locations!, selection); act(() => controller.current!.prepare(draft)); } catch (e) { setError((e as Error).message); } };
-  const cancel = (op: string) => { setReapply(true); act(() => controller.current!.cancel(op)); };
+  const cancel = (op: string) => { setReapply(state?.phase === 'review' && state.operationId === op && Boolean(selection.id && selection.regionId && (selection.kind === 'district' || selection.districtId))); act(() => controller.current!.cancel(op)); };
   let actions: React.ReactNode = <Button disabled={busy} onClick={close}>Close</Button>;
   if (editing && catalog) actions = <><Button disabled={busy} onClick={close}>Close</Button><Button variant="primary" disabled={!canEdit || reapply} onClick={review}>Review move<ArrowRight className="h-4 w-4" /></Button></>;
   if (state?.phase === 'review') actions = <><Button disabled={busy} onClick={() => cancel(state.operationId!)}>Back to selection</Button><Button variant="primary" isLoading={busy} onClick={() => act(() => controller.current!.commit())}>Confirm move</Button></>;

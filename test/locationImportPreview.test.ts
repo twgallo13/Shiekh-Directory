@@ -500,6 +500,12 @@ function managedImportSnapshot() {
 }
 const managedAddition = { StoreNumber:'008',StoreName:'New managed Store',Type:'Enclosed Mall',Address:'8 Actual Way',City:'Los Angeles',State:'CA',ZipCode:'90008',Phone:'2135550108',TimeZone:'America/Los_Angeles',HierarchyApplicability:'Applicable',RegionId:'reg-west',DistrictId:'dist-1',OperationalStatus:'Open — Normal Operations',RecordStatus:'Active' };
 describe('managed organization CSV alignment',()=>{
+  it('uses the District parent rather than a stale Location Region for inherited RM copies',()=>{
+    const saved=managedImportSnapshot();saved.regions.push(Object.assign({...saved.regions[0],id:'stale-region'},{regionalManagerId:null}));saved.locations[0].regionId='stale-region';
+    const plan=buildLocationImportPlan(csvRow({LocationId:baseLocation.id,StoreName:'Updated label'}),saved);
+    if(plan.preview.rows[0].action!=='blocked')assert.equal(plan.writes[0].data.regionalManagerId,'rm');
+    assert(!plan.preview.rows[0].changes.some(c=>c.field==='regionalManagerId'&&c.after===null));
+  });
   it('previews both canonical manager copies for new Stores and rejects a Regional override',()=>{
     const saved=managedImportSnapshot(), plan=buildLocationImportPlan(csvRow(managedAddition),saved,undefined,()=> 'managed-new');
     assert.equal(plan.preview.rows[0].action,'add',JSON.stringify(plan.preview.rows[0].issues));

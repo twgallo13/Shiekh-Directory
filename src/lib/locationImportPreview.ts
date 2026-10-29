@@ -383,7 +383,8 @@ export function buildLocationImportPlan(
       proposed.districtManagerId = managerId || null;
       proposed.districtManagerName = snapshot.people.find(p => p.id === managerId)?.fullName || '';
     }
-    const leadershipRegion = snapshot.regions.find(r => r.id === proposed.regionId);
+    const canonicalDistrict = snapshot.districts.find(d => d.id === proposed.districtId);
+    const leadershipRegion = snapshot.regions.find(r => r.id === (canonicalDistrict?.regionId ?? proposed.regionId));
     const managedRegion = classifyHierarchyLocationType(proposed.type) === 'retail' && requiresManagedHierarchyReview(leadershipRegion);
     const canonicalRegion = leadershipRegion as unknown as Record<string, unknown> | undefined;
     if (classifyHierarchyLocationType(proposed.type) === 'retail') for (const [unit, pointer] of [[leadershipDistrict, 'districtManagerId'], [leadershipRegion, 'regionalManagerId']] as const) {

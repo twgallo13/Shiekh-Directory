@@ -14,6 +14,7 @@ boundary.update(session);
 const auth = { currentSession: boundary.snapshot, sessionGeneration: boundary.generation, onSessionBoundary: boundary.subscribe };
 let data = moveBrowserFixture(), drop = false, failRefresh = false, commits = 0, prepares = 0;
 const ops = new Map<string, any>(), nativeFetch = window.fetch.bind(window);
+if(new URLSearchParams(window.location.search).has('pendingOnly')){const at=Date.now();ops.set('server-pending',{schemaVersion:1,operationId:'server-pending',state:'prepared',updatedAt:new Date(at).toISOString(),expiresAt:new Date(at+600000).toISOString()});}
 const reply = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'Content-Type': 'application/json' } });
 const bootstrap = () => ({ serverNow: new Date().toISOString(), locations: data.locations, people: [], users: [], requests: [], auditLogs: [], hoursTemplates: [], corporateHolidays: [], emailTemplates: [], notificationRules: [], outboxLogs: [], sopRunbooks: [], regions: [], districts: [] });
 window.fetch = async (url, init) => {

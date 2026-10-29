@@ -137,7 +137,7 @@ export const PersonDetailModal: React.FC<PersonDetailModalProps> = ({
         </div>
       )}
       footer={isEditing || isManaging ? <div ref={setEditorFooter} className="w-full" /> : <div className="flex w-full flex-wrap justify-end gap-2">
-        {organization?.catalogEnabled && <Button size="sm" onClick={() => setIsManaging(true)}>Responsibilities</Button>}
+        {(organization?.catalogEnabled || organization?.recoveryEnabled) && <Button size="sm" onClick={() => setIsManaging(true)}>Responsibilities</Button>}
         {canEdit && person.status !== 'Inactive' && person.activeStatus !== false && <Button size="sm" variant="danger" onClick={() => setPendingAction('inactivate')}><UserX className="h-3.5 w-3.5" />Inactivate</Button>}
         {canEdit && <Button size="sm" variant="danger" onClick={() => setPendingAction('delete')}><Trash2 className="h-3.5 w-3.5" />Delete</Button>}
         {canEdit && <Button size="sm" variant="primary" onClick={() => setIsEditing(true)}><Pencil className="h-3.5 w-3.5" />Edit Person</Button>}

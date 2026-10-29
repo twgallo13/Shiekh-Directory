@@ -19,6 +19,7 @@
     "test:location-lifecycle-guard-emulator": "node --import tsx --test test/locationLifecycleGuard.emulator.ts",
     "test:location-lifecycle-source-emulator": "node --import tsx --test test/locationLifecycleSource.emulator.ts",
     "test:location-lifecycle-emulator": "node --import tsx --test test/locationLifecycleAtomic.emulator.ts",
+    "test:location-lifecycle-api-emulator": "node --import tsx --test test/locationLifecycleApi.emulator.ts",
     "test:managed-location-import-emulator": "node --import tsx --test test/managedLocationImport.emulator.ts",
     "test:location-creation-recovery-emulator": "node --import tsx --test test/locationCreationRecovery.emulator.ts",
     "test:location-creation-api-emulator": "node --import tsx --test test/locationCreationApi.emulator.ts",

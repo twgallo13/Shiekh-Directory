@@ -1,3 +1,6 @@
+import { LOCATION_LIFECYCLE_TOMBSTONE_COLLECTION } from './locationLifecycleIdentity';
+import { locationLifecycleCapabilities,requireLocationLifecycleAdmission } from './locationLifecycleConfiguration';
+import { previewLocationLifecycle,prepareLocationLifecycle,commitLocationLifecycle,readLocationLifecycleOperation,cancelLocationLifecycleOperation,listLocationLifecycleOperations } from './locationLifecycleOperations';
 import { createHash, randomUUID } from "node:crypto";
 import { Firestore, type QueryDocumentSnapshot } from "@google-cloud/firestore";
 import type { Account } from "./authAuthority";
@@ -111,6 +114,14 @@ export interface DirectoryWriter {
   cancelOrganizationLeadershipOperation?(input: unknown, actor: Account): ReturnType<typeof cancelOrganizationLeadershipOperation>;
   listOrganizationLeadershipOperations?(actor: Account): ReturnType<typeof listOrganizationLeadershipOperations>;
   organizationMoveCapabilities?(): ReturnType<typeof organizationLeadershipCapabilities>;
+  locationLifecycleCapabilities?():ReturnType<typeof locationLifecycleCapabilities>;
+  readLocationLifecycleCatalog?(actor:Account):ReturnType<typeof readOrganizationCatalog>;
+  previewLocationLifecycle?(input:unknown,actor:Account):ReturnType<typeof previewLocationLifecycle>;
+  prepareLocationLifecycle?(input:unknown,actor:Account):ReturnType<typeof prepareLocationLifecycle>;
+  commitLocationLifecycle?(input:unknown,actor:Account):ReturnType<typeof commitLocationLifecycle>;
+  readLocationLifecycleOperation?(input:unknown,actor:Account):ReturnType<typeof readLocationLifecycleOperation>;
+  cancelLocationLifecycleOperation?(input:unknown,actor:Account):ReturnType<typeof cancelLocationLifecycleOperation>;
+  listLocationLifecycleOperations?(actor:Account):ReturnType<typeof listLocationLifecycleOperations>;
   readOrganizationMoveCatalog?(actor: Account): ReturnType<typeof readOrganizationCatalog>;
   prepareOrganizationMove?(input: unknown, actor: Account): ReturnType<typeof prepareOrganizationMove>;
   commitOrganizationMove?(input: unknown, actor: Account): ReturnType<typeof commitOrganizationMove>;
@@ -144,6 +155,14 @@ export class FirestoreDirectoryStore implements DirectoryReader, DirectoryWriter
   cancelOrganizationLeadershipOperation(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return cancelOrganizationLeadershipOperation(this.firestore, input, actor); }
   listOrganizationLeadershipOperations(actor: Account) { requireOrganizationLeadershipAdmission('recovery'); return listOrganizationLeadershipOperations(this.firestore, actor); }
   organizationMoveCapabilities() { return organizationLeadershipCapabilities(); }
+  locationLifecycleCapabilities(){return locationLifecycleCapabilities();}
+  readLocationLifecycleCatalog(actor:Account){requireLocationLifecycleAdmission('catalog');return readOrganizationCatalog(this.firestore,actor);}
+  previewLocationLifecycle(input:unknown,actor:Account){requireLocationLifecycleAdmission('catalog');return previewLocationLifecycle(this.firestore,input,actor);}
+  prepareLocationLifecycle(input:unknown,actor:Account){requireLocationLifecycleAdmission('command');return prepareLocationLifecycle(this.firestore,input,actor);}
+  commitLocationLifecycle(input:unknown,actor:Account){requireLocationLifecycleAdmission('command');return commitLocationLifecycle(this.firestore,input,actor);}
+  readLocationLifecycleOperation(input:unknown,actor:Account){requireLocationLifecycleAdmission('recovery');return readLocationLifecycleOperation(this.firestore,input,actor);}
+  cancelLocationLifecycleOperation(input:unknown,actor:Account){requireLocationLifecycleAdmission('recovery');return cancelLocationLifecycleOperation(this.firestore,input,actor);}
+  listLocationLifecycleOperations(actor:Account){requireLocationLifecycleAdmission('recovery');return listLocationLifecycleOperations(this.firestore,actor);}
   readOrganizationMoveCatalog(actor: Account) { requireOrganizationLeadershipAdmission('catalog'); return readOrganizationCatalog(this.firestore, actor); }
   prepareOrganizationMove(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('command'); return prepareOrganizationMove(this.firestore, input, actor); }
   commitOrganizationMove(input: unknown, actor: Account) { requireOrganizationLeadershipAdmission('command'); return commitOrganizationMove(this.firestore, input, actor); }
@@ -1394,4 +1413,3 @@ function toRecord(snapshot: QueryDocumentSnapshot, collection: DirectoryCollecti
   };
   return { ...data, id: snapshot.id };
 }
-import { LOCATION_LIFECYCLE_TOMBSTONE_COLLECTION } from './locationLifecycleIdentity';

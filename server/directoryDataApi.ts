@@ -7,6 +7,7 @@ import { createPersonTransitionCommandPreviewRouter } from './personTransitionCo
 import { createOrganizationLeadershipRouter } from './organizationLeadershipApi';
 import { createOrganizationMoveRouter } from './organizationMoveApi';
 import { createLocationCreationRouter } from './locationCreationApi';
+import { createLocationLifecycleRouter } from './locationLifecycleApi';
 
 const COLLECTION_ROLES: Record<DirectoryCollection, Account["role"][]> = {
   locations: ["System Administrator", "Directory Data Steward", "Editor"],
@@ -35,6 +36,7 @@ export function createDirectoryDataRouter(authenticate: Authenticate | null, sto
   router.use('/organization-leadership', createOrganizationLeadershipRouter(authenticate, store));
   router.use('/organization-moves', createOrganizationMoveRouter(authenticate, store));
   router.use('/location-creations', createLocationCreationRouter(authenticate, store));
+  router.use('/location-lifecycle',createLocationLifecycleRouter(authenticate,store));
   // Scoped to Directory commits, not a global increase for authentication or other APIs.
   router.use((request, response, next) => json({ limit: '1mb' })(request, response, (error?: unknown) => {
     if (error) {

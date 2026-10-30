@@ -168,6 +168,8 @@ export interface LocationListItem {
 
 export interface LocationLeadership {
   sm?: { id: string; name: string; slot: AssignmentSlot };
+  smCoverage: { id: string; name: string; slot: AssignmentSlot; label?: string }[];
+  hasPrimarySm: boolean;
   asm: { id: string; name: string; slot: AssignmentSlot }[];
   kh: { id: string; name: string; slot: AssignmentSlot }[];
   dm?: { id: string; name: string };
@@ -194,6 +196,34 @@ export interface LocationDetail extends Location {
   addressFormatted: string;
   phoneFormatted: string;
   mapsUrl: string;
+}
+
+// === Person Detail (Slice 4) ===
+export interface PersonAssignment {
+  id: string;
+  role: AssignmentRole;
+  scopeType: AssignmentScopeType;
+  scopeId: string;
+  scopeName: string;
+  slot: AssignmentSlot;
+  label?: string;
+  startDate: string;
+  endDate?: string;
+  isActive: boolean;
+}
+
+export interface PersonDetail extends Person {
+  assignments: PersonAssignment[];
+  activeAssignments: PersonAssignment[];
+}
+
+export interface PersonListItem {
+  id: string;
+  fullName: string;
+  workEmail?: string;
+  lifecycle: PersonLifecycle;
+  primaryRole?: string;
+  primaryScopeName?: string;
 }
 
 // === Import Types ===

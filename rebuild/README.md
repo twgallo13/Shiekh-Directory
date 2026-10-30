@@ -1,4 +1,4 @@
-# Shiekh Directory Rebuild - Slices 1, 2 & 3
+# Shiekh Directory Rebuild - Slices 1, 2, 3 & 4
 
 This is a ground-up rebuild of the Shiekh Store Directory. This folder contains a completely new app that runs independently from the existing legacy app. **The legacy app is untouched and remains live.**
 
@@ -142,6 +142,14 @@ All API endpoints require authentication (Bearer token).
 - `POST /api/app/corrections/:id/approve` - Approve a correction (Steward only)
 - `POST /api/app/corrections/:id/reject` - Reject a correction (Steward only)
 - `GET /api/app/audit` - View audit log entries
+
+**People & Assignments (Slice 4):**
+- `GET /api/app/people` - List all people (with optional search and lifecycle filter)
+- `GET /api/app/people/:id` - Get person details with all assignments
+- `GET /api/app/assignments/location/:locationId` - List assignments for a location
+- `POST /api/app/assignments` - Create a new assignment
+- `PATCH /api/app/assignments/:id` - Update an assignment (slot, label, endDate)
+- `POST /api/app/assignments/:id/end` - End an assignment
 
 ### Deploying to Firebase
 
@@ -390,6 +398,87 @@ Expanded change history showing a phone number update from +12135550007 to +1213
 ✅ Reload → change is kept (persists to database)  
 ✅ Two people editing at once → second sees a warning, not a silent overwrite  
 ✅ Audit log shows who changed what (Change History section)  
+
+---
+
+## What Slice 4 Does
+
+Slice 4 adds **concurrent responsibilities** (SM/DM/RM) and **person detail pages**:
+
+### Concurrent Responsibilities
+
+A person can hold multiple roles at the same time:
+
+- **SM of a store AND DM of a district** → Both show on their person page
+- Same person can have **Primary** role at one location and **Additional/Temporary** coverage at another
+- All assignments are tracked with start/end dates
+
+### Person Detail Pages
+
+Click any person's name in the Leadership section to view their full profile:
+
+- **Contact information** (email, work phone, mobile - mobile visible to Leader+ only)
+- **Current Responsibilities** - all active assignments with scope links
+- **Past Assignments** - historical record of previous roles
+
+### "Primary Unassigned; Coverage Present"
+
+When the primary SM leaves but additional coverage exists:
+
+- Store detail shows a **yellow warning**: "Primary unassigned; coverage present"
+- Coverage managers are still listed so the store isn't left without leadership
+- Clear visual distinction between the warning state and "Not assigned"
+
+### Assignment Management
+
+Users with assignment permissions (Leader, Steward, Admin) can:
+
+- **View** current assignments for a location
+- **Add** new assignments with role, slot (Primary/Additional), and optional label
+- **End** assignments when someone leaves a role
+- All changes are **audit logged**
+
+### Screenshots
+
+<details>
+<summary>Person Detail with Concurrent Roles</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/person-detail-assignments.png" alt="Person detail showing SM and DM roles" width="375" />
+
+Maria Santos as both Store Manager of Store 007 and District Manager of LA Central.
+</details>
+
+<details>
+<summary>Leadership Section with Links</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/leadership-links.png" alt="Leadership section with clickable names" width="375" />
+
+Clickable person names linking to their detail pages.
+</details>
+
+<details>
+<summary>Manage Assignments Panel</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/manage-assignments.png" alt="Assignment management panel" width="375" />
+
+View and end current assignments for a store.
+</details>
+
+<details>
+<summary>Add Assignment Form</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/add-assignment-form.png" alt="Add assignment form" width="375" />
+
+Add new assignment with role, slot, and person selection.
+</details>
+
+## Acceptance Checklist (Slice 4)
+
+✅ Make one person SM of a store and DM of a district → both show on their person page  
+✅ Add a Temporary additional SM → primary unchanged  
+✅ End the primary → store shows "Primary unassigned; coverage present"  
+✅ Person names are clickable links to their detail pages  
+✅ Assignment management with add/end capability  
 
 ---
 

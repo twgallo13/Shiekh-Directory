@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DirectoryView } from './components/DirectoryView';
 import { LocationDetailView } from './components/LocationDetailView';
+import { PersonDetailView } from './components/PersonDetailView';
 import { SignInView } from './components/SignInView';
 import { CorrectionsQueue } from './components/CorrectionsQueue';
 
@@ -48,6 +49,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LocationDetailView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/person/:id"
+        element={
+          <ProtectedRoute>
+            <PersonDetailView />
           </ProtectedRoute>
         }
       />

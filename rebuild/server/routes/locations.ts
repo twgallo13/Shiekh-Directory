@@ -183,6 +183,8 @@ async function getLocationLeadership(
   location: Location
 ): Promise<LocationLeadership> {
   const leadership: LocationLeadership = {
+    smCoverage: [],
+    hasPrimarySm: false,
     asm: [],
     kh: [],
   };
@@ -206,7 +208,12 @@ async function getLocationLeadership(
     
     switch (assignment.role) {
       case 'SM':
-        if (!leadership.sm || assignment.slot === 'primary') {
+        const smEntry = { ...entry, label: assignment.label };
+        leadership.smCoverage.push(smEntry);
+        if (assignment.slot === 'primary') {
+          leadership.sm = entry;
+          leadership.hasPrimarySm = true;
+        } else if (!leadership.sm) {
           leadership.sm = entry;
         }
         break;
@@ -218,6 +225,12 @@ async function getLocationLeadership(
         break;
     }
   }
+  
+  leadership.smCoverage.sort((a, b) => {
+    if (a.slot === 'primary' && b.slot !== 'primary') return -1;
+    if (b.slot === 'primary' && a.slot !== 'primary') return 1;
+    return a.name.localeCompare(b.name);
+  });
   
   if (location.districtId) {
     const dmAssignment = await db.collection('assignments')

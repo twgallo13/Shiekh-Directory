@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, X } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, X, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationDetail } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -8,6 +8,7 @@ import { formatHoursDisplay } from '../lib/operatingState';
 import { canEditLocation } from '../lib/permissions';
 import { EditLocationPanel } from './EditLocationPanel';
 import { AuditHistory } from './AuditHistory';
+import { AssignmentPanel } from './AssignmentPanel';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +17,16 @@ export function LocationDetailView() {
   const [error, setError] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | null>(null);
+  const [showAssignments, setShowAssignments] = useState(false);
+  const [assignments, setAssignments] = useState<{
+    id: string;
+    personId: string;
+    personName: string;
+    role: 'SM' | 'ASM' | 'KH' | 'DM' | 'RM' | 'OTHER';
+    slot: 'primary' | 'additional';
+    label?: string;
+    isActive: boolean;
+  }[]>([]);
   
   const { getIdToken, authUser } = useAuth();
   const navigate = useNavigate();
@@ -54,9 +65,31 @@ export function LocationDetailView() {
     }
   }, [id, getIdToken]);
   
+  const fetchAssignments = useCallback(async () => {
+    if (!id) return;
+    try {
+      const token = await getIdToken();
+      const response = await fetch(`/api/app/assignments/location/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const { data } = await response.json();
+        setAssignments(data);
+      }
+    } catch {
+      console.error('Failed to fetch assignments');
+    }
+  }, [id, getIdToken]);
+  
   useEffect(() => {
     fetchLocation();
   }, [fetchLocation]);
+  
+  useEffect(() => {
+    if (showAssignments) {
+      fetchAssignments();
+    }
+  }, [showAssignments, fetchAssignments]);
   
   const handleCopy = async (text: string, label: string) => {
     try {
@@ -334,22 +367,65 @@ export function LocationDetailView() {
         
         {/* Leadership */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <User className="w-4 h-4" />
-            Leadership
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <User className="w-4 h-4" />
+              Leadership
+            </h3>
+            {editPermissions.assignments && (
+              <button
+                onClick={() => setShowAssignments(true)}
+                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 text-sm"
+                aria-label="Manage assignments"
+              >
+                <Users className="w-4 h-4" />
+                <span className="hidden sm:inline">Manage</span>
+              </button>
+            )}
+          </div>
           
           <div className="space-y-3">
             {/* Store Manager */}
-            <div className="flex items-center justify-between py-2 border-b border-gray-100">
-              <div>
-                <p className="text-sm text-gray-500">Store Manager</p>
-                <p className="font-medium text-gray-900">
-                  {location.leadership.sm?.name || 'Not assigned'}
-                </p>
-              </div>
-              {location.leadership.sm?.slot === 'additional' && (
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Additional</span>
+            <div className="py-2 border-b border-gray-100">
+              <p className="text-sm text-gray-500">Store Manager</p>
+              {location.leadership.hasPrimarySm ? (
+                <div>
+                  {location.leadership.smCoverage?.filter(sm => sm.slot === 'primary').map(sm => (
+                    <Link
+                      key={sm.id}
+                      to={`/person/${sm.id}`}
+                      className="font-medium text-blue-600 hover:underline block"
+                    >
+                      {sm.name}
+                    </Link>
+                  ))}
+                </div>
+              ) : location.leadership.smCoverage && location.leadership.smCoverage.length > 0 ? (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 mt-1">
+                  <p className="text-yellow-800 font-medium text-sm">Primary unassigned; coverage present</p>
+                </div>
+              ) : (
+                <p className="font-medium text-gray-900">Not assigned</p>
+              )}
+              
+              {/* Additional/Temporary SM coverage */}
+              {location.leadership.smCoverage && location.leadership.smCoverage.filter(sm => sm.slot !== 'primary').length > 0 && (
+                <div className="mt-2 pl-3 border-l-2 border-gray-200">
+                  <p className="text-xs text-gray-500 mb-1">Additional Coverage</p>
+                  {location.leadership.smCoverage.filter(sm => sm.slot !== 'primary').map(sm => (
+                    <div key={sm.id} className="flex items-center gap-2">
+                      <Link
+                        to={`/person/${sm.id}`}
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        {sm.name}
+                      </Link>
+                      {sm.label && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{sm.label}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
             
@@ -357,9 +433,16 @@ export function LocationDetailView() {
             <div className="flex items-center justify-between py-2 border-b border-gray-100">
               <div>
                 <p className="text-sm text-gray-500">District Manager</p>
-                <p className="font-medium text-gray-900">
-                  {location.leadership.dm?.name || 'Not assigned'}
-                </p>
+                {location.leadership.dm ? (
+                  <Link
+                    to={`/person/${location.leadership.dm.id}`}
+                    className="font-medium text-blue-600 hover:underline"
+                  >
+                    {location.leadership.dm.name}
+                  </Link>
+                ) : (
+                  <p className="font-medium text-gray-900">Not assigned</p>
+                )}
               </div>
             </div>
             
@@ -367,9 +450,16 @@ export function LocationDetailView() {
             <div className="flex items-center justify-between py-2 border-b border-gray-100">
               <div>
                 <p className="text-sm text-gray-500">Regional Manager</p>
-                <p className="font-medium text-gray-900">
-                  {location.leadership.rm?.name || 'Not assigned'}
-                </p>
+                {location.leadership.rm ? (
+                  <Link
+                    to={`/person/${location.leadership.rm.id}`}
+                    className="font-medium text-blue-600 hover:underline"
+                  >
+                    {location.leadership.rm.name}
+                  </Link>
+                ) : (
+                  <p className="font-medium text-gray-900">Not assigned</p>
+                )}
               </div>
             </div>
             
@@ -378,12 +468,17 @@ export function LocationDetailView() {
               <div className="py-2 border-b border-gray-100">
                 <p className="text-sm text-gray-500 mb-1">Assistant Store Managers</p>
                 {location.leadership.asm.map(asm => (
-                  <p key={asm.id} className="font-medium text-gray-900">
-                    {asm.name}
+                  <div key={asm.id} className="flex items-center gap-2">
+                    <Link
+                      to={`/person/${asm.id}`}
+                      className="font-medium text-blue-600 hover:underline"
+                    >
+                      {asm.name}
+                    </Link>
                     {asm.slot === 'additional' && (
-                      <span className="ml-2 text-xs text-gray-500">(Additional)</span>
+                      <span className="text-xs text-gray-500">(Additional)</span>
                     )}
-                  </p>
+                  </div>
                 ))}
               </div>
             )}
@@ -393,9 +488,13 @@ export function LocationDetailView() {
               <div className="py-2">
                 <p className="text-sm text-gray-500 mb-1">Key Holders</p>
                 {location.leadership.kh.map(kh => (
-                  <p key={kh.id} className="font-medium text-gray-900">
+                  <Link
+                    key={kh.id}
+                    to={`/person/${kh.id}`}
+                    className="font-medium text-blue-600 hover:underline block"
+                  >
                     {kh.name}
-                  </p>
+                  </Link>
                 ))}
               </div>
             )}
@@ -440,6 +539,21 @@ export function LocationDetailView() {
             fetchLocation();
           }}
           onCancel={() => setEditingField(null)}
+        />
+      )}
+      
+      {/* Assignment Panel */}
+      {showAssignments && location && (
+        <AssignmentPanel
+          locationId={location.id}
+          locationName={`#${location.storeNumber} ${location.name}`}
+          existingAssignments={assignments}
+          onSave={() => {
+            setShowAssignments(false);
+            fetchLocation();
+            fetchAssignments();
+          }}
+          onCancel={() => setShowAssignments(false)}
         />
       )}
       

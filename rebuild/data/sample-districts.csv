@@ -1,0 +1,10 @@
+code,name,regionCode,lifecycle
+LA-CENTRAL,LA Central District,WEST,active
+LA-NORTH,LA North District,WEST,active
+LA-WEST,LA West District,WEST,active
+LV-STRIP,Las Vegas Strip District,WEST,active
+AZ-PHOENIX,Phoenix District,SOUTHWEST,active
+CHI-DOWNTOWN,Chicago Downtown District,CENTRAL,active
+TX-HOUSTON,Houston District,CENTRAL,active
+TX-DALLAS,Dallas District,CENTRAL,active
+NYC-MANHATTAN,NYC Manhattan District,EAST,active

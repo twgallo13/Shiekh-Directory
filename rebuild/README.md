@@ -719,18 +719,36 @@ New `VerificationRequest` type with:
 - Response fields (respondedAt, hoursConfirmed, proposedChanges)
 - Review fields (reviewedAt, reviewedBy, reviewNotes)
 
+### Slice 7 Fixes
+
+**Centralized Assignment Active Check:**
+- Created `server/utils/assignment.ts` with `isAssignmentActive()` and `getLocalDate()` helpers
+- `isAssignmentActive(assignment, localDate)`: checks `endedAt` first, then compares `endDate` with local date
+- `getLocalDate(timeZone)`: returns current date in the specified timezone (YYYY-MM-DD format)
+- Used consistently in `people.ts`, `users.ts`, `locations.ts`, `assignments.ts`
+
+**Verification Audit Entries:**
+- Changed `entityType` from `'location'` to `'verification'`
+- Actions: `'send'` for creating request, `'respond'` for store response, `'approve'` for approval
+- Still includes `locationId` for store Change History filtering
+
+**Firebase Hosting:**
+- Added `predeploy: ["npm run build"]` to firebase.json hosting config
+
 ## Acceptance Checklist (Slice 7)
 
 ✅ Send verification request to a store's shared inbox  
 ✅ Store confirms hours and proposes a phone fix  
 ✅ Steward approves → value changes and "last verified" updates  
-✅ Audit log tracks verification actions  
+✅ Audit log tracks verification actions with entityType 'verification'
 ✅ Store accounts see pending verification banner  
+✅ Assignment active check uses location's local date, not UTC
+✅ firebase.json builds web app before hosting deploy
 
 ---
 
 ## What's Not Included (Future Slices)
 
-- Legacy API compatibility (v1/v2/v3)
+- Legacy API compatibility (v1/v2/v3) - Slice 8
 - PDF exports
 - User management UI

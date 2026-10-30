@@ -128,14 +128,14 @@ export function createVerificationRouter(db: Firestore): Router {
         userId: authUser.uid,
         userEmail: authUser.email,
         userRole: authUser.role,
-        action: 'create',
-        entityType: 'location',
-        entityId: locationId,
+        action: 'send',
+        entityType: 'verification',
+        entityId: requestRef.id,
         entityName: `Verification request for ${location.storeNumber}`,
         locationId,
         changes: [
-          { field: 'verificationRequest', newValue: 'sent' },
           { field: 'sentTo', newValue: location.sharedInboxEmail },
+          { field: 'expiresAt', newValue: expiresAt.toISOString() },
         ],
       });
 
@@ -268,14 +268,14 @@ export function createVerificationRouter(db: Firestore): Router {
           userId: authUser.uid,
           userEmail: authUser.email,
           userRole: authUser.role,
-          action: 'update',
-          entityType: 'location',
-          entityId: request.locationId,
+          action: 'respond',
+          entityType: 'verification',
+          entityId: id,
           entityName: `${request.storeNumber} verified`,
           locationId: request.locationId,
           changes: [
-            { field: 'lastVerifiedAt', newValue: now.toISOString() },
             { field: 'hoursConfirmed', newValue: true },
+            { field: 'lastVerifiedAt', newValue: now.toISOString() },
           ],
         });
       } else if (hasProposedChanges) {
@@ -283,13 +283,13 @@ export function createVerificationRouter(db: Firestore): Router {
           userId: authUser.uid,
           userEmail: authUser.email,
           userRole: authUser.role,
-          action: 'update',
-          entityType: 'location',
-          entityId: request.locationId,
+          action: 'respond',
+          entityType: 'verification',
+          entityId: id,
           entityName: `${request.storeNumber} verification response`,
           locationId: request.locationId,
           changes: [
-            { field: 'verificationResponse', newValue: 'changes proposed' },
+            { field: 'proposedChanges', newValue: 'submitted' },
           ],
         });
       }
@@ -412,8 +412,8 @@ export function createVerificationRouter(db: Firestore): Router {
         userEmail: authUser.email,
         userRole: authUser.role,
         action: 'approve',
-        entityType: 'location',
-        entityId: request.locationId,
+        entityType: 'verification',
+        entityId: id,
         entityName: `${request.storeNumber} verification approved`,
         locationId: request.locationId,
         changes: auditChanges,

@@ -15,6 +15,7 @@ import type {
 import { resolveOperatingStatus, getWeekSchedule, getScheduleForDate } from '../../src/lib/operatingState';
 import { formatPhoneNumber } from '../utils/phone';
 import { formatAddress, getMapsUrl } from '../utils/address';
+import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 
 export function createLocationsRouter(db: Firestore): Router {
   const router = Router();
@@ -202,10 +203,11 @@ async function getLocationLeadership(
     .where('scopeId', '==', location.id)
     .get();
   
+  const localDate = getLocalDate(location.timeZone);
+  
   for (const doc of locationAssignments.docs) {
     const assignment = doc.data() as Assignment;
-    const isActive = !assignment.endedAt && (!assignment.endDate || assignment.endDate >= new Date().toISOString().slice(0, 10));
-    if (!isActive) continue;
+    if (!isAssignmentActive(assignment, localDate)) continue;
     
     const personDoc = await db.collection('people').doc(assignment.personId).get();
     if (!personDoc.exists) continue;
@@ -251,10 +253,12 @@ async function getLocationLeadership(
     
     if (!dmAssignment.empty) {
       const assignment = dmAssignment.docs[0].data() as Assignment;
-      const personDoc = await db.collection('people').doc(assignment.personId).get();
-      if (personDoc.exists) {
-        const person = personDoc.data() as Person;
-        leadership.dm = { id: assignment.personId, name: person.fullName };
+      if (isAssignmentActive(assignment, localDate)) {
+        const personDoc = await db.collection('people').doc(assignment.personId).get();
+        if (personDoc.exists) {
+          const person = personDoc.data() as Person;
+          leadership.dm = { id: assignment.personId, name: person.fullName };
+        }
       }
     }
   }
@@ -270,10 +274,12 @@ async function getLocationLeadership(
     
     if (!rmAssignment.empty) {
       const assignment = rmAssignment.docs[0].data() as Assignment;
-      const personDoc = await db.collection('people').doc(assignment.personId).get();
-      if (personDoc.exists) {
-        const person = personDoc.data() as Person;
-        leadership.rm = { id: assignment.personId, name: person.fullName };
+      if (isAssignmentActive(assignment, localDate)) {
+        const personDoc = await db.collection('people').doc(assignment.personId).get();
+        if (personDoc.exists) {
+          const person = personDoc.data() as Person;
+          leadership.rm = { id: assignment.personId, name: person.fullName };
+        }
       }
     }
   }

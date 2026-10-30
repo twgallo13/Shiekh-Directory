@@ -329,7 +329,9 @@ export type AuditAction =
   | 'assign'
   | 'unassign'
   | 'closure:start'
-  | 'closure:end';
+  | 'closure:end'
+  | 'send'
+  | 'respond';
 
 export interface AuditLogEntry {
   id: string;
@@ -338,7 +340,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store

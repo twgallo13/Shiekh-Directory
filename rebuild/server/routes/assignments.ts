@@ -10,6 +10,7 @@ import type {
   Region,
 } from '../../src/types';
 import { canEditLocation } from '../../src/lib/permissions';
+import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 
 export function createAssignmentsRouter(db: Firestore): Router {
   const router = Router();
@@ -25,7 +26,10 @@ export function createAssignmentsRouter(db: Firestore): Router {
         });
       }
 
-      const today = new Date().toISOString().slice(0, 10);
+      const locationDoc = await db.collection('locations').doc(locationId).get();
+      const location = locationDoc.exists ? (locationDoc.data() as Location) : null;
+      const localDate = getLocalDate(location?.timeZone);
+      
       const snapshot = await db.collection('assignments')
         .where('scopeType', '==', 'location')
         .where('scopeId', '==', locationId)
@@ -34,7 +38,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
       const assignments = [];
       for (const doc of snapshot.docs) {
         const assignment = { id: doc.id, ...doc.data() } as Assignment;
-        const isActive = !assignment.endedAt && (!assignment.endDate || assignment.endDate >= today);
+        const isActive = isAssignmentActive(assignment, localDate);
         
         const personDoc = await db.collection('people').doc(assignment.personId).get();
         const personName = personDoc.exists ? personDoc.data()?.fullName : 'Unknown';

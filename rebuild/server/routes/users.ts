@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { User, AuthUser, Assignment, UserRole } from '../../src/types';
 import { isEmailDomainAllowed, isAdminEmail, getEmailDomain, getAllowedDomains } from '../config/auth';
+import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 
 export function createUsersRouter(db: Firestore): Router {
   const router = Router();
@@ -137,10 +138,10 @@ async function computeLeaderScope(
   const districtIds: string[] = [];
   const regionIds: string[] = [];
 
+  const localDate = getLocalDate();
   for (const doc of assignmentsSnap.docs) {
     const assignment = doc.data() as Assignment;
-    const isActive = !assignment.endDate || assignment.endDate >= new Date().toISOString().slice(0, 10);
-    if (!isActive) continue;
+    if (!isAssignmentActive(assignment, localDate)) continue;
 
     if (assignment.role === 'DM' && assignment.scopeType === 'district') {
       districtIds.push(assignment.scopeId);

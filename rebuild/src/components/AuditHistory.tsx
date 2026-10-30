@@ -18,6 +18,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   unassign: 'Unassigned',
   'closure:start': 'Closure started',
   'closure:end': 'Closure ended',
+  send: 'Sent',
+  respond: 'Responded',
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {

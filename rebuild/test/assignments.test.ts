@@ -424,3 +424,81 @@ describe('Assignment Logic', () => {
     });
   });
 });
+
+describe('Centralized Assignment Active Check', () => {
+  function isAssignmentActive(
+    assignment: { endDate?: string; endedAt?: string },
+    localDate: string
+  ): boolean {
+    if (assignment.endedAt) {
+      return false;
+    }
+    if (!assignment.endDate) {
+      return true;
+    }
+    return assignment.endDate >= localDate;
+  }
+
+  describe('endedAt takes priority', () => {
+    it('assignment with endedAt is always inactive', () => {
+      const assignment = { 
+        endDate: '2026-12-31',
+        endedAt: '2026-10-30T10:00:00Z'
+      };
+      const localDate = '2026-10-30';
+      
+      assert.strictEqual(isAssignmentActive(assignment, localDate), false);
+    });
+    
+    it('assignment ended today with endedAt is immediately inactive', () => {
+      const assignment = { 
+        endDate: '2026-10-30',
+        endedAt: '2026-10-30T08:00:00Z'
+      };
+      const localDate = '2026-10-30';
+      
+      assert.strictEqual(isAssignmentActive(assignment, localDate), false);
+    });
+  });
+
+  describe('endDate comparison uses local date', () => {
+    it('assignment with no endDate is active', () => {
+      const assignment = {};
+      const localDate = '2026-10-30';
+      
+      assert.strictEqual(isAssignmentActive(assignment, localDate), true);
+    });
+    
+    it('assignment ending today is active', () => {
+      const assignment = { endDate: '2026-10-30' };
+      const localDate = '2026-10-30';
+      
+      assert.strictEqual(isAssignmentActive(assignment, localDate), true);
+    });
+    
+    it('assignment ending yesterday is inactive', () => {
+      const assignment = { endDate: '2026-10-29' };
+      const localDate = '2026-10-30';
+      
+      assert.strictEqual(isAssignmentActive(assignment, localDate), false);
+    });
+    
+    it('assignment ending tomorrow is active', () => {
+      const assignment = { endDate: '2026-10-31' };
+      const localDate = '2026-10-30';
+      
+      assert.strictEqual(isAssignmentActive(assignment, localDate), true);
+    });
+  });
+
+  describe('local date vs UTC', () => {
+    it('uses provided local date not UTC', () => {
+      const assignment = { endDate: '2026-10-30' };
+      const laLocalDate = '2026-10-30';
+      const nyLocalDate = '2026-10-31';
+      
+      assert.strictEqual(isAssignmentActive(assignment, laLocalDate), true);
+      assert.strictEqual(isAssignmentActive(assignment, nyLocalDate), false);
+    });
+  });
+});

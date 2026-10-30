@@ -11,6 +11,7 @@ import type {
   District,
   Region,
 } from '../../src/types';
+import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 
 export function createPeopleRouter(db: Firestore): Router {
   const router = Router();
@@ -57,9 +58,9 @@ export function createPeopleRouter(db: Firestore): Router {
 
         if (!assignmentSnap.empty) {
           const assignment = assignmentSnap.docs[0].data() as Assignment;
-          const isActive = !assignment.endDate || assignment.endDate >= new Date().toISOString().slice(0, 10);
+          const localDate = getLocalDate();
           
-          if (isActive) {
+          if (isAssignmentActive(assignment, localDate)) {
             primaryRole = assignment.role;
             primaryScopeName = await getScopeName(db, assignment.scopeType, assignment.scopeId);
           }
@@ -104,7 +105,7 @@ export function createPeopleRouter(db: Firestore): Router {
       }
 
       const person = { id: personDoc.id, ...personDoc.data() } as Person;
-      const today = new Date().toISOString().slice(0, 10);
+      const localDate = getLocalDate();
 
       const assignmentsSnap = await db.collection('assignments')
         .where('personId', '==', id)
@@ -114,7 +115,7 @@ export function createPeopleRouter(db: Firestore): Router {
 
       for (const doc of assignmentsSnap.docs) {
         const assignment = doc.data() as Assignment;
-        const isActive = !assignment.endDate || assignment.endDate >= today;
+        const isActive = isAssignmentActive(assignment, localDate);
         const scopeName = await getScopeName(db, assignment.scopeType, assignment.scopeId);
 
         assignments.push({

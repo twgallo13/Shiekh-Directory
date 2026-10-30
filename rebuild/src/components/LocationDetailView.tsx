@@ -189,6 +189,12 @@ export function LocationDetailView() {
             {location.statusNow.reason}
           </p>
           
+          {/* Phone Number */}
+          <div className="flex items-center gap-2 mb-3">
+            <Phone className="w-4 h-4 text-gray-500" />
+            <span className="text-lg font-medium text-gray-900">{location.phoneFormatted}</span>
+          </div>
+          
           {/* Contact Actions */}
           <div className="grid grid-cols-2 gap-3">
             <a

@@ -12,6 +12,10 @@ import { createAssignmentsRouter } from './routes/assignments';
 import { createHoursExceptionsRouter } from './routes/hoursExceptions';
 import { createVerificationRouter } from './routes/verification';
 import { createAuthMiddleware, createAuthUserMiddleware } from './middleware/auth';
+import { createLegacyApiAuthMiddleware } from './middleware/legacyApiAuth';
+import { createLegacyV1Router } from './routes/legacyV1';
+import { createLegacyV2Router } from './routes/legacyV2';
+import { createLegacyV3Router } from './routes/legacyV3';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -36,6 +40,11 @@ app.use('/api/app/people', createPeopleRouter(db));
 app.use('/api/app/assignments', createAssignmentsRouter(db));
 app.use('/api/app/hours-exceptions', createHoursExceptionsRouter(db));
 app.use('/api/app/verification', createVerificationRouter(db));
+
+// Legacy API routes (v1/v2/v3)
+app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));
+app.use('/api/v2', createLegacyApiAuthMiddleware(db), createLegacyV2Router(db));
+app.use('/api/v3', createLegacyApiAuthMiddleware(db), createLegacyV3Router(db));
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

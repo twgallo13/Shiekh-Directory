@@ -1,4 +1,4 @@
-# Shiekh Directory Rebuild - Slices 1 & 2
+# Shiekh Directory Rebuild - Slices 1, 2 & 3
 
 This is a ground-up rebuild of the Shiekh Store Directory. This folder contains a completely new app that runs independently from the existing legacy app. **The legacy app is untouched and remains live.**
 
@@ -94,7 +94,7 @@ The sample data includes:
 ```
 rebuild/
 ├── src/               # React frontend
-│   ├── components/    # UI components (DirectoryView, LocationDetailView, EditLocationPanel, CorrectionsQueue, etc.)
+│   ├── components/    # UI components (DirectoryView, LocationDetailView, EditLocationPanel, CorrectionsQueue, AuditHistory, etc.)
 │   ├── context/       # React context (auth with role loading)
 │   ├── lib/           # Business logic (operatingState, permissions)
 │   └── types/         # TypeScript type definitions
@@ -103,7 +103,7 @@ rebuild/
 │   ├── middleware/    # Auth middleware (token + user role loading)
 │   └── utils/         # Utilities (phone, address)
 ├── data/              # Sample CSV data
-├── test/              # Test files (operatingState, import, search, permissions)
+├── test/              # Test files (operatingState, import, search, permissions, edit)
 ├── firebase.json      # Firebase emulator config
 └── firestore.rules    # Security rules
 ```
@@ -322,6 +322,74 @@ npm run seed:users -- --project=shiekh-directory-v2 --admin=theo@shiekhshoes.org
 ✅ All writes go through server API with version checks  
 ✅ Audit log tracks all changes  
 ✅ Mobile numbers visible only to Leader/Steward/Admin  
+
+---
+
+## What Slice 3 Does
+
+Slice 3 adds **in-place editing of location info and standard hours** with change tracking:
+
+### In-Place Editing
+
+Users with edit permissions can modify store information directly from the store detail page:
+
+- **Contact Information** - Edit phone, email, and address without leaving the page
+- **Store Hours** - Update standard hours for each day of the week
+- **Temporary Closures** - Add and end temporary store closures
+
+### Version Conflict Detection
+
+If two people try to edit the same store at the same time:
+
+1. The first person saves their changes successfully
+2. The second person sees a **version conflict warning**: "This record was modified by someone else. Please reload and try again."
+3. This prevents one person's changes from silently overwriting another's
+
+This uses optimistic concurrency control—each save includes the expected version number, and the server rejects the save if the version doesn't match.
+
+### Change History (Audit Log)
+
+The **Change History** section on each store detail page shows who changed what:
+
+- **Who** made the change (email and role)
+- **When** it happened (relative time like "2m ago")
+- **What** changed (field names with old → new values)
+- **Version** tracking (1 → 2)
+
+This is visible to **Leader**, **Steward**, and **Admin** roles. Click any entry to expand and see the details of what changed.
+
+### Screenshots
+
+<details>
+<summary>Edit Contact Info (Phone)</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/edit-contact-phone.png" alt="Edit Contact Info panel showing phone input" width="375" />
+
+Edit panel for contact information, showing phone, email, and address fields.
+</details>
+
+<details>
+<summary>Edit Hours</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/edit-hours.png" alt="Edit Hours panel showing daily schedule" width="375" />
+
+Edit panel for standard hours, with day-by-day controls for open/close times.
+</details>
+
+<details>
+<summary>Change History (Audit Log)</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/audit-history-with-entry.png" alt="Change History showing recent edit" width="375" />
+
+Expanded change history showing a phone number update from +12135550007 to +12135550999.
+</details>
+
+## Acceptance Checklist (Slice 3)
+
+✅ Change a store's phone from the detail page without leaving it  
+✅ Reload → change is kept (persists to database)  
+✅ Two people editing at once → second sees a warning, not a silent overwrite  
+✅ Audit log shows who changed what (Change History section)  
 
 ---
 

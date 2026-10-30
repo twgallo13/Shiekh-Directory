@@ -7,6 +7,7 @@ import { StatusBadge } from './StatusBadge';
 import { formatHoursDisplay } from '../lib/operatingState';
 import { canEditLocation } from '../lib/permissions';
 import { EditLocationPanel } from './EditLocationPanel';
+import { AuditHistory } from './AuditHistory';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -415,6 +416,12 @@ export function LocationDetailView() {
             </div>
           </dl>
         </div>
+        
+        {/* Audit History - visible to Leader/Steward/Admin */}
+        <AuditHistory
+          locationId={location.id}
+          locationName={`${location.storeNumber} ${location.name}`}
+        />
       </main>
       
       {/* Edit Panel */}

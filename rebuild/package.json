@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "start": "node dist/server.js",
-    "seed": "tsx scripts/seedEmulator.ts"
+    "seed": "tsx scripts/seedEmulator.ts",
+    "seed:users": "tsx server/seedUsers.ts"
   },
   "dependencies": {
     "csv-parse": "^5.5.6",

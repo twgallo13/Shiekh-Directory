@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationDetail } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { formatHoursDisplay } from '../lib/operatingState';
+import { canEditLocation } from '../lib/permissions';
+import { EditLocationPanel } from './EditLocationPanel';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -12,9 +14,14 @@ export function LocationDetailView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | null>(null);
   
-  const { getIdToken } = useAuth();
+  const { getIdToken, authUser } = useAuth();
   const navigate = useNavigate();
+  
+  const editPermissions = authUser && location
+    ? canEditLocation(authUser, location.id)
+    : { closure: false, hours: false, contactInfo: false, assignments: false };
   
   const fetchLocation = useCallback(async () => {
     if (!id) return;
@@ -138,7 +145,7 @@ export function LocationDetailView() {
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <div>
+                <div className="flex-1">
                   <p className="font-medium text-red-800">Temporarily Closed</p>
                   <p className="text-sm text-red-700">{location.activeClosure.reason}</p>
                   {location.activeClosure.endsAt && (
@@ -147,8 +154,34 @@ export function LocationDetailView() {
                     </p>
                   )}
                 </div>
+                {editPermissions.closure && (
+                  <button
+                    onClick={async () => {
+                      const token = await getIdToken();
+                      await fetch(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/end`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                      fetchLocation();
+                    }}
+                    className="text-xs text-red-700 hover:bg-red-100 px-2 py-1 rounded"
+                  >
+                    <X className="w-3 h-3 inline mr-1" />
+                    End
+                  </button>
+                )}
               </div>
             </div>
+          )}
+          
+          {/* Add Closure Button */}
+          {editPermissions.closure && !location.activeClosure && (
+            <button
+              onClick={() => setEditingField('closure')}
+              className="w-full text-sm text-gray-600 border border-dashed border-gray-300 rounded-lg py-2 mb-4 hover:bg-gray-50 hover:border-gray-400"
+            >
+              + Add Temporary Closure
+            </button>
           )}
           
           <p className="text-sm text-gray-600 mb-4">
@@ -188,10 +221,21 @@ export function LocationDetailView() {
         
         {/* Address */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <MapPin className="w-4 h-4" />
-            Location
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <MapPin className="w-4 h-4" />
+              Location
+            </h3>
+            {editPermissions.contactInfo && (
+              <button
+                onClick={() => setEditingField('contact')}
+                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                aria-label="Edit contact info"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <div className="space-y-2">
             <p className="text-gray-700">{location.addressFormatted}</p>
             {location.mallOrCenterName && (
@@ -213,10 +257,21 @@ export function LocationDetailView() {
         
         {/* Hours */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            Store Hours
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Store Hours
+            </h3>
+            {editPermissions.hours && (
+              <button
+                onClick={() => setEditingField('hours')}
+                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                aria-label="Edit hours"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           
           {/* Today's Hours */}
           <div className="bg-gray-50 rounded-lg p-3 mb-4">
@@ -361,6 +416,19 @@ export function LocationDetailView() {
           </dl>
         </div>
       </main>
+      
+      {/* Edit Panel */}
+      {editingField && location && (
+        <EditLocationPanel
+          location={location}
+          field={editingField}
+          onSave={() => {
+            setEditingField(null);
+            fetchLocation();
+          }}
+          onCancel={() => setEditingField(null)}
+        />
+      )}
       
       {/* Copy Toast */}
       {copiedText && (

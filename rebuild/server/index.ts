@@ -3,7 +3,11 @@ import { createSearchRouter } from './routes/search';
 import { createLocationsRouter } from './routes/locations';
 import { createImportRouter } from './routes/import';
 import { createRegionsRouter, createDistrictsRouter } from './routes/regions';
-import { createAuthMiddleware } from './middleware/auth';
+import { createUsersRouter } from './routes/users';
+import { createEditRouter } from './routes/edit';
+import { createCorrectionsRouter } from './routes/corrections';
+import { createAuditRouter } from './routes/audit';
+import { createAuthMiddleware, createAuthUserMiddleware } from './middleware/auth';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -14,11 +18,16 @@ app.use(express.json({ limit: '10mb' }));
 const db = createFirestoreClient();
 
 app.use('/api/app', createAuthMiddleware());
+app.use('/api/app', createAuthUserMiddleware(db));
 app.use('/api/app/search', createSearchRouter(db));
 app.use('/api/app/locations', createLocationsRouter(db));
 app.use('/api/app/import', createImportRouter(db));
 app.use('/api/app/regions', createRegionsRouter(db));
 app.use('/api/app/districts', createDistrictsRouter(db));
+app.use('/api/app/users', createUsersRouter(db));
+app.use('/api/app/edit', createEditRouter(db));
+app.use('/api/app/corrections', createCorrectionsRouter(db));
+app.use('/api/app/audit', createAuditRouter(db));
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

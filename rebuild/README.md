@@ -1,4 +1,4 @@
-# Shiekh Directory Rebuild - Slice 1
+# Shiekh Directory Rebuild - Slices 1 & 2
 
 This is a ground-up rebuild of the Shiekh Store Directory. This folder contains a completely new app that runs independently from the existing legacy app. **The legacy app is untouched and remains live.**
 
@@ -93,16 +93,16 @@ The sample data includes:
 ```
 rebuild/
 ├── src/               # React frontend
-│   ├── components/    # UI components
-│   ├── context/       # React context (auth)
-│   ├── lib/           # Business logic (operating state)
+│   ├── components/    # UI components (DirectoryView, LocationDetailView, EditLocationPanel, CorrectionsQueue, etc.)
+│   ├── context/       # React context (auth with role loading)
+│   ├── lib/           # Business logic (operatingState, permissions)
 │   └── types/         # TypeScript type definitions
 ├── server/            # Node.js API server
-│   ├── routes/        # API endpoints
-│   ├── middleware/    # Auth middleware
+│   ├── routes/        # API endpoints (search, locations, import, edit, corrections, audit, users)
+│   ├── middleware/    # Auth middleware (token + user role loading)
 │   └── utils/         # Utilities (phone, address)
 ├── data/              # Sample CSV data
-├── test/              # Test files
+├── test/              # Test files (operatingState, import, search, permissions)
 ├── firebase.json      # Firebase emulator config
 └── firestore.rules    # Security rules
 ```
@@ -113,6 +113,7 @@ rebuild/
 npm run dev           # Start both server and frontend
 npm run dev:emulators # Start Firebase Emulators only
 npm run seed          # Load sample data into emulators
+npm run seed:users    # Create test user accounts for each role (slice 2)
 npm run test          # Run all tests
 npm run lint          # TypeScript type checking
 npm run build         # Production build
@@ -122,12 +123,23 @@ npm run build         # Production build
 
 All API endpoints require authentication (Bearer token).
 
+**Core (Slice 1):**
 - `GET /api/app/search?q=...` - Search stores and people
 - `GET /api/app/locations` - List all stores (with optional filters)
 - `GET /api/app/locations/:id` - Get store details
 - `POST /api/app/import` - Import data from CSV (with `?dryRun=true` for preview)
 - `GET /api/app/regions` - List regions
 - `GET /api/app/districts` - List districts
+
+**Editing (Slice 2):**
+- `GET /api/app/users/me` - Get current user's profile and role
+- `PATCH /api/app/edit/locations/:id` - Edit a store (with version check)
+- `POST /api/app/edit/locations/:id/closures` - Add a temporary closure
+- `POST /api/app/edit/locations/:id/closures/:closureId/end` - End a closure
+- `GET /api/app/corrections` - List corrections (filtered by status)
+- `POST /api/app/corrections/:id/approve` - Approve a correction (Steward only)
+- `POST /api/app/corrections/:id/reject` - Reject a correction (Steward only)
+- `GET /api/app/audit` - View audit log entries
 
 ### Connecting to a Real Firebase Project
 
@@ -160,11 +172,85 @@ VITE_FIREBASE_APP_ID=your-app-id
 ✅ All data writes go through server API (security rules block client writes)  
 ✅ Basic sign-in required to view data
 
-## What's Not Included (Out of Scope for Slice 1)
+---
 
-- Editing stores/people/assignments in the UI
-- User roles and permissions
+## What Slice 2 Does
+
+Slice 2 adds **roles & permissions** and **in-context editing** to the directory:
+
+### User Roles
+
+There are five roles, each with different capabilities:
+
+| Role | What They Can Do |
+|------|------------------|
+| **Viewer** | Read-only access to all stores and people |
+| **Store** | Edit own store's closures; propose corrections to phone/address (needs approval) |
+| **Leader** | DMs/RMs can edit hours, closures, and SM assignments for stores in their scope |
+| **Steward** | Full edit access; can approve corrections submitted by others |
+| **Admin** | Everything a Steward can do, plus user management |
+
+### In-Context Editing
+
+- **Edit buttons** appear on store details based on your role
+- **Pencil icons** next to Hours and Contact Info sections (for users with permission)
+- **"+ Add Temporary Closure" button** for users who can add closures
+- **Version conflict detection** - if someone else edits the same record, you get a warning
+
+### Correction Workflow
+
+When a Store or Leader user edits contact info (phone, address, inbox):
+1. Their changes are saved as a **pending correction**
+2. A Steward sees it in the **Approval Queue** (menu → "Approval Queue")
+3. Steward can **Approve** or **Reject** with optional notes
+4. If approved, the changes go live immediately
+
+### Audit Logging
+
+All edits are tracked in an audit log:
+- Who made the change
+- What was changed (before/after values)
+- When it happened
+- Version number for tracking
+
+### Mobile Phone Visibility
+
+Mobile phone numbers for people are only visible to **Leader**, **Steward**, and **Admin** roles. Viewers and Store accounts don't see mobile numbers.
+
+## Test Accounts for Slice 2
+
+In addition to the basic test account, there are accounts for each role:
+
+| Email | Password | Role | Notes |
+|-------|----------|------|-------|
+| `viewer@shiekh.test` | `test123` | Viewer | Read-only, no edit buttons |
+| `store007@shiekh.test` | `test123` | Store | Can edit closures for store 007 only |
+| `dm.jones@shiekh.test` | `test123` | Leader | DM for LA-Central district |
+| `steward@shiekh.test` | `test123` | Steward | Full access, sees Approval Queue |
+| `admin@shiekh.test` | `test123` | Admin | Full access, plus user management |
+
+To seed these users, run:
+```bash
+npm run seed:users
+```
+
+## Acceptance Checklist (Slice 2)
+
+✅ A Viewer cannot see any edit pencil  
+✅ A Steward can see edit pencils on any store  
+✅ A Store account only sees its own store as editable  
+✅ DM/RM (Leader) can edit hours and closures for their own stores without approval  
+✅ Store corrections to phone/address need Steward approval before going live  
+✅ All writes go through server API with version checks  
+✅ Audit log tracks all changes  
+✅ Mobile numbers visible only to Leader/Steward/Admin  
+
+---
+
+## What's Not Included (Future Slices)
+
 - Legacy API compatibility (v1/v2/v3)
-- Offices and warehouses (only stores)
-- Verification/audit features
+- Offices and warehouses (only stores in slice 2)
+- Verification/audit UI
 - PDF exports
+- User management UI

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
@@ -9,6 +9,7 @@ import {
   type Auth,
   type User,
 } from 'firebase/auth';
+import type { AuthUser } from '../types';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'demo-api-key',
@@ -39,17 +40,64 @@ try {
 
 interface AuthContextType {
   user: User | null;
+  authUser: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string>;
+  refreshAuthUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  const getIdToken = useCallback(async (): Promise<string> => {
+    if (!user) throw new Error('Not authenticated');
+    
+    if (import.meta.env.DEV || import.meta.env.VITE_USE_EMULATOR === 'true') {
+      return `test-token-${user.uid}`;
+    }
+    
+    return user.getIdToken();
+  }, [user]);
+  
+  const loadAuthUser = useCallback(async () => {
+    if (!user) {
+      setAuthUser(null);
+      return;
+    }
+    
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/users/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (response.ok) {
+        const { data } = await response.json();
+        setAuthUser(data);
+      } else {
+        setAuthUser({
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.email?.split('@')[0] || 'Unknown',
+          role: 'Viewer',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load user profile:', error);
+      setAuthUser({
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.email?.split('@')[0] || 'Unknown',
+        role: 'Viewer',
+      });
+    }
+  }, [user, getIdToken]);
   
   useEffect(() => {
     if (!auth) {
@@ -59,11 +107,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
-      setLoading(false);
+      if (!user) {
+        setAuthUser(null);
+        setLoading(false);
+      }
     });
     
     return unsubscribe;
   }, []);
+  
+  useEffect(() => {
+    if (user) {
+      loadAuthUser().finally(() => setLoading(false));
+    }
+  }, [user, loadAuthUser]);
   
   const signIn = async (email: string, password: string) => {
     if (!auth) throw new Error('Auth not initialized');
@@ -72,21 +129,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
   const signOut = async () => {
     if (!auth) return;
+    setAuthUser(null);
     await firebaseSignOut(auth);
   };
   
-  const getIdToken = async (): Promise<string> => {
-    if (!user) throw new Error('Not authenticated');
-    
-    if (import.meta.env.DEV || import.meta.env.VITE_USE_EMULATOR === 'true') {
-      return `test-token-${user.uid}`;
-    }
-    
-    return user.getIdToken();
+  const refreshAuthUser = async () => {
+    await loadAuthUser();
   };
   
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, getIdToken }}>
+    <AuthContext.Provider value={{ user, authUser, loading, signIn, signOut, getIdToken, refreshAuthUser }}>
       {children}
     </AuthContext.Provider>
   );

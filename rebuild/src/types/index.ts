@@ -241,3 +241,131 @@ export interface ApiError {
     requestId: string;
   };
 }
+
+// ============================================
+// Slice 2: Roles, Permissions, Editing, Audit
+// ============================================
+
+// === User Roles ===
+export type UserRole = 'Viewer' | 'Store' | 'Leader' | 'Steward' | 'Admin';
+
+export interface User extends RecordMetadata {
+  id: string;
+  email: string; // Sign-in email
+  displayName: string;
+  role: UserRole;
+  status: 'active' | 'suspended' | 'inactive';
+  // For Store role: the locationId they can access
+  storeLocationId?: string;
+  // For Leader role: links to a person record with DM/RM assignments
+  personId?: string;
+}
+
+// === Permissions ===
+export type Permission =
+  | 'view:locations'
+  | 'view:people'
+  | 'view:mobilePhones'
+  | 'edit:closure'
+  | 'edit:hours'
+  | 'edit:contactInfo' // phone, address, inbox - requires approval for Store/Leader
+  | 'assign:storeLead' // SM/ASM/KH
+  | 'assign:districtLead' // DM/RM
+  | 'edit:districts'
+  | 'approve:corrections'
+  | 'export:data'
+  | 'admin:users'
+  | 'admin:system';
+
+export type PermissionScope = 'all' | 'own-store' | 'own-scope' | 'propose-only';
+
+export interface PermissionGrant {
+  permission: Permission;
+  scope: PermissionScope;
+}
+
+// === Audit Log ===
+export type AuditAction =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'approve'
+  | 'reject'
+  | 'assign'
+  | 'unassign'
+  | 'closure:start'
+  | 'closure:end';
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string; // ISO timestamp
+  userId: string;
+  userEmail: string;
+  userRole: UserRole;
+  action: AuditAction;
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user';
+  entityId: string;
+  entityName: string;
+  changes: AuditChange[];
+  previousVersion?: number;
+  newVersion?: number;
+}
+
+export interface AuditChange {
+  field: string;
+  oldValue?: string | number | boolean | null;
+  newValue?: string | number | boolean | null;
+}
+
+// === Corrections (requires Steward approval) ===
+export type CorrectionStatus = 'pending' | 'approved' | 'rejected';
+export type CorrectionType = 'phone' | 'address' | 'inbox' | 'hours';
+
+export interface Correction extends RecordMetadata {
+  id: string;
+  status: CorrectionStatus;
+  type: CorrectionType;
+  locationId: string;
+  locationName: string;
+  storeNumber: string;
+  submittedBy: string; // User ID
+  submittedByEmail: string;
+  submittedByRole: UserRole;
+  submittedAt: string;
+  // The proposed changes
+  proposedChanges: Record<string, unknown>;
+  // Current values at time of submission
+  currentValues: Record<string, unknown>;
+  // Review info (filled when approved/rejected)
+  reviewedBy?: string;
+  reviewedByEmail?: string;
+  reviewedAt?: string;
+  reviewNotes?: string;
+  // Version of location when submitted (for conflict detection)
+  locationVersion: number;
+}
+
+// === Extended Location Detail with permissions ===
+export interface LocationDetailWithPermissions extends LocationDetail {
+  canEdit: {
+    closure: boolean;
+    hours: boolean;
+    contactInfo: boolean; // true = direct edit, false = propose only
+    assignments: boolean;
+  };
+  pendingCorrections: Correction[];
+}
+
+// === User context returned by auth ===
+export interface AuthUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  storeLocationId?: string; // For Store role
+  leaderScope?: {
+    districtIds: string[];
+    regionIds: string[];
+    locationIds: string[]; // All locations in their districts
+  };
+}

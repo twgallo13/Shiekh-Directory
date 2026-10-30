@@ -1,8 +1,14 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DirectoryView } from './components/DirectoryView';
 import { LocationDetailView } from './components/LocationDetailView';
 import { SignInView } from './components/SignInView';
+import { CorrectionsQueue } from './components/CorrectionsQueue';
+
+function CorrectionsQueuePage() {
+  const navigate = useNavigate();
+  return <CorrectionsQueue onBack={() => navigate('/')} />;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -42,6 +48,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LocationDetailView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/corrections"
+        element={
+          <ProtectedRoute>
+            <CorrectionsQueuePage />
           </ProtectedRoute>
         }
       />

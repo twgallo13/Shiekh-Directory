@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District } from '../types';
 import { StatusBadge } from './StatusBadge';
+import { canApproveCorrections } from '../lib/permissions';
 
 export function DirectoryView() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,8 +20,10 @@ export function DirectoryView() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   
-  const { getIdToken, signOut, user } = useAuth();
+  const { getIdToken, signOut, user, authUser } = useAuth();
   const navigate = useNavigate();
+  
+  const showCorrectionsLink = authUser && canApproveCorrections(authUser);
   
   const fetchLocations = useCallback(async () => {
     try {
@@ -159,9 +162,26 @@ export function DirectoryView() {
             <div className="px-4 py-2 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-gray-500" />
-                <span className="text-sm">{user?.email || 'User'}</span>
+                <div>
+                  <span className="text-sm block">{user?.email || 'User'}</span>
+                  {authUser && (
+                    <span className="text-xs text-gray-500">{authUser.role}</span>
+                  )}
+                </div>
               </div>
             </div>
+            {showCorrectionsLink && (
+              <button
+                onClick={() => {
+                  navigate('/corrections');
+                  setMenuOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                Approval Queue
+              </button>
+            )}
             <button
               onClick={() => {
                 signOut();

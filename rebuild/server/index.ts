@@ -10,6 +10,7 @@ import { createAuditRouter } from './routes/audit';
 import { createPeopleRouter } from './routes/people';
 import { createAssignmentsRouter } from './routes/assignments';
 import { createHoursExceptionsRouter } from './routes/hoursExceptions';
+import { createVerificationRouter } from './routes/verification';
 import { createAuthMiddleware, createAuthUserMiddleware } from './middleware/auth';
 import { createFirestoreClient } from './firebase';
 
@@ -34,6 +35,7 @@ app.use('/api/app/audit', createAuditRouter(db));
 app.use('/api/app/people', createPeopleRouter(db));
 app.use('/api/app/assignments', createAssignmentsRouter(db));
 app.use('/api/app/hours-exceptions', createHoursExceptionsRouter(db));
+app.use('/api/app/verification', createVerificationRouter(db));
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

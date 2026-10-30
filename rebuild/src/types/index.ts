@@ -79,6 +79,8 @@ export interface Location extends RecordMetadata {
   mallOrCenterName?: string;
   wayfindingDirections?: string; // <= 1000 chars
   standardHours: StandardHours;
+  lastVerifiedAt?: string; // ISO timestamp
+  lastVerifiedBy?: string; // User ID
 }
 
 // === Region ===
@@ -126,6 +128,7 @@ export interface Assignment extends RecordMetadata {
   label?: string;
   startDate: string; // YYYY-MM-DD
   endDate?: string; // YYYY-MM-DD
+  endedAt?: string; // ISO timestamp - set when End action is used
 }
 
 // === Operating State ===
@@ -165,6 +168,7 @@ export interface LocationListItem {
   phone: string;
   phoneFormatted: string;
   smName?: string;
+  sharedInboxEmail?: string;
 }
 
 export interface LocationLeadership {
@@ -347,6 +351,28 @@ export interface AuditChange {
   field: string;
   oldValue?: string | number | boolean | null;
   newValue?: string | number | boolean | null;
+}
+
+// === Verification ===
+export type VerificationStatus = 'pending' | 'confirmed' | 'expired';
+
+export interface VerificationRequest extends RecordMetadata {
+  id: string;
+  locationId: string;
+  locationName: string;
+  storeNumber: string;
+  status: VerificationStatus;
+  sentAt: string; // ISO timestamp
+  sentTo: string; // Email address
+  sentBy: string; // User ID
+  expiresAt: string; // ISO timestamp
+  respondedAt?: string; // ISO timestamp
+  respondedBy?: string; // User ID (store account)
+  hoursConfirmed?: boolean;
+  proposedChanges?: Record<string, unknown>;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
 }
 
 // === Corrections (requires Steward approval) ===

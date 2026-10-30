@@ -1,4 +1,4 @@
-# Shiekh Directory Rebuild - Slices 1-6
+# Shiekh Directory Rebuild - Slices 1-7
 
 This is a ground-up rebuild of the Shiekh Store Directory. This folder contains a completely new app that runs independently from the existing legacy app. **The legacy app is untouched and remains live.**
 
@@ -611,18 +611,126 @@ The locations endpoint now accepts a `kind` query parameter:
 - `GET /api/app/locations?kind=office` - Only offices
 - `GET /api/app/locations?kind=all` - All location types
 
+### Slice 6 Fixes
+
+**Assignment End Logic:**
+- When ending an assignment, the system now sets an `endedAt` timestamp for immediate deactivation
+- Assignments ended today are immediately inactive (not waiting until end of day)
+- Active check: `!assignment.endedAt && (!endDate || endDate >= today)`
+
+**Import Improvements:**
+- CSV import now reads an optional `kind` column (store, warehouse, office)
+- Defaults to `store` if kind column is missing (backward compatible)
+- Validation error if invalid kind value provided
+
+**Hours Exceptions:**
+- Server now sorts hours exceptions by `startDate` for consistent ordering
+- Admin/Steward can change location kind via the edit API
+
+### Sample Warehouse and Office
+
+The seed data now includes:
+- **WH-001**: Los Angeles Distribution Center (warehouse)
+- **HQ-001**: Corporate Headquarters (office)
+
 ## Acceptance Checklist (Slice 6)
 
 ✅ Warehouses and offices can be created with appropriate location kinds  
 ✅ Directory can filter by kind (stores, warehouses, offices, all)  
 ✅ Kind-specific icons shown when viewing all locations  
 ✅ Backward compatible: stores shown by default  
+✅ Same-day ended assignment is immediately inactive  
+✅ Import reads optional kind column  
+✅ Hours exceptions sorted by startDate  
+
+---
+
+## What Slice 7 Does
+
+Slice 7 adds **store verification** to confirm hours and contact info:
+
+### Verification Workflow
+
+1. **Steward/Admin sends request** - Sends verification email to store's shared inbox
+2. **Store responds** - Confirms hours are correct, proposes any contact info changes
+3. **Steward approves** - Reviews response, optionally applies proposed changes
+4. **Location updated** - `lastVerifiedAt` timestamp is set on the location
+
+### Verification Request UI
+
+Stewards and Admins can access the Verification view from the menu:
+
+- **Send Request** - Select a store to send a verification email
+- **Pending** tab - Requests waiting for store response or steward approval
+- **Confirmed** tab - Completed verifications
+- **Expired** tab - Requests that weren't responded to within 7 days
+
+### Store Response Form
+
+When a Store account logs in and has a pending verification:
+
+- **Yellow banner** on their store detail page
+- **"Respond to Request"** button opens the response form
+- **Confirm Hours** - Indicate if hours are correct or need correction
+- **Propose Changes** - Suggest corrections to phone or email
+
+### Proposed Changes Flow
+
+If a store proposes changes to contact info:
+
+1. Request stays in "pending" status until steward reviews
+2. Steward sees proposed changes with option to approve
+3. **"Approve & Apply Changes"** - Updates the location with proposed values
+4. **"Mark Verified (No Changes)"** - Verifies without applying changes
+
+### Last Verified Display
+
+Each location now shows when it was last verified in the Store Information section:
+- **Last Verified** - Date of most recent verification
+- Visible on store detail page for all users
+
+### API Endpoints (Slice 7)
+
+**Verification Requests:**
+- `GET /api/app/verification?status=pending` - List verification requests
+- `POST /api/app/verification` - Create verification request (requires locationId)
+- `GET /api/app/verification/:id` - Get single request
+- `POST /api/app/verification/:id/respond` - Store responds (hoursConfirmed, proposedChanges)
+- `POST /api/app/verification/:id/approve` - Steward approves (applyChanges, notes)
+- `GET /api/app/verification/pending/for-store` - Get pending request for Store account
+
+### Role Requirements
+
+| Action | Allowed Roles |
+|--------|--------------|
+| Send verification request | Admin, Steward |
+| View all requests | Admin, Steward |
+| Respond to request | Store (own store only), Admin, Steward, Leader |
+| Approve/reject response | Admin, Steward |
+
+### Type Updates
+
+The `Location` type now includes:
+- `lastVerifiedAt?: string` - ISO timestamp of last verification
+- `lastVerifiedBy?: string` - User ID who performed verification
+
+New `VerificationRequest` type with:
+- Request metadata (locationId, sentAt, expiresAt, status)
+- Response fields (respondedAt, hoursConfirmed, proposedChanges)
+- Review fields (reviewedAt, reviewedBy, reviewNotes)
+
+## Acceptance Checklist (Slice 7)
+
+✅ Send verification request to a store's shared inbox  
+✅ Store confirms hours and proposes a phone fix  
+✅ Steward approves → value changes and "last verified" updates  
+✅ Audit log tracks verification actions  
+✅ Store accounts see pending verification banner  
 
 ---
 
 ## What's Not Included (Future Slices)
 
 - Legacy API compatibility (v1/v2/v3)
-- Verification/audit UI
 - PDF exports
 - User management UI

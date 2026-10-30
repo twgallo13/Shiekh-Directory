@@ -6,6 +6,7 @@ import { PersonDetailView } from './components/PersonDetailView';
 import { SignInView } from './components/SignInView';
 import { CorrectionsQueue } from './components/CorrectionsQueue';
 import { BulkHolidayManager } from './components/BulkHolidayManager';
+import { VerificationRequestsView } from './components/VerificationRequestsView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -74,6 +75,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <BulkHolidayManager />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/verification"
+        element={
+          <ProtectedRoute>
+            <VerificationRequestsView />
           </ProtectedRoute>
         }
       />

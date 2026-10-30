@@ -257,6 +257,84 @@ async function seedLocations(
   return locationMap;
 }
 
+async function seedWarehouseAndOffice(
+  regionMap: Map<string, string>,
+  districtMap: Map<string, string>,
+  locationMap: Map<string, string>
+): Promise<void> {
+  console.log('Seeding warehouse and office...');
+  
+  const westRegionId = regionMap.get('WEST') || '';
+  const laDistrictId = districtMap.get('LA-CENTRAL') || '';
+  
+  const officeHours: Record<DayOfWeek, { closed: boolean; intervals: { open: string; close: string }[] }> = {
+    monday: { closed: false, intervals: [{ open: '09:00', close: '17:00' }] },
+    tuesday: { closed: false, intervals: [{ open: '09:00', close: '17:00' }] },
+    wednesday: { closed: false, intervals: [{ open: '09:00', close: '17:00' }] },
+    thursday: { closed: false, intervals: [{ open: '09:00', close: '17:00' }] },
+    friday: { closed: false, intervals: [{ open: '09:00', close: '17:00' }] },
+    saturday: { closed: true, intervals: [] },
+    sunday: { closed: true, intervals: [] },
+  };
+  
+  const warehouseRef = db.collection('locations').doc();
+  await warehouseRef.set({
+    kind: 'warehouse',
+    storeNumber: 'WH-001',
+    name: 'Los Angeles Distribution Center',
+    lifecycle: 'active',
+    address: {
+      street: '1234 Industrial Way',
+      city: 'Commerce',
+      state: 'CA',
+      zip: '90040',
+      country: 'US',
+    },
+    timeZone: 'America/Los_Angeles',
+    mainPhone: '+13235551000',
+    phonePublic: true,
+    sharedInboxEmail: 'warehouse@shiekh.test',
+    regionId: westRegionId,
+    districtId: laDistrictId,
+    standardHours: officeHours,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'seed-script',
+    version: 1,
+  });
+  locationMap.set('WH-001', warehouseRef.id);
+  console.log('  Created warehouse: WH-001 Los Angeles Distribution Center');
+  
+  const officeRef = db.collection('locations').doc();
+  await officeRef.set({
+    kind: 'office',
+    storeNumber: 'HQ-001',
+    name: 'Corporate Headquarters',
+    lifecycle: 'active',
+    address: {
+      street: '5000 Executive Blvd',
+      suite: 'Suite 100',
+      city: 'Los Angeles',
+      state: 'CA',
+      zip: '90017',
+      country: 'US',
+    },
+    timeZone: 'America/Los_Angeles',
+    mainPhone: '+12135550000',
+    phonePublic: true,
+    sharedInboxEmail: 'hq@shiekh.test',
+    regionId: westRegionId,
+    districtId: laDistrictId,
+    standardHours: officeHours,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'seed-script',
+    version: 1,
+  });
+  locationMap.set('HQ-001', officeRef.id);
+  console.log('  Created office: HQ-001 Corporate Headquarters');
+}
+
 async function seedPeople(): Promise<Map<string, string>> {
   console.log('Seeding people...');
   const rows = parseCsv('sample-people.csv');
@@ -443,6 +521,7 @@ async function main() {
     const regionMap = await seedRegions();
     const districtMap = await seedDistricts(regionMap);
     const locationMap = await seedLocations(regionMap, districtMap);
+    await seedWarehouseAndOffice(regionMap, districtMap, locationMap);
     const peopleMap = await seedPeople();
     await seedAssignments(peopleMap, locationMap, districtMap, regionMap);
     await seedHoursExceptions(locationMap);

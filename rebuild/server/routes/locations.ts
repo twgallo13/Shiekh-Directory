@@ -81,6 +81,7 @@ export function createLocationsRouter(db: Firestore): Router {
           phone: location.mainPhone,
           phoneFormatted: location.phonePublic ? formatPhoneNumber(location.mainPhone) : 'Private',
           smName,
+          sharedInboxEmail: location.sharedInboxEmail,
         });
       }
       
@@ -126,7 +127,9 @@ export function createLocationsRouter(db: Firestore): Router {
       const closures = allClosures.filter(c => c.status === 'active');
       const activeClosure = closures[0] || null;
       
-      const exceptionsSnap = await db.collection(`locations/${id}/hoursExceptions`).get();
+      const exceptionsSnap = await db.collection(`locations/${id}/hoursExceptions`)
+        .orderBy('startDate', 'asc')
+        .get();
       const exceptions = exceptionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as HoursException[];
       
       const statusNow = resolveOperatingStatus(location, closures, exceptions);
@@ -201,7 +204,7 @@ async function getLocationLeadership(
   
   for (const doc of locationAssignments.docs) {
     const assignment = doc.data() as Assignment;
-    const isActive = !assignment.endDate || assignment.endDate >= new Date().toISOString().slice(0, 10);
+    const isActive = !assignment.endedAt && (!assignment.endDate || assignment.endDate >= new Date().toISOString().slice(0, 10));
     if (!isActive) continue;
     
     const personDoc = await db.collection('people').doc(assignment.personId).get();

@@ -34,7 +34,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
       const assignments = [];
       for (const doc of snapshot.docs) {
         const assignment = { id: doc.id, ...doc.data() } as Assignment;
-        const isActive = !assignment.endDate || assignment.endDate >= today;
+        const isActive = !assignment.endedAt && (!assignment.endDate || assignment.endDate >= today);
         
         const personDoc = await db.collection('people').doc(assignment.personId).get();
         const personName = personDoc.exists ? personDoc.data()?.fullName : 'Unknown';
@@ -300,10 +300,12 @@ export function createAssignmentsRouter(db: Firestore): Router {
       }
       
       const effectiveEndDate = endDate || (assignment.startDate > yesterdayStr ? assignment.startDate : yesterdayStr);
+      const endedAtTimestamp = now.toISOString();
       
       await assignmentRef.update({
         endDate: effectiveEndDate,
-        updatedAt: now.toISOString(),
+        endedAt: endedAtTimestamp,
+        updatedAt: endedAtTimestamp,
         updatedBy: authUser.uid,
         version: (assignment.version || 0) + 1,
       });
@@ -319,11 +321,12 @@ export function createAssignmentsRouter(db: Firestore): Router {
         locationId: assignment.scopeType === 'location' ? assignment.scopeId : null,
         changes: [
           { field: 'endDate', oldValue: assignment.endDate ?? null, newValue: effectiveEndDate },
+          { field: 'endedAt', oldValue: null, newValue: endedAtTimestamp },
         ],
       });
 
       return res.json({
-        data: { ...assignment, endDate: effectiveEndDate },
+        data: { ...assignment, endDate: effectiveEndDate, endedAt: endedAtTimestamp },
       });
     } catch (error) {
       console.error('End assignment error:', error);

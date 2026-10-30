@@ -116,6 +116,23 @@ export function createEditRouter(db: Firestore): Router {
             }
             break;
 
+          case 'kind':
+            if (authUser.role === 'Steward' || authUser.role === 'Admin') {
+              const validKinds = ['store', 'warehouse', 'office'];
+              if (!validKinds.includes(value as string)) {
+                return res.status(400).json({
+                  error: { code: 'invalid_kind', message: 'Kind must be store, warehouse, or office', requestId: res.locals.requestId },
+                });
+              }
+              updateData[field] = value;
+              auditChanges.push({ field, oldValue: location.kind ?? null, newValue: value as string });
+            } else {
+              return res.status(403).json({
+                error: { code: 'forbidden', message: 'Only Steward or Admin can change location kind', requestId: res.locals.requestId },
+              });
+            }
+            break;
+
           default:
             return res.status(400).json({
               error: { code: 'invalid_field', message: `Cannot edit field: ${field}`, requestId: res.locals.requestId },

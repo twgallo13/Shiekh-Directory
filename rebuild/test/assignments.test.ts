@@ -142,6 +142,50 @@ describe('Assignment Logic', () => {
       assert.strictEqual(isActive, false);
     });
     
+    it('assignment with endedAt is immediately inactive', () => {
+      const assignment = {
+        id: '1',
+        startDate: '2024-01-01',
+        endDate: '2026-10-30',
+        endedAt: '2026-10-30T12:00:00Z',
+      };
+      
+      const today = '2026-10-30';
+      const isActive = !assignment.endedAt && (!assignment.endDate || assignment.endDate >= today);
+      
+      assert.strictEqual(isActive, false);
+    });
+    
+    it('same-day ended assignment is inactive due to endedAt', () => {
+      const assignment = {
+        id: '1',
+        startDate: '2026-10-30',
+        endDate: '2026-10-30',
+        endedAt: '2026-10-30T15:00:00Z',
+      };
+      
+      const today = '2026-10-30';
+      const isActiveWithoutEndedAt = !assignment.endDate || assignment.endDate >= today;
+      const isActiveWithEndedAt = !assignment.endedAt && (!assignment.endDate || assignment.endDate >= today);
+      
+      assert.strictEqual(isActiveWithoutEndedAt, true, 'Would be active based on endDate alone');
+      assert.strictEqual(isActiveWithEndedAt, false, 'Should be inactive due to endedAt');
+    });
+    
+    it('assignment without endedAt and future endDate is active', () => {
+      const assignment = {
+        id: '1',
+        startDate: '2024-01-01',
+        endDate: '2027-12-31',
+        endedAt: undefined as string | undefined,
+      };
+      
+      const today = '2026-10-30';
+      const isActive = !assignment.endedAt && (!assignment.endDate || assignment.endDate >= today);
+      
+      assert.strictEqual(isActive, true);
+    });
+    
     it('End action should use yesterday date for immediate effect', () => {
       const now = new Date('2026-10-30T12:00:00Z');
       const yesterday = new Date(now);

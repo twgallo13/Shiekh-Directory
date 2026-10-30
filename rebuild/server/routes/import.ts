@@ -254,8 +254,19 @@ async function processLocations(
     
     const standardHours = parseStandardHours(row);
     
+    const kindValue = (row.kind?.trim().toLowerCase() || 'store') as Location['kind'];
+    const validKinds: Location['kind'][] = ['store', 'warehouse', 'office'];
+    if (!validKinds.includes(kindValue)) {
+      preview.errors.push({
+        row: rowNum,
+        column: 'kind',
+        message: `Invalid kind: ${row.kind}. Must be store, warehouse, or office.`,
+      });
+      continue;
+    }
+    
     const locationData: Omit<Location, 'id'> = {
-      kind: 'store',
+      kind: kindValue,
       storeNumber,
       name: row.name.trim(),
       lifecycle: 'active',

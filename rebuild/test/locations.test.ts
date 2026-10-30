@@ -1,6 +1,44 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
+describe('Import Kind Column', () => {
+  it('defaults to store when kind column is empty', () => {
+    const row = { kind: '' };
+    const kindValue = (row.kind?.trim().toLowerCase() || 'store');
+    
+    assert.strictEqual(kindValue, 'store');
+  });
+  
+  it('defaults to store when kind column is undefined', () => {
+    const row: { kind?: string } = {};
+    const kindValue = (row.kind?.trim().toLowerCase() || 'store');
+    
+    assert.strictEqual(kindValue, 'store');
+  });
+  
+  it('parses warehouse kind', () => {
+    const row = { kind: 'warehouse' };
+    const kindValue = (row.kind?.trim().toLowerCase() || 'store');
+    
+    assert.strictEqual(kindValue, 'warehouse');
+  });
+  
+  it('parses office kind (case insensitive)', () => {
+    const row = { kind: 'OFFICE' };
+    const kindValue = (row.kind?.trim().toLowerCase() || 'store');
+    
+    assert.strictEqual(kindValue, 'office');
+  });
+  
+  it('validates invalid kind values', () => {
+    const validKinds = ['store', 'warehouse', 'office'];
+    const row = { kind: 'invalid' };
+    const kindValue = row.kind?.trim().toLowerCase();
+    
+    assert.strictEqual(validKinds.includes(kindValue!), false);
+  });
+});
+
 describe('Location Kinds', () => {
   describe('Kind Types', () => {
     it('supports store, warehouse, and office kinds', () => {
@@ -116,7 +154,6 @@ describe('Location Kinds', () => {
 describe('Assignment Ending Edge Cases', () => {
   describe('max(yesterday, startDate) Logic', () => {
     it('uses startDate when assignment started recently', () => {
-      const today = '2026-10-30';
       const yesterday = '2026-10-29';
       const startDate = '2026-10-29';
       

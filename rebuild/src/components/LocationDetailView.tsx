@@ -9,6 +9,7 @@ import { canEditLocation } from '../lib/permissions';
 import { EditLocationPanel } from './EditLocationPanel';
 import { AuditHistory } from './AuditHistory';
 import { AssignmentPanel } from './AssignmentPanel';
+import { StoreVerificationPanel } from './StoreVerificationPanel';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -160,6 +161,14 @@ export function LocationDetailView() {
       </header>
       
       <main className="max-w-3xl mx-auto px-4 py-4 space-y-4">
+        {/* Store Verification for Store accounts */}
+        {authUser?.role === 'Store' && (
+          <StoreVerificationPanel
+            location={location}
+            onVerified={fetchLocation}
+          />
+        )}
+        
         {/* Status & Basic Info */}
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-start justify-between gap-3 mb-4">
@@ -527,6 +536,14 @@ export function LocationDetailView() {
               <dt className="text-gray-500">Time Zone</dt>
               <dd className="font-medium text-gray-900">{location.timeZone}</dd>
             </div>
+            {location.lastVerifiedAt && (
+              <div className="flex justify-between">
+                <dt className="text-gray-500">Last Verified</dt>
+                <dd className="font-medium text-gray-900">
+                  {new Date(location.lastVerifiedAt).toLocaleDateString()}
+                </dd>
+              </div>
+            )}
           </dl>
         </div>
         

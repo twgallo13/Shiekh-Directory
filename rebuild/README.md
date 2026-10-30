@@ -267,7 +267,49 @@ In addition to the basic test account, there are accounts for each role:
 
 To seed these users, run:
 ```bash
-npm run seed:users
+npm run seed:users -- --emulator
+```
+
+### Google Sign-In
+
+The app supports **Sign in with Google** for company accounts:
+
+- Only emails from allowed domains can sign in (default: `@shiekhshoes.org`)
+- New Google users are auto-provisioned as **Viewer** by default
+- Specific emails can be bootstrapped as **Admin** via env var or seed script
+
+#### Firebase Console Setup (One-Time)
+
+1. Go to [Firebase Console](https://console.firebase.google.com) → **Authentication** → **Sign-in method**
+2. Enable **Google** provider
+3. Set your support email
+4. Go to **Settings** → **Authorized domains**
+5. Add your hosting domain: `shiekh-directory-v2.web.app`
+
+#### Server Configuration
+
+Set these environment variables (or in Cloud Functions config):
+
+```bash
+# Allowed domains for Google sign-in (comma-separated)
+ALLOWED_DOMAINS=shiekhshoes.org
+
+# Admin emails for auto-provisioning (comma-separated)
+ADMIN_EMAILS=theo@shiekhshoes.org
+```
+
+See `env.server.example` for a template.
+
+#### Bootstrapping Admins
+
+Option 1: Environment variable (auto-provisions on first sign-in)
+```bash
+ADMIN_EMAILS=theo@shiekhshoes.org,admin@shiekhshoes.org
+```
+
+Option 2: Seed script
+```bash
+npm run seed:users -- --project=shiekh-directory-v2 --admin=theo@shiekhshoes.org --admin-only
 ```
 
 ## Acceptance Checklist (Slice 2)

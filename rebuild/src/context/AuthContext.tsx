@@ -4,12 +4,19 @@ import {
   getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut as firebaseSignOut,
   connectAuthEmulator,
   type Auth,
   type User,
 } from 'firebase/auth';
 import type { AuthUser } from '../types';
+
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account',
+});
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'demo-api-key',
@@ -43,6 +50,7 @@ interface AuthContextType {
   authUser: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string>;
   refreshAuthUser: () => Promise<void>;
@@ -80,6 +88,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const { data } = await response.json();
         setAuthUser(data);
+      } else if (response.status === 403) {
+        const errorData = await response.json();
+        if (errorData.error?.code === 'domain_not_allowed') {
+          console.error('Domain not allowed:', errorData.error.message);
+          await firebaseSignOut(auth);
+          setAuthUser(null);
+          throw new Error(errorData.error.message);
+        }
+        setAuthUser({
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.email?.split('@')[0] || 'Unknown',
+          role: 'Viewer',
+        });
       } else {
         setAuthUser({
           uid: user.uid,
@@ -90,6 +112,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Failed to load user profile:', error);
+      if (error instanceof Error && error.message.includes('domain')) {
+        throw error;
+      }
       setAuthUser({
         uid: user.uid,
         email: user.email || '',
@@ -127,6 +152,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   };
   
+  const signInWithGoogleHandler = async () => {
+    if (!auth) throw new Error('Auth not initialized');
+    await signInWithPopup(auth, googleProvider);
+  };
+  
   const signOut = async () => {
     if (!auth) return;
     setAuthUser(null);
@@ -138,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   
   return (
-    <AuthContext.Provider value={{ user, authUser, loading, signIn, signOut, getIdToken, refreshAuthUser }}>
+    <AuthContext.Provider value={{ user, authUser, loading, signIn, signInWithGoogle: signInWithGoogleHandler, signOut, getIdToken, refreshAuthUser }}>
       {children}
     </AuthContext.Provider>
   );

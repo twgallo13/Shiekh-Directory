@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
-import type { User, AuthUser, Assignment } from '../../src/types';
+import type { User, AuthUser, Assignment, UserRole } from '../../src/types';
+import { isEmailDomainAllowed, isAdminEmail, getEmailDomain, getAllowedDomains } from '../config/auth';
 
 export function createUsersRouter(db: Firestore): Router {
   const router = Router();
@@ -14,7 +15,66 @@ export function createUsersRouter(db: Firestore): Router {
         });
       }
 
-      const userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+      const email = firebaseUser.email;
+      if (!email) {
+        return res.status(400).json({
+          error: { code: 'no_email', message: 'User has no email address', requestId: res.locals.requestId },
+        });
+      }
+
+      const isGoogleUser = firebaseUser.firebase?.sign_in_provider === 'google.com';
+      
+      if (isGoogleUser && !isEmailDomainAllowed(email)) {
+        const allowedDomains = getAllowedDomains();
+        const domain = getEmailDomain(email);
+        return res.status(403).json({
+          error: {
+            code: 'domain_not_allowed',
+            message: `Sign-in is restricted to company accounts. Your domain (${domain}) is not in the allowed list: ${allowedDomains.join(', ')}`,
+            requestId: res.locals.requestId,
+          },
+        });
+      }
+
+      let userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+      
+      if (!userDoc.exists && isGoogleUser) {
+        const existingByEmail = await db.collection('users')
+          .where('email', '==', email.toLowerCase())
+          .limit(1)
+          .get();
+        
+        let role: UserRole = 'Viewer';
+        
+        if (!existingByEmail.empty) {
+          const existingUserData = existingByEmail.docs[0].data() as User;
+          role = existingUserData.role;
+          
+          await existingByEmail.docs[0].ref.delete();
+          console.log(`Migrated pre-bootstrapped user record for: ${email}`);
+        } else if (isAdminEmail(email)) {
+          role = 'Admin';
+        }
+        
+        const displayName = firebaseUser.name || email.split('@')[0];
+        
+        const newUser: User = {
+          id: firebaseUser.uid,
+          email,
+          displayName,
+          role,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'auto-provision',
+          version: 1,
+        };
+        
+        await db.collection('users').doc(firebaseUser.uid).set(newUser);
+        console.log(`Auto-provisioned Google user: ${email} as ${role}`);
+        
+        userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+      }
       
       if (!userDoc.exists) {
         return res.status(404).json({

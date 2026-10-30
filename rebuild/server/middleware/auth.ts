@@ -41,6 +41,8 @@ export function createAuthMiddleware(): Router {
       res.locals.user = {
         uid: decodedToken.uid,
         email: decodedToken.email,
+        name: decodedToken.name,
+        firebase: decodedToken.firebase,
       };
       next();
     } catch (error) {

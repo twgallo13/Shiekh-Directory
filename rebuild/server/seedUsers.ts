@@ -4,15 +4,18 @@
  * USAGE:
  *   npm run seed:users -- --emulator              # Seed local emulator (safe)
  *   npm run seed:users -- --project=PROJECT_ID   # Seed a real project (requires confirmation)
+ *   npm run seed:users -- --emulator --admin=email@domain.com  # Bootstrap an admin user
  * 
- * Creates the following test accounts:
+ * Creates test accounts for local development:
  * - viewer@shiekh.test (Viewer) - Read-only
  * - store007@shiekh.test (Store) - Store 007's shared account
  * - dm.jones@shiekh.test (Leader) - DM of LA-CENTRAL district
  * - steward@shiekh.test (Steward) - Can approve corrections
  * - admin@shiekh.test (Admin) - Full access
  * 
- * All accounts use password: test123
+ * All test accounts use password: test123
+ * 
+ * The --admin flag creates/updates a user record with Admin role (for Google sign-in users).
  */
 
 import { initializeApp, cert, getApps, type ServiceAccount } from 'firebase-admin/app';
@@ -26,14 +29,19 @@ const args = process.argv.slice(2);
 const useEmulator = args.includes('--emulator');
 const projectArg = args.find(a => a.startsWith('--project='));
 const projectId = projectArg?.split('=')[1];
+const adminArg = args.find(a => a.startsWith('--admin='));
+const adminEmail = adminArg?.split('=')[1]?.toLowerCase();
+const adminOnly = args.includes('--admin-only');
 
 if (!useEmulator && !projectId) {
   console.error(`
 ERROR: You must specify a target.
 
 Usage:
-  npm run seed:users -- --emulator              # Seed local emulator (safe, recommended for dev)
-  npm run seed:users -- --project=PROJECT_ID   # Seed a real Firebase project
+  npm run seed:users -- --emulator                          # Seed test users to local emulator
+  npm run seed:users -- --project=PROJECT_ID                # Seed test users to real project
+  npm run seed:users -- --emulator --admin=email@domain.com # Bootstrap admin + seed test users
+  npm run seed:users -- --project=ID --admin=email --admin-only  # Only bootstrap admin (no test users)
 
 The seed script never defaults to production to prevent accidental data loss.
 `);
@@ -162,6 +170,72 @@ async function createAuthUser(email: string, password: string, displayName: stri
   }
 }
 
+async function bootstrapAdmin(email: string): Promise<void> {
+  console.log(`\nBootstrapping admin user: ${email}`);
+  
+  const existingUserSnap = await db.collection('users')
+    .where('email', '==', email)
+    .limit(1)
+    .get();
+  
+  if (!existingUserSnap.empty) {
+    const existingUser = existingUserSnap.docs[0];
+    const userData = existingUser.data() as User;
+    
+    if (userData.role === 'Admin') {
+      console.log(`  ✓ User already has Admin role`);
+      return;
+    }
+    
+    await existingUser.ref.update({
+      role: 'Admin',
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'seed-script-admin-bootstrap',
+    });
+    console.log(`  ✓ Upgraded existing user to Admin role`);
+    return;
+  }
+  
+  try {
+    const authUser = await auth.getUserByEmail(email).catch(() => null);
+    
+    if (authUser) {
+      const userDoc: User = {
+        id: authUser.uid,
+        email,
+        displayName: authUser.displayName || email.split('@')[0],
+        role: 'Admin',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'seed-script-admin-bootstrap',
+        version: 1,
+      };
+      
+      await db.collection('users').doc(authUser.uid).set(userDoc);
+      console.log(`  ✓ Created Admin user record for existing auth user`);
+    } else {
+      const placeholderId = `admin-placeholder-${Date.now()}`;
+      const userDoc: User = {
+        id: placeholderId,
+        email,
+        displayName: email.split('@')[0],
+        role: 'Admin',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'seed-script-admin-bootstrap',
+        version: 1,
+      };
+      
+      await db.collection('users').doc(placeholderId).set(userDoc);
+      console.log(`  ✓ Created placeholder Admin record (will be linked on first sign-in)`);
+    }
+  } catch (error) {
+    console.error(`  ✗ Error bootstrapping admin:`, error);
+  }
+}
+
 async function seedUsers() {
   const confirmed = await confirmRealProject();
   if (!confirmed) {
@@ -169,13 +243,23 @@ async function seedUsers() {
     process.exit(1);
   }
 
-  console.log('Seeding test users...\n');
+  console.log('Seeding users...\n');
   console.log(`Project: ${effectiveProjectId}`);
   console.log(`Mode: ${useEmulator ? 'EMULATOR' : 'PRODUCTION'}`);
   if (useEmulator) {
     console.log(`Auth: ${process.env.FIREBASE_AUTH_EMULATOR_HOST}`);
     console.log(`Firestore: ${process.env.FIRESTORE_EMULATOR_HOST}`);
   }
+  
+  if (adminEmail) {
+    await bootstrapAdmin(adminEmail);
+  }
+  
+  if (adminOnly) {
+    console.log('\n✓ Admin bootstrap complete (--admin-only, skipping test users)');
+    return;
+  }
+  
   console.log('');
 
   const store007Snap = await db.collection('locations')

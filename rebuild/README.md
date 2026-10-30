@@ -54,7 +54,8 @@ npm install
 npm run dev:emulators
 
 # In a new terminal, seed the sample data
-npm run seed
+npm run seed -- --emulator
+npm run seed:users -- --emulator
 
 # In another terminal, start the app
 npm run dev
@@ -110,13 +111,14 @@ rebuild/
 ### Commands
 
 ```bash
-npm run dev           # Start both server and frontend
-npm run dev:emulators # Start Firebase Emulators only
-npm run seed          # Load sample data into emulators
-npm run seed:users    # Create test user accounts for each role (slice 2)
-npm run test          # Run all tests
-npm run lint          # TypeScript type checking
-npm run build         # Production build
+npm run dev              # Start both server and frontend
+npm run dev:emulators    # Start Firebase Emulators only
+npm run seed -- --emulator       # Load sample data into emulators
+npm run seed:users -- --emulator # Create test user accounts for each role
+npm run test             # Run all tests
+npm run lint             # TypeScript type checking
+npm run build            # Production build (frontend + functions)
+npm run deploy           # Deploy to Firebase (shiekh-directory-v2)
 ```
 
 ### API Endpoints
@@ -141,25 +143,59 @@ All API endpoints require authentication (Bearer token).
 - `POST /api/app/corrections/:id/reject` - Reject a correction (Steward only)
 - `GET /api/app/audit` - View audit log entries
 
-### Connecting to a Real Firebase Project
+### Deploying to Firebase
 
-When you're ready to connect to a real Firebase project:
+The app is configured to deploy to Firebase project `shiekh-directory-v2`:
+- **Hosting**: Static frontend at https://shiekh-directory-v2.web.app
+- **Functions**: Express API as Cloud Function `api` (us-central1, Node 22)
 
-1. Create a new Firebase project at https://console.firebase.google.com
-2. Enable Firestore and Authentication
-3. Create a `.env` file with your Firebase config:
+#### Prerequisites
+
+1. Copy `env.production.example` to `.env.production` and fill in your Firebase web config
+2. Set up Firebase CLI authentication: `firebase login`
+3. (Optional) Set `GOOGLE_APPLICATION_CREDENTIALS` for service account access
+
+#### Deploy Commands
+
+```bash
+# Deploy everything (hosting + functions + rules)
+firebase deploy --project shiekh-directory-v2
+
+# Or deploy specific parts
+firebase deploy --only hosting --project shiekh-directory-v2
+firebase deploy --only functions --project shiekh-directory-v2
+firebase deploy --only firestore:rules --project shiekh-directory-v2
+```
+
+#### Environment Config
+
+For production, create `.env.production`:
 
 ```env
 VITE_FIREBASE_API_KEY=your-api-key
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_AUTH_DOMAIN=shiekh-directory-v2.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=shiekh-directory-v2
+VITE_FIREBASE_STORAGE_BUCKET=shiekh-directory-v2.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
 VITE_FIREBASE_APP_ID=your-app-id
+VITE_USE_EMULATOR=false
 ```
 
-4. For the server, set `GOOGLE_APPLICATION_CREDENTIALS` to your service account key path
-5. Deploy the Firestore security rules: `firebase deploy --only firestore:rules`
+### Seeding Data
+
+The seed scripts require explicit targeting to prevent accidental production writes:
+
+```bash
+# Seed local emulator (safe, recommended for development)
+npm run seed -- --emulator
+npm run seed:users -- --emulator
+
+# Seed a real Firebase project (requires confirmation)
+npm run seed -- --project=shiekh-directory-v2
+npm run seed:users -- --project=shiekh-directory-v2
+```
+
+⚠️ **Warning**: Seeding a real project will CLEAR and REPLACE existing data. You must type the project ID to confirm.
 
 ## Acceptance Checklist (Slice 1)
 

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+const isEmulator = import.meta.env.DEV || import.meta.env.VITE_USE_EMULATOR === 'true';
+
 export function SignInView() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -78,12 +80,14 @@ export function SignInView() {
             </button>
           </form>
           
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-sm text-gray-500 text-center">
-              Running on Firebase Emulator<br />
-              <span className="text-xs">Create a test user in the Auth Emulator UI</span>
-            </p>
-          </div>
+          {isEmulator && (
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <p className="text-sm text-gray-500 text-center">
+                Running on Firebase Emulator<br />
+                <span className="text-xs">Create a test user in the Auth Emulator UI</span>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

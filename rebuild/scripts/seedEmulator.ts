@@ -1,26 +1,84 @@
 /**
- * Seed script to load sample data into Firebase Emulator
- * Run with: npm run seed
+ * Seed script to load sample data into Firebase
+ * 
+ * USAGE:
+ *   npm run seed -- --emulator              # Seed local emulator (safe)
+ *   npm run seed -- --project=PROJECT_ID    # Seed a real project (requires confirmation)
+ * 
+ * Never defaults to a production project - requires explicit targeting.
  */
 
-import { initializeApp, getApps } from 'firebase-admin/app';
+import { initializeApp, getApps, cert, type ServiceAccount } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { parse } from 'csv-parse/sync';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { parsePhoneNumber } from 'libphonenumber-js';
+import * as readline from 'readline';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
-process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1:9099';
+const args = process.argv.slice(2);
+const useEmulator = args.includes('--emulator');
+const projectArg = args.find(a => a.startsWith('--project='));
+const projectId = projectArg?.split('=')[1];
 
-const projectId = process.env.GCLOUD_PROJECT || 'shiekh-directory-rebuild-placeholder';
+if (!useEmulator && !projectId) {
+  console.error(`
+ERROR: You must specify a target.
+
+Usage:
+  npm run seed -- --emulator              # Seed local emulator (safe, recommended for dev)
+  npm run seed -- --project=PROJECT_ID    # Seed a real Firebase project (DESTRUCTIVE!)
+
+The seed script never defaults to production to prevent accidental data loss.
+`);
+  process.exit(1);
+}
+
+async function confirmRealProject(): Promise<boolean> {
+  if (useEmulator) return true;
+  
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  
+  return new Promise((resolve) => {
+    console.warn(`\n⚠️  WARNING: You are about to seed data to a REAL Firebase project: ${projectId}`);
+    console.warn('This will CLEAR and REPLACE all data in: locations, people, assignments, regions, districts\n');
+    rl.question('Type the project ID to confirm: ', (answer) => {
+      rl.close();
+      resolve(answer === projectId);
+    });
+  });
+}
+
+if (useEmulator) {
+  process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1:9099';
+}
+
+const effectiveProjectId = useEmulator 
+  ? (process.env.GCLOUD_PROJECT || 'shiekh-directory-rebuild-placeholder')
+  : projectId!;
 
 if (getApps().length === 0) {
-  initializeApp({ projectId });
+  if (useEmulator) {
+    initializeApp({ projectId: effectiveProjectId });
+  } else {
+    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (credPath && existsSync(credPath)) {
+      initializeApp({
+        credential: cert(JSON.parse(readFileSync(credPath, 'utf-8')) as ServiceAccount),
+        projectId: effectiveProjectId,
+      });
+    } else {
+      initializeApp({ projectId: effectiveProjectId });
+    }
+  }
 }
 
 const db = getFirestore();
@@ -293,27 +351,25 @@ async function seedAssignments(
 async function seedHoursExceptions(locationMap: Map<string, string>): Promise<void> {
   console.log('Seeding hours exceptions...');
   
-  const today = new Date();
+  const currentYear = new Date().getFullYear();
+  const nextYear = currentYear + 1;
+  
   const holidays = [
-    { label: 'Thanksgiving', daysFromNow: 30, closed: true },
-    { label: 'Black Friday', daysFromNow: 31, closed: false, hours: { open: '06:00', close: '23:00' } },
-    { label: 'Christmas Eve', daysFromNow: 55, closed: false, hours: { open: '10:00', close: '18:00' } },
-    { label: 'Christmas Day', daysFromNow: 56, closed: true },
-    { label: 'New Year\'s Day', daysFromNow: 63, closed: true },
+    { label: 'Thanksgiving', date: `${currentYear}-11-26`, closed: true },
+    { label: 'Black Friday', date: `${currentYear}-11-27`, closed: false, hours: { open: '06:00', close: '23:00' } },
+    { label: 'Christmas Eve', date: `${currentYear}-12-24`, closed: false, hours: { open: '10:00', close: '18:00' } },
+    { label: 'Christmas Day', date: `${currentYear}-12-25`, closed: true },
+    { label: 'New Year\'s Day', date: `${nextYear}-01-01`, closed: true },
   ];
   
   for (const [storeNumber, locationId] of locationMap) {
     for (const holiday of holidays) {
-      const date = new Date(today);
-      date.setDate(date.getDate() + holiday.daysFromNow);
-      const dateStr = date.toISOString().slice(0, 10);
-      
       const ref = db.collection(`locations/${locationId}/hoursExceptions`).doc();
       await ref.set({
         type: 'holiday',
         label: holiday.label,
-        startDate: dateStr,
-        endDate: dateStr,
+        startDate: holiday.date,
+        endDate: holiday.date,
         closed: holiday.closed,
         intervals: holiday.closed ? [] : [holiday.hours],
         source: 'corporate',
@@ -366,10 +422,19 @@ async function createTestUser(): Promise<void> {
 }
 
 async function main() {
+  const confirmed = await confirmRealProject();
+  if (!confirmed) {
+    console.log('Aborted - project ID did not match.');
+    process.exit(1);
+  }
+
   console.log('=== Shiekh Directory Seed Script ===');
-  console.log(`Project: ${projectId}`);
-  console.log(`Firestore: ${process.env.FIRESTORE_EMULATOR_HOST}`);
-  console.log(`Auth: ${process.env.FIREBASE_AUTH_EMULATOR_HOST}`);
+  console.log(`Project: ${effectiveProjectId}`);
+  console.log(`Mode: ${useEmulator ? 'EMULATOR' : 'PRODUCTION'}`);
+  if (useEmulator) {
+    console.log(`Firestore: ${process.env.FIRESTORE_EMULATOR_HOST}`);
+    console.log(`Auth: ${process.env.FIREBASE_AUTH_EMULATOR_HOST}`);
+  }
   console.log('');
   
   try {
@@ -382,7 +447,14 @@ async function main() {
     await seedAssignments(peopleMap, locationMap, districtMap, regionMap);
     await seedHoursExceptions(locationMap);
     await seedClosures(locationMap);
-    await createTestUser();
+    
+    if (useEmulator) {
+      await createTestUser();
+      console.log('');
+      console.log('Test user credentials:');
+      console.log('  Email: test@shiekh.test');
+      console.log('  Password: testpassword123');
+    }
     
     console.log('');
     console.log('=== Seed Complete ===');
@@ -390,10 +462,6 @@ async function main() {
     console.log(`  Districts: ${districtMap.size}`);
     console.log(`  Locations: ${locationMap.size}`);
     console.log(`  People: ${peopleMap.size}`);
-    console.log('');
-    console.log('Test user credentials:');
-    console.log('  Email: test@shiekh.test');
-    console.log('  Password: testpassword123');
     
     process.exit(0);
   } catch (error) {

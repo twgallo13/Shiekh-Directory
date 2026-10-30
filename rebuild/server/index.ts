@@ -54,8 +54,12 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+const isCloudFunction = !!(process.env.FUNCTION_TARGET || process.env.K_SERVICE);
+
+if (!isCloudFunction) {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
 
 export default app;

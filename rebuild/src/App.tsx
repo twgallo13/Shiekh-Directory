@@ -5,6 +5,7 @@ import { LocationDetailView } from './components/LocationDetailView';
 import { PersonDetailView } from './components/PersonDetailView';
 import { SignInView } from './components/SignInView';
 import { CorrectionsQueue } from './components/CorrectionsQueue';
+import { BulkHolidayManager } from './components/BulkHolidayManager';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -65,6 +66,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <CorrectionsQueuePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/holidays"
+        element={
+          <ProtectedRoute>
+            <BulkHolidayManager />
           </ProtectedRoute>
         }
       />

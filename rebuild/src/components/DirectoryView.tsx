@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -24,6 +24,7 @@ export function DirectoryView() {
   const navigate = useNavigate();
   
   const showCorrectionsLink = authUser && canApproveCorrections(authUser);
+  const showHolidaysLink = authUser && (authUser.role === 'Admin' || authUser.role === 'Steward');
   
   const fetchLocations = useCallback(async () => {
     try {
@@ -180,6 +181,18 @@ export function DirectoryView() {
               >
                 <ClipboardCheck className="w-4 h-4" />
                 Approval Queue
+              </button>
+            )}
+            {showHolidaysLink && (
+              <button
+                onClick={() => {
+                  navigate('/holidays');
+                  setMenuOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+              >
+                <Calendar className="w-4 h-4" />
+                Manage Holidays
               </button>
             )}
             <button

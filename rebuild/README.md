@@ -1,4 +1,4 @@
-# Shiekh Directory Rebuild - Slices 1, 2, 3 & 4
+# Shiekh Directory Rebuild - Slices 1, 2, 3, 4 & 5
 
 This is a ground-up rebuild of the Shiekh Store Directory. This folder contains a completely new app that runs independently from the existing legacy app. **The legacy app is untouched and remains live.**
 
@@ -482,10 +482,104 @@ Add new assignment with role, slot, and person selection.
 
 ---
 
+## What Slice 5 Does
+
+Slice 5 adds **bulk holiday management** and **temporary closures**:
+
+### Bulk Holiday Manager
+
+Admins and Stewards can apply holidays to multiple stores at once:
+
+- **Holiday selection** - Choose from a predefined list of US holidays (Thanksgiving, Christmas, etc.)
+- **State filtering** - Apply to specific states only (e.g., "All CA stores")
+- **Preview before applying** - See exactly which stores will be affected
+- **Skip existing** - Stores that already have the holiday set are skipped
+
+Access the Bulk Holiday Manager from the menu (hamburger icon → "Manage Holidays").
+
+### Temporary Closures with Reason Display
+
+Emergency closures show prominently on the store detail:
+
+- **Red alert banner** with the closure reason
+- **"Temporarily Closed" status** until manually ended or until local midnight
+- **End closure button** for users with closure permissions
+
+### Hours Exceptions
+
+The system tracks two types of schedule exceptions:
+
+1. **Holidays** - Closed or special hours for specific dates
+2. **Special hours** - Modified schedule for events, construction, etc.
+
+Both types show on the store's weekly schedule with their label.
+
+### Closure Expiry Logic
+
+If a closure doesn't have an explicit end time:
+- It expires at **local midnight** in the store's time zone
+- This allows same-day emergency closures without manual cleanup
+- To keep a closure past midnight, set an explicit end date
+
+### Screenshots
+
+<details>
+<summary>Manage Holidays Menu Option</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/slice5-holiday-menu.png" alt="Menu showing Manage Holidays option" width="375" />
+
+Admin menu with the "Manage Holidays" navigation option.
+</details>
+
+<details>
+<summary>Thanksgiving Holiday Selection</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/slice5-thanksgiving-selected.png" alt="Bulk Holiday Manager with Thanksgiving selected" width="375" />
+
+Bulk Holiday Manager showing Thanksgiving Day selected with "Closed" status.
+</details>
+
+<details>
+<summary>Bulk Preview of CA Stores</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/slice5-bulk-preview.png" alt="Preview of stores to apply holiday" width="375" />
+
+Preview showing stores filtered by CA state before applying the holiday.
+</details>
+
+<details>
+<summary>Store with Temporary Closure</summary>
+
+<img src="/opt/cursor/artifacts/screenshots/slice5-store-temp-closure.png" alt="Store detail showing temporary closure" width="375" />
+
+Store 007 showing temporary closure banner with reason "Emergency plumbing repairs".
+</details>
+
+### API Endpoints (Slice 5)
+
+**Hours Exceptions:**
+- `GET /api/app/hours-exceptions/holidays?year=YYYY` - List available holidays for a year
+- `GET /api/app/hours-exceptions/locations/:locationId` - List exceptions for a store
+- `POST /api/app/hours-exceptions/locations/:locationId` - Create exception for a store
+- `DELETE /api/app/hours-exceptions/locations/:locationId/:exceptionId` - Delete exception
+
+**Bulk Operations:**
+- `POST /api/app/hours-exceptions/bulk/preview` - Preview stores affected by bulk operation
+- `POST /api/app/hours-exceptions/bulk/apply` - Apply holiday to multiple stores
+- `DELETE /api/app/hours-exceptions/bulk` - Remove holiday from multiple stores
+
+## Acceptance Checklist (Slice 5)
+
+✅ Apply Thanksgiving closed to all CA stores with a preview  
+✅ Add an emergency closure → store shows Closed with reason  
+✅ At local midnight it returns to normal (closure expires)  
+
+---
+
 ## What's Not Included (Future Slices)
 
 - Legacy API compatibility (v1/v2/v3)
-- Offices and warehouses (only stores in slice 2)
+- Offices and warehouses (only stores in slices 1-5)
 - Verification/audit UI
 - PDF exports
 - User management UI

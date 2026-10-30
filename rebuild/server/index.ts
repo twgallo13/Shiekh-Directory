@@ -54,7 +54,11 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-const isCloudFunction = !!(process.env.FUNCTION_TARGET || process.env.K_SERVICE);
+const isCloudFunction = !!(
+  process.env.FUNCTION_TARGET ||
+  process.env.K_SERVICE ||
+  process.env.FUNCTIONS_CONTROL_API
+);
 
 if (!isCloudFunction) {
   app.listen(PORT, () => {

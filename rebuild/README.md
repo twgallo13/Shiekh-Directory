@@ -1,4 +1,4 @@
-# Shiekh Directory Rebuild - Slices 1, 2, 3, 4 & 5
+# Shiekh Directory Rebuild - Slices 1-6
 
 This is a ground-up rebuild of the Shiekh Store Directory. This folder contains a completely new app that runs independently from the existing legacy app. **The legacy app is untouched and remains live.**
 
@@ -576,10 +576,53 @@ Store 007 showing temporary closure banner with reason "Emergency plumbing repai
 
 ---
 
+## What Slice 6 Does
+
+Slice 6 adds **warehouses and offices** to the directory (per OD-7):
+
+### Location Kinds
+
+The directory now supports three location types:
+
+| Kind | Description | Has Hours | Has SM |
+|------|-------------|-----------|--------|
+| **Store** | Retail locations | Yes | Yes |
+| **Warehouse** | Distribution centers | Optional | No |
+| **Office** | Corporate/admin locations | Optional | No |
+
+### Kind Filtering
+
+- **Filter dropdown** in the directory list to show Stores, Warehouses, Offices, or All
+- **Default to Stores** for backward compatibility
+- **URL parameter** `?kind=warehouse` to deep-link to specific kinds
+
+### Visual Indicators
+
+When viewing "All Locations":
+- **Store icon** for retail stores
+- **Warehouse icon** for distribution centers
+- **Building icon** for offices
+
+### API Changes
+
+The locations endpoint now accepts a `kind` query parameter:
+- `GET /api/app/locations?kind=store` - Only stores (default)
+- `GET /api/app/locations?kind=warehouse` - Only warehouses
+- `GET /api/app/locations?kind=office` - Only offices
+- `GET /api/app/locations?kind=all` - All location types
+
+## Acceptance Checklist (Slice 6)
+
+✅ Warehouses and offices can be created with appropriate location kinds  
+✅ Directory can filter by kind (stores, warehouses, offices, all)  
+✅ Kind-specific icons shown when viewing all locations  
+✅ Backward compatible: stores shown by default  
+
+---
+
 ## What's Not Included (Future Slices)
 
 - Legacy API compatibility (v1/v2/v3)
-- Offices and warehouses (only stores in slices 1-5)
 - Verification/audit UI
 - PDF exports
 - User management UI

@@ -21,11 +21,15 @@ export function createLocationsRouter(db: Firestore): Router {
 
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const { districtId, regionId } = req.query;
+      const { districtId, regionId, kind } = req.query;
       
       let query = db.collection('locations')
-        .where('lifecycle', '==', 'active')
-        .where('kind', '==', 'store');
+        .where('lifecycle', '==', 'active');
+      
+      const kindFilter = kind as string || 'store';
+      if (kindFilter !== 'all') {
+        query = query.where('kind', '==', kindFilter);
+      }
       
       if (districtId) {
         query = query.where('districtId', '==', districtId);
@@ -68,6 +72,7 @@ export function createLocationsRouter(db: Firestore): Router {
         
         locations.push({
           id: location.id,
+          kind: location.kind,
           storeNumber: location.storeNumber,
           name: location.name,
           city: location.address.city,

@@ -337,7 +337,7 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
       };
 
       const batch = db.batch();
-      const storesAffected: string[] = [];
+      const storesAffected: { id: string; storeNumber: string }[] = [];
 
       for (const location of locations) {
         try {
@@ -367,7 +367,7 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
           };
 
           batch.set(exceptionRef, exception);
-          storesAffected.push(`${location.storeNumber}`);
+          storesAffected.push({ id: location.id, storeNumber: location.storeNumber });
           result.created++;
         } catch (err) {
           result.errors.push(`Failed for store ${location.storeNumber}: ${err}`);
@@ -376,21 +376,23 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
 
       await batch.commit();
 
-      await logAudit(db, {
-        userId: authUser.uid,
-        userEmail: authUser.email,
-        userRole: authUser.role,
-        action: 'create',
-        entityType: 'location',
-        entityId: 'bulk',
-        entityName: `Bulk holiday: ${holiday.name}`,
-        changes: [
-          { field: 'holiday', newValue: holiday.name },
-          { field: 'date', newValue: holiday.date },
-          { field: 'states', newValue: states?.join(', ') || 'all' },
-          { field: 'storesAffected', newValue: result.created.toString() },
-        ],
-      });
+      for (const store of storesAffected) {
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'create',
+          entityType: 'location',
+          entityId: store.id,
+          entityName: `Holiday: ${holiday.name} for #${store.storeNumber}`,
+          locationId: store.id,
+          changes: [
+            { field: 'hoursException', newValue: holiday.name },
+            { field: 'date', newValue: holiday.date },
+            { field: 'closed', newValue: holiday.closed },
+          ],
+        });
+      }
 
       return res.json({ data: result });
     } catch (error) {
@@ -500,66 +502,73 @@ function getHolidaysForYear(year: number): Holiday[] {
   ];
 }
 
+function formatDateUTC(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function getFirstMonday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
-  while (date.getDay() !== 1) {
-    date.setDate(date.getDate() + 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  while (date.getUTCDay() !== 1) {
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getSecondMonday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
   let mondays = 0;
   while (mondays < 2) {
-    if (date.getDay() === 1) {
+    if (date.getUTCDay() === 1) {
       mondays++;
       if (mondays === 2) break;
     }
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getThirdMonday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
   let mondays = 0;
   while (mondays < 3) {
-    if (date.getDay() === 1) {
+    if (date.getUTCDay() === 1) {
       mondays++;
       if (mondays === 3) break;
     }
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getLastMonday(year: number, month: number): string {
-  const date = new Date(year, month, 0);
-  while (date.getDay() !== 1) {
-    date.setDate(date.getDate() - 1);
+  const date = new Date(Date.UTC(year, month, 0));
+  while (date.getUTCDay() !== 1) {
+    date.setUTCDate(date.getUTCDate() - 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getFourthThursday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
   let thursdays = 0;
   while (thursdays < 4) {
-    if (date.getDay() === 4) {
+    if (date.getUTCDay() === 4) {
       thursdays++;
       if (thursdays === 4) break;
     }
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getDayAfterThanksgiving(year: number): string {
   const thanksgiving = getFourthThursday(year, 11);
-  const date = new Date(thanksgiving);
-  date.setDate(date.getDate() + 1);
-  return date.toISOString().slice(0, 10);
+  const [y, m, d] = thanksgiving.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + 1));
+  return formatDateUTC(date);
 }
 
 async function logAudit(

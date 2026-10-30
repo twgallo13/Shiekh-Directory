@@ -153,6 +153,42 @@ describe('Assignment Logic', () => {
       const isActive = effectiveEndDate >= '2026-10-30';
       assert.strictEqual(isActive, false);
     });
+    
+    it('End action uses max(yesterday, startDate) when startDate is recent', () => {
+      const yesterday = '2026-10-29';
+      const startDate = '2026-10-30';
+      
+      const effectiveEndDate = startDate > yesterday ? startDate : yesterday;
+      
+      assert.strictEqual(effectiveEndDate, '2026-10-30');
+    });
+    
+    it('End action uses yesterday when startDate is old', () => {
+      const yesterday = '2026-10-29';
+      const startDate = '2024-01-01';
+      
+      const effectiveEndDate = startDate > yesterday ? startDate : yesterday;
+      
+      assert.strictEqual(effectiveEndDate, '2026-10-29');
+    });
+    
+    it('Future assignment should be deleted instead of ended', () => {
+      const today = '2026-10-30';
+      const startDate = '2026-11-15';
+      
+      const neverStarted = startDate > today;
+      
+      assert.strictEqual(neverStarted, true, 'Assignment starting in the future should be deleted');
+    });
+    
+    it('Assignment starting today should be ended, not deleted', () => {
+      const today = '2026-10-30';
+      const startDate = '2026-10-30';
+      
+      const neverStarted = startDate > today;
+      
+      assert.strictEqual(neverStarted, false, 'Assignment starting today has started');
+    });
   });
   
   describe('Leadership Display Logic', () => {

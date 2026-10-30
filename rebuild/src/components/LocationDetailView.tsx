@@ -346,23 +346,31 @@ export function LocationDetailView() {
           </div>
           
           {/* Upcoming Exceptions */}
-          {location.hoursExceptions.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-200">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Upcoming Exceptions</h4>
-              <div className="space-y-2">
-                {location.hoursExceptions.slice(0, 3).map(ex => (
-                  <div key={ex.id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-600">{ex.label}</span>
-                    <span className="text-gray-500">
-                      {ex.startDate === ex.endDate 
-                        ? ex.startDate 
-                        : `${ex.startDate} - ${ex.endDate}`}
-                    </span>
-                  </div>
-                ))}
+          {(() => {
+            const today = location.statusNow.localDate;
+            const upcomingExceptions = location.hoursExceptions
+              .filter(ex => ex.endDate >= today)
+              .sort((a, b) => a.startDate.localeCompare(b.startDate))
+              .slice(0, 3);
+            
+            return upcomingExceptions.length > 0 ? (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Upcoming Exceptions</h4>
+                <div className="space-y-2">
+                  {upcomingExceptions.map(ex => (
+                    <div key={ex.id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600">{ex.label}</span>
+                      <span className="text-gray-500">
+                        {ex.startDate === ex.endDate 
+                          ? ex.startDate 
+                          : `${ex.startDate} - ${ex.endDate}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            ) : null;
+          })()}
         </div>
         
         {/* Leadership */}

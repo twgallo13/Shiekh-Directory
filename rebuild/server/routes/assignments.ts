@@ -268,9 +268,38 @@ export function createAssignmentsRouter(db: Firestore): Router {
       }
 
       const now = new Date();
+      const today = now.toISOString().slice(0, 10);
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
-      const effectiveEndDate = endDate || yesterday.toISOString().slice(0, 10);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      
+      const personDoc = await db.collection('people').doc(assignment.personId).get();
+      const personName = personDoc.exists ? personDoc.data()?.fullName : 'Unknown';
+      const scopeName = await getScopeName(db, assignment.scopeType, assignment.scopeId);
+      
+      if (assignment.startDate > today) {
+        await assignmentRef.delete();
+        
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'delete',
+          entityType: 'assignment',
+          entityId: id,
+          entityName: `${personName} as ${assignment.role} at ${scopeName}`,
+          locationId: assignment.scopeType === 'location' ? assignment.scopeId : null,
+          changes: [
+            { field: 'deleted', oldValue: null, newValue: 'Assignment never started, deleted' },
+          ],
+        });
+        
+        return res.json({
+          data: { deleted: true, reason: 'Assignment had not started yet' },
+        });
+      }
+      
+      const effectiveEndDate = endDate || (assignment.startDate > yesterdayStr ? assignment.startDate : yesterdayStr);
       
       await assignmentRef.update({
         endDate: effectiveEndDate,
@@ -278,10 +307,6 @@ export function createAssignmentsRouter(db: Firestore): Router {
         updatedBy: authUser.uid,
         version: (assignment.version || 0) + 1,
       });
-
-      const personDoc = await db.collection('people').doc(assignment.personId).get();
-      const personName = personDoc.exists ? personDoc.data()?.fullName : 'Unknown';
-      const scopeName = await getScopeName(db, assignment.scopeType, assignment.scopeId);
 
       await logAudit(db, {
         userId: authUser.uid,

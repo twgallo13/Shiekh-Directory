@@ -1,10 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import type { LocationListItem, SearchResult, Region, District } from '../types';
+import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { canApproveCorrections } from '../lib/permissions';
+
+const KIND_ICONS: Record<LocationKind, typeof Store> = {
+  store: Store,
+  warehouse: Warehouse,
+  office: Building2,
+};
 
 export function DirectoryView() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -15,6 +21,7 @@ export function DirectoryView() {
   const [districts, setDistricts] = useState<District[]>([]);
   const [selectedRegion, setSelectedRegion] = useState<string>(searchParams.get('region') || '');
   const [selectedDistrict, setSelectedDistrict] = useState<string>(searchParams.get('district') || '');
+  const [selectedKind, setSelectedKind] = useState<string>(searchParams.get('kind') || 'store');
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -32,6 +39,7 @@ export function DirectoryView() {
       const token = await getIdToken();
       
       const params = new URLSearchParams();
+      if (selectedKind) params.set('kind', selectedKind);
       if (selectedDistrict) params.set('districtId', selectedDistrict);
       else if (selectedRegion) params.set('regionId', selectedRegion);
       
@@ -48,7 +56,7 @@ export function DirectoryView() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken, selectedRegion, selectedDistrict]);
+  }, [getIdToken, selectedRegion, selectedDistrict, selectedKind]);
   
   const fetchFilters = useCallback(async () => {
     try {
@@ -115,8 +123,9 @@ export function DirectoryView() {
     if (searchQuery) params.set('q', searchQuery);
     if (selectedRegion) params.set('region', selectedRegion);
     if (selectedDistrict) params.set('district', selectedDistrict);
+    if (selectedKind && selectedKind !== 'store') params.set('kind', selectedKind);
     setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedRegion, selectedDistrict, setSearchParams]);
+  }, [searchQuery, selectedRegion, selectedDistrict, selectedKind, setSearchParams]);
   
   const handleCall = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -258,6 +267,17 @@ export function DirectoryView() {
                 <option key={district.id} value={district.id}>{district.name}</option>
               ))}
             </select>
+            
+            <select
+              value={selectedKind}
+              onChange={(e) => setSelectedKind(e.target.value)}
+              className="px-3 py-1.5 border border-gray-300 rounded-full text-sm bg-white"
+            >
+              <option value="store">Stores</option>
+              <option value="warehouse">Warehouses</option>
+              <option value="office">Offices</option>
+              <option value="all">All Locations</option>
+            </select>
           </div>
         </div>
       )}
@@ -331,32 +351,37 @@ export function DirectoryView() {
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-gray-500">
-              {locations.length} store{locations.length !== 1 ? 's' : ''}
+              {locations.length} {selectedKind === 'all' ? 'location' : selectedKind}{locations.length !== 1 ? 's' : ''}
             </p>
-            {locations.map(location => (
-              <div
-                key={location.id}
-                onClick={() => handleLocationClick(location)}
-                className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-blue-300 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-medium text-gray-900">
-                        #{location.storeNumber} {location.name}
-                      </h3>
-                      <StatusBadge status={location.statusNow.state} />
-                    </div>
-                    <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5" />
-                      {location.city}, {location.state}
-                    </p>
-                    {location.smName && (
-                      <p className="text-sm text-gray-500 mt-0.5">
-                        SM: {location.smName}
+            {locations.map(location => {
+              const KindIcon = KIND_ICONS[location.kind] || Store;
+              return (
+                <div
+                  key={location.id}
+                  onClick={() => handleLocationClick(location)}
+                  className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-blue-300 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {selectedKind === 'all' && (
+                          <KindIcon className="w-4 h-4 text-gray-400" />
+                        )}
+                        <h3 className="font-medium text-gray-900">
+                          #{location.storeNumber} {location.name}
+                        </h3>
+                        <StatusBadge status={location.statusNow.state} />
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5" />
+                        {location.city}, {location.state}
                       </p>
-                    )}
-                  </div>
+                      {location.smName && (
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          SM: {location.smName}
+                        </p>
+                      )}
+                    </div>
                   
                   <div className="flex items-center gap-1">
                     <button
@@ -377,7 +402,8 @@ export function DirectoryView() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

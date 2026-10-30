@@ -261,6 +261,7 @@ export function createEditRouter(db: Firestore): Router {
         entityType: 'closure',
         entityId: closureRef.id,
         entityName: `Closure for ${location.storeNumber}`,
+        locationId: id,
         changes: [
           { field: 'reason', newValue: reason },
           { field: 'status', newValue: 'active' },
@@ -323,6 +324,7 @@ export function createEditRouter(db: Firestore): Router {
         entityType: 'closure',
         entityId: closureId,
         entityName: `Closure for ${location?.storeNumber || locationId}`,
+        locationId,
         changes: [{ field: 'status', oldValue: 'active', newValue: 'ended' }],
       });
 
@@ -379,6 +381,7 @@ export function createEditRouter(db: Firestore): Router {
           entityType: 'closure',
           entityId: closureId,
           entityName: `Closure for ${location?.storeNumber || locationId}`,
+          locationId,
           changes: [{ field: 'status', oldValue: 'active', newValue: 'ended' }],
         });
 

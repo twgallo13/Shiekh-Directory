@@ -8,66 +8,73 @@ interface Holiday {
   closed: boolean;
 }
 
+function formatDateUTC(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function getFirstMonday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
-  while (date.getDay() !== 1) {
-    date.setDate(date.getDate() + 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  while (date.getUTCDay() !== 1) {
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getSecondMonday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
   let mondays = 0;
   while (mondays < 2) {
-    if (date.getDay() === 1) {
+    if (date.getUTCDay() === 1) {
       mondays++;
       if (mondays === 2) break;
     }
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getThirdMonday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
   let mondays = 0;
   while (mondays < 3) {
-    if (date.getDay() === 1) {
+    if (date.getUTCDay() === 1) {
       mondays++;
       if (mondays === 3) break;
     }
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getLastMonday(year: number, month: number): string {
-  const date = new Date(year, month, 0);
-  while (date.getDay() !== 1) {
-    date.setDate(date.getDate() - 1);
+  const date = new Date(Date.UTC(year, month, 0));
+  while (date.getUTCDay() !== 1) {
+    date.setUTCDate(date.getUTCDate() - 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getFourthThursday(year: number, month: number): string {
-  const date = new Date(year, month - 1, 1);
+  const date = new Date(Date.UTC(year, month - 1, 1));
   let thursdays = 0;
   while (thursdays < 4) {
-    if (date.getDay() === 4) {
+    if (date.getUTCDay() === 4) {
       thursdays++;
       if (thursdays === 4) break;
     }
-    date.setDate(date.getDate() + 1);
+    date.setUTCDate(date.getUTCDate() + 1);
   }
-  return date.toISOString().slice(0, 10);
+  return formatDateUTC(date);
 }
 
 function getDayAfterThanksgiving(year: number): string {
   const thanksgiving = getFourthThursday(year, 11);
-  const date = new Date(thanksgiving);
-  date.setDate(date.getDate() + 1);
-  return date.toISOString().slice(0, 10);
+  const [y, m, d] = thanksgiving.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + 1));
+  return formatDateUTC(date);
 }
 
 function getHolidaysForYear(year: number): Holiday[] {
@@ -375,6 +382,61 @@ describe('Hours Exceptions - Bulk Operations', () => {
       assert.strictEqual(exception.label, 'Black Friday');
       assert.strictEqual(exception.closed, false);
     });
+  });
+});
+
+describe('Hours Exceptions - Upcoming Exceptions Filter', () => {
+  it('filters out past exceptions', () => {
+    const today = '2026-10-30';
+    const exceptions = [
+      { id: '1', label: 'Halloween', startDate: '2026-10-31', endDate: '2026-10-31' },
+      { id: '2', label: 'Past Event', startDate: '2026-10-01', endDate: '2026-10-05' },
+      { id: '3', label: 'Thanksgiving', startDate: '2026-11-26', endDate: '2026-11-26' },
+      { id: '4', label: 'Ended Yesterday', startDate: '2026-10-28', endDate: '2026-10-29' },
+    ];
+    
+    const upcoming = exceptions.filter(ex => ex.endDate >= today);
+    
+    assert.strictEqual(upcoming.length, 2);
+    assert.ok(upcoming.some(ex => ex.label === 'Halloween'));
+    assert.ok(upcoming.some(ex => ex.label === 'Thanksgiving'));
+    assert.ok(!upcoming.some(ex => ex.label === 'Past Event'));
+    assert.ok(!upcoming.some(ex => ex.label === 'Ended Yesterday'));
+  });
+  
+  it('sorts exceptions by startDate', () => {
+    const exceptions = [
+      { id: '1', label: 'Thanksgiving', startDate: '2026-11-26', endDate: '2026-11-26' },
+      { id: '2', label: 'Halloween', startDate: '2026-10-31', endDate: '2026-10-31' },
+      { id: '3', label: 'Christmas', startDate: '2026-12-25', endDate: '2026-12-25' },
+    ];
+    
+    const sorted = [...exceptions].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    
+    assert.strictEqual(sorted[0].label, 'Halloween');
+    assert.strictEqual(sorted[1].label, 'Thanksgiving');
+    assert.strictEqual(sorted[2].label, 'Christmas');
+  });
+  
+  it('takes only first 3 upcoming exceptions', () => {
+    const today = '2026-10-30';
+    const exceptions = [
+      { id: '1', label: 'Halloween', startDate: '2026-10-31', endDate: '2026-10-31' },
+      { id: '2', label: 'Thanksgiving', startDate: '2026-11-26', endDate: '2026-11-26' },
+      { id: '3', label: 'Black Friday', startDate: '2026-11-27', endDate: '2026-11-27' },
+      { id: '4', label: 'Christmas', startDate: '2026-12-25', endDate: '2026-12-25' },
+      { id: '5', label: 'New Years', startDate: '2027-01-01', endDate: '2027-01-01' },
+    ];
+    
+    const upcomingThree = exceptions
+      .filter(ex => ex.endDate >= today)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .slice(0, 3);
+    
+    assert.strictEqual(upcomingThree.length, 3);
+    assert.strictEqual(upcomingThree[0].label, 'Halloween');
+    assert.strictEqual(upcomingThree[1].label, 'Thanksgiving');
+    assert.strictEqual(upcomingThree[2].label, 'Black Friday');
   });
 });
 

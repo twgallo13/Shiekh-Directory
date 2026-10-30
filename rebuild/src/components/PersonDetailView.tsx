@@ -20,6 +20,17 @@ const SCOPE_ICONS: Record<string, typeof MapPin> = {
   region: Building,
 };
 
+function formatPhoneNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return phone;
+}
+
 function AssignmentCard({ assignment }: { assignment: PersonAssignment }) {
   const ScopeIcon = SCOPE_ICONS[assignment.scopeType] || Briefcase;
   
@@ -200,7 +211,7 @@ export function PersonDetailView() {
               <div className="flex items-center gap-3">
                 <Phone className="w-5 h-5 text-gray-400" />
                 <a href={`tel:${person.workPhone}`} className="text-blue-600 hover:underline">
-                  {person.workPhone}
+                  {formatPhoneNumber(person.workPhone)}
                 </a>
                 <span className="text-xs text-gray-500">Work</span>
               </div>
@@ -209,7 +220,7 @@ export function PersonDetailView() {
               <div className="flex items-center gap-3">
                 <Phone className="w-5 h-5 text-gray-400" />
                 <a href={`tel:${person.mobilePhone}`} className="text-blue-600 hover:underline">
-                  {person.mobilePhone}
+                  {formatPhoneNumber(person.mobilePhone)}
                 </a>
                 <span className="text-xs text-gray-500">Mobile</span>
               </div>

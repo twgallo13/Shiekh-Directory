@@ -128,6 +128,31 @@ describe('Assignment Logic', () => {
       
       assert.strictEqual(isActive, true);
     });
+    
+    it('assignment ending yesterday is immediately inactive', () => {
+      const assignment: { id: string; startDate: string; endDate?: string } = {
+        id: '1',
+        startDate: '2024-01-01',
+        endDate: '2026-10-29',
+      };
+      
+      const today = '2026-10-30';
+      const isActive = !assignment.endDate || assignment.endDate >= today;
+      
+      assert.strictEqual(isActive, false);
+    });
+    
+    it('End action should use yesterday date for immediate effect', () => {
+      const now = new Date('2026-10-30T12:00:00Z');
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const effectiveEndDate = yesterday.toISOString().slice(0, 10);
+      
+      assert.strictEqual(effectiveEndDate, '2026-10-29');
+      
+      const isActive = effectiveEndDate >= '2026-10-30';
+      assert.strictEqual(isActive, false);
+    });
   });
   
   describe('Leadership Display Logic', () => {
@@ -247,6 +272,75 @@ describe('Assignment Logic', () => {
       assert.strictEqual(sorted[1].isActive, true);
       assert.strictEqual(sorted[1].slot, 'additional');
       assert.strictEqual(sorted[2].isActive, false);
+    });
+  });
+  
+  describe('Phone Number Formatting', () => {
+    function formatPhoneNumber(phone: string): string {
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length === 11 && digits.startsWith('1')) {
+        return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+      }
+      if (digits.length === 10) {
+        return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+      }
+      return phone;
+    }
+    
+    it('formats E.164 phone number with country code', () => {
+      const result = formatPhoneNumber('+12135551001');
+      assert.strictEqual(result, '(213) 555-1001');
+    });
+    
+    it('formats 10-digit phone number', () => {
+      const result = formatPhoneNumber('2135551001');
+      assert.strictEqual(result, '(213) 555-1001');
+    });
+    
+    it('formats phone number with dashes', () => {
+      const result = formatPhoneNumber('213-555-1001');
+      assert.strictEqual(result, '(213) 555-1001');
+    });
+    
+    it('formats phone number with parentheses', () => {
+      const result = formatPhoneNumber('(213) 555-1001');
+      assert.strictEqual(result, '(213) 555-1001');
+    });
+    
+    it('returns original for invalid format', () => {
+      const result = formatPhoneNumber('12345');
+      assert.strictEqual(result, '12345');
+    });
+  });
+  
+  describe('Audit Entry Undefined Handling', () => {
+    it('uses null for undefined oldValue with ?? null', () => {
+      const assignment = { endDate: undefined as string | undefined };
+      const oldValue = assignment.endDate ?? null;
+      
+      assert.strictEqual(oldValue, null);
+    });
+    
+    it('preserves existing value when not undefined', () => {
+      const assignment = { endDate: '2026-10-30' };
+      const oldValue = assignment.endDate ?? null;
+      
+      assert.strictEqual(oldValue, '2026-10-30');
+    });
+    
+    it('handles optional fields gracefully', () => {
+      const location = { 
+        mainPhone: '+12135551234',
+        sharedInboxEmail: undefined as string | undefined,
+      };
+      
+      const changes = [
+        { field: 'mainPhone', oldValue: location.mainPhone ?? null },
+        { field: 'sharedInboxEmail', oldValue: location.sharedInboxEmail ?? null },
+      ];
+      
+      assert.strictEqual(changes[0].oldValue, '+12135551234');
+      assert.strictEqual(changes[1].oldValue, null);
     });
   });
 });

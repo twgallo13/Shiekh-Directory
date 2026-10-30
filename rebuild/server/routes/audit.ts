@@ -67,16 +67,34 @@ export function createAuditRouter(db: Firestore): Router {
         });
       }
 
-      const snapshot = await db.collection('auditLog')
-        .where('entityId', '==', locationId)
-        .orderBy('timestamp', 'desc')
-        .limit(50)
-        .get();
+      const [directSnapshot, assignmentSnapshot] = await Promise.all([
+        db.collection('auditLog')
+          .where('entityId', '==', locationId)
+          .orderBy('timestamp', 'desc')
+          .limit(50)
+          .get(),
+        db.collection('auditLog')
+          .where('locationId', '==', locationId)
+          .orderBy('timestamp', 'desc')
+          .limit(50)
+          .get(),
+      ]);
 
-      const entries: AuditLogEntry[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as AuditLogEntry[];
+      const entriesMap = new Map<string, AuditLogEntry>();
+      
+      for (const doc of directSnapshot.docs) {
+        entriesMap.set(doc.id, { id: doc.id, ...doc.data() } as AuditLogEntry);
+      }
+      
+      for (const doc of assignmentSnapshot.docs) {
+        if (!entriesMap.has(doc.id)) {
+          entriesMap.set(doc.id, { id: doc.id, ...doc.data() } as AuditLogEntry);
+        }
+      }
+
+      const entries = Array.from(entriesMap.values())
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+        .slice(0, 50);
 
       return res.json({ data: entries });
     } catch (error) {

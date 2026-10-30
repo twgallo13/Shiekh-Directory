@@ -32,6 +32,7 @@ export function createFirestoreClient(): Firestore {
   }
   
   db = getFirestore(app);
+  db.settings({ ignoreUndefinedProperties: true });
   return db;
 }
 

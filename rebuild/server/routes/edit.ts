@@ -68,13 +68,13 @@ export function createEditRouter(db: Firestore): Router {
                   });
                 }
                 updateData[field] = normalized;
-                auditChanges.push({ field, oldValue: location.mainPhone, newValue: normalized });
+                auditChanges.push({ field, oldValue: location.mainPhone ?? null, newValue: normalized });
               } else if (field === 'address') {
                 updateData[field] = value;
-                auditChanges.push({ field, oldValue: JSON.stringify(location.address), newValue: JSON.stringify(value) });
+                auditChanges.push({ field, oldValue: JSON.stringify(location.address ?? null), newValue: JSON.stringify(value) });
               } else {
                 updateData[field] = value || null;
-                auditChanges.push({ field, oldValue: location.sharedInboxEmail, newValue: value as string });
+                auditChanges.push({ field, oldValue: location.sharedInboxEmail ?? null, newValue: (value as string) || null });
               }
             } else if (permissions.contactInfo === 'propose-only') {
               requiresApproval = true;
@@ -108,7 +108,7 @@ export function createEditRouter(db: Firestore): Router {
           case 'storeType':
             if (authUser.role === 'Steward' || authUser.role === 'Admin') {
               updateData[field] = value;
-              auditChanges.push({ field, oldValue: location[field as keyof Location] as string, newValue: value as string });
+              auditChanges.push({ field, oldValue: (location[field as keyof Location] as string) ?? null, newValue: value as string });
             } else {
               return res.status(403).json({
                 error: { code: 'forbidden', message: `Only Steward or Admin can edit ${field}`, requestId: res.locals.requestId },

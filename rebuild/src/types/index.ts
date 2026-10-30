@@ -336,6 +336,7 @@ export interface AuditLogEntry {
   entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user';
   entityId: string;
   entityName: string;
+  locationId?: string | null; // For assignment entries - links to the store
   changes: AuditChange[];
   previousVersion?: number;
   newVersion?: number;

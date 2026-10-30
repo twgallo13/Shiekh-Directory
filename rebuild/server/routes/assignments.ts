@@ -121,6 +121,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
         entityType: 'assignment',
         entityId: assignmentRef.id,
         entityName: `${personName} as ${role} at ${scopeName}`,
+        locationId: scopeType === 'location' ? scopeId : null,
         changes: [
           { field: 'role', newValue: role },
           { field: 'slot', newValue: slot },
@@ -184,17 +185,17 @@ export function createAssignmentsRouter(db: Firestore): Router {
 
       if (slot !== undefined && slot !== assignment.slot) {
         updates.slot = slot;
-        changes.push({ field: 'slot', oldValue: assignment.slot, newValue: slot });
+        changes.push({ field: 'slot', oldValue: assignment.slot ?? null, newValue: slot });
       }
 
       if (label !== undefined && label !== assignment.label) {
         updates.label = label || null;
-        changes.push({ field: 'label', oldValue: assignment.label, newValue: label || null });
+        changes.push({ field: 'label', oldValue: assignment.label ?? null, newValue: label || null });
       }
 
       if (endDate !== undefined && endDate !== assignment.endDate) {
         updates.endDate = endDate || null;
-        changes.push({ field: 'endDate', oldValue: assignment.endDate, newValue: endDate || null });
+        changes.push({ field: 'endDate', oldValue: assignment.endDate ?? null, newValue: endDate || null });
       }
 
       if (changes.length === 0) {
@@ -215,6 +216,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
         entityType: 'assignment',
         entityId: id,
         entityName: `${personName} as ${assignment.role} at ${scopeName}`,
+        locationId: assignment.scopeType === 'location' ? assignment.scopeId : null,
         changes,
       });
 
@@ -265,11 +267,14 @@ export function createAssignmentsRouter(db: Firestore): Router {
         });
       }
 
-      const effectiveEndDate = endDate || new Date().toISOString().slice(0, 10);
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const effectiveEndDate = endDate || yesterday.toISOString().slice(0, 10);
       
       await assignmentRef.update({
         endDate: effectiveEndDate,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now.toISOString(),
         updatedBy: authUser.uid,
         version: (assignment.version || 0) + 1,
       });
@@ -286,8 +291,9 @@ export function createAssignmentsRouter(db: Firestore): Router {
         entityType: 'assignment',
         entityId: id,
         entityName: `${personName} as ${assignment.role} at ${scopeName}`,
+        locationId: assignment.scopeType === 'location' ? assignment.scopeId : null,
         changes: [
-          { field: 'endDate', oldValue: assignment.endDate, newValue: effectiveEndDate },
+          { field: 'endDate', oldValue: assignment.endDate ?? null, newValue: effectiveEndDate },
         ],
       });
 

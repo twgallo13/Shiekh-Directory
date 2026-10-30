@@ -25,6 +25,14 @@
       ]
     },
     {
+      "collectionGroup": "auditLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "locationId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "corrections",
       "queryScope": "COLLECTION",
       "fields": [
@@ -110,25 +118,11 @@
       ]
     },
     {
-      "collectionGroup": "closures",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "people",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "lifecycle", "order": "ASCENDING" },
         { "fieldPath": "fullName", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "assignments",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "personId", "order": "ASCENDING" }
       ]
     }
   ],

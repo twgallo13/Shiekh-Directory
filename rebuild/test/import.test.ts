@@ -5,11 +5,25 @@
  * 1. Import replaces data cleanly
  * 2. Required field validation
  * 3. Phone number normalization
- * 4. Hours parsing
+ * 4. Store Manager phone saved correctly
  */
 
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
+import { seedTestUsers, seedTestHierarchy, getTestDb } from './testHelpers';
+
+const API_BASE = process.env.API_BASE || 'http://localhost:3001';
+
+async function fetchApi(path: string, options: RequestInit = {}): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
+    headers: {
+      'Authorization': 'Bearer test-token-admin',
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    ...options,
+  });
+}
 
 describe('Import - Phone Normalization', () => {
   function normalizePhoneNumber(phone: string): string | null {
@@ -207,6 +221,126 @@ describe('Import - Data Replacement', () => {
     
     assert.strictEqual(toRemove, 2);
     assert.strictEqual(toCreate, 2);
+  });
+});
+
+describe('Import Route - Store Manager Phone', () => {
+  let hierarchyIds: { regionId: string; districtId: string };
+
+  before(async () => {
+    await seedTestUsers();
+    const result = await seedTestHierarchy();
+    hierarchyIds = { regionId: result.regionId, districtId: result.districtId };
+  });
+
+  it('saves StoreManagerPhone as person work phone (E.164)', async () => {
+    const uniqueNum = `IMP${Date.now() % 10000}`;
+    const smName = `SM Import Test ${uniqueNum}`;
+    const smPhone = '(323) 555-9876';
+    const expectedE164 = '+13235559876';
+
+    const csv = [
+      'storeNumber,name,street,city,state,zip,mainPhone,timeZone,regionId,districtId,storeManager,storeManagerPhone',
+      `${uniqueNum},"Import Test Store","123 Import St","Los Angeles","CA","90001","(213) 555-1234","America/Los_Angeles","${hierarchyIds.regionId}","${hierarchyIds.districtId}","${smName}","${smPhone}"`,
+    ].join('\n');
+
+    const previewRes = await fetchApi('/api/app/import/legacy/preview', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    });
+    assert.strictEqual(previewRes.status, 200, 'preview should succeed');
+    const previewBody = await previewRes.json();
+    assert.ok(previewBody.sessionId, 'should return sessionId');
+    assert.strictEqual(previewBody.preview.valid, true, 'preview should be valid');
+    assert.strictEqual(previewBody.preview.toCreate, 1, 'should have 1 location to create');
+
+    const applyRes = await fetchApi(`/api/app/import/legacy/apply/${previewBody.sessionId}`, {
+      method: 'POST',
+    });
+    assert.strictEqual(applyRes.status, 200, 'apply should succeed');
+    const applyBody = await applyRes.json();
+    assert.strictEqual(applyBody.success, true, 'apply should report success');
+    assert.strictEqual(applyBody.result.created, 1, 'should create 1 location');
+    assert.strictEqual(applyBody.result.assignmentsCreated, 1, 'should create 1 assignment');
+
+    const db = getTestDb();
+    const peopleSnap = await db.collection('people')
+      .where('fullName', '==', smName)
+      .limit(1)
+      .get();
+    
+    assert.strictEqual(peopleSnap.empty, false, `person "${smName}" should exist`);
+    const person = peopleSnap.docs[0].data();
+    assert.strictEqual(person.workPhone, expectedE164, `work phone should be E.164 format: ${expectedE164}`);
+  });
+
+  it('saves StoreManagerMobile as person mobile phone (E.164)', async () => {
+    const uniqueNum = `IMP${Date.now() % 10000 + 1}`;
+    const smName = `SM Mobile Test ${uniqueNum}`;
+    const smMobile = '(310) 555-4321';
+    const expectedE164 = '+13105554321';
+
+    const csv = [
+      'storeNumber,name,street,city,state,zip,mainPhone,timeZone,regionId,districtId,storeManager,storeManagerMobile',
+      `${uniqueNum},"Mobile Test Store","456 Mobile St","Los Angeles","CA","90002","(213) 555-5678","America/Los_Angeles","${hierarchyIds.regionId}","${hierarchyIds.districtId}","${smName}","${smMobile}"`,
+    ].join('\n');
+
+    const previewRes = await fetchApi('/api/app/import/legacy/preview', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    });
+    assert.strictEqual(previewRes.status, 200, 'preview should succeed');
+    const previewBody = await previewRes.json();
+
+    const applyRes = await fetchApi(`/api/app/import/legacy/apply/${previewBody.sessionId}`, {
+      method: 'POST',
+    });
+    assert.strictEqual(applyRes.status, 200, 'apply should succeed');
+
+    const db = getTestDb();
+    const peopleSnap = await db.collection('people')
+      .where('fullName', '==', smName)
+      .limit(1)
+      .get();
+    
+    assert.strictEqual(peopleSnap.empty, false, `person "${smName}" should exist`);
+    const person = peopleSnap.docs[0].data();
+    assert.strictEqual(person.mobilePhone, expectedE164, `mobile phone should be E.164 format: ${expectedE164}`);
+  });
+
+  it('maps Store Manager Phone column header variations correctly', async () => {
+    const uniqueNum = `IMP${Date.now() % 10000 + 2}`;
+    const smName = `SM Header Test ${uniqueNum}`;
+    const smPhone = '(818) 555-7890';
+    const expectedE164 = '+18185557890';
+
+    const csv = [
+      'Store Number,Name,Address,City,State,Zip Code,Phone,Time Zone,Region ID,District ID,Store Manager,Store Manager Phone',
+      `${uniqueNum},"Header Test Store","789 Header St","Burbank","CA","91505","(818) 555-0000","America/Los_Angeles","${hierarchyIds.regionId}","${hierarchyIds.districtId}","${smName}","${smPhone}"`,
+    ].join('\n');
+
+    const previewRes = await fetchApi('/api/app/import/legacy/preview', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    });
+    assert.strictEqual(previewRes.status, 200, 'preview should succeed');
+    const previewBody = await previewRes.json();
+    assert.strictEqual(previewBody.preview.valid, true, 'preview should be valid');
+
+    const applyRes = await fetchApi(`/api/app/import/legacy/apply/${previewBody.sessionId}`, {
+      method: 'POST',
+    });
+    assert.strictEqual(applyRes.status, 200, 'apply should succeed');
+
+    const db = getTestDb();
+    const peopleSnap = await db.collection('people')
+      .where('fullName', '==', smName)
+      .limit(1)
+      .get();
+    
+    assert.strictEqual(peopleSnap.empty, false, `person "${smName}" should exist`);
+    const person = peopleSnap.docs[0].data();
+    assert.strictEqual(person.workPhone, expectedE164, `work phone should be E.164 format: ${expectedE164}`);
   });
 });
 

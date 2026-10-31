@@ -1,6 +1,13 @@
-import { describe, it } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
 import type { VerificationRequest, VerificationStatus, Location } from '../src/types';
+import { 
+  seedTestUsers, 
+  seedTestHierarchy, 
+  seedTestLeader, 
+  seedTestLocationsForDistrict,
+  getTestDb,
+} from './testHelpers';
 
 describe('Verification - Request Status', () => {
   describe('Status Transitions', () => {
@@ -514,5 +521,152 @@ describe('Verification - UI Filter Logic', () => {
     assert.strictEqual(sorted[0].id, '2');
     assert.strictEqual(sorted[1].id, '3');
     assert.strictEqual(sorted[2].id, '1');
+  });
+});
+
+const API_BASE = process.env.API_BASE || 'http://localhost:3001';
+
+async function fetchApiAs(role: string, path: string, options: RequestInit = {}): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
+    headers: {
+      'Authorization': `Bearer test-token-${role}`,
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    ...options,
+  });
+}
+
+describe('Verification Route - Leader Scope', () => {
+  let hierarchyIds: { regionId: string; region2Id: string; districtId: string; district2Id: string };
+  let leaderLocationIds: string[];
+  let otherDistrictLocationIds: string[];
+  let requestInLeaderScope: string;
+  let requestOutsideScope: string;
+
+  before(async () => {
+    await seedTestUsers();
+    hierarchyIds = await seedTestHierarchy();
+    
+    leaderLocationIds = await seedTestLocationsForDistrict(
+      hierarchyIds.districtId, 
+      hierarchyIds.regionId, 
+      2, 
+      'LDR'
+    );
+    
+    otherDistrictLocationIds = await seedTestLocationsForDistrict(
+      hierarchyIds.district2Id, 
+      hierarchyIds.region2Id, 
+      2, 
+      'OTH'
+    );
+    
+    await seedTestLeader(hierarchyIds.districtId);
+    
+    const db = getTestDb();
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const leaderRequestRef = db.collection('verificationRequests').doc();
+    await leaderRequestRef.set({
+      locationId: leaderLocationIds[0],
+      locationName: 'Test Store LDR001',
+      storeNumber: 'LDR001',
+      sentTo: 'ldr001@shiekh.test',
+      sentBy: 'steward',
+      sentAt: now,
+      expiresAt,
+      status: 'pending',
+      hoursConfirmed: false,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'steward',
+      version: 1,
+    });
+    requestInLeaderScope = leaderRequestRef.id;
+
+    const otherRequestRef = db.collection('verificationRequests').doc();
+    await otherRequestRef.set({
+      locationId: otherDistrictLocationIds[0],
+      locationName: 'Test Store OTH001',
+      storeNumber: 'OTH001',
+      sentTo: 'oth001@shiekh.test',
+      sentBy: 'steward',
+      sentAt: now,
+      expiresAt,
+      status: 'pending',
+      hoursConfirmed: false,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'steward',
+      version: 1,
+    });
+    requestOutsideScope = otherRequestRef.id;
+  });
+
+  it('Leader sees verification requests only for their district stores', async () => {
+    const res = await fetchApiAs('leader', '/api/app/verification');
+    assert.strictEqual(res.status, 200, 'Leader should be able to list verification requests');
+    
+    const body = await res.json();
+    assert.ok(Array.isArray(body.data), 'should return data array');
+    
+    const requestIds = body.data.map((r: { id: string }) => r.id);
+    assert.ok(
+      requestIds.includes(requestInLeaderScope),
+      'should include request for store in leader\'s district'
+    );
+    assert.ok(
+      !requestIds.includes(requestOutsideScope),
+      'should NOT include request for store outside leader\'s district'
+    );
+  });
+
+  it('Leader cannot access verification request for other district store', async () => {
+    const res = await fetchApiAs('leader', `/api/app/verification?locationId=${otherDistrictLocationIds[0]}`);
+    assert.strictEqual(res.status, 403, 'Leader should be denied access to other district stores');
+    
+    const body = await res.json();
+    assert.strictEqual(body.error.code, 'forbidden');
+  });
+
+  it('Admin sees verification requests from all districts', async () => {
+    const res = await fetchApiAs('admin', '/api/app/verification');
+    assert.strictEqual(res.status, 200, 'Admin should be able to list all verification requests');
+    
+    const body = await res.json();
+    const requestIds = body.data.map((r: { id: string }) => r.id);
+    
+    assert.ok(
+      requestIds.includes(requestInLeaderScope),
+      'Admin should see request in leader\'s district'
+    );
+    assert.ok(
+      requestIds.includes(requestOutsideScope),
+      'Admin should see request outside leader\'s district'
+    );
+  });
+
+  it('Steward sees verification requests from all districts', async () => {
+    const res = await fetchApiAs('steward', '/api/app/verification');
+    assert.strictEqual(res.status, 200, 'Steward should be able to list all verification requests');
+    
+    const body = await res.json();
+    const requestIds = body.data.map((r: { id: string }) => r.id);
+    
+    assert.ok(
+      requestIds.includes(requestInLeaderScope),
+      'Steward should see request in leader\'s district'
+    );
+    assert.ok(
+      requestIds.includes(requestOutsideScope),
+      'Steward should see request outside leader\'s district'
+    );
+  });
+
+  it('Viewer cannot access verification requests', async () => {
+    const res = await fetchApiAs('viewer', '/api/app/verification');
+    assert.strictEqual(res.status, 403, 'Viewer should be denied access');
   });
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from '../context/AuthContext';
 import type { Correction, CorrectionCategory } from '../types';
+import { apiGet, apiPost } from '../lib/api';
 
 const CATEGORY_LABELS: Record<CorrectionCategory, string> = {
   address: 'Address',
@@ -20,7 +20,6 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
 };
 
 export function MyRequestsView() {
-  const { getIdToken } = useAuth();
   const [requests, setRequests] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,14 +31,11 @@ export function MyRequestsView() {
     try {
       setLoading(true);
       setError(null);
-      const token = await getIdToken();
       const statuses = ['pending', 'approved', 'rejected', 'cancelled'];
       const allRequests: Correction[] = [];
 
       for (const status of statuses) {
-        const response = await fetch(`/api/app/corrections?status=${status}&myRequests=true`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await apiGet(`/api/app/corrections?status=${status}&myRequests=true`);
         if (response.ok) {
           const { data } = await response.json();
           allRequests.push(...(data || []));
@@ -56,7 +52,7 @@ export function MyRequestsView() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken]);
+  }, []);
 
   useEffect(() => {
     loadRequests();
@@ -68,11 +64,7 @@ export function MyRequestsView() {
     try {
       setCancelling(id);
       setActionError(null);
-      const token = await getIdToken();
-      const response = await fetch(`/api/app/corrections/${id}/cancel`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiPost(`/api/app/corrections/${id}/cancel`);
       if (!response.ok) {
         const { error: err } = await response.json().catch(() => ({}));
         throw new Error(err?.message || 'Failed to cancel request');

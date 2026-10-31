@@ -13,6 +13,7 @@ import { AssignmentPanel } from './AssignmentPanel';
 import { StoreVerificationPanel } from './StoreVerificationPanel';
 import { CapacityBadge, VacantBadge } from './CapacityBadge';
 import { ReportProblemDialog } from './ReportProblemDialog';
+import { apiGet, apiPost } from '../lib/api';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -33,7 +34,7 @@ export function LocationDetailView() {
     isActive: boolean;
   }[]>([]);
   
-  const { getIdToken, authUser } = useAuth();
+  const { authUser } = useAuth();
   const navigate = useNavigate();
   
   const editPermissions = authUser && location
@@ -46,11 +47,8 @@ export function LocationDetailView() {
     try {
       setLoading(true);
       setError(null);
-      const token = await getIdToken();
       
-      const response = await fetch(`/api/app/locations/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiGet(`/api/app/locations/${id}`);
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -68,15 +66,12 @@ export function LocationDetailView() {
     } finally {
       setLoading(false);
     }
-  }, [id, getIdToken]);
+  }, [id]);
   
   const fetchAssignments = useCallback(async () => {
     if (!id) return;
     try {
-      const token = await getIdToken();
-      const response = await fetch(`/api/app/assignments/location/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiGet(`/api/app/assignments/location/${id}`);
       if (response.ok) {
         const { data } = await response.json();
         setAssignments(data);
@@ -84,7 +79,7 @@ export function LocationDetailView() {
     } catch {
       console.error('Failed to fetch assignments');
     }
-  }, [id, getIdToken]);
+  }, [id]);
   
   useEffect(() => {
     fetchLocation();
@@ -230,11 +225,7 @@ export function LocationDetailView() {
                   {(!location.activeClosure.type || location.activeClosure.type === 'same_day') && (
                     <button
                       onClick={async () => {
-                        const token = await getIdToken();
-                        const resp = await fetch(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/renew`, {
-                          method: 'POST',
-                          headers: { Authorization: `Bearer ${token}` },
-                        });
+                        const resp = await apiPost(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/renew`);
                         if (!resp.ok) {
                           const err = await resp.json().catch(() => ({}));
                           alert(err.error?.message || 'Failed to renew closure');
@@ -254,11 +245,7 @@ export function LocationDetailView() {
                   </button>
                   <button
                     onClick={async () => {
-                      const token = await getIdToken();
-                      await fetch(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/end`, {
-                        method: 'POST',
-                        headers: { Authorization: `Bearer ${token}` },
-                      });
+                      await apiPost(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/end`);
                       fetchLocation();
                     }}
                     className="text-sm bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 min-h-[44px]"

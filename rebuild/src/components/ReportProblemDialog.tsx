@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
 import type { Location, CorrectionCategory } from '../types';
+import { apiPost } from '../lib/api';
 
 interface Props {
   location: Location;
@@ -19,7 +19,6 @@ const CATEGORIES: { value: CorrectionCategory; label: string; description: strin
 ];
 
 export function ReportProblemDialog({ location, onClose, onSuccess }: Props) {
-  const { getIdToken } = useAuth();
   const [category, setCategory] = useState<CorrectionCategory | ''>('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -36,18 +35,10 @@ export function ReportProblemDialog({ location, onClose, onSuccess }: Props) {
       setSubmitting(true);
       setError(null);
 
-      const token = await getIdToken();
-      const response = await fetch('/api/app/corrections', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          locationId: location.id,
-          category,
-          proposedNote: note.trim() || undefined,
-        }),
+      const response = await apiPost('/api/app/corrections', {
+        locationId: location.id,
+        category,
+        proposedNote: note.trim() || undefined,
       });
 
       if (!response.ok) {

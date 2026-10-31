@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout } from './components/AppLayout';
 import { DirectoryView } from './components/DirectoryView';
@@ -25,8 +25,17 @@ function CorrectionsQueuePage() {
   return <CorrectionsQueue onBack={() => navigate('/')} />;
 }
 
-function ProtectedRoute({ children, withLayout = true }: { children: React.ReactNode; withLayout?: boolean }) {
-  const { user, loading } = useAuth();
+function ProtectedRoute({ 
+  children, 
+  withLayout = true,
+  storeAllowed = false,
+}: { 
+  children: React.ReactNode; 
+  withLayout?: boolean;
+  storeAllowed?: boolean;
+}) {
+  const { user, loading, isStoreSession, storeSession } = useAuth();
+  const isAuthenticated = !!user || isStoreSession;
   
   if (loading) {
     return (
@@ -39,8 +48,13 @@ function ProtectedRoute({ children, withLayout = true }: { children: React.React
     );
   }
   
-  if (!user) {
+  if (!isAuthenticated) {
     return <Navigate to="/signin" replace />;
+  }
+  
+  if (isStoreSession && storeSession?.locationId && !storeAllowed) {
+    const storeLocationId = storeSession.locationId;
+    return <Navigate to={`/location/${storeLocationId}`} replace />;
   }
   
   if (withLayout) {
@@ -48,6 +62,33 @@ function ProtectedRoute({ children, withLayout = true }: { children: React.React
   }
   
   return <>{children}</>;
+}
+
+function StoreLocationRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading, isStoreSession, storeSession } = useAuth();
+  const { id } = useParams<{ id: string }>();
+  const isAuthenticated = !!user || isStoreSession;
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/signin" replace />;
+  }
+  
+  if (isStoreSession && storeSession?.locationId && id !== storeSession.locationId) {
+    return <Navigate to={`/location/${storeSession.locationId}`} replace />;
+  }
+  
+  return <AppLayout>{children}</AppLayout>;
 }
 
 function OptionalAuthLayout({ children }: { children: React.ReactNode }) {
@@ -89,9 +130,9 @@ function AppRoutes() {
       <Route
         path="/location/:id"
         element={
-          <ProtectedRoute>
+          <StoreLocationRoute>
             <LocationDetailView />
-          </ProtectedRoute>
+          </StoreLocationRoute>
         }
       />
       <Route
@@ -185,7 +226,7 @@ function AppRoutes() {
       <Route
         path="/my-requests"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute storeAllowed>
             <MyRequestsView />
           </ProtectedRoute>
         }

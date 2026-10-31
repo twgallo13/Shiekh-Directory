@@ -3,6 +3,7 @@ import { X, Save, AlertTriangle } from 'lucide-react';
 import type { LocationDetail, StandardHours, Address, DayOfWeek, ClosureType, ClosureReasonCode, StoreTypeCode } from '../types';
 import { STORE_TYPES } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { apiPatch, apiPost } from '../lib/api';
 
 interface EditLocationPanelProps {
   location: LocationDetail;
@@ -42,7 +43,7 @@ const CLOSURE_TYPES: { type: ClosureType; label: string; description: string }[]
 ];
 
 export function EditLocationPanel({ location, field, onSave, onCancel }: EditLocationPanelProps) {
-  const { getIdToken, authUser } = useAuth();
+  const { authUser } = useAuth();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -99,7 +100,6 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
     setSaving(true);
 
     try {
-      const token = await getIdToken();
       let changes: Record<string, unknown> = {};
 
       if (field === 'contact') {
@@ -124,16 +124,9 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
         return;
       }
 
-      const response = await fetch(`/api/app/edit/locations/${location.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          changes,
-          expectedVersion: location.version,
-        }),
+      const response = await apiPatch(`/api/app/edit/locations/${location.id}`, {
+        changes,
+        expectedVersion: location.version,
       });
 
       const result = await response.json();
@@ -185,29 +178,20 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
     setSaving(true);
 
     try {
-      const token = await getIdToken();
-      
       // Build the reason text from code or custom text
       const reasonLabel = CLOSURE_REASONS.find(r => r.code === closureReasonCode)?.label || closureReasonCode;
       const reason = closureReasonText.trim() || reasonLabel;
 
-      const response = await fetch(`/api/app/edit/locations/${location.id}/closures`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          reason,
-          type: closureType,
-          reasonCode: closureReasonCode || undefined,
-          reasonNote: closureReasonNote.trim() || undefined,
-          publicExplanation: closurePublicExplanation.trim() || undefined,
-          endsAt: closureType === 'multi_day' ? new Date(closureEndsAt).toISOString() : undefined,
-          ownerId: (closureType === 'multi_day' || closureType === 'unknown_end') ? closureOwnerId || undefined : undefined,
-          ownerName: (closureType === 'multi_day' || closureType === 'unknown_end') ? closureOwnerName.trim() || undefined : undefined,
-          nextReviewDate: closureType === 'unknown_end' ? closureNextReviewDate : undefined,
-        }),
+      const response = await apiPost(`/api/app/edit/locations/${location.id}/closures`, {
+        reason,
+        type: closureType,
+        reasonCode: closureReasonCode || undefined,
+        reasonNote: closureReasonNote.trim() || undefined,
+        publicExplanation: closurePublicExplanation.trim() || undefined,
+        endsAt: closureType === 'multi_day' ? new Date(closureEndsAt).toISOString() : undefined,
+        ownerId: (closureType === 'multi_day' || closureType === 'unknown_end') ? closureOwnerId || undefined : undefined,
+        ownerName: (closureType === 'multi_day' || closureType === 'unknown_end') ? closureOwnerName.trim() || undefined : undefined,
+        nextReviewDate: closureType === 'unknown_end' ? closureNextReviewDate : undefined,
       });
 
       if (!response.ok) {

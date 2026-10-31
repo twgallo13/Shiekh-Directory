@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   getAuth,
@@ -13,6 +13,7 @@ import {
   type User,
 } from 'firebase/auth';
 import type { AuthUser } from '../types';
+import { setAuthGetter } from '../lib/api';
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
@@ -61,6 +62,7 @@ interface AuthContextType {
   authUser: AuthUser | null;
   storeSession: StoreSessionData | null;
   loading: boolean;
+  isStoreSession: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -78,6 +80,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [storeSession, setStoreSession] = useState<StoreSessionData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [storeSessionChecked, setStoreSessionChecked] = useState(false);
+  const [firebaseChecked, setFirebaseChecked] = useState(false);
+  
+  const isStoreSession = storeSession?.authenticated === true && !user;
+  
+  const userRef = useRef<User | null>(null);
+  const storeSessionRef = useRef<StoreSessionData | null>(null);
+  
+  useEffect(() => {
+    userRef.current = user;
+    storeSessionRef.current = storeSession;
+  }, [user, storeSession]);
 
   const getStoreSessionHeader = useCallback((): string | null => {
     return null;
@@ -92,6 +106,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     return user.getIdToken();
   }, [user]);
+
+  useEffect(() => {
+    setAuthGetter(async () => {
+      const currentUser = userRef.current;
+      const currentStoreSession = storeSessionRef.current;
+      
+      if (currentStoreSession?.authenticated && !currentUser) {
+        return { isStoreSession: true };
+      }
+      
+      if (currentUser) {
+        let token: string;
+        if (import.meta.env.DEV || import.meta.env.VITE_USE_EMULATOR === 'true') {
+          token = `test-token-${currentUser.uid}`;
+        } else {
+          token = await currentUser.getIdToken();
+        }
+        return { isStoreSession: false, token };
+      }
+      
+      return { isStoreSession: false };
+    });
+  }, []);
 
   const refreshStoreSession = useCallback(async () => {
     try {
@@ -172,33 +209,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, getIdToken]);
   
   useEffect(() => {
+    if (storeSessionChecked && firebaseChecked) {
+      if (user) {
+        loadAuthUser().finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    }
+  }, [storeSessionChecked, firebaseChecked, user, loadAuthUser]);
+
+  useEffect(() => {
     if (!auth) {
-      setLoading(false);
+      setFirebaseChecked(true);
       return;
     }
     
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      if (!user) {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      if (!firebaseUser) {
         setAuthUser(null);
-        setLoading(false);
       }
+      setFirebaseChecked(true);
     });
     
     return unsubscribe;
   }, []);
-  
-  useEffect(() => {
-    if (user) {
-      loadAuthUser().finally(() => setLoading(false));
-    }
-  }, [user, loadAuthUser]);
 
   useEffect(() => {
     refreshStoreSession().finally(() => {
-      if (!user) {
-        setLoading(false);
-      }
+      setStoreSessionChecked(true);
     });
   }, [refreshStoreSession]);
   
@@ -244,7 +283,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, 
       authUser, 
       storeSession,
-      loading, 
+      loading,
+      isStoreSession,
       signIn, 
       signInWithGoogle: signInWithGoogleHandler, 
       signOut, 

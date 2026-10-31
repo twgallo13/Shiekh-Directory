@@ -1,0 +1,18 @@
+personName,role,storeNumber,districtCode,regionCode,slot,startDate
+Maria Santos,SM,007,,,primary,2024-01-15
+Maria Santos,DM,,LA-CENTRAL,,primary,2024-06-01
+James Rodriguez,SM,012,,,primary,2023-08-01
+Ashley Chen,SM,025,,,primary,2024-03-10
+DeShawn Williams,SM,031,,,primary,2023-11-15
+Priya Patel,SM,044,,,primary,2024-02-01
+Marcus Johnson,SM,056,,,primary,2023-07-01
+Sarah Thompson,SM,063,,,primary,2024-05-01
+David Kim,SM,078,,,primary,2024-01-20
+Nicole Brown,SM,085,,,primary,2023-09-15
+Michael O'Brien,SM,091,,,primary,2024-04-01
+Jessica Martinez,ASM,007,,,primary,2024-02-01
+Robert Taylor,ASM,012,,,primary,2024-01-01
+Emily Wilson,DM,,LA-NORTH,,primary,2024-01-01
+Christopher Lee,DM,,LV-STRIP,,primary,2023-06-01
+Amanda Garcia,RM,,,WEST,primary,2023-01-01
+David Jones,DM,,LA-CENTRAL,,additional,2024-09-01

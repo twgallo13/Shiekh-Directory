@@ -1,0 +1,125 @@
+{
+  "01": {
+    "standardHours": {
+      "sunday": { "open": "08:00", "close": "17:00", "isClosed": true },
+      "monday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "tuesday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "wednesday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "thursday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "friday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "saturday": { "open": "08:00", "close": "17:00", "isClosed": true }
+    },
+    "holidayHours": [
+      {
+        "id": "hol-test-01",
+        "holidayName": "Thanksgiving Day",
+        "date": "2026-11-26",
+        "hours": { "open": "00:00", "close": "00:00", "isClosed": true }
+      },
+      {
+        "id": "hol-test-02",
+        "holidayName": "Christmas Day",
+        "date": "2026-12-25",
+        "hours": { "open": "00:00", "close": "00:00", "isClosed": true }
+      }
+    ],
+    "hoursMode": "template",
+    "timeZone": "America/Los_Angeles"
+  },
+  "07": {
+    "standardHours": {
+      "sunday": { "open": "11:00", "close": "18:00", "isClosed": false },
+      "monday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "tuesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "wednesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "thursday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "friday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "saturday": { "open": "10:00", "close": "21:00", "isClosed": false }
+    },
+    "timeZone": "America/Los_Angeles"
+  },
+  "09": {
+    "standardHours": {
+      "sunday": { "open": "11:00", "close": "18:00", "isClosed": false },
+      "monday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "tuesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "wednesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "thursday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "friday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "saturday": { "open": "10:00", "close": "21:00", "isClosed": false }
+    },
+    "timeZone": "America/Los_Angeles"
+  },
+  "11": {
+    "standardHours": {
+      "sunday": { "open": "11:00", "close": "19:00", "isClosed": false },
+      "monday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "tuesday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "wednesday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "thursday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "friday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "saturday": { "open": "10:00", "close": "21:00", "isClosed": false }
+    },
+    "timeZone": "America/Los_Angeles"
+  },
+  "14": {
+    "standardHours": {
+      "sunday": { "open": "11:00", "close": "18:00", "isClosed": false },
+      "monday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "tuesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "wednesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "thursday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "friday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "saturday": { "open": "10:00", "close": "21:00", "isClosed": false }
+    },
+    "timeZone": "America/Los_Angeles"
+  },
+  "29": {
+    "standardHours": {
+      "sunday": { "open": "11:00", "close": "19:00", "isClosed": false },
+      "monday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "tuesday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "wednesday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "thursday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "friday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "saturday": { "open": "10:00", "close": "21:00", "isClosed": false }
+    },
+    "timeZone": "America/Los_Angeles"
+  },
+  "34": {
+    "standardHours": {
+      "sunday": { "open": "11:00", "close": "18:00", "isClosed": false },
+      "monday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "tuesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "wednesday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "thursday": { "open": "10:00", "close": "20:00", "isClosed": false },
+      "friday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "saturday": { "open": "10:00", "close": "21:00", "isClosed": false }
+    },
+    "timeZone": "America/Los_Angeles"
+  },
+  "51": {
+    "standardHours": {
+      "sunday": { "open": "11:00", "close": "19:00", "isClosed": false },
+      "monday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "tuesday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "wednesday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "thursday": { "open": "10:00", "close": "21:00", "isClosed": false },
+      "friday": { "open": "10:00", "close": "22:00", "isClosed": false },
+      "saturday": { "open": "10:00", "close": "22:00", "isClosed": false }
+    },
+    "timeZone": "America/Los_Angeles"
+  },
+  "86": {
+    "standardHours": {
+      "sunday": { "open": "00:00", "close": "00:00", "isClosed": true },
+      "monday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "tuesday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "wednesday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "thursday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "friday": { "open": "08:00", "close": "17:00", "isClosed": false },
+      "saturday": { "open": "00:00", "close": "00:00", "isClosed": true }
+    },
+    "timeZone": "America/Los_Angeles"
+  }
+}

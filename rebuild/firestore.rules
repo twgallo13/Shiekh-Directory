@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All writes must go through the server API
+    // Client can read if signed in
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Locations collection
+    match /locations/{locationId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Server-only writes
+      
+      // Hours exceptions subcollection
+      match /hoursExceptions/{exceptionId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+      
+      // Closures subcollection
+      match /closures/{closureId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+    }
+    
+    // Regions collection
+    match /regions/{regionId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    
+    // Districts collection
+    match /districts/{districtId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    
+    // People collection
+    match /people/{personId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    
+    // Assignments collection
+    match /assignments/{assignmentId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    
+    // testTokens collection - server-only, no client access
+    match /testTokens/{tokenId} {
+      allow read: if false;
+      allow write: if false;
+    }
+    
+    // storeAuthTokens collection - server-only, no client access
+    match /storeAuthTokens/{tokenId} {
+      allow read: if false;
+      allow write: if false;
+    }
+    
+    // storeSessions collection - server-only, no client access
+    match /storeSessions/{sessionId} {
+      allow read: if false;
+      allow write: if false;
+    }
+  }
+}

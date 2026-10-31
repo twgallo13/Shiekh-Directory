@@ -297,6 +297,11 @@ export function createVerificationRouter(db: Firestore): Router {
         console.error(`[Verification] Email failed for ${location.storeNumber}: ${mailResult.error}`);
       }
 
+      const emailTextRedacted = email.text
+        .replace(confirmUrl, confirmUrlRedacted)
+        .replace(updateUrl, updateUrlRedacted)
+        .replace(new RegExp(verificationUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `${appUrl}/verify/[REDACTED]`);
+
       await db.collection('mailLog').add({
         to: location.sharedInboxEmail,
         type: 'verification-request',
@@ -308,6 +313,7 @@ export function createVerificationRouter(db: Firestore): Router {
         updateUrl: updateUrlRedacted,
         confirmTokenId,
         updateTokenId,
+        emailBody: emailTextRedacted,
         sentAt: now.toISOString(),
         sentBy: authUser.uid,
         sentByEmail: authUser.email,

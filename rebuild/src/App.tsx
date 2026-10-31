@@ -11,6 +11,7 @@ import { PrintableDirectoryView } from './components/PrintableDirectoryView';
 import { AdminView } from './components/AdminView';
 import { PeopleListView } from './components/PeopleListView';
 import { HierarchyView } from './components/HierarchyView';
+import { SettingsView } from './components/SettingsView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -119,6 +120,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <HierarchyView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <SettingsView />
           </ProtectedRoute>
         }
       />

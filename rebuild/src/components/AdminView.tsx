@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight } from 'lucide-react';
+import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { ComingSoonPlaceholder, ComingSoonSection } from './ComingSoonPlaceholder';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log';
 
 interface User {
   id: string;
@@ -87,7 +88,7 @@ export function AdminView() {
               <h1 className="text-xl font-bold text-gray-900">Admin</h1>
             </div>
           </div>
-          <div className="flex gap-1 mt-3 -mb-px">
+          <div className="flex gap-1 mt-3 -mb-px overflow-x-auto">
             <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users}>
               Users
             </TabButton>
@@ -100,6 +101,12 @@ export function AdminView() {
             <TabButton id="import" active={activeTab === 'import'} onClick={setActiveTab} icon={Upload}>
               Import
             </TabButton>
+            <TabButton id="communications" active={activeTab === 'communications'} onClick={setActiveTab} icon={Mail}>
+              Communications
+            </TabButton>
+            <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History}>
+              Audit Log
+            </TabButton>
           </div>
         </div>
       </div>
@@ -109,6 +116,8 @@ export function AdminView() {
         {activeTab === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
         {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
         {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
+        {activeTab === 'communications' && <CommunicationsTab />}
+        {activeTab === 'audit-log' && <AuditLogTab />}
       </div>
     </div>
   );
@@ -731,6 +740,22 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           onCreated={handleCreated}
         />
       )}
+
+      {/* Planned API features */}
+      <div className="space-y-3 mt-6 pt-6 border-t border-gray-200">
+        <ComingSoonPlaceholder
+          title="Edit Client Permissions"
+          description="Modify scopes and access settings for existing API clients."
+        />
+        <ComingSoonPlaceholder
+          title="Pause / Resume Clients"
+          description="Temporarily disable an API client without revoking its token."
+        />
+        <ComingSoonPlaceholder
+          title="API Documentation"
+          description="Interactive documentation for the external API endpoints."
+        />
+      </div>
     </div>
   );
 }
@@ -1434,6 +1459,110 @@ function ImportTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
             </ul>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CommunicationsTab() {
+  return (
+    <div className="space-y-6">
+      {/* Email Templates - Read-only preview */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Mail className="w-5 h-5 text-blue-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Email Templates</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Preview of built-in email templates used for store verification.
+        </p>
+        <div className="space-y-3">
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-medium text-gray-800">Verification Request</h3>
+              <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">Built-in</span>
+            </div>
+            <p className="text-sm text-gray-600">
+              Sent to store shared inbox when hours verification is requested.
+            </p>
+          </div>
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-medium text-gray-800">Verification Reminder</h3>
+              <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">Built-in</span>
+            </div>
+            <p className="text-sm text-gray-600">
+              Sent 3 days after initial request if store has not responded.
+            </p>
+          </div>
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-medium text-gray-800">Verification Confirmation</h3>
+              <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">Built-in</span>
+            </div>
+            <p className="text-sm text-gray-600">
+              Sent to store after steward approves their verification response.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Email Sending Settings - Current Mode */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Settings className="w-5 h-5 text-gray-600" />
+          <h2 className="text-lg font-semibold text-gray-900">Email Sending Settings</h2>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle className="w-4 h-4 text-amber-600" />
+            <span className="font-medium text-amber-800">Current Mode</span>
+          </div>
+          <p className="text-sm text-amber-700">
+            <strong>Log-only</strong> — emails are not sent until cut-over is enabled.
+          </p>
+          <p className="text-xs text-amber-600 mt-2">
+            Set <code className="bg-amber-100 px-1 py-0.5 rounded">MAIL_CUTOVER_ENABLED=true</code> to enable sending.
+          </p>
+        </div>
+      </div>
+
+      {/* Planned Features */}
+      <div className="space-y-4">
+        <ComingSoonPlaceholder
+          title="Notification Rules"
+          description="Configure when and how notifications are sent for different events."
+        />
+        <ComingSoonPlaceholder
+          title="Sent Mail Log"
+          description="View history of all sent emails with delivery status and timestamps."
+        />
+        <ComingSoonPlaceholder
+          title="User Invitations"
+          description="Send invitation emails to new users to set up their accounts."
+        />
+      </div>
+    </div>
+  );
+}
+
+function AuditLogTab() {
+  return (
+    <div className="space-y-6">
+      <ComingSoonSection
+        title="All-Store Audit Log"
+        description="View a unified timeline of all changes across all stores, including hours edits, closures, assignments, and verification responses."
+      />
+      
+      <div className="space-y-4">
+        <ComingSoonPlaceholder
+          title="Closures Board"
+          description="Dashboard view of all current and upcoming store closures across the company."
+        />
+        <ComingSoonPlaceholder
+          title="Data Quality / Stale Stores"
+          description="Identify stores with outdated information, missing managers, or unverified hours."
+        />
       </div>
     </div>
   );

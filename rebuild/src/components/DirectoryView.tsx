@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store, Printer, Users, Network, FileCheck } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store, Printer, Users, Network, FileCheck, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -269,6 +269,16 @@ export function DirectoryView() {
                 Admin
               </button>
             )}
+            <button
+              onClick={() => {
+                navigate('/settings');
+                setMenuOpen(false);
+              }}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </button>
             <button
               onClick={() => {
                 signOut();

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem } from '../types';
+import { ComingSoonPlaceholder } from './ComingSoonPlaceholder';
 
 export function VerificationRequestsView() {
   const navigate = useNavigate();
@@ -123,6 +124,15 @@ export function VerificationRequestsView() {
             </button>
           ))}
         </div>
+
+        {/* Bulk verification placeholder - Admin/Steward only */}
+        {isAdminOrSteward && (
+          <ComingSoonPlaceholder
+            title="Bulk Verification by District/Region"
+            description="Send verification requests to all stores in a district or region at once."
+            className="mb-4"
+          />
+        )}
 
         {error && (
           <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg mb-4 flex items-start gap-2">

@@ -8,14 +8,17 @@ export function SignInView() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const { signIn, signInWithGoogle } = useAuth();
+  const [forgotPassword, setForgotPassword] = useState(false);
+  const { signIn, signInWithGoogle, sendPasswordReset } = useAuth();
   const navigate = useNavigate();
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
     
     try {
@@ -23,6 +26,36 @@ export function SignInView() {
       navigate('/');
     } catch (err) {
       setError('Invalid email or password');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      await sendPasswordReset(email);
+      setSuccess('Password reset email sent. Check your inbox (or store shared inbox).');
+      setForgotPassword(false);
+    } catch (err: unknown) {
+      const firebaseError = err as { code?: string };
+      if (firebaseError.code === 'auth/user-not-found') {
+        setError('No account found with this email');
+      } else if (firebaseError.code === 'auth/invalid-email') {
+        setError('Invalid email address');
+      } else {
+        setError('Failed to send reset email. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -58,49 +91,110 @@ export function SignInView() {
         </div>
         
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {error}
+          {forgotPassword ? (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="text-center mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Reset Password</h2>
+                <p className="text-sm text-gray-600">Enter your email to receive a reset link</p>
               </div>
-            )}
-            
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
-            </div>
-            
-            <button
-              type="submit"
-              disabled={loading || googleLoading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </button>
-          </form>
+              
+              {error && (
+                <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+              
+              <div>
+                <label htmlFor="reset-email" className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  id="reset-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="store@shiekhshoes.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+              
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Sending...' : 'Send Reset Link'}
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => { setForgotPassword(false); setError(''); }}
+                className="w-full text-gray-600 hover:text-gray-900 text-sm"
+              >
+                Back to Sign In
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && (
+                <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+              
+              {success && (
+                <div className="bg-green-50 text-green-700 px-4 py-3 rounded-lg text-sm">
+                  {success}
+                </div>
+              )}
+              
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+              
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { setForgotPassword(true); setError(''); setSuccess(''); }}
+                    className="text-sm text-blue-600 hover:text-blue-700"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+              
+              <button
+                type="submit"
+                disabled={loading || googleLoading}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+          )}
           
           <div className="mt-6 pt-6 border-t border-gray-200">
             <button

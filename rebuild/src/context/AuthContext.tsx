@@ -7,6 +7,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
+  sendPasswordResetEmail,
   connectAuthEmulator,
   type Auth,
   type User,
@@ -54,6 +55,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string>;
   refreshAuthUser: () => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -167,8 +169,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadAuthUser();
   };
   
+  const sendPasswordReset = async (email: string) => {
+    if (!auth) throw new Error('Auth not initialized');
+    await sendPasswordResetEmail(auth, email);
+  };
+  
   return (
-    <AuthContext.Provider value={{ user, authUser, loading, signIn, signInWithGoogle: signInWithGoogleHandler, signOut, getIdToken, refreshAuthUser }}>
+    <AuthContext.Provider value={{ user, authUser, loading, signIn, signInWithGoogle: signInWithGoogleHandler, signOut, getIdToken, refreshAuthUser, sendPasswordReset }}>
       {children}
     </AuthContext.Provider>
   );

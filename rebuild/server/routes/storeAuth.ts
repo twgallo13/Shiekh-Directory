@@ -87,34 +87,34 @@ export function createStoreAuthRouter(db: Firestore): Router {
         });
       }
 
-      const storeNumberPadded = String(parsed.storeNumber).padStart(3, '0');
-      const locationQuery = await db.collection('locations')
-        .where('storeNumber', '==', storeNumberPadded)
-        .where('lifecycle', '==', 'active')
-        .limit(1)
-        .get();
+      const storeNum = parsed.storeNumber;
+      const storeNumberFormats = [
+        String(storeNum).padStart(2, '0'),
+        String(storeNum),
+        String(storeNum).padStart(3, '0'),
+      ];
+      const uniqueFormats = [...new Set(storeNumberFormats)];
 
-      if (locationQuery.empty) {
-        const locationQueryNoPad = await db.collection('locations')
-          .where('storeNumber', '==', String(parsed.storeNumber))
+      let locationDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+      
+      for (const format of uniqueFormats) {
+        const query = await db.collection('locations')
+          .where('storeNumber', '==', format)
           .where('lifecycle', '==', 'active')
           .limit(1)
           .get();
-
-        if (locationQueryNoPad.empty) {
-          return res.status(404).json({
-            error: { code: 'store_not_found', message: 'No active store found for this email', requestId: res.locals.requestId },
-          });
+        
+        if (!query.empty) {
+          locationDoc = query.docs[0];
+          break;
         }
       }
 
-      const locationDoc = locationQuery.empty 
-        ? (await db.collection('locations')
-            .where('storeNumber', '==', String(parsed.storeNumber))
-            .where('lifecycle', '==', 'active')
-            .limit(1)
-            .get()).docs[0]
-        : locationQuery.docs[0];
+      if (!locationDoc) {
+        return res.status(404).json({
+          error: { code: 'store_not_found', message: 'No active store found for this email', requestId: res.locals.requestId },
+        });
+      }
 
       const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
 

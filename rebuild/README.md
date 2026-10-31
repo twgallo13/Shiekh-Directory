@@ -747,8 +747,93 @@ New `VerificationRequest` type with:
 
 ---
 
-## What's Not Included (Future Slices)
+## Cut-Over Features
+
+These features were added to prepare for production cut-over:
+
+### Legacy CSV Import
+
+Admin import screen that maps legacy export columns to the new model:
+- Dry-run preview with create/update/skip/error counts
+- Stable IDs (uses LocationId first, then StoreNumber)
+- Store numbers preserved as strings (e.g., "007")
+- Session-based workflow with 30-minute expiry
+
+Access: Admin role → Import tab → "Import from Legacy"
+
+### Automated Backups
+
+- **Weekly backup**: Cloud Scheduler runs Sunday 3am Pacific
+- **Pre-import backup**: Triggered before any import apply
+- **Restore script**: `scripts/restore-backup.ts` with explicit `--project` flag required
+- All backups logged to audit trail
+
+See `docs/ROLLBACK.md` for restore procedures.
+
+### Verification Emails
+
+- **Pluggable mail sender**: Firebase Trigger Email or SMTP modes
+- **TEST inbox allowlist**: `TEST_EMAIL_ALLOWLIST` env var controls recipients
+- **Cut-over mode**: `MAIL_CUTOVER_ENABLED=true` allows real store emails
+- **Reminder job**: Sends reminders at 3 days and 1 day before expiry
+- **Retry logic**: 3 attempts with exponential backoff
+
+**Environment Variables:**
+```bash
+MAIL_MODE=firebase|smtp|disabled
+TEST_EMAIL_ALLOWLIST=test@example.com,*@testdomain.com
+MAIL_CUTOVER_ENABLED=false  # Set true for production
+SMTP_HOST=smtp.example.com  # For SMTP mode
+```
+
+### People & Hierarchy Management
+
+Full CRUD for people and organizational hierarchy:
+
+**People:**
+- `POST /api/app/people` - Create person
+- `PATCH /api/app/people/:id` - Update with version conflict detection
+- `POST /api/app/people/:id/retire` - Retire and end assignments
+- `POST /api/app/people/:id/reactivate` - Reactivate retired person
+
+**Hierarchy:**
+- `GET /api/app/hierarchy/tree` - Full tree with RM/DM/SM names
+- `POST /api/app/hierarchy/regions` - Create region
+- `PATCH /api/app/hierarchy/regions/:id` - Rename region
+- `POST /api/app/hierarchy/regions/:id/retire` - Retire empty region
+- `POST /api/app/hierarchy/districts` - Create district
+- `PATCH /api/app/hierarchy/districts/:id` - Rename or move to new region
+- `POST /api/app/hierarchy/districts/:id/retire` - Retire empty district
+- `POST /api/app/hierarchy/locations` - Create location
+- `PATCH /api/app/hierarchy/locations/:id/move` - Move to new district
+- `POST /api/app/hierarchy/locations/:id/retire` - Retire location
+
+### Access Control Updates
+
+- **Print/Export**: Restricted to Leader, Steward, Admin (Viewer/Store see "Access Restricted")
+- **Verification for Leaders**: DMs can view verification requests for stores in their districts
+
+### Forgot Password
+
+Sign-in page includes "Forgot password?" link that sends Firebase password reset email.
+
+---
+
+## What's Not Included
+
+### Not Being Rebuilt (Legacy-Only Features)
+
+The following features exist in the legacy directory but are **intentionally not being rebuilt**:
+
+- **Integrations Tab** - Legacy third-party integrations (replaced by API clients in Admin)
+- **SOP Runbooks** - Operational runbooks (outside scope of directory rebuild)
+- **Secure Mail** - Legacy encrypted messaging (replaced by shared inbox email)
+- **Transition Wizard** - Legacy data migration tool (not needed in new system)
+
+These features were specific to the legacy architecture and are either replaced by simpler approaches or out of scope for the directory rebuild.
+
+### Future Enhancements
 
 - Legacy API compatibility (v1/v2/v3) - Slice 8
 - PDF exports
-- User management UI
+- User management UI (basic admin exists, full UI pending)

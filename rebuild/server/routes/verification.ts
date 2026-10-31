@@ -6,6 +6,10 @@ import type {
   AuditLogEntry,
   VerificationRequest,
 } from '../../src/types';
+import { createMailService } from '../services/mail';
+import { createVerificationRequestEmail } from '../services/mailTemplates';
+
+const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
 
 export function createVerificationRouter(db: Firestore): Router {
   const router = Router();
@@ -124,6 +128,38 @@ export function createVerificationRouter(db: Firestore): Router {
 
       await requestRef.set(verificationRequest);
 
+      const mailService = createMailService(db);
+      const verificationUrl = `${APP_URL}/verify/${requestRef.id}`;
+      const emailData = {
+        storeName: location.name,
+        storeNumber: location.storeNumber,
+        storeEmail: location.sharedInboxEmail,
+        verificationUrl,
+        expiresAt: expiresAt.toISOString(),
+      };
+
+      const email = createVerificationRequestEmail(emailData);
+      const mailResult = await mailService.send(email);
+
+      if (mailResult.success && !mailResult.blocked) {
+        await requestRef.update({
+          emailSent: true,
+          emailMessageId: mailResult.messageId,
+        });
+      } else if (mailResult.blocked) {
+        await requestRef.update({
+          emailSent: false,
+          emailError: mailResult.reason,
+        });
+        console.log(`[Verification] Email blocked for ${location.storeNumber}: ${mailResult.reason}`);
+      } else {
+        await requestRef.update({
+          emailSent: false,
+          emailError: mailResult.error,
+        });
+        console.error(`[Verification] Email failed for ${location.storeNumber}: ${mailResult.error}`);
+      }
+
       await logAudit(db, {
         userId: authUser.uid,
         userEmail: authUser.email,
@@ -136,11 +172,18 @@ export function createVerificationRouter(db: Firestore): Router {
         changes: [
           { field: 'sentTo', newValue: location.sharedInboxEmail },
           { field: 'expiresAt', newValue: expiresAt.toISOString() },
+          { field: 'emailSent', newValue: mailResult.success && !mailResult.blocked },
         ],
       });
 
+      const savedRequest = await requestRef.get();
       return res.status(201).json({
-        data: { id: requestRef.id, ...verificationRequest },
+        data: { id: requestRef.id, ...savedRequest.data() },
+        email: {
+          sent: mailResult.success && !mailResult.blocked,
+          blocked: mailResult.blocked,
+          reason: mailResult.reason || mailResult.error,
+        },
       });
     } catch (error) {
       console.error('Create verification request error:', error);

@@ -375,6 +375,12 @@ export interface VerificationRequest extends RecordMetadata {
   reviewedAt?: string;
   reviewedBy?: string;
   reviewNotes?: string;
+  // Email tracking
+  emailSent?: boolean;
+  emailMessageId?: string;
+  emailError?: string;
+  lastReminderAt?: string;
+  reminderCount?: number;
 }
 
 // === Corrections (requires Steward approval) ===

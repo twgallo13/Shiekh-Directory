@@ -202,7 +202,40 @@ This document maps legacy API fields to the new rebuild model, enabling the rebu
 | `staffing.regionalManager` | Resolved person reference | |
 | `staffing.assistantStoreManagers` | Array of resolved persons | |
 | `staffing.keyHolders` | Array of resolved persons | |
+| `positionStatus.sm` | Position status object | New field with status and holders |
+| `positionStatus.asm` | Position status object | New field with status and holders |
+| `positionStatus.kh` | Position status object | New field with status and holders |
+| `positionStatus.dm` | Position status object | New field with status and holders |
+| `positionStatus.rm` | Position status object | New field with status and holders |
 | `issues` | `[]` | Validation issues |
+
+### Position Status Object
+
+The `positionStatus` object provides structured vacancy and multi-holder information:
+
+```json
+{
+  "sm": {
+    "status": "filled" | "vacant",
+    "holders": [
+      {
+        "personId": "string",
+        "fullName": "string" | null,
+        "capacity": "primary" | "training" | "acting",
+        "slot": "primary" | "additional",
+        "issues": []
+      }
+    ]
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `status` | `"filled"` when at least one holder exists, `"vacant"` otherwise |
+| `holders` | Array of all current holders for this position |
+| `holders[].capacity` | `"primary"` (default), `"training"`, or `"acting"` |
+| `holders[].slot` | Assignment slot: `"primary"` or `"additional"` |
 
 ### Person Reference Object
 
@@ -320,6 +353,32 @@ All errors use consistent JSON shape:
 
 ---
 
+## Assignment Capacity
+
+Assignments now support a `capacity` field indicating the holder's status:
+
+| Capacity | Description | UI Badge |
+|----------|-------------|----------|
+| `primary` | Full capacity, fully trained (default) | None |
+| `training` | Person is in training | "In Training" badge |
+| `acting` | Acting/temporary assignment | "Acting" badge |
+
+### Import Capacity Field
+
+The CSV importer accepts an optional `capacity` column:
+- Valid values: `primary`, `training`, `acting`
+- Blank or invalid values default to `primary`
+- Positions with no assignment rows display as `VACANT` in exports
+
+### Export Vacancy Display
+
+Print and CSV exports show vacancy status:
+- **CSV**: Position columns contain `VACANT` when no holder assigned
+- **Print view**: Red "VACANT" badge displayed for empty positions
+- This applies to: StoreManager, DistrictManager, AssistantStoreManagers, KeyHolders
+
+---
+
 ## Assumptions Made
 
 1. **Custom metadata**: Not implemented in rebuild MVP; return empty `{}` and version hash of empty array
@@ -329,6 +388,7 @@ All errors use consistent JSON shape:
 5. **Hierarchy applicability**: Default to "Applicable" for stores
 6. **Work email in v3**: Requires explicit `district-leadership:contacts:read` scope grant
 7. **Snapshot TTL**: 15 minutes as in legacy
+8. **Assignment capacity**: Defaults to `primary` for existing and imported assignments without explicit capacity
 
 ---
 

@@ -62,7 +62,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
   router.post('/', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
-      const { personId, role, scopeType, scopeId, slot, label, startDate } = req.body;
+      const { personId, role, scopeType, scopeId, slot, capacity, label, startDate } = req.body;
 
       if (!authUser) {
         return res.status(401).json({
@@ -75,6 +75,9 @@ export function createAssignmentsRouter(db: Firestore): Router {
           error: { code: 'invalid_request', message: 'Missing required fields', requestId: res.locals.requestId },
         });
       }
+
+      const validCapacities = ['primary', 'training', 'acting'];
+      const assignmentCapacity = capacity && validCapacities.includes(capacity) ? capacity : 'primary';
 
       if (scopeType === 'location') {
         const editPerms = canEditLocation(authUser, scopeId);
@@ -96,6 +99,36 @@ export function createAssignmentsRouter(db: Firestore): Router {
         });
       }
 
+      // Check for existing primary slot holder if this is a primary slot assignment
+      if (slot === 'primary') {
+        const locationDoc = scopeType === 'location' 
+          ? await db.collection('locations').doc(scopeId).get()
+          : null;
+        const localDate = getLocalDate(locationDoc?.exists ? (locationDoc.data() as Location)?.timeZone : undefined);
+        
+        const existingPrimary = await db.collection('assignments')
+          .where('scopeType', '==', scopeType)
+          .where('scopeId', '==', scopeId)
+          .where('role', '==', role)
+          .where('slot', '==', 'primary')
+          .get();
+        
+        const activePrimary = existingPrimary.docs.find(doc => {
+          const a = doc.data() as Assignment;
+          return isAssignmentActive(a, localDate);
+        });
+        
+        if (activePrimary) {
+          return res.status(400).json({
+            error: { 
+              code: 'primary_exists', 
+              message: `A primary ${role} is already assigned to this position. End the existing assignment first or use an additional slot.`,
+              requestId: res.locals.requestId 
+            },
+          });
+        }
+      }
+
       const scopeName = await getScopeName(db, scopeType, scopeId);
       const personName = personDoc.data()?.fullName;
 
@@ -107,6 +140,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
         scopeType,
         scopeId,
         slot,
+        capacity: assignmentCapacity,
         label: label || undefined,
         startDate: startDate || now.slice(0, 10),
         createdAt: now,
@@ -129,6 +163,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
         changes: [
           { field: 'role', newValue: role },
           { field: 'slot', newValue: slot },
+          { field: 'capacity', newValue: assignmentCapacity },
           { field: 'scope', newValue: `${scopeType}:${scopeName}` },
         ],
       });
@@ -148,7 +183,7 @@ export function createAssignmentsRouter(db: Firestore): Router {
     try {
       const { id } = req.params;
       const authUser = res.locals.authUser as AuthUser;
-      const { slot, label, endDate } = req.body;
+      const { slot, capacity, label, endDate } = req.body;
 
       if (!authUser) {
         return res.status(401).json({
@@ -188,8 +223,44 @@ export function createAssignmentsRouter(db: Firestore): Router {
       const changes: AuditChange[] = [];
 
       if (slot !== undefined && slot !== assignment.slot) {
+        // If changing to primary slot, check for existing primary
+        if (slot === 'primary') {
+          const locationDoc = assignment.scopeType === 'location' 
+            ? await db.collection('locations').doc(assignment.scopeId).get()
+            : null;
+          const localDate = getLocalDate(locationDoc?.exists ? (locationDoc.data() as Location)?.timeZone : undefined);
+          
+          const existingPrimary = await db.collection('assignments')
+            .where('scopeType', '==', assignment.scopeType)
+            .where('scopeId', '==', assignment.scopeId)
+            .where('role', '==', assignment.role)
+            .where('slot', '==', 'primary')
+            .get();
+          
+          const activePrimary = existingPrimary.docs.find(doc => {
+            if (doc.id === id) return false; // Skip current assignment
+            const a = doc.data() as Assignment;
+            return isAssignmentActive(a, localDate);
+          });
+          
+          if (activePrimary) {
+            return res.status(400).json({
+              error: { 
+                code: 'primary_exists', 
+                message: `A primary ${assignment.role} is already assigned. End the existing assignment first.`,
+                requestId: res.locals.requestId 
+              },
+            });
+          }
+        }
         updates.slot = slot;
         changes.push({ field: 'slot', oldValue: assignment.slot ?? null, newValue: slot });
+      }
+
+      const validCapacities = ['primary', 'training', 'acting'];
+      if (capacity !== undefined && validCapacities.includes(capacity) && capacity !== assignment.capacity) {
+        updates.capacity = capacity;
+        changes.push({ field: 'capacity', oldValue: assignment.capacity ?? 'primary', newValue: capacity });
       }
 
       if (label !== undefined && label !== assignment.label) {

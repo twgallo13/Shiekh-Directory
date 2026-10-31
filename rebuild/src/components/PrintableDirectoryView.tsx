@@ -21,11 +21,15 @@ interface ExportLocation {
   districtId: string;
   districtName: string;
   storeManager: string;
+  storeManagerStatus: 'filled' | 'vacant';
   storeManagerPhone: string;
   storeManagerMobile: string;
   districtManager: string;
+  districtManagerStatus: 'filled' | 'vacant';
   assistantStoreManagers: string[];
+  asmStatus: 'filled' | 'vacant';
   keyHolders: string[];
+  khStatus: 'filled' | 'vacant';
   lifecycle: string;
 }
 
@@ -312,11 +316,13 @@ export function PrintableDirectoryView() {
                   <span className="uppercase tracking-wide text-red-700">
                     {district.name} ({district.stores.length})
                   </span>
-                  {district.districtManager && (
-                    <span className="text-gray-700 text-[8px] print:text-[7px] font-medium">
-                      DM: <strong className="text-gray-900">{district.districtManager}</strong>
-                    </span>
-                  )}
+                  <span className="text-gray-700 text-[8px] print:text-[7px] font-medium">
+                    DM: {district.districtManager ? (
+                      <strong className="text-gray-900">{district.districtManager}</strong>
+                    ) : (
+                      <strong className="text-red-600">VACANT</strong>
+                    )}
+                  </span>
                 </div>
 
                 {/* Stores Table */}
@@ -361,9 +367,15 @@ export function PrintableDirectoryView() {
                           {store.phoneFormatted}
                         </td>
                         <td className="py-px px-0.5 text-gray-700 truncate max-w-[130px] print:max-w-[110px]">
-                          {store.storeManager || <span className="text-gray-400 italic text-[7px]">Open</span>}
-                          {exportData?.canViewMobilePhones && store.storeManagerMobile && (
-                            <span className="text-[7px] text-gray-500 ml-1">📱{store.storeManagerMobile.replace(/[^\d]/g, '').slice(-4)}</span>
+                          {store.storeManagerStatus === 'vacant' ? (
+                            <span className="text-red-600 font-semibold text-[7px]">VACANT</span>
+                          ) : (
+                            <>
+                              {store.storeManager}
+                              {exportData?.canViewMobilePhones && store.storeManagerMobile && (
+                                <span className="text-[7px] text-gray-500 ml-1">📱{store.storeManagerMobile.replace(/[^\d]/g, '').slice(-4)}</span>
+                              )}
+                            </>
                           )}
                         </td>
                       </tr>

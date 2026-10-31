@@ -394,7 +394,52 @@ function projectStaffing(
     };
   };
 
+  const resolveHolder = (assignment: Assignment, field: string): { 
+    personId: string; 
+    fullName: string | null; 
+    capacity: string;
+    slot: string;
+    issues: { code: string; field: string }[] 
+  } | null => {
+    const person = people.get(assignment.personId);
+    const holderIssues: { code: string; field: string }[] = [];
+    
+    if (!person) {
+      return { 
+        personId: assignment.personId, 
+        fullName: null, 
+        capacity: assignment.capacity || 'primary',
+        slot: assignment.slot,
+        issues: [{ code: 'missing_person', field }] 
+      };
+    }
+    
+    if (!person.fullName?.trim()) {
+      holderIssues.push({ code: 'invalid_name', field });
+    }
+    if (person.lifecycle === 'inactive') {
+      holderIssues.push({ code: 'inactive_person', field });
+    }
+
+    return {
+      personId: person.id,
+      fullName: person.fullName?.trim() || null,
+      capacity: assignment.capacity || 'primary',
+      slot: assignment.slot,
+      issues: holderIssues,
+    };
+  };
+
   const recordStatus = location.lifecycle === 'active' ? 'active' : location.lifecycle === 'retired' ? 'retired' : 'draft';
+
+  const smHolders = locationAssignments
+    .filter(a => a.role === 'SM')
+    .map(a => resolveHolder(a, 'storeManagerId'))
+    .filter(Boolean);
+  const asmHolders = asmAssignments.map(a => resolveHolder(a, 'assistantStoreManagerIds')).filter(Boolean);
+  const khHolders = khAssignments.map(a => resolveHolder(a, 'keyHolderIds')).filter(Boolean);
+  const dmHolders = dmAssignment ? [resolveHolder(dmAssignment, 'districtManagerId')].filter(Boolean) : [];
+  const rmHolders = rmAssignment ? [resolveHolder(rmAssignment, 'regionalManagerId')].filter(Boolean) : [];
 
   return {
     locationId: location.id,
@@ -417,6 +462,13 @@ function projectStaffing(
       regionalManager: resolvePerson(rmAssignment?.personId, 'regionalManagerId'),
       assistantStoreManagers: asmAssignments.map(a => resolvePerson(a.personId, 'assistantStoreManagerIds')).filter(Boolean),
       keyHolders: khAssignments.map(a => resolvePerson(a.personId, 'keyHolderIds')).filter(Boolean),
+    },
+    positionStatus: {
+      sm: { status: smHolders.length > 0 ? 'filled' : 'vacant', holders: smHolders },
+      asm: { status: asmHolders.length > 0 ? 'filled' : 'vacant', holders: asmHolders },
+      kh: { status: khHolders.length > 0 ? 'filled' : 'vacant', holders: khHolders },
+      dm: { status: dmHolders.length > 0 ? 'filled' : 'vacant', holders: dmHolders },
+      rm: { status: rmHolders.length > 0 ? 'filled' : 'vacant', holders: rmHolders },
     },
     issues,
   };

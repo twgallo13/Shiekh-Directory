@@ -137,6 +137,18 @@ GET /api/v2/location-staffing?snapshot={token}&limit=50&kind=store
         },
         "assistantManagers": [...],
         "keyHolders": [...]
+      },
+      "positionStatus": {
+        "sm": { 
+          "status": "filled", 
+          "holders": [
+            { "personId": "per-sm1", "fullName": "Jane Doe", "capacity": "primary", "slot": "primary" }
+          ]
+        },
+        "asm": { "status": "vacant", "holders": [] },
+        "kh": { "status": "filled", "holders": [...] },
+        "dm": { "status": "filled", "holders": [...] },
+        "rm": { "status": "vacant", "holders": [] }
       }
     }
   ],
@@ -148,6 +160,23 @@ GET /api/v2/location-staffing?snapshot={token}&limit=50&kind=store
   }
 }
 ```
+
+### Position Status Fields
+
+The `positionStatus` object provides structured vacancy information for each position type:
+
+| Field | Description |
+|-------|-------------|
+| `status` | `"filled"` if at least one holder exists, `"vacant"` otherwise |
+| `holders` | Array of current holders with their capacity and slot |
+
+### Holder Capacity Values
+
+| Capacity | Description |
+|----------|-------------|
+| `primary` | Fully trained and in full capacity (default) |
+| `training` | Person is in training for this role |
+| `acting` | Person is acting/temporary in this role |
 
 ---
 

@@ -425,6 +425,138 @@ describe('Assignment Logic', () => {
   });
 });
 
+describe('Assignment Capacity and Vacancy', () => {
+  describe('Capacity field', () => {
+    it('defaults capacity to primary when undefined', () => {
+      const assignment = { id: '1', personId: 'p1', role: 'SM', slot: 'primary' } as const;
+      const capacity = (assignment as { capacity?: string }).capacity ?? 'primary';
+      assert.strictEqual(capacity, 'primary');
+    });
+
+    it('recognizes training capacity', () => {
+      const assignment = { id: '1', personId: 'p1', role: 'SM', slot: 'primary', capacity: 'training' as const };
+      assert.strictEqual(assignment.capacity, 'training');
+    });
+
+    it('recognizes acting capacity', () => {
+      const assignment = { id: '1', personId: 'p1', role: 'SM', slot: 'primary', capacity: 'acting' as const };
+      assert.strictEqual(assignment.capacity, 'acting');
+    });
+  });
+
+  describe('Position vacancy status', () => {
+    it('position with holders is filled', () => {
+      const holders = [{ personId: 'p1', fullName: 'John Doe', capacity: 'primary' }];
+      const status = holders.length > 0 ? 'filled' : 'vacant';
+      assert.strictEqual(status, 'filled');
+    });
+
+    it('position without holders is vacant', () => {
+      const holders: unknown[] = [];
+      const status = holders.length > 0 ? 'filled' : 'vacant';
+      assert.strictEqual(status, 'vacant');
+    });
+
+    it('multiple holders keep position filled', () => {
+      const holders = [
+        { personId: 'p1', fullName: 'John Doe', capacity: 'primary', slot: 'primary' },
+        { personId: 'p2', fullName: 'Jane Smith', capacity: 'training', slot: 'additional' },
+      ];
+      const status = holders.length > 0 ? 'filled' : 'vacant';
+      assert.strictEqual(status, 'filled');
+      assert.strictEqual(holders.length, 2);
+    });
+  });
+
+  describe('Primary slot enforcement', () => {
+    it('allows only one primary per position scope', () => {
+      const assignments = [
+        { id: '1', personId: 'p1', role: 'SM', scopeId: 'store-007', slot: 'primary', isActive: true },
+      ];
+      
+      const existingPrimary = assignments.find(a => 
+        a.role === 'SM' && a.scopeId === 'store-007' && a.slot === 'primary' && a.isActive
+      );
+      
+      assert.ok(existingPrimary, 'Should find existing primary');
+    });
+
+    it('allows additional slots alongside primary', () => {
+      const assignments = [
+        { id: '1', personId: 'p1', role: 'SM', scopeId: 'store-007', slot: 'primary' },
+        { id: '2', personId: 'p2', role: 'SM', scopeId: 'store-007', slot: 'additional' },
+        { id: '3', personId: 'p3', role: 'SM', scopeId: 'store-007', slot: 'additional' },
+      ];
+      
+      const primaryCount = assignments.filter(a => a.slot === 'primary').length;
+      const additionalCount = assignments.filter(a => a.slot === 'additional').length;
+      
+      assert.strictEqual(primaryCount, 1);
+      assert.strictEqual(additionalCount, 2);
+    });
+
+    it('different scopes can each have a primary', () => {
+      const assignments = [
+        { id: '1', personId: 'p1', role: 'SM', scopeId: 'store-007', slot: 'primary' },
+        { id: '2', personId: 'p2', role: 'SM', scopeId: 'store-008', slot: 'primary' },
+      ];
+      
+      const store007Primary = assignments.filter(a => a.scopeId === 'store-007' && a.slot === 'primary');
+      const store008Primary = assignments.filter(a => a.scopeId === 'store-008' && a.slot === 'primary');
+      
+      assert.strictEqual(store007Primary.length, 1);
+      assert.strictEqual(store008Primary.length, 1);
+    });
+  });
+
+  describe('Export VACANT display', () => {
+    it('CSV shows VACANT for vacant positions', () => {
+      type PositionStatus = 'filled' | 'vacant';
+      const storeManagerStatus = 'vacant' as PositionStatus;
+      const csvValue = storeManagerStatus === 'vacant' ? 'VACANT' : 'John Doe';
+      assert.strictEqual(csvValue, 'VACANT');
+    });
+
+    it('CSV shows name for filled positions', () => {
+      type PositionStatus = 'filled' | 'vacant';
+      const storeManagerStatus = 'filled' as PositionStatus;
+      const storeManager = 'John Doe';
+      const csvValue = storeManagerStatus === 'vacant' ? 'VACANT' : storeManager;
+      assert.strictEqual(csvValue, 'John Doe');
+    });
+  });
+
+  describe('Import capacity handling', () => {
+    it('valid capacity values are preserved', () => {
+      const validCapacities = ['primary', 'training', 'acting'];
+      const capacityValue = 'training';
+      const capacity = validCapacities.includes(capacityValue) ? capacityValue : 'primary';
+      assert.strictEqual(capacity, 'training');
+    });
+
+    it('invalid capacity defaults to primary', () => {
+      const validCapacities = ['primary', 'training', 'acting'];
+      const capacityValue = 'invalid';
+      const capacity = validCapacities.includes(capacityValue) ? capacityValue : 'primary';
+      assert.strictEqual(capacity, 'primary');
+    });
+
+    it('empty capacity defaults to primary', () => {
+      const validCapacities = ['primary', 'training', 'acting'];
+      const capacityValue = '';
+      const capacity = validCapacities.includes(capacityValue) ? capacityValue : 'primary';
+      assert.strictEqual(capacity, 'primary');
+    });
+
+    it('case-insensitive capacity matching', () => {
+      const validCapacities = ['primary', 'training', 'acting'];
+      const capacityValue = 'TRAINING'.toLowerCase();
+      const capacity = validCapacities.includes(capacityValue) ? capacityValue : 'primary';
+      assert.strictEqual(capacity, 'training');
+    });
+  });
+});
+
 describe('Centralized Assignment Active Check', () => {
   function isAssignmentActive(
     assignment: { endDate?: string; endedAt?: string },

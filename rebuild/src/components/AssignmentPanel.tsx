@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Save, UserPlus, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import type { AssignmentRole, AssignmentSlot, PersonListItem } from '../types';
+import type { AssignmentRole, AssignmentSlot, AssignmentCapacity, PersonListItem } from '../types';
+import { CapacityBadge } from './CapacityBadge';
 
 interface AssignmentPanelProps {
   locationId: string;
@@ -12,6 +13,7 @@ interface AssignmentPanelProps {
     personName: string;
     role: AssignmentRole;
     slot: AssignmentSlot;
+    capacity?: AssignmentCapacity;
     label?: string;
     isActive: boolean;
   }[];
@@ -39,6 +41,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
   const [mode, setMode] = useState<'list' | 'add' | 'end'>('list');
   const [selectedRole, setSelectedRole] = useState<AssignmentRole>('SM');
   const [selectedSlot, setSelectedSlot] = useState<AssignmentSlot>('primary');
+  const [selectedCapacity, setSelectedCapacity] = useState<AssignmentCapacity>('primary');
   const [label, setLabel] = useState('');
   
   const [people, setPeople] = useState<PersonListItem[]>([]);
@@ -95,6 +98,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
           scopeType: 'location',
           scopeId: locationId,
           slot: selectedSlot,
+          capacity: selectedCapacity,
           label: selectedSlot === 'additional' ? label || undefined : undefined,
         }),
       });
@@ -194,7 +198,10 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
                   {activeAssignments.map(assignment => (
                     <div key={assignment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
-                        <p className="font-medium text-gray-900">{assignment.personName}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-gray-900">{assignment.personName}</p>
+                          <CapacityBadge capacity={assignment.capacity || 'primary'} />
+                        </div>
                         <p className="text-sm text-gray-600">
                           {ROLE_LABELS[assignment.role]}
                           {assignment.slot === 'additional' && (
@@ -260,6 +267,22 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
                 </select>
               </div>
               
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                <select
+                  value={selectedCapacity}
+                  onChange={(e) => setSelectedCapacity(e.target.value as AssignmentCapacity)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="primary">Full Capacity (Primary)</option>
+                  <option value="training">In Training</option>
+                  <option value="acting">Acting / Temporary</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Capacity indicates whether the person is fully trained, in training, or acting temporarily.
+                </p>
+              </div>
+              
               {selectedSlot === 'additional' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Label (optional)</label>
@@ -267,7 +290,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
                     type="text"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g., Temporary, Training"
+                    placeholder="e.g., Temporary coverage"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   />
                 </div>

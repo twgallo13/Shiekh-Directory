@@ -117,6 +117,7 @@ export interface Person extends RecordMetadata {
 export type AssignmentRole = 'SM' | 'ASM' | 'KH' | 'DM' | 'RM' | 'OTHER';
 export type AssignmentScopeType = 'location' | 'district' | 'region';
 export type AssignmentSlot = 'primary' | 'additional';
+export type AssignmentCapacity = 'primary' | 'training' | 'acting';
 
 export interface Assignment extends RecordMetadata {
   id: string;
@@ -125,10 +126,23 @@ export interface Assignment extends RecordMetadata {
   scopeType: AssignmentScopeType;
   scopeId: string; // Location/District/Region ID
   slot: AssignmentSlot;
+  capacity?: AssignmentCapacity; // 'primary' (default), 'training', or 'acting'
   label?: string;
   startDate: string; // YYYY-MM-DD
   endDate?: string; // YYYY-MM-DD
   endedAt?: string; // ISO timestamp - set when End action is used
+}
+
+// Position status for API responses
+export type PositionStatus = 'filled' | 'vacant';
+
+export interface PositionHolder {
+  personId: string;
+  fullName: string;
+  capacity: AssignmentCapacity;
+  slot: AssignmentSlot;
+  startDate: string;
+  endDate?: string;
 }
 
 // === Operating State ===
@@ -171,14 +185,33 @@ export interface LocationListItem {
   sharedInboxEmail?: string;
 }
 
+export interface LeadershipHolder {
+  id: string;
+  name: string;
+  slot: AssignmentSlot;
+  capacity: AssignmentCapacity;
+  label?: string;
+}
+
+export interface PositionInfo {
+  status: PositionStatus;
+  holders: LeadershipHolder[];
+  primary?: LeadershipHolder; // The primary holder (if any) for backward compatibility
+}
+
 export interface LocationLeadership {
-  sm?: { id: string; name: string; slot: AssignmentSlot };
-  smCoverage: { id: string; name: string; slot: AssignmentSlot; label?: string }[];
+  sm?: { id: string; name: string; slot: AssignmentSlot; capacity?: AssignmentCapacity };
+  smCoverage: { id: string; name: string; slot: AssignmentSlot; capacity?: AssignmentCapacity; label?: string }[];
   hasPrimarySm: boolean;
-  asm: { id: string; name: string; slot: AssignmentSlot }[];
-  kh: { id: string; name: string; slot: AssignmentSlot }[];
-  dm?: { id: string; name: string };
-  rm?: { id: string; name: string };
+  smStatus: PositionStatus;
+  asm: { id: string; name: string; slot: AssignmentSlot; capacity?: AssignmentCapacity }[];
+  asmStatus: PositionStatus;
+  kh: { id: string; name: string; slot: AssignmentSlot; capacity?: AssignmentCapacity }[];
+  khStatus: PositionStatus;
+  dm?: { id: string; name: string; capacity?: AssignmentCapacity };
+  dmStatus: PositionStatus;
+  rm?: { id: string; name: string; capacity?: AssignmentCapacity };
+  rmStatus: PositionStatus;
 }
 
 export interface DaySchedule {

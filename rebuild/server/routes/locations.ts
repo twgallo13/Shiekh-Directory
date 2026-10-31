@@ -194,8 +194,13 @@ async function getLocationLeadership(
   const leadership: LocationLeadership = {
     smCoverage: [],
     hasPrimarySm: false,
+    smStatus: 'vacant',
     asm: [],
+    asmStatus: 'vacant',
     kh: [],
+    khStatus: 'vacant',
+    dmStatus: 'vacant',
+    rmStatus: 'vacant',
   };
   
   const locationAssignments = await db.collection('assignments')
@@ -214,12 +219,14 @@ async function getLocationLeadership(
     const person = personDoc.data() as Person;
     if (person.lifecycle !== 'active') continue;
     
-    const entry = { id: assignment.personId, name: person.fullName, slot: assignment.slot };
+    const capacity = assignment.capacity || 'primary';
+    const entry = { id: assignment.personId, name: person.fullName, slot: assignment.slot, capacity };
     
     switch (assignment.role) {
       case 'SM':
         const smEntry = { ...entry, label: assignment.label };
         leadership.smCoverage.push(smEntry);
+        leadership.smStatus = 'filled';
         if (assignment.slot === 'primary') {
           leadership.sm = entry;
           leadership.hasPrimarySm = true;
@@ -229,9 +236,11 @@ async function getLocationLeadership(
         break;
       case 'ASM':
         leadership.asm.push(entry);
+        leadership.asmStatus = 'filled';
         break;
       case 'KH':
         leadership.kh.push(entry);
+        leadership.khStatus = 'filled';
         break;
     }
   }
@@ -243,42 +252,44 @@ async function getLocationLeadership(
   });
   
   if (location.districtId) {
-    const dmAssignment = await db.collection('assignments')
+    const dmAssignments = await db.collection('assignments')
       .where('scopeType', '==', 'district')
       .where('scopeId', '==', location.districtId)
       .where('role', '==', 'DM')
-      .where('slot', '==', 'primary')
-      .limit(1)
       .get();
     
-    if (!dmAssignment.empty) {
-      const assignment = dmAssignment.docs[0].data() as Assignment;
+    for (const doc of dmAssignments.docs) {
+      const assignment = doc.data() as Assignment;
       if (isAssignmentActive(assignment, localDate)) {
         const personDoc = await db.collection('people').doc(assignment.personId).get();
         if (personDoc.exists) {
           const person = personDoc.data() as Person;
-          leadership.dm = { id: assignment.personId, name: person.fullName };
+          const capacity = assignment.capacity || 'primary';
+          leadership.dm = { id: assignment.personId, name: person.fullName, capacity };
+          leadership.dmStatus = 'filled';
+          break; // Use first active assignment
         }
       }
     }
   }
   
   if (location.regionId) {
-    const rmAssignment = await db.collection('assignments')
+    const rmAssignments = await db.collection('assignments')
       .where('scopeType', '==', 'region')
       .where('scopeId', '==', location.regionId)
       .where('role', '==', 'RM')
-      .where('slot', '==', 'primary')
-      .limit(1)
       .get();
     
-    if (!rmAssignment.empty) {
-      const assignment = rmAssignment.docs[0].data() as Assignment;
+    for (const doc of rmAssignments.docs) {
+      const assignment = doc.data() as Assignment;
       if (isAssignmentActive(assignment, localDate)) {
         const personDoc = await db.collection('people').doc(assignment.personId).get();
         if (personDoc.exists) {
           const person = personDoc.data() as Person;
-          leadership.rm = { id: assignment.personId, name: person.fullName };
+          const capacity = assignment.capacity || 'primary';
+          leadership.rm = { id: assignment.personId, name: person.fullName, capacity };
+          leadership.rmStatus = 'filled';
+          break; // Use first active assignment
         }
       }
     }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, ChevronDown, Plus, Edit2, Trash2, MapPin, Building, Users, X, Move, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { PersonListItem } from '../types';
+import { VacantBadge } from './CapacityBadge';
 
 interface HierarchyRegion {
   id: string;
@@ -354,7 +355,11 @@ export function HierarchyView() {
                     <div className="flex-1">
                       <span className="font-semibold text-gray-900">{region.name}</span>
                       <span className="ml-2 text-sm text-gray-500">({region.code})</span>
-                      {region.rmName && <span className="ml-3 text-sm text-purple-600">RM: {region.rmName}</span>}
+                      {region.rmName ? (
+                        <span className="ml-3 text-sm text-purple-600">RM: {region.rmName}</span>
+                      ) : (
+                        <span className="ml-3 flex items-center gap-1 text-sm">RM: <VacantBadge /></span>
+                      )}
                     </div>
                     <span className="text-sm text-gray-500">{districts.length} districts</span>
                     {canManage && (
@@ -397,7 +402,11 @@ export function HierarchyView() {
                               <div className="flex-1">
                                 <span className="font-medium text-gray-800">{district.name}</span>
                                 <span className="ml-2 text-sm text-gray-500">({district.code})</span>
-                                {district.dmName && <span className="ml-3 text-sm text-blue-600">DM: {district.dmName}</span>}
+                                {district.dmName ? (
+                                  <span className="ml-3 text-sm text-blue-600">DM: {district.dmName}</span>
+                                ) : (
+                                  <span className="ml-3 flex items-center gap-1 text-sm">DM: <VacantBadge /></span>
+                                )}
                               </div>
                               <span className="text-xs text-gray-500">{locations.length} stores</span>
                               {canManage && (
@@ -437,7 +446,11 @@ export function HierarchyView() {
                                     <MapPin className="w-4 h-4 text-green-600" />
                                     <span className="font-mono text-sm text-gray-700">#{location.storeNumber}</span>
                                     <span className="text-gray-800">{location.name}</span>
-                                    {location.smName && <span className="text-sm text-gray-500">SM: {location.smName}</span>}
+                                    {location.smName ? (
+                                      <span className="text-sm text-gray-500">SM: {location.smName}</span>
+                                    ) : (
+                                      <span className="text-sm flex items-center gap-1">SM: <VacantBadge /></span>
+                                    )}
                                     {canManage && (
                                       <div className="ml-auto flex" onClick={e => e.stopPropagation()}>
                                         <button onClick={() => openMoveLocation(location)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Move to another district">

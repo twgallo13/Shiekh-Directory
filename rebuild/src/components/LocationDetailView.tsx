@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, X, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import type { LocationDetail } from '../types';
+import type { LocationDetail, AssignmentCapacity } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { formatHoursDisplay } from '../lib/operatingState';
 import { canEditLocation } from '../lib/permissions';
@@ -10,6 +10,7 @@ import { EditLocationPanel } from './EditLocationPanel';
 import { AuditHistory } from './AuditHistory';
 import { AssignmentPanel } from './AssignmentPanel';
 import { StoreVerificationPanel } from './StoreVerificationPanel';
+import { CapacityBadge, VacantBadge } from './CapacityBadge';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -404,17 +405,22 @@ export function LocationDetailView() {
           <div className="space-y-3">
             {/* Store Manager */}
             <div className="py-2 border-b border-gray-100">
-              <p className="text-sm text-gray-500">Store Manager</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm text-gray-500">Store Manager</p>
+                {location.leadership.smStatus === 'vacant' && <VacantBadge />}
+              </div>
               {location.leadership.hasPrimarySm ? (
                 <div>
                   {location.leadership.smCoverage?.filter(sm => sm.slot === 'primary').map(sm => (
-                    <Link
-                      key={sm.id}
-                      to={`/person/${sm.id}`}
-                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
-                    >
-                      {sm.name}
-                    </Link>
+                    <div key={sm.id} className="flex items-center gap-2">
+                      <Link
+                        to={`/person/${sm.id}`}
+                        className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
+                      >
+                        {sm.name}
+                      </Link>
+                      <CapacityBadge capacity={(sm.capacity || 'primary') as AssignmentCapacity} />
+                    </div>
                   ))}
                 </div>
               ) : location.leadership.smCoverage && location.leadership.smCoverage.length > 0 ? (
@@ -422,7 +428,7 @@ export function LocationDetailView() {
                   <p className="text-yellow-800 font-medium text-sm">Primary unassigned; coverage present</p>
                 </div>
               ) : (
-                <p className="font-medium text-gray-900">Not assigned</p>
+                <p className="font-medium text-gray-400 italic">Not assigned</p>
               )}
               
               {/* Additional/Temporary SM coverage */}
@@ -437,6 +443,7 @@ export function LocationDetailView() {
                       >
                         {sm.name}
                       </Link>
+                      <CapacityBadge capacity={(sm.capacity || 'primary') as AssignmentCapacity} />
                       {sm.label && (
                         <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{sm.label}</span>
                       )}
@@ -449,16 +456,22 @@ export function LocationDetailView() {
             {/* District Manager */}
             <div className="flex items-center justify-between py-2 border-b border-gray-100">
               <div>
-                <p className="text-sm text-gray-500">District Manager</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-sm text-gray-500">District Manager</p>
+                  {location.leadership.dmStatus === 'vacant' && <VacantBadge />}
+                </div>
                 {location.leadership.dm ? (
-                  <Link
-                    to={`/person/${location.leadership.dm.id}`}
-                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
-                  >
-                    {location.leadership.dm.name}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/person/${location.leadership.dm.id}`}
+                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
+                    >
+                      {location.leadership.dm.name}
+                    </Link>
+                    <CapacityBadge capacity={(location.leadership.dm.capacity || 'primary') as AssignmentCapacity} />
+                  </div>
                 ) : (
-                  <p className="font-medium text-gray-900">Not assigned</p>
+                  <p className="font-medium text-gray-400 italic">Not assigned</p>
                 )}
               </div>
             </div>
@@ -466,25 +479,34 @@ export function LocationDetailView() {
             {/* Regional Manager */}
             <div className="flex items-center justify-between py-2 border-b border-gray-100">
               <div>
-                <p className="text-sm text-gray-500">Regional Manager</p>
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-sm text-gray-500">Regional Manager</p>
+                  {location.leadership.rmStatus === 'vacant' && <VacantBadge />}
+                </div>
                 {location.leadership.rm ? (
-                  <Link
-                    to={`/person/${location.leadership.rm.id}`}
-                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
-                  >
-                    {location.leadership.rm.name}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/person/${location.leadership.rm.id}`}
+                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
+                    >
+                      {location.leadership.rm.name}
+                    </Link>
+                    <CapacityBadge capacity={(location.leadership.rm.capacity || 'primary') as AssignmentCapacity} />
+                  </div>
                 ) : (
-                  <p className="font-medium text-gray-900">Not assigned</p>
+                  <p className="font-medium text-gray-400 italic">Not assigned</p>
                 )}
               </div>
             </div>
             
             {/* ASMs */}
-            {location.leadership.asm.length > 0 && (
-              <div className="py-2 border-b border-gray-100">
-                <p className="text-sm text-gray-500 mb-1">Assistant Store Managers</p>
-                {location.leadership.asm.map(asm => (
+            <div className="py-2 border-b border-gray-100">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm text-gray-500">Assistant Store Managers</p>
+                {location.leadership.asmStatus === 'vacant' && <VacantBadge />}
+              </div>
+              {location.leadership.asm.length > 0 ? (
+                location.leadership.asm.map(asm => (
                   <div key={asm.id} className="flex items-center gap-2 min-h-[44px]">
                     <Link
                       to={`/person/${asm.id}`}
@@ -492,29 +514,39 @@ export function LocationDetailView() {
                     >
                       {asm.name}
                     </Link>
+                    <CapacityBadge capacity={(asm.capacity || 'primary') as AssignmentCapacity} />
                     {asm.slot === 'additional' && (
                       <span className="text-xs text-gray-500">(Additional)</span>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              ) : (
+                <p className="font-medium text-gray-400 italic">None assigned</p>
+              )}
+            </div>
             
             {/* Key Holders */}
-            {location.leadership.kh.length > 0 && (
-              <div className="py-2">
-                <p className="text-sm text-gray-500 mb-1">Key Holders</p>
-                {location.leadership.kh.map(kh => (
-                  <Link
-                    key={kh.id}
-                    to={`/person/${kh.id}`}
-                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
-                  >
-                    {kh.name}
-                  </Link>
-                ))}
+            <div className="py-2">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm text-gray-500">Key Holders</p>
+                {location.leadership.khStatus === 'vacant' && <VacantBadge />}
               </div>
-            )}
+              {location.leadership.kh.length > 0 ? (
+                location.leadership.kh.map(kh => (
+                  <div key={kh.id} className="flex items-center gap-2">
+                    <Link
+                      to={`/person/${kh.id}`}
+                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
+                    >
+                      {kh.name}
+                    </Link>
+                    <CapacityBadge capacity={(kh.capacity || 'primary') as AssignmentCapacity} />
+                  </div>
+                ))
+              ) : (
+                <p className="font-medium text-gray-400 italic">None assigned</p>
+              )}
+            </div>
           </div>
         </div>
         

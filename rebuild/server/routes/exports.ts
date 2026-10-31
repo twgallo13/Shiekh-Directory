@@ -36,11 +36,15 @@ interface ExportLocation {
   districtId: string;
   districtName: string;
   storeManager: string;
+  storeManagerStatus: 'filled' | 'vacant';
   storeManagerPhone: string;
   storeManagerMobile: string;
   districtManager: string;
+  districtManagerStatus: 'filled' | 'vacant';
   assistantStoreManagers: string[];
+  asmStatus: 'filled' | 'vacant';
   keyHolders: string[];
+  khStatus: 'filled' | 'vacant';
   lifecycle: string;
 }
 
@@ -253,6 +257,13 @@ function mapExportLocation(
 
   const showMobile = canViewMobilePhones(userRole);
 
+  const asmNames = asmAssignments
+    .map(a => people.get(a.personId)?.fullName)
+    .filter((name): name is string => !!name);
+  const khNames = khAssignments
+    .map(a => people.get(a.personId)?.fullName)
+    .filter((name): name is string => !!name);
+
   return {
     id: location.id,
     storeNumber: location.storeNumber,
@@ -271,15 +282,15 @@ function mapExportLocation(
     districtId: district?.code || '',
     districtName: district?.name || '',
     storeManager: smPerson?.fullName || '',
+    storeManagerStatus: smPerson ? 'filled' : 'vacant',
     storeManagerPhone: smPerson?.workPhone || '',
     storeManagerMobile: showMobile ? (smPerson?.mobilePhone || '') : '',
     districtManager: dmPerson?.fullName || '',
-    assistantStoreManagers: asmAssignments
-      .map(a => people.get(a.personId)?.fullName)
-      .filter((name): name is string => !!name),
-    keyHolders: khAssignments
-      .map(a => people.get(a.personId)?.fullName)
-      .filter((name): name is string => !!name),
+    districtManagerStatus: dmPerson ? 'filled' : 'vacant',
+    assistantStoreManagers: asmNames,
+    asmStatus: asmNames.length > 0 ? 'filled' : 'vacant',
+    keyHolders: khNames,
+    khStatus: khNames.length > 0 ? 'filled' : 'vacant',
     lifecycle: location.lifecycle,
   };
 }
@@ -339,12 +350,12 @@ function generateCsv(locations: ExportLocation[], userRole: string): string {
     escapeCsvValue(loc.regionName),
     escapeCsvValue(loc.districtId),
     escapeCsvValue(loc.districtName),
-    escapeCsvValue(loc.storeManager),
+    escapeCsvValue(loc.storeManagerStatus === 'vacant' ? 'VACANT' : loc.storeManager),
     escapeCsvValue(formatPhoneForCsv(loc.storeManagerPhone)),
     ...(showMobile ? [escapeCsvValue(formatPhoneForCsv(loc.storeManagerMobile))] : []),
-    escapeCsvValue(loc.districtManager),
-    escapeCsvValue(loc.assistantStoreManagers.join('; ')),
-    escapeCsvValue(loc.keyHolders.join('; ')),
+    escapeCsvValue(loc.districtManagerStatus === 'vacant' ? 'VACANT' : loc.districtManager),
+    escapeCsvValue(loc.asmStatus === 'vacant' ? 'VACANT' : loc.assistantStoreManagers.join('; ')),
+    escapeCsvValue(loc.khStatus === 'vacant' ? 'VACANT' : loc.keyHolders.join('; ')),
     escapeCsvValue(loc.lifecycle === 'active' ? 'Active' : loc.lifecycle),
   ]);
 

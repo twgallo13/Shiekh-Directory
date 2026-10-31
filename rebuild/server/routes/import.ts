@@ -545,12 +545,17 @@ async function processAssignments(
       scopeId = row.scopeId?.trim() || '';
     }
     
+    const capacityValue = row.capacity?.trim().toLowerCase();
+    const validCapacities = ['primary', 'training', 'acting'];
+    const capacity = validCapacities.includes(capacityValue) ? capacityValue as 'primary' | 'training' | 'acting' : 'primary';
+    
     const assignment: Omit<Assignment, 'id'> = {
       personId,
       role,
       scopeType,
       scopeId,
       slot: row.slot === 'additional' ? 'additional' : 'primary',
+      capacity,
       label: row.label?.trim() || undefined,
       startDate: row.startDate?.trim() || today,
       endDate: row.endDate?.trim() || undefined,

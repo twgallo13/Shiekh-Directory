@@ -232,6 +232,21 @@ export function SignInView() {
             </p>
           </div>
           
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <p className="text-sm text-gray-600 text-center mb-3">
+              Store manager using a store mailbox?
+            </p>
+            <a
+              href="/store-signin"
+              className="block w-full text-center py-2 px-4 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50"
+            >
+              Store Manager Sign-In
+            </a>
+            <p className="mt-2 text-xs text-center text-gray-500">
+              Passwordless sign-in for store{'{n}'}@shiekhshoes.com
+            </p>
+          </div>
+
           {isEmulator && (
             <div className="mt-6 pt-6 border-t border-gray-200">
               <p className="text-sm text-gray-500 text-center">

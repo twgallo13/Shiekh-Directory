@@ -7,6 +7,8 @@ export interface VerificationEmailData {
   verificationUrl: string;
   expiresAt: string;
   sentByName?: string;
+  confirmUrl?: string;
+  updateUrl?: string;
 }
 
 export interface ReminderEmailData extends VerificationEmailData {
@@ -40,6 +42,36 @@ export function createVerificationRequestEmail(data: VerificationEmailData): Ema
     day: 'numeric',
   });
 
+  const hasOneClick = data.confirmUrl && data.updateUrl;
+
+  const oneClickButtonsHtml = hasOneClick ? `
+      <div style="text-align: center; margin: 30px 0;">
+        <p style="font-weight: 600; margin-bottom: 16px;">Are your store hours correct?</p>
+        <a href="${data.confirmUrl}" class="button" style="background-color: #059669; margin-right: 12px;">Yes, Correct</a>
+        <a href="${data.updateUrl}" class="button" style="background-color: #2563EB;">No, Update</a>
+      </div>
+      <p style="text-align: center; font-size: 13px; color: #6B7280; margin-bottom: 20px;">
+        Click <strong>Yes, Correct</strong> to confirm your hours in one click.<br>
+        Click <strong>No, Update</strong> to sign in and make changes.
+      </p>
+      <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;">
+      <p style="text-align: center; font-size: 13px; color: #6B7280;">Or review all details:</p>
+  ` : '';
+
+  const oneClickButtonsText = hasOneClick ? `
+Are your store hours correct?
+
+YES, CORRECT: ${data.confirmUrl}
+(Click to confirm your hours in one click)
+
+NO, UPDATE: ${data.updateUrl}
+(Click to sign in and make changes)
+
+---
+
+Or review all details:
+` : '';
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -67,6 +99,8 @@ export function createVerificationRequestEmail(data: VerificationEmailData): Ema
       </div>
 
       <p>Please review your store's current hours and confirm they are correct, or submit any needed corrections.</p>
+
+      ${oneClickButtonsHtml}
 
       <div style="text-align: center;">
         <a href="${data.verificationUrl}" class="button">Verify Hours Now</a>
@@ -100,6 +134,7 @@ Store: ${data.storeNumber} - ${data.storeName}
 
 Please review your store's current hours and confirm they are correct, or submit any needed corrections.
 
+${oneClickButtonsText}
 Verify Hours Now: ${data.verificationUrl}
 
 Please respond by: ${expiresFormatted}

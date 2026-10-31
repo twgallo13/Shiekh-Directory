@@ -25,6 +25,7 @@ import { createHierarchyRouter } from './routes/hierarchy';
 import { createHoursTemplatesRouter } from './routes/hoursTemplates';
 import { createNoticesRouter } from './routes/notices';
 import { createStaleStoresRouter } from './routes/staleStores';
+import { createStoreAuthRouter } from './routes/storeAuth';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -58,6 +59,7 @@ app.use('/api/app/hierarchy', createHierarchyRouter(db));
 app.use('/api/app/hours-templates', createHoursTemplatesRouter(db));
 app.use('/api/app', createNoticesRouter(db));
 app.use('/api/app/stale-stores', createStaleStoresRouter(db));
+app.use('/api/store-auth', createStoreAuthRouter(db));
 
 // Legacy API routes (v1/v2/v3)
 app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));

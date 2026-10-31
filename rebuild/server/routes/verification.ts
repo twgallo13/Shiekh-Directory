@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
+import { randomBytes, createHmac } from 'crypto';
 import type {
   Location,
   AuthUser,
@@ -10,6 +11,15 @@ import { createMailService } from '../services/mail';
 import { createVerificationRequestEmail } from '../services/mailTemplates';
 
 const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
+const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
+
+function generateToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function hashToken(token: string): string {
+  return createHmac('sha256', TOKEN_SECRET).update(token).digest('hex');
+}
 
 export function createVerificationRouter(db: Firestore): Router {
   const router = Router();
@@ -174,6 +184,32 @@ export function createVerificationRouter(db: Firestore): Router {
 
       await requestRef.set(verificationRequest);
 
+      const confirmToken = generateToken();
+      const updateToken = generateToken();
+
+      const baseTokenData = {
+        locationId: location.id,
+        storeNumber: location.storeNumber,
+        storeEmail: location.sharedInboxEmail,
+        verificationRequestId: requestRef.id,
+        expiresAt: expiresAt.toISOString(),
+        createdAt: now.toISOString(),
+        createdBy: authUser.uid,
+      };
+
+      await db.collection('storeAuthTokens').doc(hashToken(confirmToken)).set({
+        ...baseTokenData,
+        action: 'confirm',
+      });
+
+      await db.collection('storeAuthTokens').doc(hashToken(updateToken)).set({
+        ...baseTokenData,
+        action: 'update',
+      });
+
+      const confirmUrl = `${APP_URL}/verify-action?token=${confirmToken}&action=confirm`;
+      const updateUrl = `${APP_URL}/verify-action?token=${updateToken}&action=update`;
+
       const mailService = createMailService(db);
       const verificationUrl = `${APP_URL}/verify/${requestRef.id}`;
       const emailData = {
@@ -182,6 +218,8 @@ export function createVerificationRouter(db: Firestore): Router {
         storeEmail: location.sharedInboxEmail,
         verificationUrl,
         expiresAt: expiresAt.toISOString(),
+        confirmUrl,
+        updateUrl,
       };
 
       const email = createVerificationRequestEmail(emailData);
@@ -198,6 +236,8 @@ export function createVerificationRouter(db: Firestore): Router {
           emailError: mailResult.reason,
         });
         console.log(`[Verification] Email blocked for ${location.storeNumber}: ${mailResult.reason}`);
+        console.log(`[Verification] One-click confirm URL: ${confirmUrl}`);
+        console.log(`[Verification] One-click update URL: ${updateUrl}`);
       } else {
         await requestRef.update({
           emailSent: false,
@@ -205,6 +245,24 @@ export function createVerificationRouter(db: Firestore): Router {
         });
         console.error(`[Verification] Email failed for ${location.storeNumber}: ${mailResult.error}`);
       }
+
+      await db.collection('mailLog').add({
+        to: location.sharedInboxEmail,
+        type: 'verification-request',
+        verificationRequestId: requestRef.id,
+        locationId: location.id,
+        storeNumber: location.storeNumber,
+        verificationUrl,
+        confirmUrl,
+        updateUrl,
+        sentAt: now.toISOString(),
+        sentBy: authUser.uid,
+        sentByEmail: authUser.email,
+        success: mailResult.success && !mailResult.blocked,
+        blocked: mailResult.blocked,
+        reason: mailResult.reason || mailResult.error,
+        expiresAt: expiresAt.toISOString(),
+      });
 
       await logAudit(db, {
         userId: authUser.uid,
@@ -230,6 +288,7 @@ export function createVerificationRouter(db: Firestore): Router {
           blocked: mailResult.blocked,
           reason: mailResult.reason || mailResult.error,
         },
+        testLinks: mailResult.blocked ? { confirmUrl, updateUrl, verificationUrl } : undefined,
       });
     } catch (error) {
       console.error('Create verification request error:', error);

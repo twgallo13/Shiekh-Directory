@@ -14,6 +14,8 @@ import { HierarchyView } from './components/HierarchyView';
 import { SettingsView } from './components/SettingsView';
 import { ClosuresBoardPage } from './components/ClosuresBoardPage';
 import { StaleStoresView } from './components/StaleStoresView';
+import { StoreSignInView } from './components/StoreSignInView';
+import { VerifyActionView } from './components/VerifyActionView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -45,6 +47,8 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/signin" element={<SignInView />} />
+      <Route path="/store-signin" element={<StoreSignInView />} />
+      <Route path="/verify-action" element={<VerifyActionView />} />
       <Route
         path="/"
         element={

@@ -157,7 +157,7 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      const location = locationDoc.data() as Location;
+      const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
 
       if (location.kind === 'facility') {
         return res.status(400).json({
@@ -566,7 +566,7 @@ export function createVerificationRouter(db: Firestore): Router {
       const now = new Date();
       const locationRef = db.collection('locations').doc(request.locationId);
       const locationDoc = await locationRef.get();
-      const location = locationDoc.data() as Location;
+      const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
 
       const auditChanges: { field: string; oldValue?: string | number | boolean | null; newValue?: string | number | boolean | null }[] = [];
 

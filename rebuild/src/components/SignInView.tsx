@@ -175,7 +175,7 @@ export function SignInView() {
                   <button
                     type="button"
                     onClick={() => { setForgotPassword(true); setError(''); setSuccess(''); }}
-                    className="text-sm text-blue-600 hover:text-blue-700"
+                    className="text-sm text-blue-600 hover:text-blue-700 min-h-[44px] flex items-center px-2 -mr-2"
                   >
                     Forgot password?
                   </button>

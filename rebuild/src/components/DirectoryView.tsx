@@ -307,14 +307,14 @@ export function DirectoryView() {
       {/* Filters */}
       {!showSearchResults && (
         <div className="bg-white border-b border-gray-200">
-          <div className="max-w-3xl mx-auto px-4 py-2 flex gap-2 overflow-x-auto">
+          <div className="max-w-3xl mx-auto px-4 py-2 flex flex-wrap gap-2">
             <select
               value={selectedRegion}
               onChange={(e) => {
                 setSelectedRegion(e.target.value);
                 setSelectedDistrict('');
               }}
-              className="px-3 py-1.5 border border-gray-300 rounded-full text-sm bg-white"
+              className="px-3 py-2 border border-gray-300 rounded-full text-sm bg-white min-h-[44px] max-w-full"
             >
               <option value="">All Regions</option>
               {regions.map(region => (
@@ -325,7 +325,7 @@ export function DirectoryView() {
             <select
               value={selectedDistrict}
               onChange={(e) => setSelectedDistrict(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-full text-sm bg-white"
+              className="px-3 py-2 border border-gray-300 rounded-full text-sm bg-white min-h-[44px] max-w-full"
             >
               <option value="">All Districts</option>
               {filteredDistricts.map(district => (
@@ -336,11 +336,10 @@ export function DirectoryView() {
             <select
               value={selectedKind}
               onChange={(e) => setSelectedKind(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-full text-sm bg-white"
+              className="px-3 py-2 border border-gray-300 rounded-full text-sm bg-white min-h-[44px] max-w-full"
             >
               <option value="store">Stores</option>
-              <option value="warehouse">Warehouses</option>
-              <option value="office">Offices</option>
+              <option value="facility">Facilities</option>
               <option value="all">All Locations</option>
             </select>
           </div>
@@ -391,17 +390,17 @@ export function DirectoryView() {
                     </div>
                     
                     {result.phone && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center">
                         <button
                           onClick={(e) => handleCall(result.phone!, e)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                          className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg"
                           aria-label="Call"
                         >
                           <Phone className="w-5 h-5" />
                         </button>
                         <button
                           onClick={(e) => handleCopy(result.phone!, e)}
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                          className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-lg"
                           aria-label="Copy phone"
                         >
                           <Copy className="w-5 h-5" />
@@ -448,17 +447,17 @@ export function DirectoryView() {
                       )}
                     </div>
                   
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center">
                     <button
                       onClick={(e) => handleCall(location.phone, e)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg"
                       aria-label="Call"
                     >
                       <Phone className="w-5 h-5" />
                     </button>
                     <button
                       onClick={(e) => handleCopy(location.phoneFormatted, e)}
-                      className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded-lg"
                       aria-label="Copy phone"
                     >
                       <Copy className="w-5 h-5" />

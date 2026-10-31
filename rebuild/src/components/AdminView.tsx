@@ -187,14 +187,14 @@ function UsersTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 flex-1">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
           <input
             type="text"
             placeholder="Search users..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 max-w-xs px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="flex-1 min-w-[150px] max-w-xs px-3 py-2 border border-gray-300 rounded-lg text-sm"
           />
           <select
             value={roleFilter}
@@ -209,7 +209,7 @@ function UsersTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
           Add User
@@ -221,60 +221,104 @@ function UsersTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredUsers.map(user => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{user.email}</td>
-                  <td className="px-4 py-3 text-gray-600">{user.displayName}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      user.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
-                      user.role === 'Steward' ? 'bg-blue-100 text-blue-700' :
-                      user.role === 'Leader' ? 'bg-green-100 text-green-700' :
-                      user.role === 'Store' ? 'bg-amber-100 text-amber-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {user.status || 'active'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => setEditingUser(user)}
-                      className="text-blue-600 hover:text-blue-800 text-sm"
-                    >
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {filteredUsers.length === 0 && (
+        <>
+          {/* Desktop table view */}
+          <div className="hidden md:block bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                    No users found
-                  </td>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredUsers.map(user => (
+                  <tr key={user.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{user.email}</td>
+                    <td className="px-4 py-3 text-gray-600">{user.displayName}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        user.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
+                        user.role === 'Steward' ? 'bg-blue-100 text-blue-700' :
+                        user.role === 'Leader' ? 'bg-green-100 text-green-700' :
+                        user.role === 'Store' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {user.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {user.status || 'active'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setEditingUser(user)}
+                        className="text-blue-600 hover:text-blue-800 text-sm min-h-[44px] min-w-[44px] flex items-center justify-center -m-2"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                      No users found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card view */}
+          <div className="md:hidden space-y-3">
+            {filteredUsers.map(user => (
+              <div key={user.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-gray-900 truncate">{user.email}</div>
+                    <div className="text-sm text-gray-600 truncate">{user.displayName}</div>
+                  </div>
+                  <button
+                    onClick={() => setEditingUser(user)}
+                    className="min-h-[44px] min-w-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg -m-2"
+                  >
+                    Edit
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mt-3">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    user.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
+                    user.role === 'Steward' ? 'bg-blue-100 text-blue-700' :
+                    user.role === 'Leader' ? 'bg-green-100 text-green-700' :
+                    user.role === 'Store' ? 'bg-amber-100 text-amber-700' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>
+                    {user.role}
+                  </span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {user.status || 'active'}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {filteredUsers.length === 0 && (
+              <div className="bg-white rounded-lg border border-gray-200 px-4 py-8 text-center text-gray-500">
+                No users found
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {showAddModal && (

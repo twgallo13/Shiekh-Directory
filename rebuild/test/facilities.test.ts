@@ -134,10 +134,11 @@ describe('Facility - Region Without District', () => {
   });
 
   it('can create location with region only (no district)', async () => {
+    const uniqueId = Math.random().toString(36).slice(2, 8);
     const res = await fetchApi('/api/app/hierarchy/locations', {
       method: 'POST',
       body: JSON.stringify({
-        storeNumber: 'FAC03',
+        storeNumber: `FAC-${uniqueId}`,
         name: 'New Region Only Facility',
         kind: 'facility',
         regionId: newRegionId,
@@ -147,8 +148,8 @@ describe('Facility - Region Without District', () => {
       }),
     });
 
-    assert.strictEqual(res.status, 201, 'should succeed');
     const body = await res.json();
+    assert.strictEqual(res.status, 201, `should succeed: ${JSON.stringify(body)}`);
     assert.strictEqual(body.data.regionId, newRegionId, 'regionId should be set');
     assert.strictEqual(body.data.districtId, '', 'districtId should be empty');
     assert.strictEqual(body.data.kind, 'facility', 'kind should be facility');

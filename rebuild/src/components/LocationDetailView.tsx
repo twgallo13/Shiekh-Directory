@@ -278,7 +278,7 @@ export function LocationDetailView() {
             {editPermissions.contactInfo && (
               <button
                 onClick={() => setEditingField('contact')}
-                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg -m-2"
                 aria-label="Edit contact info"
               >
                 <Pencil className="w-4 h-4" />
@@ -314,7 +314,7 @@ export function LocationDetailView() {
             {editPermissions.hours && (
               <button
                 onClick={() => setEditingField('hours')}
-                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg -m-2"
                 aria-label="Edit hours"
               >
                 <Pencil className="w-4 h-4" />
@@ -392,7 +392,7 @@ export function LocationDetailView() {
             {editPermissions.assignments && (
               <button
                 onClick={() => setShowAssignments(true)}
-                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 text-sm"
+                className="min-h-[44px] px-3 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 text-sm -m-2"
                 aria-label="Manage assignments"
               >
                 <Users className="w-4 h-4" />
@@ -411,7 +411,7 @@ export function LocationDetailView() {
                     <Link
                       key={sm.id}
                       to={`/person/${sm.id}`}
-                      className="font-medium text-blue-600 hover:underline block"
+                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
                     >
                       {sm.name}
                     </Link>
@@ -430,10 +430,10 @@ export function LocationDetailView() {
                 <div className="mt-2 pl-3 border-l-2 border-gray-200">
                   <p className="text-xs text-gray-500 mb-1">Additional Coverage</p>
                   {location.leadership.smCoverage.filter(sm => sm.slot !== 'primary').map(sm => (
-                    <div key={sm.id} className="flex items-center gap-2">
+                    <div key={sm.id} className="flex items-center gap-2 min-h-[44px]">
                       <Link
                         to={`/person/${sm.id}`}
-                        className="text-sm text-blue-600 hover:underline"
+                        className="text-sm text-blue-600 hover:underline min-h-[44px] inline-flex items-center"
                       >
                         {sm.name}
                       </Link>
@@ -453,7 +453,7 @@ export function LocationDetailView() {
                 {location.leadership.dm ? (
                   <Link
                     to={`/person/${location.leadership.dm.id}`}
-                    className="font-medium text-blue-600 hover:underline"
+                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
                   >
                     {location.leadership.dm.name}
                   </Link>
@@ -470,7 +470,7 @@ export function LocationDetailView() {
                 {location.leadership.rm ? (
                   <Link
                     to={`/person/${location.leadership.rm.id}`}
-                    className="font-medium text-blue-600 hover:underline"
+                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
                   >
                     {location.leadership.rm.name}
                   </Link>
@@ -485,10 +485,10 @@ export function LocationDetailView() {
               <div className="py-2 border-b border-gray-100">
                 <p className="text-sm text-gray-500 mb-1">Assistant Store Managers</p>
                 {location.leadership.asm.map(asm => (
-                  <div key={asm.id} className="flex items-center gap-2">
+                  <div key={asm.id} className="flex items-center gap-2 min-h-[44px]">
                     <Link
                       to={`/person/${asm.id}`}
-                      className="font-medium text-blue-600 hover:underline"
+                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
                     >
                       {asm.name}
                     </Link>
@@ -508,7 +508,7 @@ export function LocationDetailView() {
                   <Link
                     key={kh.id}
                     to={`/person/${kh.id}`}
-                    className="font-medium text-blue-600 hover:underline block"
+                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
                   >
                     {kh.name}
                   </Link>

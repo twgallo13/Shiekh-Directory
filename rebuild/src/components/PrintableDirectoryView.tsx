@@ -209,22 +209,22 @@ export function PrintableDirectoryView() {
     <div className="min-h-screen bg-gray-50 print:bg-white">
       {/* Controls - Hidden in print */}
       <div className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+        <div className="max-w-[1200px] mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <button
             onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 min-h-[44px]"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Back to Directory</span>
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Filter className="w-4 h-4" />
+              <Filter className="w-4 h-4 flex-shrink-0" />
               <select
                 value={districtFilter}
                 onChange={(e) => setDistrictFilter(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full sm:w-auto min-h-[44px]"
               >
                 <option value="all">All Districts ({exportData?.locationCount || 0} stores)</option>
                 {exportData?.districts.map(d => (
@@ -235,22 +235,24 @@ export function PrintableDirectoryView() {
               </select>
             </div>
 
-            <button
-              onClick={handleDownloadCsv}
-              disabled={preparing}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
-            >
-              <Download className="w-4 h-4" />
-              Download CSV
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDownloadCsv}
+                disabled={preparing}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm min-h-[44px]"
+              >
+                <Download className="w-4 h-4" />
+                <span className="whitespace-nowrap">Download CSV</span>
+              </button>
 
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-            >
-              <Printer className="w-4 h-4" />
-              Print 1-Sheet
-            </button>
+              <button
+                onClick={handlePrint}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm min-h-[44px]"
+              >
+                <Printer className="w-4 h-4" />
+                <span className="whitespace-nowrap">Print 1-Sheet</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

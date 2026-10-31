@@ -358,14 +358,14 @@ export function HierarchyView() {
                     </div>
                     <span className="text-sm text-gray-500">{districts.length} districts</span>
                     {canManage && (
-                      <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => openAssignRM(region.id)} className="p-1 text-gray-400 hover:text-purple-600" title="Assign RM">
+                      <div className="flex" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => openAssignRM(region.id)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg" title="Assign RM">
                           <UserPlus className="w-4 h-4" />
                         </button>
-                        <button onClick={() => openEditRegion(region)} className="p-1 text-gray-400 hover:text-gray-600">
+                        <button onClick={() => openEditRegion(region)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleRetire('region', region.id)} className="p-1 text-gray-400 hover:text-red-600">
+                        <button onClick={() => handleRetire('region', region.id)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -401,17 +401,17 @@ export function HierarchyView() {
                               </div>
                               <span className="text-xs text-gray-500">{locations.length} stores</span>
                               {canManage && (
-                                <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                                  <button onClick={() => openAssignDM(district.id)} className="p-1 text-gray-400 hover:text-blue-600" title="Assign DM">
+                                <div className="flex" onClick={e => e.stopPropagation()}>
+                                  <button onClick={() => openAssignDM(district.id)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Assign DM">
                                     <UserPlus className="w-4 h-4" />
                                   </button>
-                                  <button onClick={() => openMoveDistrict(district)} className="p-1 text-gray-400 hover:text-gray-600" title="Move to another region">
+                                  <button onClick={() => openMoveDistrict(district)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Move to another region">
                                     <Move className="w-4 h-4" />
                                   </button>
-                                  <button onClick={() => openEditDistrict(district)} className="p-1 text-gray-400 hover:text-gray-600">
+                                  <button onClick={() => openEditDistrict(district)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
                                     <Edit2 className="w-4 h-4" />
                                   </button>
-                                  <button onClick={() => handleRetire('district', district.id)} className="p-1 text-gray-400 hover:text-red-600">
+                                  <button onClick={() => handleRetire('district', district.id)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 </div>
@@ -439,11 +439,11 @@ export function HierarchyView() {
                                     <span className="text-gray-800">{location.name}</span>
                                     {location.smName && <span className="text-sm text-gray-500">SM: {location.smName}</span>}
                                     {canManage && (
-                                      <div className="ml-auto flex gap-1" onClick={e => e.stopPropagation()}>
-                                        <button onClick={() => openMoveLocation(location)} className="p-1 text-gray-400 hover:text-gray-600" title="Move to another district">
+                                      <div className="ml-auto flex" onClick={e => e.stopPropagation()}>
+                                        <button onClick={() => openMoveLocation(location)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Move to another district">
                                           <Move className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => handleRetire('location', location.id)} className="p-1 text-gray-400 hover:text-red-600">
+                                        <button onClick={() => handleRetire('location', location.id)} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
                                           <Trash2 className="w-4 h-4" />
                                         </button>
                                       </div>

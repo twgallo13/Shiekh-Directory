@@ -5,6 +5,7 @@ export interface VerificationEmailData {
   storeName: string;
   storeNumber: string;
   storeEmail: string;
+  storeType?: string;
   verificationUrl: string;
   expiresAt: string;
   sentByName?: string;
@@ -172,7 +173,9 @@ Or review all details:
       <div class="store-info">
         <dl>
           <dt>Store</dt>
-          <dd>${data.storeNumber} - ${data.storeName}</dd>
+          <dd>${data.storeNumber} - ${data.storeName}</dd>${data.storeType ? `
+          <dt>Type</dt>
+          <dd>${data.storeType}</dd>` : ''}
         </dl>
       </div>
 
@@ -213,7 +216,8 @@ Hello,
 
 Please verify the following information for your store is correct.
 
-Store: ${data.storeNumber} - ${data.storeName}
+Store: ${data.storeNumber} - ${data.storeName}${data.storeType ? `
+Type: ${data.storeType}` : ''}
 
 CURRENT HOURS:
 ${hoursFormatted.text}

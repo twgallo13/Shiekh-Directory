@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { createHash, randomUUID } from 'crypto';
 import type { AuthUser, Location, Person, Region, District, Assignment } from '../../src/types';
+import { getStoreTypeLabel } from '../../src/types';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 import { resolvePositionHolders, formatOtherHoldersForCsv } from '../utils/positionHolder';
 
@@ -24,6 +25,7 @@ interface ExportLocation {
   storeNumber: string;
   name: string;
   kind: string;
+  storeType: string;
   address: string;
   suite: string;
   city: string;
@@ -282,6 +284,7 @@ function mapExportLocation(
     storeNumber: location.storeNumber,
     name: location.name,
     kind: location.kind,
+    storeType: getStoreTypeLabel(location.storeType),
     address: addr.street || '',
     suite: addr.suite || '',
     city: addr.city || '',
@@ -360,7 +363,7 @@ function generateCsv(locations: ExportLocation[], userRole: string): string {
   const rows = locations.map(loc => [
     formatStoreNumberForExcel(loc.storeNumber),
     escapeCsvValue(loc.name),
-    escapeCsvValue(loc.kind),
+    escapeCsvValue(loc.storeType || loc.kind),
     escapeCsvValue(loc.address),
     escapeCsvValue(loc.suite),
     escapeCsvValue(loc.city),

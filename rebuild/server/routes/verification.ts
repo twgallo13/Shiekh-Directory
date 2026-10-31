@@ -7,6 +7,7 @@ import type {
   AuditLogEntry,
   VerificationRequest,
 } from '../../src/types';
+import { getStoreTypeLabel } from '../../src/types';
 import { createMailService } from '../services/mail';
 import { createVerificationRequestEmail } from '../services/mailTemplates';
 
@@ -265,6 +266,7 @@ export function createVerificationRouter(db: Firestore): Router {
         storeName: location.name,
         storeNumber: location.storeNumber,
         storeEmail: location.sharedInboxEmail,
+        storeType: getStoreTypeLabel(location.storeType),
         verificationUrl,
         expiresAt: expiresAt.toISOString(),
         confirmUrl,

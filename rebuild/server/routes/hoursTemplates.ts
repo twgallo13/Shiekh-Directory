@@ -8,6 +8,7 @@ import type {
   AppliedHoursTemplate,
   StoreTypeCode,
   AuditLogEntry,
+  AuditChange,
 } from '../../src/types';
 import { hasPermission } from '../../src/lib/permissions';
 import { isValidStoreTypeCode } from '../../src/types';
@@ -319,11 +320,11 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
 
       await db.collection('hoursTemplates').doc(id).update(updates);
 
-      const changes: { field: string; oldValue?: unknown; newValue?: unknown }[] = [];
+      const changes: AuditChange[] = [];
       if (updates.name !== undefined) changes.push({ field: 'name', oldValue: existing.name, newValue: updates.name });
       if (updates.hours !== undefined) changes.push({ field: 'hours', oldValue: 'previous schedule', newValue: 'updated schedule' });
-      if (updates.defaultForTypes !== undefined) changes.push({ field: 'defaultForTypes', oldValue: existing.defaultForTypes?.join(', '), newValue: updates.defaultForTypes?.join(', ') || 'none' });
-      if (updates.isDefault !== undefined) changes.push({ field: 'isDefault', oldValue: existing.isDefault, newValue: updates.isDefault });
+      if (updates.defaultForTypes !== undefined) changes.push({ field: 'defaultForTypes', oldValue: existing.defaultForTypes?.join(', ') ?? null, newValue: updates.defaultForTypes?.join(', ') || 'none' });
+      if (updates.isDefault !== undefined) changes.push({ field: 'isDefault', oldValue: existing.isDefault ?? null, newValue: updates.isDefault ?? null });
 
       await addAuditEntry(db, {
         userId: authUser.uid,

@@ -29,7 +29,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isLeaderOrAbove = authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isStewardOrAdmin = authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isAdmin = authUser?.role === 'Admin';
-  const isStoreUser = authUser?.role === 'Store' || !!storeSession;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

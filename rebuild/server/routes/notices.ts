@@ -4,6 +4,7 @@ import type {
   Notice,
   AuthUser,
   AuditLogEntry,
+  AuditChange,
   Location,
 } from '../../src/types';
 import { hasPermission } from '../../src/lib/permissions';
@@ -172,7 +173,7 @@ export function createNoticesRouter(db: Firestore): Router {
 
       const existingNotice = noticeDoc.data() as Notice;
       const updates: Partial<Notice> = {};
-      const auditChanges: { field: string; oldValue?: unknown; newValue?: unknown }[] = [];
+      const auditChanges: AuditChange[] = [];
 
       if (text !== undefined) {
         if (!text.trim()) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Calendar, RefreshCw, Store, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../context/AuthContext';
 
 interface StaleStoreItem {
   id: string;

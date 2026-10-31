@@ -448,7 +448,11 @@ export type AuditAction =
   | 'closure:end'
   | 'send'
   | 'respond'
-  | 'cancel';
+  | 'cancel'
+  | 'request-signin'
+  | 'use-signin-token'
+  | 'one-click-confirm'
+  | 'one-click-update';
 
 export interface AuditLogEntry {
   id: string;
@@ -457,7 +461,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store
@@ -495,6 +499,47 @@ export interface VerificationRequest extends RecordMetadata {
   cancelledAt?: string; // ISO timestamp
   cancelledBy?: string; // User ID (Admin/Steward who cancelled)
   // Email tracking
+  emailSent?: boolean;
+  emailMessageId?: string;
+  emailError?: string;
+  lastReminderAt?: string;
+  reminderCount?: number;
+}
+
+// === DM Verification (District Manager verification cycle) ===
+export type DMVerificationStatus = 'pending' | 'in_progress' | 'confirmed' | 'expired' | 'cancelled';
+
+export type DMVerificationRecipientType = 'dm' | 'rm' | 'steward';
+
+export interface DMVerificationStoreResponse {
+  locationId: string;
+  storeNumber: string;
+  storeName: string;
+  smConfirmed: boolean; // SM/ASM/KH confirmed
+  smCorrectionId?: string; // Correction ID if changes requested
+  respondedAt?: string;
+}
+
+export interface DMVerificationRequest extends RecordMetadata {
+  id: string;
+  districtId: string;
+  districtName: string;
+  regionId: string;
+  regionName?: string;
+  status: DMVerificationStatus;
+  cycleStartDate: string; // YYYY-MM-DD when the store cycle started
+  sentAt: string; // ISO timestamp
+  sentTo: string; // Email address
+  sentToPersonId: string; // Person ID of recipient
+  sentToPersonName: string;
+  sentBy: string; // User ID who triggered the cycle
+  recipientType: DMVerificationRecipientType; // dm, rm, or steward
+  expiresAt: string; // ISO timestamp
+  respondedAt?: string; // ISO timestamp when response was submitted
+  respondedBy?: string; // User ID
+  storeResponses?: DMVerificationStoreResponse[];
+  cancelledAt?: string;
+  cancelledBy?: string;
   emailSent?: boolean;
   emailMessageId?: string;
   emailError?: string;
@@ -563,6 +608,7 @@ export interface AuthUser {
   displayName: string;
   role: UserRole;
   storeLocationId?: string; // For Store role
+  personId?: string; // For Leader role: links to a person record with DM/RM assignments
   leaderScope?: {
     districtIds: string[];
     regionIds: string[];

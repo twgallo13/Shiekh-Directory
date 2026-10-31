@@ -19,7 +19,7 @@ export interface StaleStoreItem {
 export function createStaleStoresRouter(db: Firestore): Router {
   const router = Router();
 
-  router.get('/', async (req: Request, res: Response) => {
+  router.get('/', async (_req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser | undefined;
       if (!authUser) {
@@ -41,8 +41,8 @@ export function createStaleStoresRouter(db: Firestore): Router {
         .where('recordStatus', '==', 'Active')
         .where('locationType', '==', 'Retail Store');
 
-      if (authUser.role === 'Leader' && authUser.districtId) {
-        locationsQuery = locationsQuery.where('districtId', '==', authUser.districtId);
+      if (authUser.role === 'Leader' && authUser.leaderScope?.districtIds?.length) {
+        locationsQuery = locationsQuery.where('districtId', 'in', authUser.leaderScope.districtIds);
       }
 
       const snapshot = await locationsQuery.get();

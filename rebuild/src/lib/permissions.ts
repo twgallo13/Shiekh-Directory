@@ -110,6 +110,7 @@ export function canEditLocation(
   closure: boolean;
   hours: boolean;
   contactInfo: boolean | 'propose-only';
+  directions: boolean | 'propose-only';
   assignments: boolean;
 } {
   const closureCheck = hasPermission(user, 'edit:closure', locationId);
@@ -117,11 +118,17 @@ export function canEditLocation(
   const contactCheck = hasPermission(user, 'edit:contactInfo', locationId);
   const assignCheck = hasPermission(user, 'assign:storeLead', locationId);
   
+  const canEditDirections = user.role === 'Admin' || user.role === 'Steward' ||
+    (user.role === 'Store' && user.storeLocationId === locationId);
+  
   return {
     closure: closureCheck.allowed && closureCheck.scope !== 'propose-only',
     hours: hoursCheck.allowed && hoursCheck.scope !== 'propose-only',
     contactInfo: contactCheck.allowed
       ? (contactCheck.scope === 'propose-only' ? 'propose-only' : true)
+      : false,
+    directions: canEditDirections 
+      ? (user.role === 'Store' ? 'propose-only' : true)
       : false,
     assignments: assignCheck.allowed && assignCheck.scope !== 'propose-only',
   };

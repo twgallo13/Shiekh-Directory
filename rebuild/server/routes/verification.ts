@@ -220,6 +220,8 @@ export function createVerificationRouter(db: Firestore): Router {
         expiresAt: expiresAt.toISOString(),
         confirmUrl,
         updateUrl,
+        hours: location.standardHours,
+        wayfindingDirections: location.wayfindingDirections,
       };
 
       const email = createVerificationRequestEmail(emailData);

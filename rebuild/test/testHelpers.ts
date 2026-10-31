@@ -235,3 +235,44 @@ export async function seedTestLocationsForDistrict(districtId: string, regionId:
 
   return locationIds;
 }
+
+export async function seedTestLocations(): Promise<string[]> {
+  const db = getTestDb();
+  const now = new Date().toISOString();
+  const locationIds: string[] = [];
+
+  const testStores = [
+    { storeNumber: '001', name: 'Test Store One' },
+    { storeNumber: '042', name: 'Test Store Forty-Two' },
+  ];
+
+  for (const store of testStores) {
+    const locationRef = db.collection('locations').doc();
+    await locationRef.set({
+      kind: 'store',
+      storeNumber: store.storeNumber,
+      name: store.name,
+      lifecycle: 'active',
+      address: {
+        street: '123 Test St',
+        city: 'Test City',
+        state: 'CA',
+        zip: '90001',
+        country: 'US',
+      },
+      timeZone: 'America/Los_Angeles',
+      mainPhone: '+12135550001',
+      phonePublic: true,
+      sharedInboxEmail: `store${parseInt(store.storeNumber, 10)}@shiekhshoes.com`,
+      regionId: 'test-region-1',
+      districtId: 'test-district-1',
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+      version: 1,
+    });
+    locationIds.push(locationRef.id);
+  }
+
+  return locationIds;
+}

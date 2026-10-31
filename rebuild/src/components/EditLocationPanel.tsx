@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 interface EditLocationPanelProps {
   location: LocationDetail;
-  field: 'hours' | 'contact' | 'closure';
+  field: 'hours' | 'contact' | 'closure' | 'directions';
   onSave: () => void;
   onCancel: () => void;
 }
@@ -59,6 +59,9 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
     sunday: { closed: true, intervals: [] },
   });
 
+  // Directions form state
+  const [wayfindingDirections, setWayfindingDirections] = useState(location.wayfindingDirections || '');
+
   // Closure form state
   const [closureReasonCode, setClosureReasonCode] = useState<ClosureReasonCode | ''>('');
   const [closureReasonText, setClosureReasonText] = useState('');
@@ -101,6 +104,11 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
         if (JSON.stringify(address) !== JSON.stringify(location.address)) changes.address = address;
       } else if (field === 'hours') {
         changes.standardHours = hours;
+      } else if (field === 'directions') {
+        const newDirections = wayfindingDirections.trim().slice(0, 1000);
+        if (newDirections !== (location.wayfindingDirections || '')) {
+          changes.wayfindingDirections = newDirections || null;
+        }
       }
 
       if (Object.keys(changes).length === 0) {
@@ -231,7 +239,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
       <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">
-            {field === 'hours' ? 'Edit Hours' : field === 'contact' ? 'Edit Contact Info' : 'Add Temporary Closure'}
+            {field === 'hours' ? 'Edit Hours' : field === 'contact' ? 'Edit Contact Info' : field === 'directions' ? 'Edit Directions' : 'Add Temporary Closure'}
           </h2>
           <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
@@ -355,6 +363,33 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {field === 'directions' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">How to Find Us</label>
+                <textarea
+                  value={wayfindingDirections}
+                  onChange={(e) => setWayfindingDirections(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  rows={4}
+                  maxLength={1000}
+                  placeholder="Describe how customers can find your store (e.g., 'Enter through main mall entrance, turn left past food court, store is on the right near Macy's')"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {wayfindingDirections.length}/1000 characters
+                </p>
+              </div>
+              <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                These directions help customers find your store and are included in verification emails.
+              </p>
+              {authUser && authUser.role === 'Store' && (
+                <p className="text-sm text-yellow-700 bg-yellow-50 px-3 py-2 rounded-lg">
+                  Changes to directions require Steward approval before going live.
+                </p>
+              )}
             </div>
           )}
 

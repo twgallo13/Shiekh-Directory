@@ -21,6 +21,10 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   send: 'Sent',
   respond: 'Responded',
   cancel: 'Cancelled',
+  'request-signin': 'Sign-in requested',
+  'use-signin-token': 'Sign-in token used',
+  'one-click-confirm': 'One-click confirmed',
+  'one-click-update': 'One-click update',
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {

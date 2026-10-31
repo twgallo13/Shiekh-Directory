@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, Users } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, Users, Navigation } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationDetail, AssignmentCapacity } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -19,7 +19,7 @@ export function LocationDetailView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
-  const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | null>(null);
+  const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | 'directions' | null>(null);
   const [showAssignments, setShowAssignments] = useState(false);
   const [showReportProblem, setShowReportProblem] = useState(false);
   const [assignments, setAssignments] = useState<{
@@ -37,7 +37,7 @@ export function LocationDetailView() {
   
   const editPermissions = authUser && location
     ? canEditLocation(authUser, location.id)
-    : { closure: false, hours: false, contactInfo: false, assignments: false };
+    : { closure: false, hours: false, contactInfo: false, directions: false, assignments: false };
   
   const fetchLocation = useCallback(async () => {
     if (!id) return;
@@ -378,9 +378,6 @@ export function LocationDetailView() {
             {location.mallOrCenterName && (
               <p className="text-sm text-gray-500">{location.mallOrCenterName}</p>
             )}
-            {location.wayfindingDirections && (
-              <p className="text-sm text-gray-500 italic">{location.wayfindingDirections}</p>
-            )}
             <a
               href={location.mapsUrl}
               target="_blank"
@@ -390,6 +387,32 @@ export function LocationDetailView() {
               Open in Maps <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
+        </div>
+
+        {/* How to Find Us - Wayfinding Directions */}
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <Navigation className="w-4 h-4" />
+              How to Find Us
+            </h3>
+            {editPermissions.directions && (
+              <button
+                onClick={() => setEditingField('directions')}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg -m-2"
+                aria-label="Edit directions"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {location.wayfindingDirections ? (
+            <p className="text-gray-700">{location.wayfindingDirections}</p>
+          ) : (
+            <p className="text-gray-400 italic">
+              {editPermissions.directions ? 'No directions added yet. Click edit to add directions.' : 'No directions available.'}
+            </p>
+          )}
         </div>
         
         {/* Hours */}

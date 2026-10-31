@@ -104,7 +104,6 @@ export function createEditRouter(db: Firestore): Router {
 
           case 'name':
           case 'mallOrCenterName':
-          case 'wayfindingDirections':
           case 'storeType':
             if (authUser.role === 'Steward' || authUser.role === 'Admin') {
               updateData[field] = value;
@@ -112,6 +111,21 @@ export function createEditRouter(db: Firestore): Router {
             } else {
               return res.status(403).json({
                 error: { code: 'forbidden', message: `Only Steward or Admin can edit ${field}`, requestId: res.locals.requestId },
+              });
+            }
+            break;
+
+          case 'wayfindingDirections':
+            if (authUser.role === 'Steward' || authUser.role === 'Admin') {
+              updateData[field] = value;
+              auditChanges.push({ field, oldValue: (location.wayfindingDirections as string) ?? null, newValue: value as string });
+            } else if (authUser.role === 'Store' && authUser.storeLocationId === id) {
+              requiresApproval = true;
+              proposedChanges[field] = value;
+              currentValues[field] = location.wayfindingDirections;
+            } else {
+              return res.status(403).json({
+                error: { code: 'forbidden', message: `You don't have permission to edit directions`, requestId: res.locals.requestId },
               });
             }
             break;

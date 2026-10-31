@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
-import { randomBytes, createHmac, timingSafeEqual } from 'crypto';
+import { randomBytes, createHmac } from 'crypto';
 import { createMailService } from '../services/mail';
 import type { Location, AuditLogEntry } from '../../src/types';
 

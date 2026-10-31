@@ -213,12 +213,9 @@ describe('Verification Email - One-Click Buttons', () => {
   });
 
   it('handles missing one-click URLs gracefully', () => {
-    const data = {
-      storeName: 'Test Store',
-      storeNumber: '042',
-      storeEmail: 'store42@shiekhshoes.com',
-      verificationUrl: 'https://example.com/verify/123',
-      expiresAt: new Date().toISOString(),
+    const data: { confirmUrl?: string; updateUrl?: string } = {
+      confirmUrl: undefined,
+      updateUrl: undefined,
     };
 
     const hasOneClick = data.confirmUrl && data.updateUrl;

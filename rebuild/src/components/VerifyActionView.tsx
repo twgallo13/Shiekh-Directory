@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { CheckCircle, XCircle, Loader2, AlertCircle, Edit, ArrowRight } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, Edit, ArrowRight } from 'lucide-react';
 
 export function VerifyActionView() {
   const [searchParams] = useSearchParams();

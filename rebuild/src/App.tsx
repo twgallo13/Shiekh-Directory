@@ -16,6 +16,7 @@ import { ClosuresBoardPage } from './components/ClosuresBoardPage';
 import { StaleStoresView } from './components/StaleStoresView';
 import { StoreSignInView } from './components/StoreSignInView';
 import { VerifyActionView } from './components/VerifyActionView';
+import { DMVerifyView } from './components/DMVerifyView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -49,6 +50,7 @@ function AppRoutes() {
       <Route path="/signin" element={<SignInView />} />
       <Route path="/store-signin" element={<StoreSignInView />} />
       <Route path="/verify-action" element={<VerifyActionView />} />
+      <Route path="/dm-verify/:id" element={<DMVerifyView />} />
       <Route
         path="/"
         element={

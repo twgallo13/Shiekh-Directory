@@ -6,8 +6,10 @@ import type {
   AuthUser,
   Location,
   AppliedHoursTemplate,
+  StoreTypeCode,
 } from '../../src/types';
 import { hasPermission } from '../../src/lib/permissions';
+import { isValidStoreTypeCode } from '../../src/types';
 
 export function createHoursTemplatesRouter(db: Firestore): Router {
   const router = Router();
@@ -37,6 +39,58 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
       console.error('List hours templates error:', error);
       return res.status(500).json({
         error: { code: 'list_error', message: 'Failed to list hours templates', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // Suggest templates for a store type
+  router.get('/suggest/:storeType', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      const { storeType } = req.params;
+      if (!isValidStoreTypeCode(storeType)) {
+        return res.status(400).json({
+          error: { code: 'invalid_store_type', message: 'Invalid store type code', requestId: res.locals.requestId },
+        });
+      }
+
+      const snap = await db.collection('hoursTemplates')
+        .where('lifecycle', '==', 'active')
+        .get();
+      
+      const templates = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as HoursTemplate[];
+      
+      // Find templates with this store type in defaultForTypes
+      const typeMatches = templates.filter(t => 
+        t.defaultForTypes?.includes(storeType as StoreTypeCode)
+      );
+      
+      // Find default template as fallback
+      const defaultTemplate = templates.find(t => t.isDefault === true);
+      
+      // Return suggestions: type-specific first, then default
+      const suggestions = typeMatches.length > 0 
+        ? typeMatches 
+        : defaultTemplate ? [defaultTemplate] : [];
+
+      return res.json({ 
+        data: { 
+          storeType,
+          suggestions,
+          hasTypeSpecific: typeMatches.length > 0,
+          hasFallback: !!defaultTemplate && typeMatches.length === 0,
+        } 
+      });
+    } catch (error) {
+      console.error('Suggest hours template error:', error);
+      return res.status(500).json({
+        error: { code: 'suggest_error', message: 'Failed to suggest hours templates', requestId: res.locals.requestId },
       });
     }
   });
@@ -85,7 +139,7 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
         });
       }
 
-      const { name, description, hours } = req.body;
+      const { name, description, hours, defaultForTypes, isDefault } = req.body;
 
       if (!name?.trim()) {
         return res.status(400).json({
@@ -109,6 +163,21 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
         }
       }
 
+      // Validate defaultForTypes if provided
+      let validatedDefaultForTypes: StoreTypeCode[] | undefined;
+      if (defaultForTypes && Array.isArray(defaultForTypes)) {
+        validatedDefaultForTypes = [];
+        for (const code of defaultForTypes) {
+          if (typeof code === 'string' && isValidStoreTypeCode(code)) {
+            validatedDefaultForTypes.push(code);
+          } else {
+            return res.status(400).json({
+              error: { code: 'invalid_store_type', message: `Invalid store type code: ${code}`, requestId: res.locals.requestId },
+            });
+          }
+        }
+      }
+
       const now = new Date().toISOString();
       const templateRef = db.collection('hoursTemplates').doc();
       const template: Omit<HoursTemplate, 'id'> = {
@@ -121,6 +190,8 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
         updatedAt: now,
         updatedBy: authUser.uid,
         lifecycle: 'active',
+        defaultForTypes: validatedDefaultForTypes,
+        isDefault: isDefault === true ? true : undefined,
       };
 
       await templateRef.set(template);
@@ -151,7 +222,7 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
       }
 
       const { id } = req.params;
-      const { name, description, hours } = req.body;
+      const { name, description, hours, defaultForTypes, isDefault } = req.body;
 
       const doc = await db.collection('hoursTemplates').doc(id).get();
       if (!doc.exists) {
@@ -192,6 +263,30 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
         updates.hours = hours as StandardHours;
         // Increment version when hours change
         updates.version = existing.version + 1;
+      }
+
+      // Handle defaultForTypes update
+      if (defaultForTypes !== undefined) {
+        if (defaultForTypes === null || (Array.isArray(defaultForTypes) && defaultForTypes.length === 0)) {
+          updates.defaultForTypes = undefined;
+        } else if (Array.isArray(defaultForTypes)) {
+          const validated: StoreTypeCode[] = [];
+          for (const code of defaultForTypes) {
+            if (typeof code === 'string' && isValidStoreTypeCode(code)) {
+              validated.push(code);
+            } else {
+              return res.status(400).json({
+                error: { code: 'invalid_store_type', message: `Invalid store type code: ${code}`, requestId: res.locals.requestId },
+              });
+            }
+          }
+          updates.defaultForTypes = validated;
+        }
+      }
+
+      // Handle isDefault update
+      if (isDefault !== undefined) {
+        updates.isDefault = isDefault === true ? true : undefined;
       }
 
       await db.collection('hoursTemplates').doc(id).update(updates);

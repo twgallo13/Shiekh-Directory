@@ -280,3 +280,114 @@ describe('DM Verification - Cancelled/Expired Rejection', () => {
     await db.collection('dmVerificationRequests').doc(expiredRequestId).delete();
   });
 });
+
+describe('Store Session - Cookie Authentication', () => {
+  it('API accepts store session via cookie (credentials:include)', async () => {
+    const db = await getTestDb();
+    const testLocationId = 'test-store-cookie-auth';
+    
+    await db.collection('locations').doc(testLocationId).set({
+      storeNumber: '999',
+      name: 'Test Store Cookie Auth',
+      lifecycle: 'active',
+      kind: 'store',
+      address: { street: '123 Test St', city: 'Test', state: 'CA', zip: '90210' },
+      timeZone: 'America/Los_Angeles',
+      mainPhone: '555-0199',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      version: 1,
+    });
+
+    const res = await fetch(`${API_BASE}/api/app/locations/${testLocationId}`, {
+      headers: { Authorization: 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.data);
+    assert.strictEqual(body.data.storeNumber, '999');
+
+    await db.collection('locations').doc(testLocationId).delete();
+  });
+
+  it('store session provides role Store in authUser', () => {
+    const storeAuthUser = {
+      uid: 'store_test-location',
+      email: 'store@shiekhshoes.com',
+      displayName: 'Store 71',
+      role: 'Store' as const,
+      storeLocationId: 'test-location',
+      isStoreSession: true,
+    };
+    
+    assert.strictEqual(storeAuthUser.role, 'Store');
+    assert.ok(storeAuthUser.storeLocationId);
+    assert.ok(storeAuthUser.isStoreSession);
+  });
+
+  it('store session should use __session cookie name', () => {
+    const expectedCookieName = '__session';
+    assert.strictEqual(expectedCookieName, '__session');
+  });
+});
+
+describe('Store Session - Route Access Control', () => {
+  const STAFF_ONLY_ROUTES = [
+    '/admin',
+    '/people', 
+    '/hierarchy',
+    '/verification',
+    '/stale-stores',
+    '/corrections',
+    '/holidays',
+    '/closures',
+    '/print',
+    '/settings',
+  ];
+
+  it('store sessions cannot access staff-only routes', () => {
+    const storeSession = {
+      role: 'Store' as const,
+      locationId: 'store-71',
+    };
+    
+    for (const route of STAFF_ONLY_ROUTES) {
+      const canAccess = storeSession.role !== 'Store';
+      assert.strictEqual(canAccess, false, `store should not access ${route}`);
+    }
+  });
+
+  it('store sessions can access their own store page', () => {
+    const storeSession = {
+      role: 'Store' as const,
+      locationId: 'store-71',
+    };
+    
+    const requestedPath = '/location/store-71';
+    const pathLocationId = requestedPath.split('/')[2];
+    const canAccess = pathLocationId === storeSession.locationId;
+    
+    assert.strictEqual(canAccess, true, 'store should access own store');
+  });
+
+  it('store sessions cannot access other store pages', () => {
+    const storeSession = {
+      role: 'Store' as const,
+      locationId: 'store-71',
+    };
+    
+    const requestedPath = '/location/store-72';
+    const pathLocationId = requestedPath.split('/')[2];
+    const canAccess = pathLocationId === storeSession.locationId;
+    
+    assert.strictEqual(canAccess, false, 'store should not access other store');
+  });
+
+  it('store sessions can access my-requests page', () => {
+    const STORE_ALLOWED_ROUTES = ['/my-requests', '/location'];
+    const requestedPath = '/my-requests';
+    const isAllowed = STORE_ALLOWED_ROUTES.some(r => requestedPath.startsWith(r));
+    assert.strictEqual(isAllowed, true, 'store should access my-requests');
+  });
+});

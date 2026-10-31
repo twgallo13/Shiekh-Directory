@@ -15,9 +15,28 @@ import type {
 import { createMailService } from '../services/mail';
 import { createDMVerificationRequestEmail } from '../services/mailTemplates';
 
-const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
 const DEFAULT_DM_OFFSET_DAYS = 14;
+
+function getAppUrl(req: Request): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL;
+  }
+  const origin = req.get('origin') || req.get('x-forwarded-host');
+  if (origin) {
+    if (origin.startsWith('http')) {
+      return origin;
+    }
+    const protocol = req.get('x-forwarded-proto') || 'https';
+    return `${protocol}://${origin}`;
+  }
+  const host = req.get('host');
+  if (host) {
+    const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+    return `${protocol}://${host}`;
+  }
+  return 'https://directory.shiekh.com';
+}
 const DM_VERIFICATION_EXPIRY_DAYS = 14;
 
 function generateToken(): string {
@@ -370,7 +389,8 @@ export function createDMVerificationRouter(db: Firestore): Router {
         createdBy: authUser.uid,
       });
 
-      const verificationUrl = `${APP_URL}/dm-verify/${requestRef.id}?token=${verifyToken}`;
+      const appUrl = getAppUrl(req);
+      const verificationUrl = `${appUrl}/dm-verify/${requestRef.id}?token=${verifyToken}`;
 
       const mailService = createMailService(db);
       const emailData = {

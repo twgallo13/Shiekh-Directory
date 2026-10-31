@@ -26,7 +26,7 @@ export function createAuthMiddleware(db?: Firestore): Router {
     res.locals.requestId = randomUUID();
     res.setHeader('X-Request-ID', res.locals.requestId);
     
-    const sessionId = req.cookies?.store_session || 
+    const sessionId = req.cookies?.__session || 
       (req.headers.authorization?.startsWith('StoreSession ') 
         ? req.headers.authorization.slice(13) 
         : null);
@@ -112,7 +112,7 @@ export function createOptionalAuthMiddleware(db?: Firestore): Router {
       res.setHeader('X-Request-ID', res.locals.requestId);
     }
     
-    const sessionId = req.cookies?.store_session || 
+    const sessionId = req.cookies?.__session || 
       (req.headers.authorization?.startsWith('StoreSession ') 
         ? req.headers.authorization.slice(13) 
         : null);

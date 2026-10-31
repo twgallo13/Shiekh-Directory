@@ -88,7 +88,7 @@ function parseStoreEmail(email: string): { valid: boolean; storeNumber?: number 
 
 function setSessionCookie(res: Response, sessionId: string, expiresAt: Date): void {
   const isProduction = process.env.NODE_ENV === 'production';
-  res.cookie('store_session', sessionId, {
+  res.cookie('__session', sessionId, {
     httpOnly: true,
     secure: isProduction,
     sameSite: 'strict',
@@ -98,7 +98,7 @@ function setSessionCookie(res: Response, sessionId: string, expiresAt: Date): vo
 }
 
 function clearSessionCookie(res: Response): void {
-  res.clearCookie('store_session', {
+  res.clearCookie('__session', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
@@ -374,7 +374,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
   router.post('/logout', async (req: Request, res: Response) => {
     try {
-      const sessionId = req.cookies?.store_session || 
+      const sessionId = req.cookies?.__session || 
         (req.headers.authorization?.startsWith('StoreSession ') 
           ? req.headers.authorization.slice(13) 
           : null);
@@ -763,7 +763,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
   router.get('/session', async (req: Request, res: Response) => {
     try {
-      const sessionId = req.cookies?.store_session || 
+      const sessionId = req.cookies?.__session || 
         (req.headers.authorization?.startsWith('StoreSession ') 
           ? req.headers.authorization.slice(13) 
           : null);

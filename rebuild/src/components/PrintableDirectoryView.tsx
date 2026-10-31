@@ -43,6 +43,10 @@ interface ExportData {
   districts: DistrictGroup[];
 }
 
+function canAccessExports(role: string | undefined): boolean {
+  return ['Leader', 'Steward', 'Admin'].includes(role || '');
+}
+
 export function PrintableDirectoryView() {
   const [loading, setLoading] = useState(true);
   const [preparing, setPreparing] = useState(false);
@@ -53,6 +57,8 @@ export function PrintableDirectoryView() {
   
   const { getIdToken, authUser } = useAuth();
   const navigate = useNavigate();
+  
+  const hasAccess = canAccessExports(authUser?.role);
 
   const prepareExport = useCallback(async () => {
     try {
@@ -95,8 +101,12 @@ export function PrintableDirectoryView() {
   }, [getIdToken]);
 
   useEffect(() => {
-    prepareExport();
-  }, [prepareExport]);
+    if (hasAccess) {
+      prepareExport();
+    } else {
+      setLoading(false);
+    }
+  }, [prepareExport, hasAccess]);
 
   const handlePrint = () => {
     window.print();
@@ -145,6 +155,27 @@ export function PrintableDirectoryView() {
     day: 'numeric',
     year: 'numeric',
   });
+
+  if (!hasAccess) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md mx-4">
+          <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto" />
+          <h2 className="mt-4 text-lg font-semibold text-gray-900">Access Restricted</h2>
+          <p className="mt-2 text-gray-600">
+            Export and print access requires Leader, Steward, or Admin role.
+          </p>
+          <button
+            onClick={() => navigate('/')}
+            className="mt-4 flex items-center gap-2 mx-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Directory
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

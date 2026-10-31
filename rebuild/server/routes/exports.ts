@@ -57,6 +57,12 @@ export function createExportsRouter(db: Firestore): Router {
       if (!authUser) {
         return res.status(401).json({ error: { code: 'unauthorized', message: 'Authentication required' } });
       }
+      
+      if (!['Leader', 'Steward', 'Admin'].includes(authUser.role)) {
+        return res.status(403).json({ 
+          error: { code: 'access_denied', message: 'Export access requires Leader, Steward, or Admin role' } 
+        });
+      }
 
       const [locationsSnap, peopleSnap, regionsSnap, districtsSnap, assignmentsSnap] = await Promise.all([
         db.collection('locations').where('lifecycle', '==', 'active').get(),

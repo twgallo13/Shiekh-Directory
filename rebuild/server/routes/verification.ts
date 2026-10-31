@@ -186,6 +186,8 @@ export function createVerificationRouter(db: Firestore): Router {
 
       const confirmToken = generateToken();
       const updateToken = generateToken();
+      const confirmTokenId = `tok_${randomBytes(8).toString('hex')}`;
+      const updateTokenId = `tok_${randomBytes(8).toString('hex')}`;
 
       const baseTokenData = {
         locationId: location.id,
@@ -200,15 +202,42 @@ export function createVerificationRouter(db: Firestore): Router {
       await db.collection('storeAuthTokens').doc(hashToken(confirmToken)).set({
         ...baseTokenData,
         action: 'confirm',
+        tokenId: confirmTokenId,
       });
 
       await db.collection('storeAuthTokens').doc(hashToken(updateToken)).set({
         ...baseTokenData,
         action: 'update',
+        tokenId: updateTokenId,
+      });
+
+      // Store tokens for test link retrieval (only accessible when MAIL_CUTOVER_ENABLED is unset)
+      await db.collection('testTokens').doc(confirmTokenId).set({
+        token: confirmToken,
+        action: 'confirm',
+        verificationRequestId: requestRef.id,
+        locationId: location.id,
+        storeNumber: location.storeNumber,
+        expiresAt: expiresAt.toISOString(),
+        createdAt: now.toISOString(),
+        createdBy: authUser.uid,
+      });
+
+      await db.collection('testTokens').doc(updateTokenId).set({
+        token: updateToken,
+        action: 'update',
+        verificationRequestId: requestRef.id,
+        locationId: location.id,
+        storeNumber: location.storeNumber,
+        expiresAt: expiresAt.toISOString(),
+        createdAt: now.toISOString(),
+        createdBy: authUser.uid,
       });
 
       const confirmUrl = `${APP_URL}/verify-action?token=${confirmToken}&action=confirm`;
       const updateUrl = `${APP_URL}/verify-action?token=${updateToken}&action=update`;
+      const confirmUrlRedacted = `${APP_URL}/verify-action?token=[REDACTED:${confirmTokenId}]&action=confirm`;
+      const updateUrlRedacted = `${APP_URL}/verify-action?token=[REDACTED:${updateTokenId}]&action=update`;
 
       const mailService = createMailService(db);
       const verificationUrl = `${APP_URL}/verify/${requestRef.id}`;
@@ -255,8 +284,10 @@ export function createVerificationRouter(db: Firestore): Router {
         locationId: location.id,
         storeNumber: location.storeNumber,
         verificationUrl,
-        confirmUrl,
-        updateUrl,
+        confirmUrl: confirmUrlRedacted,
+        updateUrl: updateUrlRedacted,
+        confirmTokenId,
+        updateTokenId,
         sentAt: now.toISOString(),
         sentBy: authUser.uid,
         sentByEmail: authUser.email,
@@ -700,6 +731,90 @@ export function createVerificationRouter(db: Firestore): Router {
       console.error('Get pending verification for store error:', error);
       return res.status(500).json({
         error: { code: 'get_error', message: 'Failed to get pending verification', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.post('/test-link', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { tokenId } = req.body;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (authUser.role !== 'Admin' && authUser.role !== 'Steward') {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Admin and Steward can retrieve test links', requestId: res.locals.requestId },
+        });
+      }
+
+      if (process.env.MAIL_CUTOVER_ENABLED === 'true') {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Test link retrieval is disabled in production', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!tokenId || typeof tokenId !== 'string' || !tokenId.startsWith('tok_')) {
+        return res.status(400).json({
+          error: { code: 'invalid_request', message: 'Valid tokenId required', requestId: res.locals.requestId },
+        });
+      }
+
+      const tokenDoc = await db.collection('testTokens').doc(tokenId).get();
+
+      if (!tokenDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Token not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const tokenData = tokenDoc.data()!;
+
+      if (new Date(tokenData.expiresAt) < new Date()) {
+        return res.status(400).json({
+          error: { code: 'expired', message: 'Token has expired', requestId: res.locals.requestId },
+        });
+      }
+
+      const authTokenHash = hashToken(tokenData.token);
+      const authTokenDoc = await db.collection('storeAuthTokens').doc(authTokenHash).get();
+      
+      if (authTokenDoc.exists && authTokenDoc.data()?.usedAt) {
+        return res.status(400).json({
+          error: { code: 'used', message: 'Token has already been used', requestId: res.locals.requestId },
+        });
+      }
+
+      const testUrl = `${APP_URL}/verify-action?token=${tokenData.token}&action=${tokenData.action}`;
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'verification',
+        entityId: tokenId,
+        entityName: `Test link retrieved for ${tokenData.storeNumber}`,
+        locationId: tokenData.locationId,
+        changes: [{ field: 'testLinkRetrieved', newValue: true }],
+      });
+
+      return res.json({ 
+        data: { 
+          testUrl,
+          action: tokenData.action,
+          storeNumber: tokenData.storeNumber,
+          expiresAt: tokenData.expiresAt,
+        } 
+      });
+    } catch (error) {
+      console.error('Get test link error:', error);
+      return res.status(500).json({
+        error: { code: 'get_error', message: 'Failed to get test link', requestId: res.locals.requestId },
       });
     }
   });

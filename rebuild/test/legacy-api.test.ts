@@ -4,6 +4,27 @@ import assert from 'node:assert';
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 const TEST_TOKEN = 'test-api-token-all';
 
+let serverAvailable = false;
+
+async function checkServerAvailable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${API_BASE}/api/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+before(async () => {
+  serverAvailable = await checkServerAvailable();
+  if (!serverAvailable) {
+    console.log('[Legacy API Tests] Server not available at', API_BASE, '- tests will be skipped');
+  }
+});
+
 interface V1LocationResponse {
   id: string;
   storeNumber: string;
@@ -96,7 +117,8 @@ async function fetchApi(path: string, token = TEST_TOKEN): Promise<Response> {
 
 describe('Legacy API v1 - Locations', () => {
   describe('GET /api/v1/locations', () => {
-    it('returns paginated location list with correct shape', async () => {
+    it('returns paginated location list with correct shape', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetchApi('/api/v1/locations?limit=10');
       assert.strictEqual(res.status, 200);
 

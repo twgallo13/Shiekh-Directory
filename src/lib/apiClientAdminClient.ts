@@ -20,7 +20,6 @@ export interface ApiClientSummary {
   updatedAt: string;
   lastUsedAt?: string;
   tokenVersions: ApiTokenVersionSummary[];
-  rateLimit?: number;
 }
 
 export interface IssuedApiClient {
@@ -54,10 +53,6 @@ export function rotateApiClient(id: string, retirePreviousImmediately: boolean):
 
 export function revokeApiClient(id: string): Promise<ApiClientSummary> {
   return apiClientRequest(`/${encodeURIComponent(id)}/revoke`, "POST", {});
-}
-
-export function updateApiClientRateLimit(id: string, rateLimit: number): Promise<ApiClientSummary> {
-  return apiClientRequest<{ client: ApiClientSummary }>(`/${encodeURIComponent(id)}/rate-limit`, "POST", { rateLimit }).then(r => r.client);
 }
 
 async function apiClientRequest<T>(path: string, method: "GET" | "POST", body?: Record<string, unknown>): Promise<T> {

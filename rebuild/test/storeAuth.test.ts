@@ -1,5 +1,6 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
+import { createHmac } from 'crypto';
 import { seedTestUsers, seedTestLocations } from './testHelpers';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
@@ -175,7 +176,6 @@ describe('Store Auth - Token Security', () => {
   });
 
   it('token hash is deterministic', () => {
-    const { createHmac } = require('crypto');
     const secret = 'test-secret';
     const token = 'test-token-value';
     
@@ -186,7 +186,6 @@ describe('Store Auth - Token Security', () => {
   });
 
   it('different tokens produce different hashes', () => {
-    const { createHmac } = require('crypto');
     const secret = 'test-secret';
     
     const hash1 = createHmac('sha256', secret).update('token1').digest('hex');
@@ -224,20 +223,24 @@ describe('Verification Email - One-Click Buttons', () => {
 });
 
 describe('Mail Log - Test Link Visibility', () => {
-  it('stores verification URLs in mail log for testing', () => {
+  it('stores redacted URLs in mail log with token IDs', () => {
     const mailLogEntry = {
       to: 'store42@shiekhshoes.com',
       type: 'verification-request',
       verificationUrl: 'https://example.com/verify/123',
-      confirmUrl: 'https://example.com/verify-action?token=abc&action=confirm',
-      updateUrl: 'https://example.com/verify-action?token=xyz&action=update',
+      confirmUrl: 'https://example.com/verify-action?token=[REDACTED:tok_abc123]&action=confirm',
+      updateUrl: 'https://example.com/verify-action?token=[REDACTED:tok_xyz789]&action=update',
+      confirmTokenId: 'tok_abc123',
+      updateTokenId: 'tok_xyz789',
       sentAt: new Date().toISOString(),
       blocked: true,
       reason: 'Email not in test allowlist',
     };
 
-    assert.ok(mailLogEntry.confirmUrl, 'mail log should contain confirmUrl');
-    assert.ok(mailLogEntry.updateUrl, 'mail log should contain updateUrl');
+    assert.ok(mailLogEntry.confirmUrl.includes('[REDACTED'), 'confirmUrl should be redacted');
+    assert.ok(mailLogEntry.updateUrl.includes('[REDACTED'), 'updateUrl should be redacted');
+    assert.ok(mailLogEntry.confirmTokenId.startsWith('tok_'), 'should have confirmTokenId');
+    assert.ok(mailLogEntry.updateTokenId.startsWith('tok_'), 'should have updateTokenId');
     assert.ok(mailLogEntry.verificationUrl, 'mail log should contain verificationUrl');
   });
 });

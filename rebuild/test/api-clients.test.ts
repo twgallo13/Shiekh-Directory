@@ -5,6 +5,18 @@ import { seedTestUsers } from './testHelpers';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 
+async function checkServerAvailable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${API_BASE}/api/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 describe('API Client Token Functions', () => {
   describe('generateApiToken', () => {
     it('generates token with shk_ prefix', () => {
@@ -49,8 +61,15 @@ describe('API Client Token Functions', () => {
   });
 });
 
-describe('API Client Endpoints', () => {
+describe('API Client Endpoints', async () => {
+  let serverAvailable = false;
+
   before(async () => {
+    serverAvailable = await checkServerAvailable();
+    if (!serverAvailable) {
+      console.log('[API Client Endpoints] Server not available at', API_BASE, '- tests will be skipped');
+      return;
+    }
     await seedTestUsers();
   });
 
@@ -66,7 +85,8 @@ describe('API Client Endpoints', () => {
   }
 
   describe('GET /api/app/api-clients', () => {
-    it('requires admin role', async () => {
+    it('requires admin role', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetch(`${API_BASE}/api/app/api-clients`, {
         headers: {
           'Authorization': 'Bearer test-token-viewer',
@@ -75,7 +95,8 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(res.status, 403, 'should return 403 for non-admin');
     });
 
-    it('returns list of clients for admin', async () => {
+    it('returns list of clients for admin', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetchApi('/api/app/api-clients');
       assert.strictEqual(res.status, 200, 'should return 200 for admin');
       
@@ -85,7 +106,8 @@ describe('API Client Endpoints', () => {
   });
 
   describe('POST /api/app/api-clients', () => {
-    it('requires name', async () => {
+    it('requires name', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetchApi('/api/app/api-clients', {
         method: 'POST',
         body: JSON.stringify({}),
@@ -93,7 +115,8 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(res.status, 400, 'should return 400 without name');
     });
 
-    it('validates scopes', async () => {
+    it('validates scopes', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetchApi('/api/app/api-clients', {
         method: 'POST',
         body: JSON.stringify({ name: 'Test Client', scopes: ['invalid:scope'] }),
@@ -103,7 +126,8 @@ describe('API Client Endpoints', () => {
   });
 
   describe('POST /api/app/api-clients/:id/rate-limit', () => {
-    it('requires admin role', async () => {
+    it('requires admin role', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetch(`${API_BASE}/api/app/api-clients/test-id/rate-limit`, {
         method: 'POST',
         headers: {
@@ -115,7 +139,8 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(res.status, 403, 'should return 403 for non-admin');
     });
 
-    it('validates rate limit is a number', async () => {
+    it('validates rate limit is a number', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetchApi('/api/app/api-clients/test-id/rate-limit', {
         method: 'POST',
         body: JSON.stringify({ rateLimit: 'unlimited' }),
@@ -123,7 +148,8 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(res.status, 400, 'should return 400 for non-numeric rate limit');
     });
 
-    it('validates rate limit is within range', async () => {
+    it('validates rate limit is within range', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetchApi('/api/app/api-clients/test-id/rate-limit', {
         method: 'POST',
         body: JSON.stringify({ rateLimit: 20000 }),
@@ -131,7 +157,8 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(res.status, 400, 'should return 400 for rate limit > 10000');
     });
 
-    it('accepts 0 for unlimited', async () => {
+    it('accepts 0 for unlimited', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const createRes = await fetchApi('/api/app/api-clients', {
         method: 'POST',
         body: JSON.stringify({ name: `Rate Limit Test ${Date.now()}`, scopes: ['locations:read'] }),
@@ -148,7 +175,8 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(body.client.rateLimit, 0);
     });
 
-    it('updates rate limit successfully', async () => {
+    it('updates rate limit successfully', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const createRes = await fetchApi('/api/app/api-clients', {
         method: 'POST',
         body: JSON.stringify({ name: `Rate Limit Test ${Date.now()}`, scopes: ['locations:read'] }),
@@ -167,7 +195,8 @@ describe('API Client Endpoints', () => {
   });
 
   describe('DELETE /api/app/api-clients/:id', () => {
-    it('cannot delete active client', async () => {
+    it('cannot delete active client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const createRes = await fetchApi('/api/app/api-clients', {
         method: 'POST',
         body: JSON.stringify({ name: `Delete Test ${Date.now()}`, scopes: ['locations:read'] }),
@@ -184,7 +213,8 @@ describe('API Client Endpoints', () => {
       assert.ok(body.error?.message?.includes('Revoke'), 'error should mention revoking first');
     });
 
-    it('deletes revoked client successfully', async () => {
+    it('deletes revoked client successfully', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const createRes = await fetchApi('/api/app/api-clients', {
         method: 'POST',
         body: JSON.stringify({ name: `Delete Test ${Date.now()}`, scopes: ['locations:read'] }),
@@ -206,7 +236,8 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(body.success, true);
     });
 
-    it('returns 404 for non-existent client', async () => {
+    it('returns 404 for non-existent client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
       const res = await fetchApi('/api/app/api-clients/non-existent-id', {
         method: 'DELETE',
       });

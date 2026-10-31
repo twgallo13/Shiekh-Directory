@@ -25,6 +25,7 @@ interface ApiClient {
   version: number;
   createdAt: string;
   lastUsedAt?: string;
+  rateLimit?: number;
 }
 
 interface CustomField {
@@ -580,6 +581,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newToken, setNewToken] = useState<{ clientId: string; token: string } | null>(null);
+  const [editingRateLimit, setEditingRateLimit] = useState<{ client: ApiClient; value: number } | null>(null);
 
   const loadClients = useCallback(async () => {
     try {
@@ -641,6 +643,29 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
     loadClients();
   };
 
+  const handleUpdateRateLimit = async () => {
+    if (!editingRateLimit) return;
+    
+    try {
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/api-clients/${editingRateLimit.client.id}/rate-limit`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ rateLimit: editingRateLimit.value }),
+      });
+      
+      if (res.ok) {
+        setEditingRateLimit(null);
+        loadClients();
+      }
+    } catch (error) {
+      console.error('Update rate limit error:', error);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -684,6 +709,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Scopes</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Rate Limit</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Last Used</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
@@ -695,6 +721,15 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                   <td className="px-4 py-3 font-medium text-gray-900">{client.name}</td>
                   <td className="px-4 py-3 text-gray-600 text-xs">
                     {client.scopes.join(', ')}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setEditingRateLimit({ client, value: client.rateLimit ?? 60 })}
+                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                      disabled={!client.active}
+                    >
+                      {(client.rateLimit ?? 60) === 0 ? 'Unlimited' : `${client.rateLimit ?? 60}/min`}
+                    </button>
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -728,7 +763,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
               ))}
               {clients.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                     No API clients yet
                   </td>
                 </tr>
@@ -744,6 +779,57 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           onClose={() => setShowAddModal(false)}
           onCreated={handleCreated}
         />
+      )}
+
+      {editingRateLimit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <h2 className="font-semibold text-gray-900">Edit Rate Limit</h2>
+              <button onClick={() => setEditingRateLimit(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-gray-600">
+                Configure rate limit for <strong>{editingRateLimit.client.name}</strong>
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Requests per minute
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={editingRateLimit.value}
+                  onChange={(e) => setEditingRateLimit({ 
+                    ...editingRateLimit, 
+                    value: parseInt(e.target.value) || 0 
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Set to 0 for unlimited. Default is 60 requests/min.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setEditingRateLimit(null)}
+                  className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateRateLimit}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Planned API features */}

@@ -30,24 +30,55 @@ export interface ApiClientDocument {
   rateLimit?: number;
 }
 
-// In-memory rate limit counters: clientId -> { count, windowStart }
-interface RateLimitEntry {
-  count: number;
-  windowStart: number;
-}
-const rateLimitCounters = new Map<string, RateLimitEntry>();
 const DEFAULT_RATE_LIMIT = 60; // requests per minute
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 
-// Clean up old entries periodically (every 5 minutes)
-setInterval(() => {
+// Firestore-based rate limiting helper
+async function checkRateLimit(
+  db: Firestore,
+  clientId: string,
+  rateLimit: number
+): Promise<{ allowed: boolean; count: number; windowStart: number; remaining: number }> {
   const now = Date.now();
-  for (const [key, entry] of rateLimitCounters.entries()) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-      rateLimitCounters.delete(key);
-    }
+  const windowStart = now - (now % RATE_LIMIT_WINDOW_MS); // Round down to window boundary
+  const windowId = `${clientId}_${windowStart}`;
+  
+  const counterRef = db.collection('rateLimitCounters').doc(windowId);
+  
+  try {
+    const result = await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(counterRef);
+      
+      if (!doc.exists) {
+        // First request in this window
+        transaction.set(counterRef, {
+          clientId,
+          windowStart,
+          count: 1,
+          expiresAt: new Date(windowStart + RATE_LIMIT_WINDOW_MS * 2).toISOString(),
+        });
+        return { count: 1, windowStart };
+      }
+      
+      const data = doc.data()!;
+      const newCount = (data.count || 0) + 1;
+      transaction.update(counterRef, { count: newCount });
+      return { count: newCount, windowStart: data.windowStart };
+    });
+    
+    const remaining = Math.max(0, rateLimit - result.count);
+    return {
+      allowed: result.count <= rateLimit,
+      count: result.count,
+      windowStart: result.windowStart,
+      remaining,
+    };
+  } catch (error) {
+    // On Firestore error, allow the request but don't count it
+    console.error('Rate limit check error:', error);
+    return { allowed: true, count: 0, windowStart, remaining: rateLimit };
   }
-}, 5 * 60_000);
+}
 
 const TEST_TOKEN_SECRET = 'test-cursor-signing-key-for-rebuild';
 const LAST_USED_THROTTLE_MS = 15 * 60_000;
@@ -106,6 +137,14 @@ export function createLegacyApiAuthMiddleware(db: Firestore): Router {
         cursorSigningKey: TEST_TOKEN_SECRET,
         grantsVersion: 1,
       } as ApiCredential;
+      
+      // Add rate limit headers for test tokens too
+      const testRateLimit = DEFAULT_RATE_LIMIT;
+      const now = Date.now();
+      res.setHeader('X-RateLimit-Limit', testRateLimit.toString());
+      res.setHeader('X-RateLimit-Remaining', (testRateLimit - 1).toString());
+      res.setHeader('X-RateLimit-Reset', Math.ceil((now + RATE_LIMIT_WINDOW_MS) / 1000).toString());
+      
       return next();
     }
 
@@ -142,20 +181,11 @@ export function createLegacyApiAuthMiddleware(db: Firestore): Router {
       const rateLimit = client.rateLimit ?? DEFAULT_RATE_LIMIT;
       if (rateLimit > 0) {
         const now = Date.now();
-        const key = client.id;
-        let entry = rateLimitCounters.get(key);
-        
-        // Reset window if expired
-        if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
-          entry = { count: 0, windowStart: now };
-        }
-        
-        entry.count++;
-        rateLimitCounters.set(key, entry);
+        const rateLimitResult = await checkRateLimit(db, client.id, rateLimit);
         
         // Check if over limit
-        if (entry.count > rateLimit) {
-          const retryAfterSeconds = Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
+        if (!rateLimitResult.allowed) {
+          const retryAfterSeconds = Math.ceil((rateLimitResult.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
           
           // Log rate limit exceeded
           try {
@@ -163,7 +193,7 @@ export function createLegacyApiAuthMiddleware(db: Firestore): Router {
               clientId: client.id,
               clientName: client.name,
               timestamp: new Date().toISOString(),
-              requestCount: entry.count,
+              requestCount: rateLimitResult.count,
               limit: rateLimit,
               path: req.path,
               method: req.method,
@@ -175,7 +205,7 @@ export function createLegacyApiAuthMiddleware(db: Firestore): Router {
           res.setHeader('Retry-After', retryAfterSeconds.toString());
           res.setHeader('X-RateLimit-Limit', rateLimit.toString());
           res.setHeader('X-RateLimit-Remaining', '0');
-          res.setHeader('X-RateLimit-Reset', Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS) / 1000).toString());
+          res.setHeader('X-RateLimit-Reset', Math.ceil((rateLimitResult.windowStart + RATE_LIMIT_WINDOW_MS) / 1000).toString());
           
           return sendLegacyError(res, 429, 'rate_limit_exceeded', 
             `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`);
@@ -183,8 +213,8 @@ export function createLegacyApiAuthMiddleware(db: Firestore): Router {
         
         // Add rate limit headers to successful responses
         res.setHeader('X-RateLimit-Limit', rateLimit.toString());
-        res.setHeader('X-RateLimit-Remaining', Math.max(0, rateLimit - entry.count).toString());
-        res.setHeader('X-RateLimit-Reset', Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS) / 1000).toString());
+        res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
+        res.setHeader('X-RateLimit-Reset', Math.ceil((rateLimitResult.windowStart + RATE_LIMIT_WINDOW_MS) / 1000).toString());
       }
 
       return next();

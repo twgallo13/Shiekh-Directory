@@ -78,7 +78,7 @@ export interface Location extends RecordMetadata {
   storeType?: string;
   mallOrCenterName?: string;
   wayfindingDirections?: string; // <= 1000 chars
-  standardHours: StandardHours;
+  standardHours?: StandardHours;
   lastVerifiedAt?: string; // ISO timestamp
   lastVerifiedBy?: string; // User ID
 }

@@ -246,7 +246,8 @@ export function createLegacyImportRouter(db: Firestore): Router {
         result,
         backup: {
           backupId: backupResult.backupId,
-          outputUriPrefix: backupResult.outputUriPrefix,
+          storagePath: backupResult.storagePath,
+          firestoreDocId: backupResult.firestoreDocId,
         },
       });
     } catch (error) {

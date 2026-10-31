@@ -159,6 +159,14 @@
       ]
     },
     {
+      "collectionGroup": "locations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeNumber", "order": "ASCENDING" },
+        { "fieldPath": "lifecycle", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "importSessions",
       "queryScope": "COLLECTION",
       "fields": [

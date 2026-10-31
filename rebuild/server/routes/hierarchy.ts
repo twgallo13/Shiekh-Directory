@@ -887,16 +887,6 @@ export function createHierarchyRouter(db: Firestore): Router {
       const now = new Date().toISOString();
       const locationRef = db.collection('locations').doc();
 
-      const defaultHours = {
-        monday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
-        tuesday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
-        wednesday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
-        thursday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
-        friday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
-        saturday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
-        sunday: { closed: false, intervals: [{ open: '11:00', close: '19:00' }] },
-      };
-
       const location: Omit<Location, 'id'> = {
         storeNumber: storeNumber.trim(),
         name: name.trim(),
@@ -915,7 +905,6 @@ export function createHierarchyRouter(db: Firestore): Router {
         timeZone,
         mainPhone: mainPhone || '',
         phonePublic: true,
-        standardHours: defaultHours,
         createdAt: now,
         updatedAt: now,
         updatedBy: authUser.uid,

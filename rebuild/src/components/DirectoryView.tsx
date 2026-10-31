@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store, Printer, Users, Network } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store, Printer, Users, Network, FileCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -202,6 +202,18 @@ export function DirectoryView() {
               >
                 <Calendar className="w-4 h-4" />
                 Manage Holidays
+              </button>
+            )}
+            {(authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin') && (
+              <button
+                onClick={() => {
+                  navigate('/verification');
+                  setMenuOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+              >
+                <FileCheck className="w-4 h-4" />
+                Store Verification
               </button>
             )}
             <button

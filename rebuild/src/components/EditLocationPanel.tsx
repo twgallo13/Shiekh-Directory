@@ -30,7 +30,15 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
   const [phone, setPhone] = useState(location.mainPhone);
   const [email, setEmail] = useState(location.sharedInboxEmail || '');
   const [address, setAddress] = useState<Address>(location.address);
-  const [hours, setHours] = useState<StandardHours>(location.standardHours);
+  const [hours, setHours] = useState<StandardHours>(location.standardHours || {
+    monday: { closed: true, intervals: [] },
+    tuesday: { closed: true, intervals: [] },
+    wednesday: { closed: true, intervals: [] },
+    thursday: { closed: true, intervals: [] },
+    friday: { closed: true, intervals: [] },
+    saturday: { closed: true, intervals: [] },
+    sunday: { closed: true, intervals: [] },
+  });
 
   const [closureReason, setClosureReason] = useState('');
   const [closureEndsAt, setClosureEndsAt] = useState('');

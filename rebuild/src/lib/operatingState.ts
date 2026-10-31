@@ -288,6 +288,20 @@ export function resolveOperatingStatus(
       nextTransitionAt: null,
     };
   }
+
+  if (!location.standardHours) {
+    return {
+      state: 'Unknown',
+      reason: 'No hours configured',
+      source: 'unknown',
+      hours: null,
+      localDate,
+      localTime: currentTime,
+      timeZone,
+      evaluatedAt: now.toISOString(),
+      nextTransitionAt: null,
+    };
+  }
   
   const todayHours = location.standardHours[dayOfWeek];
   if (!todayHours) {
@@ -311,7 +325,7 @@ export function resolveOperatingStatus(
   let yesterdayHours: DayHours | null = null;
   if (yesterdayException && !yesterdayException.closed) {
     yesterdayHours = { closed: false, intervals: yesterdayException.intervals };
-  } else if (!yesterdayException) {
+  } else if (!yesterdayException && location.standardHours) {
     yesterdayHours = location.standardHours[yesterdayDow] || null;
   }
   
@@ -398,12 +412,12 @@ export function getScheduleForDate(
     };
   }
   
-  const standardHours = location.standardHours[dayOfWeek];
+  const standardHours = location.standardHours?.[dayOfWeek];
   return {
     date: dateStr,
     dayName: DAY_NAMES[dayOfWeek],
     hours: standardHours || { closed: true, intervals: [] },
-    source: 'standard',
+    source: location.standardHours ? 'standard' : 'unknown',
   };
 }
 

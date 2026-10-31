@@ -160,7 +160,7 @@ describe('Operating State - Overnight Hours', () => {
     const overnightLocation: Location = {
       ...baseLocation,
       standardHours: {
-        ...baseLocation.standardHours,
+        ...baseLocation.standardHours!,
         friday: { closed: false, intervals: [{ open: '10:00', close: '02:00' }] },
         saturday: { closed: false, intervals: [{ open: '10:00', close: '02:00' }] },
       },
@@ -259,7 +259,7 @@ describe('Operating State - Multiple Intervals', () => {
     const splitShiftLocation: Location = {
       ...baseLocation,
       standardHours: {
-        ...baseLocation.standardHours,
+        ...baseLocation.standardHours!,
         monday: { 
           closed: false, 
           intervals: [

@@ -15,6 +15,10 @@ export function VerificationRequestsView() {
   const [filter, setFilter] = useState<'pending' | 'confirmed' | 'expired'>('pending');
   const [showNewRequest, setShowNewRequest] = useState(false);
 
+  const isAdminOrSteward = authUser?.role === 'Admin' || authUser?.role === 'Steward';
+  const isLeader = authUser?.role === 'Leader';
+  const hasAccess = isAdminOrSteward || isLeader;
+
   const loadRequests = useCallback(async () => {
     try {
       setLoading(true);
@@ -69,7 +73,7 @@ export function VerificationRequestsView() {
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
-  if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+  if (!authUser || !hasAccess) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -87,14 +91,19 @@ export function VerificationRequestsView() {
           <button onClick={() => navigate('/')} className="p-1 hover:bg-blue-600 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-semibold flex-1">Store Verification</h1>
-          <button
-            onClick={() => setShowNewRequest(true)}
-            className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-medium"
-          >
-            <Send className="w-4 h-4" />
-            Send Request
-          </button>
+          <h1 className="text-lg font-semibold flex-1">
+            Store Verification
+            {isLeader && <span className="text-sm font-normal ml-2 opacity-75">(Your Stores)</span>}
+          </h1>
+          {isAdminOrSteward && (
+            <button
+              onClick={() => setShowNewRequest(true)}
+              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-medium"
+            >
+              <Send className="w-4 h-4" />
+              Send Request
+            </button>
+          )}
         </div>
       </header>
 
@@ -251,7 +260,7 @@ export function VerificationRequestsView() {
               )}
             </div>
 
-            {selectedRequest.status === 'pending' && selectedRequest.respondedAt && (
+            {selectedRequest.status === 'pending' && selectedRequest.respondedAt && isAdminOrSteward && (
               <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 space-y-2">
                 {selectedRequest.proposedChanges && Object.keys(selectedRequest.proposedChanges).length > 0 ? (
                   <>
@@ -281,6 +290,14 @@ export function VerificationRequestsView() {
                     Mark as Verified
                   </button>
                 )}
+              </div>
+            )}
+            
+            {selectedRequest.status === 'pending' && selectedRequest.respondedAt && isLeader && (
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3">
+                <p className="text-sm text-gray-500 text-center">
+                  Awaiting Steward/Admin review
+                </p>
               </div>
             )}
           </div>

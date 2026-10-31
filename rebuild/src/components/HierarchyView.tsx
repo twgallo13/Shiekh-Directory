@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, ChevronDown, Plus, Edit2, Trash2, MapPin, Building, Users, X, Move } from 'lucide-react';
+import { ArrowLeft, ChevronRight, ChevronDown, Plus, Edit2, Trash2, MapPin, Building, Users, X, Move, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import type { PersonListItem } from '../types';
 
 interface HierarchyRegion {
   id: string;
@@ -34,7 +35,7 @@ interface HierarchyData {
   locations: HierarchyLocation[];
 }
 
-type ModalType = 'region' | 'district' | 'location' | 'move-district' | 'move-location' | null;
+type ModalType = 'region' | 'district' | 'location' | 'move-district' | 'move-location' | 'assign-rm' | 'assign-dm' | null;
 
 interface FormState {
   code: string;
@@ -45,6 +46,12 @@ interface FormState {
   address: { street: string; city: string; state: string; zip: string };
 }
 
+interface AssignFormState {
+  personId: string;
+  slot: 'primary' | 'coverage';
+  startDate: string;
+}
+
 export function HierarchyView() {
   const [data, setData] = useState<HierarchyData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,6 +60,8 @@ export function HierarchyView() {
   const [modalType, setModalType] = useState<ModalType>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({ code: '', name: '', regionId: '', districtId: '', storeNumber: '', address: { street: '', city: '', state: '', zip: '' } });
+  const [assignForm, setAssignForm] = useState<AssignFormState>({ personId: '', slot: 'primary', startDate: '' });
+  const [people, setPeople] = useState<PersonListItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,6 +152,35 @@ export function HierarchyView() {
     setModalType('move-location');
   };
 
+  const fetchPeople = useCallback(async () => {
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/people?lifecycle=active', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const { data } = await response.json();
+        setPeople(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch people:', err);
+    }
+  }, [getIdToken]);
+
+  const openAssignRM = (regionId: string) => {
+    setEditId(regionId);
+    setAssignForm({ personId: '', slot: 'primary', startDate: '' });
+    setModalType('assign-rm');
+    fetchPeople();
+  };
+
+  const openAssignDM = (districtId: string) => {
+    setEditId(districtId);
+    setAssignForm({ personId: '', slot: 'primary', startDate: '' });
+    setModalType('assign-dm');
+    fetchPeople();
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -216,6 +254,47 @@ export function HierarchyView() {
     }
   };
 
+  const handleAssign = async () => {
+    if (!editId || !assignForm.personId) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+      const token = await getIdToken();
+      
+      const role = modalType === 'assign-rm' ? 'RM' : 'DM';
+      const scopeType = modalType === 'assign-rm' ? 'region' : 'district';
+      
+      const response = await fetch('/api/app/assignments', {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personId: assignForm.personId,
+          role,
+          scopeType,
+          scopeId: editId,
+          slot: assignForm.slot,
+          startDate: assignForm.startDate || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error?.message || 'Failed to create assignment');
+      }
+
+      setModalType(null);
+      await fetchHierarchy();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Assignment failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -280,6 +359,9 @@ export function HierarchyView() {
                     <span className="text-sm text-gray-500">{districts.length} districts</span>
                     {canManage && (
                       <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => openAssignRM(region.id)} className="p-1 text-gray-400 hover:text-purple-600" title="Assign RM">
+                          <UserPlus className="w-4 h-4" />
+                        </button>
                         <button onClick={() => openEditRegion(region)} className="p-1 text-gray-400 hover:text-gray-600">
                           <Edit2 className="w-4 h-4" />
                         </button>
@@ -320,6 +402,9 @@ export function HierarchyView() {
                               <span className="text-xs text-gray-500">{locations.length} stores</span>
                               {canManage && (
                                 <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                                  <button onClick={() => openAssignDM(district.id)} className="p-1 text-gray-400 hover:text-blue-600" title="Assign DM">
+                                    <UserPlus className="w-4 h-4" />
+                                  </button>
                                   <button onClick={() => openMoveDistrict(district)} className="p-1 text-gray-400 hover:text-gray-600" title="Move to another region">
                                     <Move className="w-4 h-4" />
                                   </button>
@@ -389,6 +474,8 @@ export function HierarchyView() {
                 {modalType === 'location' && 'Add Location'}
                 {modalType === 'move-district' && 'Move District'}
                 {modalType === 'move-location' && 'Move Location'}
+                {modalType === 'assign-rm' && 'Assign Regional Manager'}
+                {modalType === 'assign-dm' && 'Assign District Manager'}
               </h2>
               <button onClick={() => setModalType(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
@@ -514,6 +601,44 @@ export function HierarchyView() {
                   </select>
                 </div>
               )}
+
+              {(modalType === 'assign-rm' || modalType === 'assign-dm') && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Person *</label>
+                    <select
+                      value={assignForm.personId}
+                      onChange={(e) => setAssignForm({ ...assignForm, personId: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="">Select a person...</option>
+                      {people.map(p => (
+                        <option key={p.id} value={p.id}>{p.fullName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Slot</label>
+                    <select
+                      value={assignForm.slot}
+                      onChange={(e) => setAssignForm({ ...assignForm, slot: e.target.value as 'primary' | 'coverage' })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="primary">Primary</option>
+                      <option value="coverage">Coverage</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date (optional)</label>
+                    <input
+                      type="date"
+                      value={assignForm.startDate}
+                      onChange={(e) => setAssignForm({ ...assignForm, startDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -521,11 +646,11 @@ export function HierarchyView() {
                 Cancel
               </button>
               <button
-                onClick={handleSave}
-                disabled={saving}
+                onClick={modalType === 'assign-rm' || modalType === 'assign-dm' ? handleAssign : handleSave}
+                disabled={saving || ((modalType === 'assign-rm' || modalType === 'assign-dm') && !assignForm.personId)}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? 'Saving...' : (modalType === 'assign-rm' || modalType === 'assign-dm') ? 'Assign' : 'Save'}
               </button>
             </div>
           </div>

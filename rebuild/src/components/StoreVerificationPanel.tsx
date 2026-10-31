@@ -172,7 +172,7 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
                 <div key={day} className="flex justify-between py-1">
                   <span className="capitalize text-gray-600">{day}</span>
                   <span className="text-gray-900">
-                    {location.standardHours[day].closed 
+                    {!location.standardHours?.[day] || location.standardHours[day].closed 
                       ? 'Closed' 
                       : location.standardHours[day].intervals.map(i => `${i.open}-${i.close}`).join(', ')}
                   </span>

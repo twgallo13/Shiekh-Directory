@@ -1,226 +1,244 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env npx ts-node
 /**
- * Firestore Backup Restore Script
- * 
- * This script restores a Firestore backup from Google Cloud Storage.
- * 
- * IMPORTANT: This script requires explicit project targeting for safety.
- * It will NOT proceed without a --project flag.
+ * Restore script for pre-import backups
  * 
  * Usage:
- *   npx tsx scripts/restore-backup.ts --project=your-project-id --backup=gs://bucket/path
+ *   npx ts-node scripts/restore-backup.ts --project <project-id> --backup <backup-id-or-path>
  * 
- * Options:
- *   --project   REQUIRED. Target GCP project ID (e.g., shiekh-directory-prod)
- *   --backup    REQUIRED. GCS path to backup (e.g., gs://shiekh-backups/firestore-exports/scheduled-2026-01-01)
- *   --database  Firestore database ID (default: "(default)")
- *   --dry-run   Show what would be restored without executing
- *   --confirm   Skip interactive confirmation prompt
+ * Examples:
+ *   # Restore from backup ID (auto-detects Storage or Firestore)
+ *   npx ts-node scripts/restore-backup.ts --project shiekh-directory --backup pre-import-2024-01-15T10-30-00-000Z
  * 
- * Prerequisites:
- *   1. gcloud CLI installed and authenticated
- *   2. Service account with Firestore Admin permissions
- *   3. Access to the backup bucket
+ *   # Restore from explicit Storage path
+ *   npx ts-node scripts/restore-backup.ts --project shiekh-directory --backup gs://bucket/backups/pre-import/2024-01-15T10-30-00-000Z.json.gz
  * 
- * Example:
- *   npx tsx scripts/restore-backup.ts \
- *     --project=shiekh-directory-prod \
- *     --backup=gs://shiekh-directory-prod-backups/firestore-exports/scheduled-weekly-2026-01-05T03-00-00-000Z
+ * Safety:
+ *   - Requires explicit --project flag
+ *   - Prompts for confirmation before write
+ *   - Does NOT delete existing documents (merge only)
  */
 
-import { v1 } from '@google-cloud/firestore';
+import { initializeApp, cert, type ServiceAccount } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import { gunzipSync } from 'zlib';
 import * as readline from 'readline';
 
-interface RestoreOptions {
-  project: string;
-  backup: string;
-  database: string;
-  dryRun: boolean;
-  confirm: boolean;
+interface SnapshotData {
+  metadata: {
+    createdAt: string;
+    createdBy: string;
+    createdByEmail: string;
+    collections: string[];
+  };
+  data: Record<string, Array<{ id: string; data: Record<string, unknown> }>>;
 }
 
-function parseArgs(): RestoreOptions {
+function parseArgs(): { project: string; backup: string; dryRun: boolean; force: boolean } {
   const args = process.argv.slice(2);
-  const options: Partial<RestoreOptions> = {
-    database: '(default)',
-    dryRun: false,
-    confirm: false,
-  };
+  let project = '';
+  let backup = '';
+  let dryRun = false;
+  let force = false;
 
-  for (const arg of args) {
-    if (arg.startsWith('--project=')) {
-      options.project = arg.split('=')[1];
-    } else if (arg.startsWith('--backup=')) {
-      options.backup = arg.split('=')[1];
-    } else if (arg.startsWith('--database=')) {
-      options.database = arg.split('=')[1];
-    } else if (arg === '--dry-run') {
-      options.dryRun = true;
-    } else if (arg === '--confirm') {
-      options.confirm = true;
-    } else if (arg === '--help' || arg === '-h') {
-      printUsage();
-      process.exit(0);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--project' && args[i + 1]) {
+      project = args[++i];
+    } else if (args[i] === '--backup' && args[i + 1]) {
+      backup = args[++i];
+    } else if (args[i] === '--dry-run') {
+      dryRun = true;
+    } else if (args[i] === '--force') {
+      force = true;
     }
   }
 
-  if (!options.project) {
-    console.error('ERROR: --project is required for safety');
-    console.error('This ensures you are restoring to the correct project.');
-    console.error('');
-    printUsage();
+  if (!project) {
+    console.error('Error: --project is required');
+    console.error('Usage: npx ts-node scripts/restore-backup.ts --project <project-id> --backup <backup-id>');
     process.exit(1);
   }
 
-  if (!options.backup) {
-    console.error('ERROR: --backup is required');
-    console.error('');
-    printUsage();
+  if (!backup) {
+    console.error('Error: --backup is required');
+    console.error('Usage: npx ts-node scripts/restore-backup.ts --project <project-id> --backup <backup-id>');
     process.exit(1);
   }
 
-  if (!options.backup.startsWith('gs://')) {
-    console.error('ERROR: --backup must be a GCS path starting with gs://');
-    process.exit(1);
-  }
-
-  return options as RestoreOptions;
+  return { project, backup, dryRun, force };
 }
 
-function printUsage(): void {
-  console.log(`
-Firestore Backup Restore Script
-
-Usage:
-  npx tsx scripts/restore-backup.ts --project=PROJECT_ID --backup=GCS_PATH [options]
-
-Required:
-  --project=ID    Target GCP project ID (REQUIRED for safety)
-  --backup=PATH   GCS path to backup (gs://bucket/path)
-
-Options:
-  --database=ID   Firestore database ID (default: "(default)")
-  --dry-run       Show what would be restored without executing
-  --confirm       Skip interactive confirmation prompt
-  --help, -h      Show this help message
-
-Examples:
-  # Dry run to see what would happen
-  npx tsx scripts/restore-backup.ts \\
-    --project=shiekh-directory-prod \\
-    --backup=gs://shiekh-backups/exports/weekly-2026-01-05 \\
-    --dry-run
-
-  # Restore with confirmation
-  npx tsx scripts/restore-backup.ts \\
-    --project=shiekh-directory-prod \\
-    --backup=gs://shiekh-backups/exports/weekly-2026-01-05
-
-  # Restore without prompts (for automation)
-  npx tsx scripts/restore-backup.ts \\
-    --project=shiekh-directory-prod \\
-    --backup=gs://shiekh-backups/exports/weekly-2026-01-05 \\
-    --confirm
-`);
-}
-
-async function promptConfirmation(project: string, backup: string): Promise<boolean> {
+async function prompt(question: string): Promise<boolean> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
   return new Promise((resolve) => {
-    console.log('');
-    console.log('='.repeat(60));
-    console.log('⚠️  FIRESTORE RESTORE WARNING');
-    console.log('='.repeat(60));
-    console.log('');
-    console.log(`Project:  ${project}`);
-    console.log(`Backup:   ${backup}`);
-    console.log('');
-    console.log('This operation will import data from the backup into Firestore.');
-    console.log('Existing documents with the same IDs will be OVERWRITTEN.');
-    console.log('');
-    
-    rl.question('Type the project name to confirm: ', (answer) => {
+    rl.question(question, (answer) => {
       rl.close();
-      resolve(answer.trim() === project);
+      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes');
     });
   });
 }
 
-async function executeRestore(options: RestoreOptions): Promise<void> {
-  console.log('');
-  console.log('Starting Firestore restore...');
-  console.log(`  Project:  ${options.project}`);
-  console.log(`  Database: ${options.database}`);
-  console.log(`  Backup:   ${options.backup}`);
-  console.log('');
+// readFromStorage is used inline in the main function when loading from gs:// paths
 
-  if (options.dryRun) {
-    console.log('DRY RUN: No changes will be made');
-    console.log('');
-    console.log('Would execute:');
-    console.log(`  gcloud firestore import ${options.backup} \\`);
-    console.log(`    --project=${options.project} \\`);
-    console.log(`    --database=${options.database}`);
-    return;
+async function readFromFirestore(db: FirebaseFirestore.Firestore, docId: string): Promise<SnapshotData> {
+  const snapshotDoc = await db.collection('snapshots').doc(docId).get();
+  if (!snapshotDoc.exists) {
+    throw new Error(`Snapshot document ${docId} not found`);
   }
 
-  const client = new v1.FirestoreAdminClient();
-  const databasePath = `projects/${options.project}/databases/${options.database}`;
+  const { chunkCount } = snapshotDoc.data() as { chunkCount: number };
+  const chunks: string[] = [];
 
-  console.log('Initiating import operation...');
+  for (let i = 0; i < chunkCount; i++) {
+    const chunkDoc = await snapshotDoc.ref
+      .collection('chunks')
+      .doc(`chunk_${i.toString().padStart(4, '0')}`)
+      .get();
 
-  try {
-    const [operation] = await client.importDocuments({
-      name: databasePath,
-      inputUriPrefix: options.backup,
-    });
-
-    const operationName = operation.name || 'unknown';
-    console.log(`Import operation started: ${operationName}`);
-    console.log('');
-    console.log('The import is running in the background.');
-    console.log('Monitor progress in the Google Cloud Console:');
-    console.log(`  https://console.cloud.google.com/firestore/databases/${options.database}/import-export?project=${options.project}`);
-    console.log('');
-    console.log('Or check operation status:');
-    console.log(`  gcloud firestore operations describe ${operationName.split('/').pop()} \\`);
-    console.log(`    --project=${options.project} \\`);
-    console.log(`    --database=${options.database}`);
-  } catch (error) {
-    console.error('Restore failed:', error);
-    process.exit(1);
+    if (!chunkDoc.exists) throw new Error(`Missing chunk ${i}`);
+    chunks.push((chunkDoc.data() as { data: string }).data);
   }
+
+  const base64Data = chunks.join('');
+  const compressed = Buffer.from(base64Data, 'base64');
+  const decompressed = gunzipSync(compressed);
+  return JSON.parse(decompressed.toString('utf-8'));
 }
 
-async function main(): Promise<void> {
-  const options = parseArgs();
+async function main() {
+  const { project, backup, dryRun, force } = parseArgs();
 
-  console.log('');
-  console.log('Firestore Restore Tool');
-  console.log('='.repeat(40));
+  console.log(`\nRestore Backup Script`);
+  console.log(`=====================`);
+  console.log(`Project: ${project}`);
+  console.log(`Backup:  ${backup}`);
+  console.log(`Mode:    ${dryRun ? 'DRY RUN (no writes)' : 'LIVE'}`);
+  console.log();
 
-  if (options.dryRun) {
-    await executeRestore(options);
-    return;
+  const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  if (serviceAccountPath) {
+    const serviceAccount = require(serviceAccountPath) as ServiceAccount;
+    initializeApp({
+      credential: cert(serviceAccount),
+      projectId: project,
+      storageBucket: `${project}.appspot.com`,
+    });
+  } else {
+    initializeApp({
+      projectId: project,
+      storageBucket: `${project}.appspot.com`,
+    });
   }
 
-  if (!options.confirm) {
-    const confirmed = await promptConfirmation(options.project, options.backup);
+  const db = getFirestore();
+
+  let snapshotData: SnapshotData;
+
+  if (backup.startsWith('gs://')) {
+    const path = backup.replace(/^gs:\/\/[^/]+\//, '');
+    console.log(`Reading from Storage: ${path}`);
+    const bucket = getStorage().bucket();
+    const file = bucket.file(path);
+    const [contents] = await file.download();
+    const decompressed = gunzipSync(contents);
+    snapshotData = JSON.parse(decompressed.toString('utf-8'));
+  } else {
+    const backupDoc = await db.collection('backups').doc(backup).get();
+
+    if (backupDoc.exists) {
+      const backupData = backupDoc.data()!;
+      
+      if (backupData.storagePath) {
+        console.log(`Reading from Storage: ${backupData.storagePath}`);
+        const bucket = getStorage().bucket();
+        const file = bucket.file(backupData.storagePath);
+        const [contents] = await file.download();
+        const decompressed = gunzipSync(contents);
+        snapshotData = JSON.parse(decompressed.toString('utf-8'));
+      } else if (backupData.firestoreDocId) {
+        console.log(`Reading from Firestore snapshot: ${backupData.firestoreDocId}`);
+        snapshotData = await readFromFirestore(db, backupData.firestoreDocId);
+      } else {
+        console.log(`Reading from Firestore snapshot: ${backup}`);
+        snapshotData = await readFromFirestore(db, backup);
+      }
+    } else {
+      console.log(`Backup record not found, trying as snapshot ID: ${backup}`);
+      snapshotData = await readFromFirestore(db, backup);
+    }
+  }
+
+  console.log(`\nBackup Metadata:`);
+  console.log(`  Created:    ${snapshotData.metadata.createdAt}`);
+  console.log(`  Created by: ${snapshotData.metadata.createdByEmail}`);
+  console.log(`  Collections: ${snapshotData.metadata.collections.join(', ')}`);
+
+  let totalDocs = 0;
+  console.log(`\nDocument counts:`);
+  for (const [collection, docs] of Object.entries(snapshotData.data)) {
+    console.log(`  ${collection}: ${docs.length}`);
+    totalDocs += docs.length;
+  }
+  console.log(`  Total: ${totalDocs}`);
+
+  if (dryRun) {
+    console.log(`\n[DRY RUN] Would restore ${totalDocs} documents. No changes made.`);
+    process.exit(0);
+  }
+
+  if (!force) {
+    console.log(`\n⚠️  WARNING: This will MERGE ${totalDocs} documents into project "${project}".`);
+    console.log(`   Existing documents with matching IDs will be overwritten.`);
+    const confirmed = await prompt('Are you sure you want to continue? (y/N): ');
+    
     if (!confirmed) {
-      console.log('');
       console.log('Restore cancelled.');
       process.exit(0);
     }
   }
 
-  await executeRestore(options);
+  console.log(`\nRestoring...`);
+
+  for (const [collection, docs] of Object.entries(snapshotData.data)) {
+    console.log(`  Restoring ${collection}...`);
+    
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+      const batch = db.batch();
+      const chunk = docs.slice(i, i + BATCH_SIZE);
+      
+      for (const doc of chunk) {
+        batch.set(db.collection(collection).doc(doc.id), doc.data, { merge: true });
+      }
+      
+      await batch.commit();
+      console.log(`    ${Math.min(i + BATCH_SIZE, docs.length)}/${docs.length}`);
+    }
+  }
+
+  await db.collection('auditLog').add({
+    timestamp: new Date().toISOString(),
+    userId: 'system',
+    userEmail: 'restore-script',
+    userRole: 'System',
+    action: 'restore',
+    entityType: 'backup',
+    entityId: backup,
+    entityName: `Restore from ${backup}`,
+    changes: [
+      { field: 'documentsRestored', newValue: totalDocs },
+      { field: 'collections', newValue: Object.keys(snapshotData.data).join(', ') },
+    ],
+  });
+
+  console.log(`\n✅ Restore complete. ${totalDocs} documents restored.`);
 }
 
 main().catch((error) => {
-  console.error('Unexpected error:', error);
+  console.error('Restore failed:', error);
   process.exit(1);
 });

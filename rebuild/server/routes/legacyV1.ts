@@ -404,9 +404,16 @@ async function mapV1Location(
   return result;
 }
 
-function mapStandardHours(hours: StandardHours): Record<string, unknown> {
+function mapStandardHours(hours: StandardHours | undefined): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
+  
+  if (!hours) {
+    for (const day of days) {
+      result[day] = { isClosed: true };
+    }
+    return result;
+  }
   
   for (const day of days) {
     const dayHours = hours[day];
@@ -480,7 +487,7 @@ function computeOperatingState(
   
   const dayHours = todayException 
     ? { closed: todayException.closed, intervals: todayException.intervals }
-    : location.standardHours[dayName];
+    : location.standardHours?.[dayName];
 
   if (!dayHours || dayHours.closed) {
     return {

@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import';
 
 interface User {
   id: string;
@@ -97,6 +97,9 @@ export function AdminView() {
             <TabButton id="custom-fields" active={activeTab === 'custom-fields'} onClick={setActiveTab} icon={Settings}>
               Custom Fields
             </TabButton>
+            <TabButton id="import" active={activeTab === 'import'} onClick={setActiveTab} icon={Upload}>
+              Import
+            </TabButton>
           </div>
         </div>
       </div>
@@ -105,6 +108,7 @@ export function AdminView() {
         {activeTab === 'users' && <UsersTab getIdToken={getIdToken} />}
         {activeTab === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
         {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
+        {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
       </div>
     </div>
   );
@@ -1083,6 +1087,308 @@ function CustomFieldModal({ getIdToken, onClose, onSaved }: {
           >
             {saving ? 'Creating...' : 'Create'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ImportPreview {
+  valid: boolean;
+  totalRows: number;
+  toCreate: number;
+  toUpdate: number;
+  toSkip: number;
+  errorCount: number;
+  rows: {
+    row: number;
+    storeNumber: string;
+    action: 'create' | 'update' | 'skip' | 'error';
+    message?: string;
+    errors?: string[];
+    changes?: string[];
+  }[];
+  timestamp: string;
+}
+
+function ImportTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
+  const [step, setStep] = useState<'upload' | 'preview' | 'applying' | 'done'>('upload');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<{ created: number; updated: number; skipped: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      setError('Please select a CSV file');
+      return;
+    }
+
+    if (file.size > 5_000_000) {
+      setError('File size exceeds 5MB limit');
+      return;
+    }
+
+    const text = await file.text();
+    setError('');
+    handlePreview(text);
+  };
+
+  const handlePreview = async (csv: string) => {
+    try {
+      setLoading(true);
+      setError('');
+      const token = await getIdToken();
+
+      const res = await fetch('/api/app/import/legacy/preview', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || 'Failed to preview import');
+      }
+
+      const data = await res.json();
+      setSessionId(data.sessionId);
+      setPreview(data.preview);
+      setStep('preview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to preview');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!sessionId) return;
+
+    try {
+      setApplying(true);
+      setStep('applying');
+      setError('');
+      const token = await getIdToken();
+
+      const res = await fetch(`/api/app/import/legacy/apply/${sessionId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || 'Failed to apply import');
+      }
+
+      const data = await res.json();
+      setResult(data.result);
+      setStep('done');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to apply');
+      setStep('preview');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleReset = () => {
+    setStep('upload');
+    setSessionId(null);
+    setPreview(null);
+    setResult(null);
+    setError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <FileSpreadsheet className="w-6 h-6 text-blue-600" />
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Import Locations from CSV</h2>
+            <p className="text-sm text-gray-600">Upload a legacy export CSV to import or update locations</p>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+            <XCircle className="w-4 h-4 flex-shrink-0" />
+            {error}
+          </div>
+        )}
+
+        {step === 'upload' && (
+          <div className="space-y-4">
+            <div
+              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-600 mb-1">Click to select a CSV file</p>
+              <p className="text-xs text-gray-500">or drag and drop</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+            </div>
+            {loading && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600 mr-2" />
+                <span className="text-gray-600">Analyzing CSV...</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 'preview' && preview && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-4 gap-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-green-700">{preview.toCreate}</div>
+                <div className="text-sm text-green-600">To Create</div>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-blue-700">{preview.toUpdate}</div>
+                <div className="text-sm text-blue-600">To Update</div>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-gray-700">{preview.toSkip}</div>
+                <div className="text-sm text-gray-600">No Changes</div>
+              </div>
+              <div className={`${preview.errorCount > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'} border rounded-lg p-4 text-center`}>
+                <div className={`text-2xl font-bold ${preview.errorCount > 0 ? 'text-red-700' : 'text-gray-700'}`}>{preview.errorCount}</div>
+                <div className={`text-sm ${preview.errorCount > 0 ? 'text-red-600' : 'text-gray-600'}`}>Errors</div>
+              </div>
+            </div>
+
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Row</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Store #</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Action</th>
+                      <th className="text-left px-3 py-2 font-medium text-gray-600">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {preview.rows.slice(0, 50).map((row) => (
+                      <tr key={row.row} className={row.action === 'error' ? 'bg-red-50' : ''}>
+                        <td className="px-3 py-2 text-gray-600">{row.row}</td>
+                        <td className="px-3 py-2 font-mono font-medium">{row.storeNumber}</td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                            row.action === 'create' ? 'bg-green-100 text-green-700' :
+                            row.action === 'update' ? 'bg-blue-100 text-blue-700' :
+                            row.action === 'skip' ? 'bg-gray-100 text-gray-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {row.action === 'create' && <Plus className="w-3 h-3" />}
+                            {row.action === 'update' && <RefreshCw className="w-3 h-3" />}
+                            {row.action === 'error' && <XCircle className="w-3 h-3" />}
+                            {row.action}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 text-xs">
+                          {row.errors?.join('; ') || row.changes?.join('; ') || row.message}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {preview.rows.length > 50 && (
+                <div className="px-3 py-2 bg-gray-50 text-sm text-gray-600 text-center">
+                  Showing 50 of {preview.rows.length} rows
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+              <button
+                onClick={handleReset}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApply}
+                disabled={!preview.valid || applying}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {preview.valid ? (
+                  <>
+                    Apply Import
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                ) : (
+                  'Fix Errors to Continue'
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'applying' && (
+          <div className="text-center py-12">
+            <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600">Applying import changes...</p>
+            <p className="text-sm text-gray-500 mt-1">This may take a moment</p>
+          </div>
+        )}
+
+        {step === 'done' && result && (
+          <div className="text-center py-8">
+            <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Import Complete</h3>
+            <div className="flex justify-center gap-6 mb-6">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">{result.created}</div>
+                <div className="text-sm text-gray-600">Created</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{result.updated}</div>
+                <div className="text-sm text-gray-600">Updated</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-600">{result.skipped}</div>
+                <div className="text-sm text-gray-600">Skipped</div>
+              </div>
+            </div>
+            <button
+              onClick={handleReset}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            >
+              Import Another File
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800">
+            <p className="font-medium mb-1">Import Notes</p>
+            <ul className="list-disc list-inside space-y-1 text-amber-700">
+              <li>Locations are matched by LocationId first, then by StoreNumber</li>
+              <li>Store numbers are preserved as-is (including leading zeros like "007")</li>
+              <li>An automatic backup is created before applying changes</li>
+              <li>Preview shows the first 50 rows - download the full report for large files</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

@@ -19,6 +19,7 @@ import { createLegacyV3Router } from './routes/legacyV3';
 import { createApiClientsRouter } from './routes/apiClients';
 import { createExportsRouter } from './routes/exports';
 import { createAdminRouter } from './routes/admin';
+import { createLegacyImportRouter } from './routes/legacyImport';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -46,6 +47,7 @@ app.use('/api/app/verification', createVerificationRouter(db));
 app.use('/api/app/api-clients', createApiClientsRouter(db));
 app.use('/api/app/exports', createExportsRouter(db));
 app.use('/api/app/admin', createAdminRouter(db));
+app.use('/api/app/import/legacy', createLegacyImportRouter(db));
 
 // Legacy API routes (v1/v2/v3)
 app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));

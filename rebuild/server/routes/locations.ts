@@ -158,12 +158,17 @@ export function createLocationsRouter(db: Firestore): Router {
         }
       }
       
-      // Get active notices
-      const noticesSnap = await db.collection('locations').doc(id).collection('notices')
-        .where('status', '==', 'active')
-        .orderBy('effectiveFrom', 'desc')
-        .get();
-      const activeNotices = noticesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Notice[];
+      // Get active notices - degrade gracefully if query fails (e.g., missing index)
+      let activeNotices: Notice[] = [];
+      try {
+        const noticesSnap = await db.collection('locations').doc(id).collection('notices')
+          .where('status', '==', 'active')
+          .orderBy('effectiveFrom', 'desc')
+          .get();
+        activeNotices = noticesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Notice[];
+      } catch (noticesError) {
+        console.error('Failed to fetch notices (missing index?), continuing without notices:', noticesError);
+      }
       
       const detail: LocationDetail = {
         ...location,

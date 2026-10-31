@@ -153,6 +153,52 @@ export async function seedTestLeader(districtId: string): Promise<{ userId: stri
   return { userId: 'leader', personId: personRef.id };
 }
 
+export interface SeedLocationOptions {
+  storeNumber: string;
+  name: string;
+  kind: 'store' | 'warehouse' | 'office' | 'facility';
+  lifecycle: 'active' | 'planned' | 'retired';
+  districtId?: string;
+  regionId?: string;
+}
+
+export async function seedTestLocation(options: SeedLocationOptions): Promise<string> {
+  const db = getTestDb();
+  const now = new Date().toISOString();
+  
+  const locationRef = db.collection('locations').doc();
+  await locationRef.set({
+    kind: options.kind,
+    storeNumber: options.storeNumber,
+    name: options.name,
+    lifecycle: options.lifecycle,
+    address: {
+      street: '123 Test St',
+      city: 'Test City',
+      state: 'CA',
+      zip: '90001',
+      country: 'US',
+    },
+    timeZone: 'America/Los_Angeles',
+    mainPhone: '+12135550001',
+    phonePublic: true,
+    sharedInboxEmail: `${options.storeNumber.toLowerCase()}@shiekh.test`,
+    regionId: options.regionId || 'test-region-1',
+    districtId: options.districtId || 'test-district-1',
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: 'test',
+    version: 1,
+  });
+  
+  return locationRef.id;
+}
+
+export async function cleanupTestLocation(locationId: string): Promise<void> {
+  const db = getTestDb();
+  await db.collection('locations').doc(locationId).delete();
+}
+
 export async function seedTestLocationsForDistrict(districtId: string, regionId: string, count: number, prefix: string): Promise<string[]> {
   const db = getTestDb();
   const now = new Date().toISOString();

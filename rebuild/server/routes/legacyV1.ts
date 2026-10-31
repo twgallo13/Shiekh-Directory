@@ -356,7 +356,17 @@ async function mapV1Location(
   result.hierarchyIssues = [];
   result.hierarchyApplicability = 'Applicable';
 
-  result.operationalStatus = location.lifecycle === 'active' ? 'Active' : 'Retired';
+  // Derive operationalStatus from lifecycle and closure state (legacy vocabulary)
+  if (location.lifecycle === 'retired') {
+    result.operationalStatus = 'Retired';
+  } else if (location.lifecycle === 'planned') {
+    result.operationalStatus = 'Pre-Opening';
+  } else if (activeClosure) {
+    result.operationalStatus = 'Temporarily Closed';
+  } else {
+    result.operationalStatus = 'Active';
+  }
+  
   if (location.lastVerifiedAt) {
     result.lastVerifiedAt = location.lastVerifiedAt;
   }

@@ -441,5 +441,58 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
     }
   });
 
+  // Delete unused template (Admin/Steward only) - fails if in use
+  router.delete('/:id', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!hasPermission(authUser, 'edit:hours').allowed) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Steward or Admin can delete hours templates', requestId: res.locals.requestId },
+        });
+      }
+
+      const { id } = req.params;
+      const doc = await db.collection('hoursTemplates').doc(id).get();
+      
+      if (!doc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Template not found', requestId: res.locals.requestId },
+        });
+      }
+
+      // Check if any location is using this template
+      const usageSnap = await db.collection('locations')
+        .where('appliedTemplate.templateId', '==', id)
+        .limit(1)
+        .get();
+
+      if (!usageSnap.empty) {
+        const usingLocation = usageSnap.docs[0].data() as Location;
+        return res.status(409).json({
+          error: {
+            code: 'template_in_use',
+            message: `Template is in use by ${usingLocation.storeNumber || 'a location'}. Archive it instead of deleting.`,
+            requestId: res.locals.requestId,
+          },
+        });
+      }
+
+      await db.collection('hoursTemplates').doc(id).delete();
+
+      return res.json({ data: { success: true } });
+    } catch (error) {
+      console.error('Delete hours template error:', error);
+      return res.status(500).json({
+        error: { code: 'delete_error', message: 'Failed to delete hours template', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   return router;
 }

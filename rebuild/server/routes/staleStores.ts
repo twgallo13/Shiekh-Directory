@@ -38,8 +38,8 @@ export function createStaleStoresRouter(db: Firestore): Router {
       const thresholdDate = new Date(now - STALE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
 
       const baseQuery = db.collection('locations')
-        .where('recordStatus', '==', 'Active')
-        .where('locationType', '==', 'Retail Store');
+        .where('lifecycle', '==', 'active')
+        .where('kind', '==', 'store');
 
       let snapshots: FirebaseFirestore.QuerySnapshot[] = [];
       

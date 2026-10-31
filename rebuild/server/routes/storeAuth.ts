@@ -2,11 +2,31 @@ import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { randomBytes, createHmac } from 'crypto';
 import { createMailService } from '../services/mail';
+import { getAuthClient } from '../firebase';
 import type { Location, AuditLogEntry } from '../../src/types';
 
-const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
 const TOKEN_EXPIRY_HOURS = 24;
+
+function getAppUrl(req: Request): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL;
+  }
+  const origin = req.get('origin') || req.get('x-forwarded-host');
+  if (origin) {
+    if (origin.startsWith('http')) {
+      return origin;
+    }
+    const protocol = req.get('x-forwarded-proto') || 'https';
+    return `${protocol}://${origin}`;
+  }
+  const host = req.get('host');
+  if (host) {
+    const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+    return `${protocol}://${host}`;
+  }
+  return 'https://directory.shiekh.com';
+}
 
 export interface OneClickToken {
   id: string;
@@ -70,14 +90,14 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const storeNumberPadded = String(parsed.storeNumber).padStart(3, '0');
       const locationQuery = await db.collection('locations')
         .where('storeNumber', '==', storeNumberPadded)
-        .where('recordStatus', '==', 'Active')
+        .where('lifecycle', '==', 'active')
         .limit(1)
         .get();
 
       if (locationQuery.empty) {
         const locationQueryNoPad = await db.collection('locations')
           .where('storeNumber', '==', String(parsed.storeNumber))
-          .where('recordStatus', '==', 'Active')
+          .where('lifecycle', '==', 'active')
           .limit(1)
           .get();
 
@@ -91,7 +111,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const locationDoc = locationQuery.empty 
         ? (await db.collection('locations')
             .where('storeNumber', '==', String(parsed.storeNumber))
-            .where('recordStatus', '==', 'Active')
+            .where('lifecycle', '==', 'active')
             .limit(1)
             .get()).docs[0]
         : locationQuery.docs[0];
@@ -100,14 +120,16 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
       const token = generateToken();
       const tokenHash = hashToken(token);
+      const tokenId = `tok_${randomBytes(8).toString('hex')}`;
       const now = new Date();
       const expiresAt = new Date(now.getTime() + TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
 
-      const tokenDoc: Omit<OneClickToken, 'id'> = {
+      const tokenDoc: Omit<OneClickToken, 'id'> & { tokenId: string } = {
         locationId: location.id,
         storeNumber: location.storeNumber,
         storeEmail: email.toLowerCase(),
         action: 'confirm',
+        tokenId,
         expiresAt: expiresAt.toISOString(),
         createdAt: now.toISOString(),
         createdBy: 'store-sign-in',
@@ -116,7 +138,20 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       await tokenRef.set(tokenDoc);
 
-      const signInUrl = `${APP_URL}/store-signin?token=${token}`;
+      await db.collection('testTokens').doc(tokenId).set({
+        token,
+        action: 'signin',
+        locationId: location.id,
+        storeNumber: location.storeNumber,
+        storeEmail: email.toLowerCase(),
+        expiresAt: expiresAt.toISOString(),
+        createdAt: now.toISOString(),
+        createdBy: 'store-sign-in',
+      });
+
+      const appUrl = getAppUrl(req);
+      const signInUrl = `${appUrl}/store-signin?token=${token}`;
+      const signInUrlRedacted = `${appUrl}/store-signin?token=[REDACTED:${tokenId}]`;
 
       const mailService = createMailService(db);
       const mailResult = await mailService.send({
@@ -131,7 +166,8 @@ export function createStoreAuthRouter(db: Firestore): Router {
         type: 'store-signin',
         locationId: location.id,
         storeNumber: location.storeNumber,
-        signInUrl,
+        signInUrl: signInUrlRedacted,
+        tokenId,
         sentAt: now.toISOString(),
         success: mailResult.success,
         blocked: mailResult.blocked,
@@ -177,45 +213,73 @@ export function createStoreAuthRouter(db: Firestore): Router {
       }
 
       const tokenHash = hashToken(token);
-      const tokenDoc = await db.collection('storeAuthTokens').doc(tokenHash).get();
-
-      if (!tokenDoc.exists) {
-        return res.status(404).json({
-          error: { code: 'token_not_found', message: 'Invalid or expired link', requestId: res.locals.requestId },
-        });
-      }
-
-      const tokenData = tokenDoc.data() as Omit<OneClickToken, 'id'>;
-
-      if (tokenData.usedAt) {
-        return res.status(400).json({
-          error: { code: 'token_used', message: 'This link has already been used', requestId: res.locals.requestId },
-        });
-      }
-
+      const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       const now = new Date();
-      if (new Date(tokenData.expiresAt) < now) {
-        return res.status(400).json({
-          error: { code: 'token_expired', message: 'This link has expired', requestId: res.locals.requestId },
+
+      const result = await db.runTransaction(async (transaction) => {
+        const tokenDoc = await transaction.get(tokenRef);
+
+        if (!tokenDoc.exists) {
+          return { error: 'token_not_found', status: 404, message: 'Invalid or expired link' };
+        }
+
+        const tokenData = tokenDoc.data() as Omit<OneClickToken, 'id'>;
+
+        if (tokenData.usedAt) {
+          return { error: 'token_used', status: 400, message: 'This link has already been used' };
+        }
+
+        if (new Date(tokenData.expiresAt) < now) {
+          return { error: 'token_expired', status: 400, message: 'This link has expired' };
+        }
+
+        const locationRef = db.collection('locations').doc(tokenData.locationId);
+        const locationDoc = await transaction.get(locationRef);
+        
+        if (!locationDoc.exists) {
+          return { error: 'store_not_found', status: 404, message: 'Store not found' };
+        }
+
+        transaction.update(tokenRef, {
+          usedAt: now.toISOString(),
+          usedBy: tokenData.storeEmail,
         });
-      }
 
-      const locationDoc = await db.collection('locations').doc(tokenData.locationId).get();
-      if (!locationDoc.exists) {
-        return res.status(404).json({
-          error: { code: 'store_not_found', message: 'Store not found', requestId: res.locals.requestId },
-        });
-      }
-
-      const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
-
-      await tokenDoc.ref.update({
-        usedAt: now.toISOString(),
-        usedBy: tokenData.storeEmail,
+        const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
+        return { success: true, tokenData, location };
       });
 
+      if ('error' in result && result.error) {
+        return res.status(result.status as number).json({
+          error: { code: result.error, message: result.message, requestId: res.locals.requestId },
+        });
+      }
+
+      const { tokenData, location } = result as { success: true; tokenData: Omit<OneClickToken, 'id'>; location: Location };
+
+      const storeUid = `store_${location.id}`;
+      const auth = getAuthClient();
+      const customToken = await auth.createCustomToken(storeUid, {
+        role: 'Store',
+        storeLocationId: location.id,
+        storeNumber: location.storeNumber,
+        email: tokenData.storeEmail,
+      });
+
+      await db.collection('users').doc(storeUid).set({
+        email: tokenData.storeEmail,
+        displayName: `Store ${location.storeNumber}`,
+        role: 'Store',
+        storeLocationId: location.id,
+        status: 'active',
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        updatedBy: 'store-signin',
+        version: 1,
+      }, { merge: true });
+
       await logAudit(db, {
-        userId: 'system',
+        userId: storeUid,
         userEmail: tokenData.storeEmail,
         userRole: 'Store',
         action: 'use-signin-token',
@@ -230,6 +294,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
       res.json({
         valid: true,
+        customToken,
         locationId: location.id,
         storeNumber: location.storeNumber,
         storeName: location.name,
@@ -295,8 +360,9 @@ export function createStoreAuthRouter(db: Firestore): Router {
         action: 'update',
       });
 
-      const confirmUrl = `${APP_URL}/verify-action?token=${confirmToken}&action=confirm`;
-      const updateUrl = `${APP_URL}/verify-action?token=${updateToken}&action=update`;
+      const appUrl = getAppUrl(req);
+      const confirmUrl = `${appUrl}/verify-action?token=${confirmToken}&action=confirm`;
+      const updateUrl = `${appUrl}/verify-action?token=${updateToken}&action=update`;
 
       res.json({
         confirmUrl,
@@ -328,67 +394,76 @@ export function createStoreAuthRouter(db: Firestore): Router {
       }
 
       const tokenHash = hashToken(token);
-      const tokenDoc = await db.collection('storeAuthTokens').doc(tokenHash).get();
-
-      if (!tokenDoc.exists) {
-        return res.status(404).json({
-          error: { code: 'token_not_found', message: 'Invalid or expired link', requestId: res.locals.requestId },
-        });
-      }
-
-      const tokenData = tokenDoc.data() as Omit<OneClickToken, 'id'>;
-
-      if (tokenData.usedAt) {
-        return res.status(400).json({
-          error: { code: 'token_used', message: 'This link has already been used', requestId: res.locals.requestId },
-        });
-      }
-
-      if (tokenData.action !== action) {
-        return res.status(400).json({
-          error: { code: 'action_mismatch', message: 'Token action does not match', requestId: res.locals.requestId },
-        });
-      }
-
+      const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       const now = new Date();
-      if (new Date(tokenData.expiresAt) < now) {
-        return res.status(400).json({
-          error: { code: 'token_expired', message: 'This link has expired', requestId: res.locals.requestId },
-        });
-      }
 
-      await tokenDoc.ref.update({
-        usedAt: now.toISOString(),
-        usedBy: tokenData.storeEmail,
-      });
+      const result = await db.runTransaction(async (transaction) => {
+        const tokenDoc = await transaction.get(tokenRef);
 
-      const locationDoc = await db.collection('locations').doc(tokenData.locationId).get();
-      if (!locationDoc.exists) {
-        return res.status(404).json({
-          error: { code: 'store_not_found', message: 'Store not found', requestId: res.locals.requestId },
-        });
-      }
-
-      const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
-
-      if (action === 'confirm') {
-        await db.collection('locations').doc(tokenData.locationId).update({
-          lastVerifiedAt: now.toISOString(),
-          lastVerifiedBy: tokenData.storeEmail,
-          updatedAt: now.toISOString(),
-          updatedBy: tokenData.storeEmail,
-        });
-
-        if (tokenData.verificationRequestId) {
-          await db.collection('verificationRequests').doc(tokenData.verificationRequestId).update({
-            status: 'confirmed',
-            respondedAt: now.toISOString(),
-            respondedBy: tokenData.storeEmail,
-            hoursConfirmed: true,
-            updatedAt: now.toISOString(),
-          });
+        if (!tokenDoc.exists) {
+          return { error: 'token_not_found', status: 404, message: 'Invalid or expired link' };
         }
 
+        const tokenData = tokenDoc.data() as Omit<OneClickToken, 'id'>;
+
+        if (tokenData.usedAt) {
+          return { error: 'token_used', status: 400, message: 'This link has already been used' };
+        }
+
+        if (tokenData.action !== action) {
+          return { error: 'action_mismatch', status: 400, message: 'Token action does not match' };
+        }
+
+        if (new Date(tokenData.expiresAt) < now) {
+          return { error: 'token_expired', status: 400, message: 'This link has expired' };
+        }
+
+        const locationRef = db.collection('locations').doc(tokenData.locationId);
+        const locationDoc = await transaction.get(locationRef);
+        
+        if (!locationDoc.exists) {
+          return { error: 'store_not_found', status: 404, message: 'Store not found' };
+        }
+
+        const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
+
+        if (action === 'confirm') {
+          transaction.update(locationRef, {
+            lastVerifiedAt: now.toISOString(),
+            lastVerifiedBy: tokenData.storeEmail,
+            updatedAt: now.toISOString(),
+            updatedBy: tokenData.storeEmail,
+          });
+
+          if (tokenData.verificationRequestId) {
+            const verificationRef = db.collection('verificationRequests').doc(tokenData.verificationRequestId);
+            transaction.update(verificationRef, {
+              status: 'confirmed',
+              respondedAt: now.toISOString(),
+              respondedBy: tokenData.storeEmail,
+              hoursConfirmed: true,
+              updatedAt: now.toISOString(),
+            });
+          }
+        }
+
+        transaction.update(tokenRef, {
+          usedAt: now.toISOString(),
+          usedBy: tokenData.storeEmail,
+        });
+
+        return { success: true, tokenData, location, action };
+      });
+
+      if ('error' in result && result.error) {
+        return res.status(result.status as number).json({
+          error: { code: result.error, message: result.message, requestId: res.locals.requestId },
+        });
+      }
+
+      const { tokenData, location } = result as { success: true; tokenData: Omit<OneClickToken, 'id'>; location: Location; action: string };
+
+      if (action === 'confirm') {
         await logAudit(db, {
           userId: tokenData.storeEmail,
           userEmail: tokenData.storeEmail,

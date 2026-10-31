@@ -185,6 +185,14 @@ describe('Store Session - Security Headers', () => {
     const sameSite = 'strict';
     assert.strictEqual(sameSite, 'strict');
   });
+
+  it('session cookie name must be __session for Firebase Hosting', () => {
+    // Firebase Hosting only forwards cookies named __session to Cloud Functions
+    // See: https://firebase.google.com/docs/hosting/manage-cache#using_cookies
+    const cookieName = '__session';
+    assert.strictEqual(cookieName, '__session', 'cookie name must be __session for Firebase Hosting');
+    assert.ok(!cookieName.startsWith('store_'), 'cookie name should not start with store_');
+  });
 });
 
 describe('DM Verification - Cancelled/Expired Rejection', () => {

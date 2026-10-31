@@ -240,3 +240,60 @@ describe('DM Verification - Status Transitions', () => {
     assert.ok(nonCancellableStatuses.includes('cancelled'));
   });
 });
+
+describe('DM Verification - Reminder Expiration', () => {
+  const testExpiredReminderId = 'test-dm-verification-expired-reminder';
+  let db: Firestore;
+
+  before(async () => {
+    await seedTestUsers();
+    db = await getTestDb();
+
+    const expiredRequest: Omit<DMVerificationRequest, 'id'> = {
+      districtId: 'district-reminder-expired',
+      districtName: 'Expired Reminder District',
+      regionId: 'region-001',
+      status: 'pending',
+      cycleStartDate: new Date().toISOString().slice(0, 10),
+      sentAt: new Date().toISOString(),
+      sentTo: 'dm@example.com',
+      sentToPersonId: 'person-001',
+      sentToPersonName: 'Test DM',
+      sentBy: 'admin-user',
+      recipientType: 'dm',
+      expiresAt: new Date(Date.now() - 1000).toISOString(), // Already expired
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'admin-user',
+      version: 1,
+    };
+    await db.collection('dmVerificationRequests').doc(testExpiredReminderId).set(expiredRequest);
+  });
+
+  after(async () => {
+    if (db) {
+      await db.collection('dmVerificationRequests').doc(testExpiredReminderId).delete();
+    }
+  });
+
+  async function fetchApi(path: string, method: string, token: string): Promise<Response> {
+    return fetch(`${API_BASE}${path}`, {
+      method,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+      },
+    });
+  }
+
+  it('rejects reminder for expired request', async () => {
+    const res = await fetchApi(
+      `/api/app/dm-verification/${testExpiredReminderId}/reminder`,
+      'POST',
+      'test-token-admin'
+    );
+    assert.strictEqual(res.status, 400, 'should return 400 for expired request');
+    const body = await res.json();
+    assert.strictEqual(body.error.code, 'expired', 'should have expired error code');
+  });
+});

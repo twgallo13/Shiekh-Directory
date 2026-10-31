@@ -202,4 +202,59 @@ describe('Admin API', () => {
       assert.ok(!found, 'deleted user should not be found');
     });
   });
+
+  describe('POST /api/app/admin/import/store-types', () => {
+    it('requires admin role', async () => {
+      const res = await fetch(`${API_BASE}/api/app/admin/import/store-types`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': 'Bearer test-token-viewer',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ storeTypes: {} }),
+      });
+      assert.strictEqual(res.status, 403, 'should return 403 for non-admin');
+    });
+
+    it('validates input is object', async () => {
+      const res = await fetchApi('/api/app/admin/import/store-types', {
+        method: 'POST',
+        body: JSON.stringify({ storeTypes: 'not-an-object' }),
+      });
+      assert.strictEqual(res.status, 400, 'should return 400 for invalid input');
+    });
+
+    it('reports facilities separately in dry run', async () => {
+      const res = await fetchApi('/api/app/admin/import/store-types?dryRun=true', {
+        method: 'POST',
+        body: JSON.stringify({
+          storeTypes: {
+            '86': 'Enclosed Mall', // Facility - should be skipped
+            '999': 'Strip Center / Shopping Center', // Non-existent - should be skipped
+          },
+          dryRun: true,
+        }),
+      });
+      assert.strictEqual(res.status, 200, 'should return 200 for dry run');
+      
+      const body = await res.json();
+      assert.ok('facilitiesFound' in body.data, 'response should include facilitiesFound count');
+      assert.ok('storesUpdated' in body.data, 'response should include storesUpdated count');
+    });
+
+    it('accepts valid store type codes', async () => {
+      const res = await fetchApi('/api/app/admin/import/store-types', {
+        method: 'POST',
+        body: JSON.stringify({
+          storeTypes: {},
+          dryRun: true,
+        }),
+      });
+      assert.strictEqual(res.status, 200, 'should return 200 for empty import');
+      
+      const body = await res.json();
+      assert.strictEqual(body.data.total, 0);
+      assert.strictEqual(body.data.storesUpdated, 0);
+    });
+  });
 });

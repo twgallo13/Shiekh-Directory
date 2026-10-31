@@ -745,6 +745,12 @@ export function createDMVerificationRouter(db: Firestore): Router {
       }
 
       const now = new Date();
+      
+      if (new Date(request.expiresAt) < now) {
+        return res.status(400).json({
+          error: { code: 'expired', message: 'This request has expired', requestId: res.locals.requestId },
+        });
+      }
       await requestDoc.ref.update({
         lastReminderAt: now.toISOString(),
         reminderCount: (request.reminderCount || 0) + 1,

@@ -34,7 +34,7 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      let snapshot;
+      let requests: VerificationRequest[] = [];
 
       if (isLeaderWithScope && !isAdminOrSteward) {
         const leaderLocationIds = authUser.leaderScope!.locationIds;
@@ -47,18 +47,28 @@ export function createVerificationRouter(db: Firestore): Router {
 
         const targetLocationIds = locationId 
           ? [locationId as string] 
-          : leaderLocationIds.slice(0, 30);
+          : leaderLocationIds;
 
-        let query = db.collection('verificationRequests')
-          .where('locationId', 'in', targetLocationIds)
-          .orderBy('sentAt', 'desc')
-          .limit(100);
+        const CHUNK_SIZE = 30;
+        const allDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+        
+        for (let i = 0; i < targetLocationIds.length; i += CHUNK_SIZE) {
+          const chunk = targetLocationIds.slice(i, i + CHUNK_SIZE);
+          let query = db.collection('verificationRequests')
+            .where('locationId', 'in', chunk);
 
-        if (status) {
-          query = query.where('status', '==', status);
+          if (status) {
+            query = query.where('status', '==', status);
+          }
+
+          const chunkSnap = await query.get();
+          allDocs.push(...chunkSnap.docs);
         }
 
-        snapshot = await query.get();
+        requests = allDocs
+          .map(doc => ({ id: doc.id, ...doc.data() }) as VerificationRequest)
+          .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())
+          .slice(0, 100);
       } else {
         let query = db.collection('verificationRequests')
           .orderBy('sentAt', 'desc')
@@ -72,13 +82,12 @@ export function createVerificationRouter(db: Firestore): Router {
           query = query.where('locationId', '==', locationId);
         }
 
-        snapshot = await query.get();
+        const snapshot = await query.get();
+        requests = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as VerificationRequest[];
       }
-
-      const requests = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as VerificationRequest[];
 
       return res.json({ data: requests });
     } catch (error) {

@@ -7,10 +7,11 @@ import type {
   Region,
   District,
   AuthUser,
-  StandardHours,
   Address,
+  Assignment,
 } from '../../src/types';
 import { normalizePhoneNumber } from '../utils/phone';
+import { createPreImportBackup } from '../scheduledBackup';
 
 interface CsvRow {
   [key: string]: string;
@@ -49,6 +50,7 @@ interface ParsedLocationRow {
   action: 'create' | 'update' | 'skip' | 'error';
   existingId?: string;
   data: Partial<Omit<Location, 'id'>>;
+  smData?: { fullName: string; workPhone?: string; mobilePhone?: string };
   errors: string[];
   changes: string[];
 }
@@ -77,7 +79,7 @@ const LEGACY_COLUMN_MAP: Record<string, string> = {
   'districtid': 'districtId',
   'district id': 'districtId',
   'suite': 'suite',
-  'mallorcenterName': 'mallOrCenterName',
+  'mallorcentername': 'mallOrCenterName',
   'mall or center name': 'mallOrCenterName',
   'wayfindingdirections': 'wayfindingDirections',
   'wayfinding directions': 'wayfindingDirections',
@@ -96,9 +98,15 @@ const LEGACY_COLUMN_MAP: Record<string, string> = {
   'locationid': 'locationId',
   'location id': 'locationId',
   'kind': 'kind',
+  'storemanager': 'storeManager',
+  'store manager': 'storeManager',
+  'storemanagername': 'storeManager',
+  'storemanagerphone': 'storeManagerPhone',
+  'store manager phone': 'storeManagerPhone',
+  'storemanagermobile': 'storeManagerMobile',
+  'store manager mobile': 'storeManagerMobile',
 };
 
-const preparedImports = new Map<string, LegacyImportSession>();
 const IMPORT_SESSION_TTL_MS = 30 * 60_000;
 
 export function createLegacyImportRouter(db: Firestore): Router {
@@ -144,15 +152,20 @@ export function createLegacyImportRouter(db: Firestore): Router {
 
       const sessionId = `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const now = new Date();
+      const expiresAt = new Date(now.getTime() + IMPORT_SESSION_TTL_MS);
+
       const session: LegacyImportSession = {
         preview,
         parsedRows,
         userId: authUser.uid,
         createdAt: now.toISOString(),
-        expiresAt: new Date(now.getTime() + IMPORT_SESSION_TTL_MS).toISOString(),
+        expiresAt: expiresAt.toISOString(),
       };
-      preparedImports.set(sessionId, session);
-      cleanupExpiredSessions();
+
+      await db.collection('importSessions').doc(sessionId).set({
+        ...session,
+        _ttl: expiresAt,
+      });
 
       res.json({ sessionId, preview });
     } catch (error) {
@@ -168,12 +181,14 @@ export function createLegacyImportRouter(db: Firestore): Router {
       const authUser = res.locals.authUser as AuthUser;
       const { sessionId } = req.params;
 
-      const session = preparedImports.get(sessionId);
-      if (!session) {
+      const sessionDoc = await db.collection('importSessions').doc(sessionId).get();
+      if (!sessionDoc.exists) {
         return res.status(410).json({
           error: { code: 'session_expired', message: 'Import session expired. Please preview again.', requestId: res.locals.requestId },
         });
       }
+
+      const session = sessionDoc.data() as LegacyImportSession;
 
       if (session.userId !== authUser.uid) {
         return res.status(403).json({
@@ -182,7 +197,7 @@ export function createLegacyImportRouter(db: Firestore): Router {
       }
 
       if (new Date(session.expiresAt).getTime() < Date.now()) {
-        preparedImports.delete(sessionId);
+        await sessionDoc.ref.delete();
         return res.status(410).json({
           error: { code: 'session_expired', message: 'Import session expired. Please preview again.', requestId: res.locals.requestId },
         });
@@ -194,10 +209,19 @@ export function createLegacyImportRouter(db: Firestore): Router {
         });
       }
 
-      await createBackupBeforeImport(db, authUser);
+      const backupResult = await createPreImportBackup(db, authUser.uid, authUser.email);
+      if (!backupResult.success) {
+        return res.status(500).json({
+          error: { 
+            code: 'backup_failed', 
+            message: `Pre-import backup failed: ${backupResult.error}. Import blocked.`,
+            requestId: res.locals.requestId,
+          },
+        });
+      }
 
       const result = await applyImport(db, session.parsedRows, authUser);
-      preparedImports.delete(sessionId);
+      await sessionDoc.ref.delete();
 
       await db.collection('auditLog').add({
         timestamp: new Date().toISOString(),
@@ -212,10 +236,19 @@ export function createLegacyImportRouter(db: Firestore): Router {
           { field: 'locationsCreated', newValue: result.created },
           { field: 'locationsUpdated', newValue: result.updated },
           { field: 'locationsSkipped', newValue: result.skipped },
+          { field: 'assignmentsCreated', newValue: result.assignmentsCreated },
+          { field: 'backupId', newValue: backupResult.backupId },
         ],
       });
 
-      res.json({ success: true, result });
+      res.json({ 
+        success: true, 
+        result,
+        backup: {
+          backupId: backupResult.backupId,
+          outputUriPrefix: backupResult.outputUriPrefix,
+        },
+      });
     } catch (error) {
       console.error('Import apply error:', error);
       res.status(500).json({
@@ -226,12 +259,18 @@ export function createLegacyImportRouter(db: Firestore): Router {
 
   router.get('/sessions', async (_req: Request, res: Response) => {
     const authUser = res.locals.authUser as AuthUser;
-    cleanupExpiredSessions();
     
-    const sessions = Array.from(preparedImports.entries())
-      .filter(([, s]) => s.userId === authUser.uid)
-      .map(([id, s]) => ({
-        sessionId: id,
+    const sessionsSnap = await db.collection('importSessions')
+      .where('userId', '==', authUser.uid)
+      .where('expiresAt', '>', new Date().toISOString())
+      .orderBy('expiresAt', 'desc')
+      .limit(10)
+      .get();
+
+    const sessions = sessionsSnap.docs.map(doc => {
+      const s = doc.data() as LegacyImportSession;
+      return {
+        sessionId: doc.id,
         preview: {
           totalRows: s.preview.totalRows,
           toCreate: s.preview.toCreate,
@@ -242,7 +281,8 @@ export function createLegacyImportRouter(db: Firestore): Router {
         },
         createdAt: s.createdAt,
         expiresAt: s.expiresAt,
-      }));
+      };
+    });
 
     res.json({ sessions });
   });
@@ -282,14 +322,17 @@ interface ExistingData {
   districts: Map<string, District>;
   districtsById: Map<string, District>;
   people: Map<string, Person>;
+  peopleByName: Map<string, Person>;
+  assignments: Map<string, Assignment[]>;
 }
 
 async function loadExistingData(db: Firestore): Promise<ExistingData> {
-  const [locationsSnap, regionsSnap, districtsSnap, peopleSnap] = await Promise.all([
+  const [locationsSnap, regionsSnap, districtsSnap, peopleSnap, assignmentsSnap] = await Promise.all([
     db.collection('locations').get(),
     db.collection('regions').where('lifecycle', '==', 'active').get(),
     db.collection('districts').where('lifecycle', '==', 'active').get(),
     db.collection('people').where('lifecycle', '==', 'active').get(),
+    db.collection('assignments').get(),
   ]);
 
   const locations = new Map<string, { id: string; data: Location }>();
@@ -319,12 +362,24 @@ async function loadExistingData(db: Firestore): Promise<ExistingData> {
   }
 
   const people = new Map<string, Person>();
+  const peopleByName = new Map<string, Person>();
   for (const doc of peopleSnap.docs) {
     const person = { id: doc.id, ...doc.data() } as Person;
     people.set(doc.id, person);
+    peopleByName.set(person.fullName.toLowerCase().trim(), person);
   }
 
-  return { locations, locationsById, regions, regionsById, districts, districtsById, people };
+  const assignments = new Map<string, Assignment[]>();
+  for (const doc of assignmentsSnap.docs) {
+    const assignment = { id: doc.id, ...doc.data() } as Assignment;
+    if (assignment.scopeType === 'location') {
+      const existing = assignments.get(assignment.scopeId) || [];
+      existing.push(assignment);
+      assignments.set(assignment.scopeId, existing);
+    }
+  }
+
+  return { locations, locationsById, regions, regionsById, districts, districtsById, people, peopleByName, assignments };
 }
 
 function parseAndValidateRows(records: CsvRow[], existing: ExistingData): ParsedLocationRow[] {
@@ -363,6 +418,7 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
     const city = (row.city || '').trim();
     const state = (row.state || '').trim().toUpperCase();
     const zip = (row.zip || '').trim();
+    const suite = (row.suite || '').trim();
 
     if (!isUpdate) {
       if (!street) errors.push('Address is required');
@@ -408,6 +464,19 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
     }
 
     const kind = mapLocationKind(row.kind || row.storeType);
+    const sharedInboxEmail = (row.sharedInboxEmail || '').trim();
+    const mallOrCenterName = (row.mallOrCenterName || '').trim();
+    const wayfindingDirections = (row.wayfindingDirections || '').trim().slice(0, 1000);
+
+    let smData: ParsedLocationRow['smData'] = undefined;
+    const storeManagerName = (row.storeManager || '').trim();
+    if (storeManagerName) {
+      smData = {
+        fullName: storeManagerName,
+        workPhone: normalizePhoneNumber(row.storeManagerPhone || '') || undefined,
+        mobilePhone: normalizePhoneNumber(row.storeManagerMobile || '') || undefined,
+      };
+    }
 
     if (errors.length > 0) {
       results.push({ row: rowNum, action: 'error', data: {}, errors, changes: [] });
@@ -416,7 +485,7 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
 
     const address: Address = {
       street: street || existingEntry?.data.address.street || '',
-      suite: (row.suite || '').trim() || existingEntry?.data.address.suite,
+      suite: suite || existingEntry?.data.address.suite,
       city: city || existingEntry?.data.address.city || '',
       state: state || existingEntry?.data.address.state || '',
       zip: zip || existingEntry?.data.address.zip || '',
@@ -432,32 +501,49 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
       timeZone: timeZone || existingEntry?.data.timeZone || 'America/Los_Angeles',
       mainPhone: mainPhone || existingEntry?.data.mainPhone || '',
       phonePublic: true,
-      sharedInboxEmail: (row.sharedInboxEmail || '').trim() || existingEntry?.data.sharedInboxEmail,
+      sharedInboxEmail: sharedInboxEmail || existingEntry?.data.sharedInboxEmail,
       regionId: regionId || existingEntry?.data.regionId || '',
       districtId: districtId || existingEntry?.data.districtId || '',
       storeType: (row.storeType || '').trim() || existingEntry?.data.storeType,
-      mallOrCenterName: (row.mallOrCenterName || '').trim() || existingEntry?.data.mallOrCenterName,
-      wayfindingDirections: (row.wayfindingDirections || '').trim().slice(0, 1000) || existingEntry?.data.wayfindingDirections,
-      standardHours: existingEntry?.data.standardHours || getDefaultHours(),
+      mallOrCenterName: mallOrCenterName || existingEntry?.data.mallOrCenterName,
+      wayfindingDirections: wayfindingDirections || existingEntry?.data.wayfindingDirections,
     };
 
     if (isUpdate && existingEntry) {
+      data.standardHours = existingEntry.data.standardHours;
+
       const existing = existingEntry.data;
       if (name && name !== existing.name) changes.push(`Name: "${existing.name}" → "${name}"`);
-      if (mainPhone && mainPhone !== existing.mainPhone) changes.push(`Phone updated`);
-      if (street && street !== existing.address.street) changes.push(`Address updated`);
+      if (mainPhone && mainPhone !== existing.mainPhone) changes.push(`Phone: ${existing.mainPhone || '(empty)'} → ${mainPhone}`);
+      if (street && street !== existing.address.street) changes.push(`Street: "${existing.address.street}" → "${street}"`);
+      if (suite && suite !== existing.address.suite) changes.push(`Suite: "${existing.address.suite || ''}" → "${suite}"`);
+      if (city && city !== existing.address.city) changes.push(`City: "${existing.address.city}" → "${city}"`);
+      if (state && state !== existing.address.state) changes.push(`State: ${existing.address.state} → ${state}`);
+      if (zip && zip !== existing.address.zip) changes.push(`ZIP: ${existing.address.zip} → ${zip}`);
       if (regionId && regionId !== existing.regionId) changes.push(`Region updated`);
       if (districtId && districtId !== existing.districtId) changes.push(`District updated`);
+      if (sharedInboxEmail && sharedInboxEmail !== existing.sharedInboxEmail) changes.push(`Inbox: ${existing.sharedInboxEmail || '(empty)'} → ${sharedInboxEmail}`);
+      if (mallOrCenterName && mallOrCenterName !== existing.mallOrCenterName) changes.push(`Mall/Center: "${existing.mallOrCenterName || ''}" → "${mallOrCenterName}"`);
+      if (wayfindingDirections && wayfindingDirections !== existing.wayfindingDirections) changes.push(`Wayfinding directions updated`);
+      if (kind && kind !== existing.kind) changes.push(`Kind: ${existing.kind} → ${kind}`);
+      if (timeZone && timeZone !== existing.timeZone) changes.push(`Timezone: ${existing.timeZone} → ${timeZone}`);
+
+      if (smData && existingEntry) {
+        changes.push(`SM: ${smData.fullName} (will be assigned if not already)`);
+      }
 
       if (changes.length === 0) {
-        results.push({ row: rowNum, action: 'skip', existingId: existingEntry.id, data, errors: [], changes: ['No changes detected'] });
+        results.push({ row: rowNum, action: 'skip', existingId: existingEntry.id, data, smData, errors: [], changes: ['No changes detected'] });
         continue;
       }
 
-      results.push({ row: rowNum, action: 'update', existingId: existingEntry.id, data, errors: [], changes });
+      results.push({ row: rowNum, action: 'update', existingId: existingEntry.id, data, smData, errors: [], changes });
     } else {
       changes.push('New location');
-      results.push({ row: rowNum, action: 'create', data, errors: [], changes });
+      if (smData) {
+        changes.push(`SM: ${smData.fullName}`);
+      }
+      results.push({ row: rowNum, action: 'create', data, smData, errors: [], changes });
     }
   }
 
@@ -470,20 +556,6 @@ function mapLocationKind(type: string | undefined): Location['kind'] {
   if (lower.includes('warehouse') || lower.includes('distribution')) return 'warehouse';
   if (lower.includes('office') || lower.includes('corporate')) return 'office';
   return 'store';
-}
-
-function getDefaultHours(): StandardHours {
-  const defaultDay = { closed: false, intervals: [{ open: '10:00', close: '21:00' }] };
-  const sundayDefault = { closed: false, intervals: [{ open: '11:00', close: '19:00' }] };
-  return {
-    monday: { ...defaultDay },
-    tuesday: { ...defaultDay },
-    wednesday: { ...defaultDay },
-    thursday: { ...defaultDay },
-    friday: { ...defaultDay },
-    saturday: { ...defaultDay },
-    sunday: { ...sundayDefault },
-  };
 }
 
 function buildPreview(rows: ParsedLocationRow[]): LegacyImportPreview {
@@ -511,36 +583,31 @@ function buildPreview(rows: ParsedLocationRow[]): LegacyImportPreview {
   };
 }
 
-async function createBackupBeforeImport(db: Firestore, authUser: AuthUser): Promise<void> {
-  const now = new Date().toISOString();
-  const backupId = `pre-import-${now.replace(/[:.]/g, '-')}`;
-  
-  await db.collection('importBackups').doc(backupId).set({
-    type: 'pre-import',
-    createdAt: now,
-    createdBy: authUser.uid,
-    createdByEmail: authUser.email,
-    status: 'created',
-    note: 'Automatic backup before CSV import apply',
-  });
-}
-
 async function applyImport(
   db: Firestore,
   rows: ParsedLocationRow[],
   authUser: AuthUser
-): Promise<{ created: number; updated: number; skipped: number }> {
+): Promise<{ created: number; updated: number; skipped: number; assignmentsCreated: number }> {
   const now = new Date().toISOString();
   let created = 0;
   let updated = 0;
   let skipped = 0;
+  let assignmentsCreated = 0;
 
   const actionableRows = rows.filter(r => r.action === 'create' || r.action === 'update');
   const MAX_BATCH = 500;
 
+  const peopleByName = new Map<string, string>();
+  const peopleSnap = await db.collection('people').where('lifecycle', '==', 'active').get();
+  for (const doc of peopleSnap.docs) {
+    const person = doc.data() as Person;
+    peopleByName.set(person.fullName.toLowerCase().trim(), doc.id);
+  }
+
   for (let i = 0; i < actionableRows.length; i += MAX_BATCH) {
     const batch = db.batch();
     const chunk = actionableRows.slice(i, i + MAX_BATCH);
+    const newLocationIds: { row: ParsedLocationRow; docRef: FirebaseFirestore.DocumentReference }[] = [];
 
     for (const row of chunk) {
       if (row.action === 'create') {
@@ -553,6 +620,9 @@ async function applyImport(
           version: 1,
         });
         created++;
+        if (row.smData) {
+          newLocationIds.push({ row, docRef });
+        }
       } else if (row.action === 'update' && row.existingId) {
         const docRef = db.collection('locations').doc(row.existingId);
         batch.update(docRef, {
@@ -561,21 +631,63 @@ async function applyImport(
           updatedBy: authUser.uid,
         });
         updated++;
+        if (row.smData) {
+          newLocationIds.push({ row, docRef: db.collection('locations').doc(row.existingId) });
+        }
       }
     }
 
     await batch.commit();
+
+    for (const { row, docRef } of newLocationIds) {
+      if (!row.smData) continue;
+
+      const locationId = docRef.id;
+      let personId = peopleByName.get(row.smData.fullName.toLowerCase().trim());
+
+      if (!personId) {
+        const personRef = db.collection('people').doc();
+        await personRef.set({
+          fullName: row.smData.fullName,
+          lifecycle: 'active',
+          workPhone: row.smData.workPhone || null,
+          mobilePhone: row.smData.mobilePhone || null,
+          createdAt: now,
+          updatedAt: now,
+          updatedBy: authUser.uid,
+          version: 1,
+        });
+        personId = personRef.id;
+        peopleByName.set(row.smData.fullName.toLowerCase().trim(), personId);
+      }
+
+      const existingSmSnap = await db.collection('assignments')
+        .where('scopeType', '==', 'location')
+        .where('scopeId', '==', locationId)
+        .where('role', '==', 'SM')
+        .where('slot', '==', 'primary')
+        .limit(1)
+        .get();
+
+      if (existingSmSnap.empty) {
+        const assignmentRef = db.collection('assignments').doc();
+        await assignmentRef.set({
+          personId,
+          role: 'SM',
+          scopeType: 'location',
+          scopeId: locationId,
+          slot: 'primary',
+          startDate: now.slice(0, 10),
+          createdAt: now,
+          updatedAt: now,
+          updatedBy: authUser.uid,
+          version: 1,
+        });
+        assignmentsCreated++;
+      }
+    }
   }
 
   skipped = rows.filter(r => r.action === 'skip').length;
-  return { created, updated, skipped };
-}
-
-function cleanupExpiredSessions(): void {
-  const now = Date.now();
-  for (const [id, session] of preparedImports) {
-    if (new Date(session.expiresAt).getTime() < now) {
-      preparedImports.delete(id);
-    }
-  }
+  return { created, updated, skipped, assignmentsCreated };
 }

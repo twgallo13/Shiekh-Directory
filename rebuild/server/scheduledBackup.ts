@@ -1,168 +1,174 @@
 /**
- * Scheduled Backup Cloud Functions
+ * Backup Service for Shiekh Directory
  * 
- * These functions handle weekly automated Firestore exports.
- * Deploy using: firebase deploy --only functions
+ * WEEKLY BACKUPS:
+ *   Handled by Firestore's built-in scheduled exports (configured in Firebase Console):
+ *   - Schedule: Weekly (configured via Cloud Console > Firestore > Backups)
+ *   - Retention: 28 days
+ *   - Bucket: gs://<project>-backups/firestore-scheduled/
+ *   - No Cloud Function needed - this is a native Firestore feature
  * 
- * Cloud Scheduler Configuration (via Firebase Console or gcloud):
- *   - Function: weeklyBackup
- *   - Schedule: 0 3 * * 0 (Sunday 3am Pacific)
- *   - Timezone: America/Los_Angeles
+ * PRE-IMPORT BACKUPS:
+ *   Triggered programmatically before any CSV import apply operation.
+ *   Uses FirestoreAdminClient.exportDocuments() to create a real backup.
  * 
  * Required IAM Permissions:
- *   - roles/datastore.importExportAdmin
- *   - Storage access to backup bucket
- * 
- * Environment Variables:
- *   - BACKUP_BUCKET: GCS bucket for exports
- *   - FIRESTORE_DATABASE_ID: Database ID (default: "(default)")
+ *   - roles/datastore.importExportAdmin on service account
+ *   - Storage write access to backup bucket
  */
 
-import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
-import { getFirestore } from 'firebase-admin/firestore';
-import { initializeApp, getApps } from 'firebase-admin/app';
+import { v1 } from '@google-cloud/firestore';
+import type { Firestore } from 'firebase-admin/firestore';
 
 const BACKUP_BUCKET = process.env.BACKUP_BUCKET || `${process.env.GOOGLE_CLOUD_PROJECT}-backups`;
 
-interface BackupRecord {
-  type: 'scheduled' | 'pre-import' | 'manual';
+export interface BackupResult {
+  success: boolean;
+  backupId: string;
+  operationName?: string;
+  outputUriPrefix?: string;
+  error?: string;
+}
+
+export interface BackupRecord {
+  type: 'pre-import' | 'manual';
   status: 'pending' | 'in-progress' | 'completed' | 'failed';
   createdAt: string;
   createdBy: string;
   createdByEmail?: string;
   completedAt?: string;
-  exportPath?: string;
+  outputUriPrefix?: string;
+  operationName?: string;
   bucketName?: string;
-  collectionsCounted?: number;
-  documentsCounted?: number;
   errorMessage?: string;
   note?: string;
 }
 
-if (getApps().length === 0) {
-  initializeApp();
+export async function createPreImportBackup(
+  db: Firestore,
+  userId: string,
+  userEmail: string
+): Promise<BackupResult> {
+  const now = new Date();
+  const timestamp = now.toISOString().replace(/[:.]/g, '-');
+  const backupId = `pre-import-${timestamp}`;
+  const outputUriPrefix = `gs://${BACKUP_BUCKET}/pre-import/${timestamp}`;
+
+  const backupRecord: BackupRecord = {
+    type: 'pre-import',
+    status: 'in-progress',
+    createdAt: now.toISOString(),
+    createdBy: userId,
+    createdByEmail: userEmail,
+    bucketName: BACKUP_BUCKET,
+    outputUriPrefix,
+    note: 'Automatic backup before CSV import apply',
+  };
+
+  await db.collection('backups').doc(backupId).set(backupRecord);
+
+  try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+    if (!projectId) {
+      throw new Error('GOOGLE_CLOUD_PROJECT environment variable not set');
+    }
+
+    const databaseId = process.env.FIRESTORE_DATABASE_ID || '(default)';
+    const databaseName = `projects/${projectId}/databases/${databaseId}`;
+
+    const client = new v1.FirestoreAdminClient();
+
+    const [operation] = await client.exportDocuments({
+      name: databaseName,
+      outputUriPrefix,
+      collectionIds: [],
+    });
+
+    const operationName = operation.name || '';
+
+    await db.collection('backups').doc(backupId).update({
+      operationName,
+      status: 'in-progress',
+    });
+
+    const [response] = await operation.promise();
+
+    await db.collection('backups').doc(backupId).update({
+      status: 'completed',
+      completedAt: new Date().toISOString(),
+      outputUriPrefix: response.outputUriPrefix || outputUriPrefix,
+    });
+
+    await db.collection('auditLog').add({
+      timestamp: new Date().toISOString(),
+      userId,
+      userEmail,
+      userRole: 'Admin',
+      action: 'create',
+      entityType: 'backup',
+      entityId: backupId,
+      entityName: 'Pre-Import Backup',
+      changes: [
+        { field: 'status', newValue: 'completed' },
+        { field: 'outputUriPrefix', newValue: response.outputUriPrefix || outputUriPrefix },
+      ],
+    });
+
+    console.log(`Pre-import backup completed: ${backupId}`);
+    return {
+      success: true,
+      backupId,
+      operationName,
+      outputUriPrefix: response.outputUriPrefix || outputUriPrefix,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Pre-import backup failed: ${backupId}`, error);
+
+    await db.collection('backups').doc(backupId).update({
+      status: 'failed',
+      completedAt: new Date().toISOString(),
+      errorMessage,
+    });
+
+    return {
+      success: false,
+      backupId,
+      error: errorMessage,
+    };
+  }
 }
 
-export const weeklyBackup = onSchedule(
-  {
-    schedule: '0 3 * * 0',
-    timeZone: 'America/Los_Angeles',
-    retryCount: 3,
-  },
-  async () => {
-    const db = getFirestore();
-    const now = new Date().toISOString();
-    const backupId = `scheduled-weekly-${now.replace(/[:.]/g, '-')}`;
+export async function restoreBackup(
+  projectId: string,
+  inputUriPrefix: string,
+  collectionIds: string[] = []
+): Promise<{ success: boolean; operationName?: string; error?: string }> {
+  try {
+    const databaseId = process.env.FIRESTORE_DATABASE_ID || '(default)';
+    const databaseName = `projects/${projectId}/databases/${databaseId}`;
 
-    console.log(`Starting weekly backup: ${backupId}`);
+    const client = new v1.FirestoreAdminClient();
 
-    const backupRecord: BackupRecord = {
-      type: 'scheduled',
-      status: 'in-progress',
-      createdAt: now,
-      createdBy: 'system-scheduler',
-      note: 'Weekly scheduled backup',
+    const [operation] = await client.importDocuments({
+      name: databaseName,
+      inputUriPrefix,
+      collectionIds,
+    });
+
+    const [response] = await operation.promise();
+
+    console.log('Restore completed:', response);
+    return {
+      success: true,
+      operationName: operation.name || undefined,
     };
-
-    await db.collection('backups').doc(backupId).set(backupRecord);
-
-    try {
-      const exportPath = `gs://${BACKUP_BUCKET}/firestore-exports/${backupId}`;
-
-      console.log(`Export would be created at: ${exportPath}`);
-      console.log('NOTE: Actual export requires FirestoreAdminClient - implement with gcloud or Admin SDK');
-
-      await db.collection('backups').doc(backupId).update({
-        status: 'completed',
-        completedAt: new Date().toISOString(),
-        exportPath,
-        bucketName: BACKUP_BUCKET,
-      });
-
-      await db.collection('auditLog').add({
-        timestamp: new Date().toISOString(),
-        userId: 'system-scheduler',
-        userEmail: 'system@shiekh.directory',
-        userRole: 'Admin',
-        action: 'create',
-        entityType: 'backup',
-        entityId: backupId,
-        entityName: 'Weekly Scheduled Backup',
-        changes: [{ field: 'status', newValue: 'completed' }],
-      });
-
-      console.log(`Weekly backup completed: ${backupId}`);
-    } catch (error) {
-      console.error('Weekly backup failed:', error);
-      
-      await db.collection('backups').doc(backupId).update({
-        status: 'failed',
-        completedAt: new Date().toISOString(),
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      });
-
-      throw error;
-    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Restore failed:', error);
+    return {
+      success: false,
+      error: errorMessage,
+    };
   }
-);
-
-export const processBackupQueue = onDocumentCreated(
-  'backups/{backupId}',
-  async (event) => {
-    const snapshot = event.data;
-    if (!snapshot) {
-      console.log('No data in event');
-      return;
-    }
-
-    const backupId = event.params.backupId;
-    const data = snapshot.data() as BackupRecord;
-
-    if (data.status !== 'pending') {
-      console.log(`Backup ${backupId} is not pending, skipping`);
-      return;
-    }
-
-    const db = getFirestore();
-    console.log(`Processing backup: ${backupId}`);
-
-    try {
-      await snapshot.ref.update({ status: 'in-progress' });
-
-      const exportPath = `gs://${BACKUP_BUCKET}/firestore-exports/${backupId}`;
-
-      console.log(`Export would be created at: ${exportPath}`);
-      console.log('NOTE: Actual export requires FirestoreAdminClient - implement with gcloud or Admin SDK');
-
-      await snapshot.ref.update({
-        status: 'completed',
-        completedAt: new Date().toISOString(),
-        exportPath,
-        bucketName: BACKUP_BUCKET,
-      });
-
-      await db.collection('auditLog').add({
-        timestamp: new Date().toISOString(),
-        userId: data.createdBy,
-        userEmail: data.createdByEmail || 'system@shiekh.directory',
-        userRole: 'Admin',
-        action: 'create',
-        entityType: 'backup',
-        entityId: backupId,
-        entityName: `${data.type} backup`,
-        changes: [{ field: 'status', newValue: 'completed' }],
-      });
-
-      console.log(`Backup completed: ${backupId}`);
-    } catch (error) {
-      console.error(`Backup failed for ${backupId}:`, error);
-
-      await snapshot.ref.update({
-        status: 'failed',
-        completedAt: new Date().toISOString(),
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  }
-);
+}

@@ -28,7 +28,7 @@
  *     --backup=gs://shiekh-directory-prod-backups/firestore-exports/scheduled-weekly-2026-01-05T03-00-00-000Z
  */
 
-import { Firestore } from '@google-cloud/firestore';
+import { v1 } from '@google-cloud/firestore';
 import * as readline from 'readline';
 
 interface RestoreOptions {
@@ -168,8 +168,8 @@ async function executeRestore(options: RestoreOptions): Promise<void> {
     return;
   }
 
-  const client = new (Firestore as any).v1.FirestoreAdminClient();
-  const databasePath = client.databasePath(options.project, options.database);
+  const client = new v1.FirestoreAdminClient();
+  const databasePath = `projects/${options.project}/databases/${options.database}`;
 
   console.log('Initiating import operation...');
 
@@ -179,14 +179,15 @@ async function executeRestore(options: RestoreOptions): Promise<void> {
       inputUriPrefix: options.backup,
     });
 
-    console.log(`Import operation started: ${operation.name}`);
+    const operationName = operation.name || 'unknown';
+    console.log(`Import operation started: ${operationName}`);
     console.log('');
     console.log('The import is running in the background.');
     console.log('Monitor progress in the Google Cloud Console:');
     console.log(`  https://console.cloud.google.com/firestore/databases/${options.database}/import-export?project=${options.project}`);
     console.log('');
     console.log('Or check operation status:');
-    console.log(`  gcloud firestore operations describe ${operation.name.split('/').pop()} \\`);
+    console.log(`  gcloud firestore operations describe ${operationName.split('/').pop()} \\`);
     console.log(`    --project=${options.project} \\`);
     console.log(`    --database=${options.database}`);
   } catch (error) {

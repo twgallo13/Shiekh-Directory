@@ -107,23 +107,17 @@ describe('Export API', () => {
       assert.strictEqual(body.canViewMobilePhones, true, 'admin should see mobile phones');
     });
 
-    it('hides mobile phones for viewer', async () => {
-      const prepareRes = await fetch(`${API_BASE}/api/app/exports/locations/prepare`, {
+    it('blocks export access for viewer', async () => {
+      const res = await fetch(`${API_BASE}/api/app/exports/locations/prepare`, {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer test-token-viewer',
           'Content-Type': 'application/json',
         },
       });
-      const { token } = await prepareRes.json();
-
-      const res = await fetch(`${API_BASE}/api/app/exports/locations/${token}/pdf-data`, {
-        headers: {
-          'Authorization': 'Bearer test-token-viewer',
-        },
-      });
+      assert.strictEqual(res.status, 403, 'viewer should be blocked from export');
       const body = await res.json();
-      assert.strictEqual(body.canViewMobilePhones, false, 'viewer should not see mobile phones');
+      assert.strictEqual(body.error.code, 'access_denied', 'should return access_denied error');
     });
   });
 });

@@ -9,6 +9,8 @@ import { BulkHolidayManager } from './components/BulkHolidayManager';
 import { VerificationRequestsView } from './components/VerificationRequestsView';
 import { PrintableDirectoryView } from './components/PrintableDirectoryView';
 import { AdminView } from './components/AdminView';
+import { PeopleListView } from './components/PeopleListView';
+import { HierarchyView } from './components/HierarchyView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -101,6 +103,22 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <AdminView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/people"
+        element={
+          <ProtectedRoute>
+            <PeopleListView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/hierarchy"
+        element={
+          <ProtectedRoute>
+            <HierarchyView />
           </ProtectedRoute>
         }
       />

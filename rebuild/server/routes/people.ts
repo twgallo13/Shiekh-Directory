@@ -13,6 +13,7 @@ import type {
   AuditLogEntry,
 } from '../../src/types';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+import { normalizePhoneNumber } from '../utils/phone';
 
 function canManagePeople(role: string): boolean {
   return ['Steward', 'Admin'].includes(role);
@@ -206,12 +207,15 @@ export function createPeopleRouter(db: Firestore): Router {
       const now = new Date().toISOString();
       const personRef = db.collection('people').doc();
       
+      const normalizedWorkPhone = workPhone ? normalizePhoneNumber(workPhone) : undefined;
+      const normalizedMobilePhone = mobilePhone ? normalizePhoneNumber(mobilePhone) : undefined;
+
       const person: Omit<Person, 'id'> = {
         fullName: fullName.trim(),
         lifecycle: 'active',
         workEmail: workEmail?.trim() || undefined,
-        workPhone: workPhone?.trim() || undefined,
-        mobilePhone: mobilePhone?.trim() || undefined,
+        workPhone: normalizedWorkPhone || undefined,
+        mobilePhone: normalizedMobilePhone || undefined,
         homeLocationId: homeLocationId || undefined,
         createdAt: now,
         updatedAt: now,
@@ -309,14 +313,20 @@ export function createPeopleRouter(db: Firestore): Router {
         changes.push({ field: 'workEmail', oldValue: currentPerson.workEmail || null, newValue: workEmail?.trim() || null });
       }
 
-      if (workPhone !== undefined && workPhone !== currentPerson.workPhone) {
-        updateData.workPhone = workPhone?.trim() || null;
-        changes.push({ field: 'workPhone', oldValue: currentPerson.workPhone || null, newValue: workPhone?.trim() || null });
+      if (workPhone !== undefined) {
+        const normalizedWorkPhone = workPhone ? normalizePhoneNumber(workPhone) : null;
+        if (normalizedWorkPhone !== currentPerson.workPhone) {
+          updateData.workPhone = normalizedWorkPhone;
+          changes.push({ field: 'workPhone', oldValue: currentPerson.workPhone || null, newValue: normalizedWorkPhone });
+        }
       }
 
-      if (mobilePhone !== undefined && mobilePhone !== currentPerson.mobilePhone) {
-        updateData.mobilePhone = mobilePhone?.trim() || null;
-        changes.push({ field: 'mobilePhone', oldValue: currentPerson.mobilePhone || null, newValue: mobilePhone?.trim() || null });
+      if (mobilePhone !== undefined) {
+        const normalizedMobilePhone = mobilePhone ? normalizePhoneNumber(mobilePhone) : null;
+        if (normalizedMobilePhone !== currentPerson.mobilePhone) {
+          updateData.mobilePhone = normalizedMobilePhone;
+          changes.push({ field: 'mobilePhone', oldValue: currentPerson.mobilePhone || null, newValue: normalizedMobilePhone });
+        }
       }
 
       if (homeLocationId !== undefined && homeLocationId !== currentPerson.homeLocationId) {

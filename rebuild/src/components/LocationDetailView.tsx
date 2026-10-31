@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, Users, Navigation } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationDetail, AssignmentCapacity } from '../types';
+import { getStoreTypeLabel } from '../types';
 import { StatusBadge } from './StatusBadge';
 import { formatHoursDisplay } from '../lib/operatingState';
 import { canEditLocation } from '../lib/permissions';
@@ -19,7 +20,7 @@ export function LocationDetailView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
-  const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | 'directions' | null>(null);
+  const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | 'directions' | 'storeType' | null>(null);
   const [showAssignments, setShowAssignments] = useState(false);
   const [showReportProblem, setShowReportProblem] = useState(false);
   const [assignments, setAssignments] = useState<{
@@ -697,18 +698,29 @@ export function LocationDetailView() {
         
         {/* Store Info */}
         <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
-          <h3 className="font-semibold text-gray-900 mb-3">Store Information</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-900">Store Information</h3>
+            {authUser && (authUser.role === 'Admin' || authUser.role === 'Steward') && (
+              <button
+                onClick={() => setEditingField('storeType')}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg -m-2"
+                aria-label="Edit store type"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-gray-500">Store Number</dt>
               <dd className="font-medium text-gray-900">{location.storeNumber}</dd>
             </div>
-            {location.storeType && (
-              <div className="flex justify-between">
-                <dt className="text-gray-500">Store Type</dt>
-                <dd className="font-medium text-gray-900">{location.storeType}</dd>
-              </div>
-            )}
+            <div className="flex justify-between">
+              <dt className="text-gray-500">Store Type</dt>
+              <dd className="font-medium text-gray-900">
+                {location.storeType ? getStoreTypeLabel(location.storeType) : <span className="text-gray-400 italic">Not set</span>}
+              </dd>
+            </div>
             <div className="flex justify-between">
               <dt className="text-gray-500">Time Zone</dt>
               <dd className="font-medium text-gray-900">{location.timeZone}</dd>

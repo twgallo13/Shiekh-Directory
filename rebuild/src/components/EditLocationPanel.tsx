@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
 import { X, Save, AlertTriangle } from 'lucide-react';
-import type { LocationDetail, StandardHours, Address, DayOfWeek, ClosureType, ClosureReasonCode } from '../types';
+import type { LocationDetail, StandardHours, Address, DayOfWeek, ClosureType, ClosureReasonCode, StoreTypeCode } from '../types';
+import { STORE_TYPES } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 interface EditLocationPanelProps {
   location: LocationDetail;
-  field: 'hours' | 'contact' | 'closure' | 'directions';
+  field: 'hours' | 'contact' | 'closure' | 'directions' | 'storeType';
   onSave: () => void;
   onCancel: () => void;
 }
@@ -62,6 +63,9 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
   // Directions form state
   const [wayfindingDirections, setWayfindingDirections] = useState(location.wayfindingDirections || '');
 
+  // Store type form state
+  const [storeType, setStoreType] = useState<StoreTypeCode | ''>(location.storeType || '');
+
   // Closure form state
   const [closureReasonCode, setClosureReasonCode] = useState<ClosureReasonCode | ''>('');
   const [closureReasonText, setClosureReasonText] = useState('');
@@ -108,6 +112,10 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
         const newDirections = wayfindingDirections.trim().slice(0, 1000);
         if (newDirections !== (location.wayfindingDirections || '')) {
           changes.wayfindingDirections = newDirections || null;
+        }
+      } else if (field === 'storeType') {
+        if (storeType !== (location.storeType || '')) {
+          changes.storeType = storeType || null;
         }
       }
 
@@ -239,7 +247,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
       <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">
-            {field === 'hours' ? 'Edit Hours' : field === 'contact' ? 'Edit Contact Info' : field === 'directions' ? 'Edit Directions' : 'Add Temporary Closure'}
+            {field === 'hours' ? 'Edit Hours' : field === 'contact' ? 'Edit Contact Info' : field === 'directions' ? 'Edit Directions' : field === 'storeType' ? 'Edit Store Type' : 'Add Temporary Closure'}
           </h2>
           <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
@@ -390,6 +398,27 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                   Changes to directions require Steward approval before going live.
                 </p>
               )}
+            </div>
+          )}
+
+          {field === 'storeType' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Store Type *</label>
+                <select
+                  value={storeType}
+                  onChange={(e) => setStoreType(e.target.value as StoreTypeCode | '')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select store type...</option>
+                  {STORE_TYPES.map(t => (
+                    <option key={t.code} value={t.code}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                This determines the default hours template suggested for this store.
+              </p>
             </div>
           )}
 

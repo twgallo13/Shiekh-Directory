@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Phone, Copy, MapPin, ChevronRight, Building2, Warehouse, Store, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
+import { STORE_TYPES } from '../types';
 import { StatusBadge } from './StatusBadge';
 
 const KIND_ICONS: Record<LocationKind, typeof Store> = {
@@ -22,6 +23,7 @@ export function DirectoryView() {
   const [selectedRegion, setSelectedRegion] = useState<string>(searchParams.get('region') || '');
   const [selectedDistrict, setSelectedDistrict] = useState<string>(searchParams.get('district') || '');
   const [selectedKind, setSelectedKind] = useState<string>(searchParams.get('kind') || 'store');
+  const [selectedStoreType, setSelectedStoreType] = useState<string>(searchParams.get('storeType') || '');
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
@@ -38,6 +40,7 @@ export function DirectoryView() {
       if (selectedKind) params.set('kind', selectedKind);
       if (selectedDistrict) params.set('districtId', selectedDistrict);
       else if (selectedRegion) params.set('regionId', selectedRegion);
+      if (selectedStoreType) params.set('storeType', selectedStoreType);
       
       const response = await fetch(`/api/app/locations?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -52,7 +55,7 @@ export function DirectoryView() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken, selectedRegion, selectedDistrict, selectedKind]);
+  }, [getIdToken, selectedRegion, selectedDistrict, selectedKind, selectedStoreType]);
   
   const fetchFilters = useCallback(async () => {
     try {
@@ -120,8 +123,9 @@ export function DirectoryView() {
     if (selectedRegion) params.set('region', selectedRegion);
     if (selectedDistrict) params.set('district', selectedDistrict);
     if (selectedKind && selectedKind !== 'store') params.set('kind', selectedKind);
+    if (selectedStoreType) params.set('storeType', selectedStoreType);
     setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedRegion, selectedDistrict, selectedKind, setSearchParams]);
+  }, [searchQuery, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, setSearchParams]);
   
   const handleCall = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -207,6 +211,17 @@ export function DirectoryView() {
                   <option value="store">Stores</option>
                   <option value="facility">Facilities</option>
                   <option value="all">All Locations</option>
+                </select>
+                
+                <select
+                  value={selectedStoreType}
+                  onChange={(e) => setSelectedStoreType(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
+                >
+                  <option value="">All Types</option>
+                  {STORE_TYPES.map(t => (
+                    <option key={t.code} value={t.code}>{t.label}</option>
+                  ))}
                 </select>
               </div>
             )}

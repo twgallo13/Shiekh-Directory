@@ -157,7 +157,13 @@ export function DirectoryView() {
       {/* Header */}
       <header className="bg-blue-700 text-white sticky top-0 z-20">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Shiekh Directory</h1>
+          <a href="/" className="flex items-center" onClick={(e) => { e.preventDefault(); navigate('/'); }}>
+            <img 
+              src="/shiekh-logo.svg" 
+              alt="Shiekh" 
+              className="h-7 brightness-0 invert"
+            />
+          </a>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className="p-2 hover:bg-blue-600 rounded-lg"

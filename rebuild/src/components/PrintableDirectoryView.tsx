@@ -260,15 +260,15 @@ export function PrintableDirectoryView() {
         <div className="bg-white rounded-lg border border-gray-200 p-6 print:border-none print:rounded-none print:shadow-none">
           {/* Header */}
           <div className="mb-2 print:mb-1 flex items-center justify-between border-b-2 border-gray-900 pb-1">
-            <div>
-              <div className="flex items-center gap-1">
-                <span className="bg-red-600 text-white text-[9px] print:text-[8px] font-black px-1.5 py-px rounded tracking-wider">
-                  SHIEKH
-                </span>
-                <h1 className="text-sm print:text-[10px] font-black tracking-tight text-gray-900 uppercase">
-                  Store Directory
-                </h1>
-              </div>
+            <div className="flex items-center gap-2">
+              <img 
+                src="/shiekh-logo.svg" 
+                alt="Shiekh" 
+                className="h-5 print:h-4"
+              />
+              <span className="text-sm print:text-[10px] font-bold tracking-tight text-gray-600 uppercase">
+                Store Directory
+              </span>
             </div>
             <div className="text-right">
               <span className="text-[9px] print:text-[8px] font-bold text-gray-900 font-mono">

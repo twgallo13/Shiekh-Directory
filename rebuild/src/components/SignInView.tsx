@@ -86,8 +86,12 @@ export function SignInView() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Shiekh Directory</h1>
-          <p className="mt-2 text-gray-600">Sign in to access the store directory</p>
+          <img 
+            src="/shiekh-logo.svg" 
+            alt="Shiekh" 
+            className="h-12 mx-auto mb-4"
+          />
+          <p className="text-gray-600">Sign in to access the store directory</p>
         </div>
         
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">

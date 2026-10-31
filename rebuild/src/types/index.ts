@@ -33,6 +33,29 @@ export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'frida
 
 export type StandardHours = Record<DayOfWeek, DayHours>;
 
+// === Hours Templates ===
+export interface HoursTemplate {
+  id: string;
+  name: string; // e.g., "Standard Store Hours", "Mall Hours", "Outlet Hours"
+  description?: string;
+  hours: StandardHours;
+  version: number; // Incremented each time template is saved
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  updatedBy: string;
+  lifecycle: 'active' | 'archived';
+}
+
+// Record of template application to a location (versioned copy-on-apply)
+export interface AppliedHoursTemplate {
+  templateId: string;
+  templateName: string;
+  templateVersion: number; // Version at time of application
+  appliedAt: string;
+  appliedBy: string;
+}
+
 // === Hours Exceptions (subcollection) ===
 export type HoursExceptionType = 'holiday' | 'special';
 
@@ -50,17 +73,70 @@ export interface HoursException {
 // === Closures (subcollection) ===
 export type ClosureStatus = 'active' | 'ended';
 
+// Controlled closure reason taxonomy - codes cannot be repurposed
+export type ClosureReasonCode = 
+  | 'ac_hvac'       // AC/HVAC issues
+  | 'power'         // Power/utility failure
+  | 'mall_landlord' // Mall or landlord issue
+  | 'safety'        // Safety/security concern
+  | 'weather'       // Weather-related
+  | 'staffing'      // Staffing shortage
+  | 'maintenance'   // Maintenance/repair
+  | 'remodel'       // Remodel/renovation
+  | 'relocation'    // Store relocation
+  | 'other';        // Other (requires note)
+
+export type ClosureType = 'same_day' | 'multi_day' | 'unknown_end';
+
 export interface Closure {
   id: string;
-  reason: string;
+  reason: string; // Display reason text (backward compatible)
+  type?: ClosureType; // Optional for backward compat; defaults to same_day
+  reasonCode?: ClosureReasonCode; // Structured reason code
+  reasonNote?: string; // Internal detail for staff
+  publicExplanation?: string; // Safe explanation for public display
   startsAt: string; // ISO timestamp UTC
-  endsAt?: string; // ISO timestamp UTC, if empty ends at local midnight
+  endsAt?: string; // ISO timestamp UTC - for same_day: local midnight, for multi_day: end date
+  expiryUnresolved?: boolean; // True if timezone was invalid when created
   status: ClosureStatus;
+  createdBy?: string; // User ID who created closure
+  createdByEmail?: string;
+  // Multi-day and unknown-end closures
+  ownerId?: string; // Person ID responsible for follow-up
+  ownerName?: string;
+  nextReviewDate?: string; // YYYY-MM-DD for unknown_end closures
+  // Renewal tracking for same-day closures
+  renewedAt?: string; // ISO timestamp of last renewal
+  renewedBy?: string; // User ID
+  renewalCount?: number;
+  // End tracking
+  endedAt?: string; // ISO timestamp when ended (different from endsAt expiry)
+  endedBy?: string; // User ID who ended it
+  endedReason?: 'expired' | 'manual' | 'resolved'; // How it ended
+}
+
+// === Notices (subcollection) ===
+export type NoticeAudience = 'internal' | 'public';
+export type NoticeStatus = 'active' | 'expired' | 'resolved';
+
+export interface Notice {
+  id: string;
+  text: string; // Short notice text, max 500 chars
+  audience: NoticeAudience;
+  status: NoticeStatus;
+  effectiveFrom: string; // ISO timestamp
+  effectiveUntil?: string; // ISO timestamp, if undefined = unknown
+  expectedResolution?: string; // Brief description of when resolved
+  createdBy: string;
+  createdByEmail: string;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
 }
 
 // === Location ===
 export type LocationKind = 'store' | 'warehouse' | 'office' | 'facility';
-export type LocationLifecycle = 'draft' | 'active' | 'retired';
+export type LocationLifecycle = 'planned' | 'active' | 'retired';
 
 export interface Location extends RecordMetadata {
   id: string;
@@ -79,6 +155,7 @@ export interface Location extends RecordMetadata {
   mallOrCenterName?: string;
   wayfindingDirections?: string; // <= 1000 chars
   standardHours?: StandardHours;
+  appliedTemplate?: AppliedHoursTemplate; // Template this location's hours were copied from
   lastVerifiedAt?: string; // ISO timestamp
   lastVerifiedBy?: string; // User ID
 }
@@ -230,6 +307,7 @@ export interface LocationDetail extends Location {
   weekSchedule: DaySchedule[]; // Today + next 7 days
   hoursExceptions: HoursException[];
   activeClosure: Closure | null;
+  activeNotices: Notice[]; // Current active notices
   leadership: LocationLeadership;
   regionName: string;
   districtName: string;
@@ -422,13 +500,24 @@ export interface VerificationRequest extends RecordMetadata {
 }
 
 // === Corrections (requires Steward approval) ===
-export type CorrectionStatus = 'pending' | 'approved' | 'rejected';
+export type CorrectionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 export type CorrectionType = 'phone' | 'address' | 'inbox' | 'hours';
+
+// User-facing categories for issue reporting
+export type CorrectionCategory = 
+  | 'address'     // Address is wrong
+  | 'suite'       // Suite/unit number is wrong
+  | 'directions'  // Wayfinding directions need update
+  | 'phone'       // Phone number is wrong
+  | 'hours'       // Hours are incorrect
+  | 'manager'     // Manager info is wrong
+  | 'other';      // Other issue
 
 export interface Correction extends RecordMetadata {
   id: string;
   status: CorrectionStatus;
   type: CorrectionType;
+  category: CorrectionCategory; // User-selected category
   locationId: string;
   locationName: string;
   storeNumber: string;
@@ -438,6 +527,7 @@ export interface Correction extends RecordMetadata {
   submittedAt: string;
   // The proposed changes
   proposedChanges: Record<string, unknown>;
+  proposedNote?: string; // User's description of the issue
   // Current values at time of submission
   currentValues: Record<string, unknown>;
   // Review info (filled when approved/rejected)
@@ -445,6 +535,9 @@ export interface Correction extends RecordMetadata {
   reviewedByEmail?: string;
   reviewedAt?: string;
   reviewNotes?: string;
+  // Cancellation info
+  cancelledAt?: string;
+  cancelledBy?: string;
   // Version of location when submitted (for conflict detection)
   locationVersion: number;
 }

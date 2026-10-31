@@ -142,11 +142,18 @@ export function createEditRouter(db: Firestore): Router {
 
       if (requiresApproval && Object.keys(proposedChanges).length > 0) {
         const correctionRef = db.collection('corrections').doc();
+        // Determine type and category from the proposed changes
+        const hasPhone = Object.keys(proposedChanges).includes('mainPhone');
+        const hasAddress = Object.keys(proposedChanges).includes('address');
+        const hasInbox = Object.keys(proposedChanges).includes('sharedInboxEmail');
+        const hasDirections = Object.keys(proposedChanges).includes('wayfindingDirections');
+        const type = hasPhone ? 'phone' : hasAddress ? 'address' : hasInbox ? 'inbox' : 'hours';
+        const category = hasPhone ? 'phone' : hasDirections ? 'directions' : hasAddress ? 'address' : hasInbox ? 'other' : 'hours';
+        
         const correction: Omit<Correction, 'id'> = {
           status: 'pending',
-          type: Object.keys(proposedChanges).includes('mainPhone') ? 'phone' :
-                Object.keys(proposedChanges).includes('address') ? 'address' :
-                Object.keys(proposedChanges).includes('sharedInboxEmail') ? 'inbox' : 'hours',
+          type,
+          category,
           locationId: id,
           locationName: location.name,
           storeNumber: location.storeNumber,
@@ -230,7 +237,7 @@ export function createEditRouter(db: Firestore): Router {
     try {
       const { id } = req.params;
       const authUser = res.locals.authUser as AuthUser;
-      const { reason, endsAt } = req.body;
+      const { reason, reasonCode, reasonNote, publicExplanation, type, endsAt, ownerId, ownerName, nextReviewDate } = req.body;
 
       if (!authUser) {
         return res.status(401).json({
@@ -260,12 +267,70 @@ export function createEditRouter(db: Firestore): Router {
         });
       }
 
+      // Validate reasonCode if provided
+      const validReasonCodes = ['ac_hvac', 'power', 'mall_landlord', 'safety', 'weather', 'staffing', 'maintenance', 'remodel', 'relocation', 'other'];
+      if (reasonCode && !validReasonCodes.includes(reasonCode)) {
+        return res.status(400).json({
+          error: { code: 'invalid_reason_code', message: 'Invalid reason code', requestId: res.locals.requestId },
+        });
+      }
+
+      // Require note for 'other' reason code
+      if (reasonCode === 'other' && !reasonNote?.trim()) {
+        return res.status(400).json({
+          error: { code: 'note_required', message: 'A note is required when reason is "other"', requestId: res.locals.requestId },
+        });
+      }
+
+      // Calculate endsAt based on closure type
+      let calculatedEndsAt = endsAt;
+      let expiryUnresolved = false;
+      const closureType = type || 'same_day';
+      
+      if (closureType === 'same_day' && !endsAt) {
+        // Calculate local midnight
+        const timeZone = location.timeZone || 'America/Los_Angeles';
+        try {
+          const now = new Date();
+          // Get today's date in the store's timezone and calculate next midnight
+          const formatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+          const localDate = formatter.format(now);
+          const midnight = new Date(`${localDate}T23:59:59`);
+          // Convert to UTC
+          const tzOffset = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(now).find(p => p.type === 'timeZoneName')?.value || '';
+          const offsetMatch = tzOffset.match(/GMT([+-]\d+)/);
+          const offsetHours = offsetMatch ? parseInt(offsetMatch[1]) : 0;
+          const utcMidnight = new Date(midnight.getTime() - offsetHours * 60 * 60 * 1000);
+          calculatedEndsAt = utcMidnight.toISOString();
+        } catch {
+          // If timezone is invalid, set expiry as unresolved
+          expiryUnresolved = true;
+        }
+      }
+
+      // Require owner and review date for unknown_end closures
+      if (closureType === 'unknown_end' && !nextReviewDate) {
+        return res.status(400).json({
+          error: { code: 'review_date_required', message: 'Next review date is required for unknown-end closures', requestId: res.locals.requestId },
+        });
+      }
+
       const closureRef = db.collection(`locations/${id}/closures`).doc();
       const closure: Omit<Closure, 'id'> = {
         reason: reason.trim(),
+        type: closureType,
+        reasonCode: reasonCode || undefined,
+        reasonNote: reasonNote?.trim() || undefined,
+        publicExplanation: publicExplanation?.trim() || undefined,
         startsAt: new Date().toISOString(),
-        endsAt: endsAt || undefined,
+        endsAt: calculatedEndsAt || undefined,
+        expiryUnresolved,
         status: 'active',
+        createdBy: authUser.uid,
+        createdByEmail: authUser.email,
+        ownerId: ownerId || undefined,
+        ownerName: ownerName || undefined,
+        nextReviewDate: nextReviewDate || undefined,
       };
 
       await closureRef.set(closure);
@@ -412,6 +477,100 @@ export function createEditRouter(db: Firestore): Router {
       console.error('Update closure error:', error);
       return res.status(500).json({
         error: { code: 'closure_error', message: 'Failed to update closure', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // Renew a same-day closure (extends to next local midnight)
+  router.post('/locations/:locationId/closures/:closureId/renew', async (req: Request, res: Response) => {
+    try {
+      const { locationId, closureId } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      const permissions = canEditLocation(authUser, locationId);
+      if (!permissions.closure) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'You don\'t have permission to renew closures', requestId: res.locals.requestId },
+        });
+      }
+
+      const closureRef = db.collection(`locations/${locationId}/closures`).doc(closureId);
+      const closureDoc = await closureRef.get();
+
+      if (!closureDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Closure not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const closure = closureDoc.data() as Closure;
+      if (closure.status !== 'active') {
+        return res.status(400).json({
+          error: { code: 'invalid_status', message: 'Closure is not active', requestId: res.locals.requestId },
+        });
+      }
+
+      if (closure.type && closure.type !== 'same_day') {
+        return res.status(400).json({
+          error: { code: 'not_renewable', message: 'Only same-day closures can be renewed', requestId: res.locals.requestId },
+        });
+      }
+
+      const locationDoc = await db.collection('locations').doc(locationId).get();
+      const location = locationDoc.data() as Location;
+
+      // Calculate new endsAt as next local midnight
+      const timeZone = location?.timeZone || 'America/Los_Angeles';
+      let newEndsAt: string;
+      try {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+        const localDate = formatter.format(now);
+        const midnight = new Date(`${localDate}T23:59:59`);
+        const tzOffset = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(now).find(p => p.type === 'timeZoneName')?.value || '';
+        const offsetMatch = tzOffset.match(/GMT([+-]\d+)/);
+        const offsetHours = offsetMatch ? parseInt(offsetMatch[1]) : 0;
+        const utcMidnight = new Date(midnight.getTime() - offsetHours * 60 * 60 * 1000);
+        newEndsAt = utcMidnight.toISOString();
+      } catch {
+        return res.status(400).json({
+          error: { code: 'invalid_timezone', message: 'Could not calculate midnight due to invalid timezone', requestId: res.locals.requestId },
+        });
+      }
+
+      await closureRef.update({
+        endsAt: newEndsAt,
+        renewedAt: new Date().toISOString(),
+        renewedBy: authUser.uid,
+        renewalCount: (closure.renewalCount || 0) + 1,
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'closure',
+        entityId: closureId,
+        entityName: `Closure for ${location?.storeNumber || locationId}`,
+        locationId,
+        changes: [
+          { field: 'endsAt', oldValue: closure.endsAt, newValue: newEndsAt },
+          { field: 'renewalCount', oldValue: closure.renewalCount || 0, newValue: (closure.renewalCount || 0) + 1 },
+        ],
+      });
+
+      return res.json({ data: { success: true, newEndsAt } });
+    } catch (error) {
+      console.error('Renew closure error:', error);
+      return res.status(500).json({
+        error: { code: 'closure_error', message: 'Failed to renew closure', requestId: res.locals.requestId },
       });
     }
   });

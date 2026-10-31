@@ -485,7 +485,7 @@ function projectLocationDistrict(
     issues.push({ code: 'invalid_store_number', field: 'storeNumber' });
   }
 
-  const recordStatus = location.lifecycle === 'active' ? 'active' : location.lifecycle === 'retired' ? 'retired' : 'draft';
+  const recordStatus = location.lifecycle === 'active' ? 'active' : location.lifecycle === 'retired' ? 'retired' : 'planned';
   const locationType = classifyLocationType(location.storeType);
 
   if (!location.regionId) {

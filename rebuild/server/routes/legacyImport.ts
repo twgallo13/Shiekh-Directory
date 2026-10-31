@@ -51,7 +51,7 @@ interface ParsedLocationRow {
   row: number;
   action: 'create' | 'update' | 'skip' | 'error';
   existingId?: string;
-  data: Partial<Omit<Location, 'id'>>;
+  data: Partial<Omit<Location, 'id'>> & { hasTemporaryClosure?: boolean };
   smData?: { fullName: string; workPhone?: string; mobilePhone?: string };
   dmData?: { fullName: string };
   asmData?: { fullName: string }[];
@@ -567,6 +567,21 @@ function parseAndValidateRows(
     const mallOrCenterName = (row.mallOrCenterName || '').trim();
     const wayfindingDirections = (row.wayfindingDirections || '').trim().slice(0, 1000);
 
+    // Parse operational status and record status
+    const operationalStatus = (row.operationalStatus || '').trim().toLowerCase();
+    const recordStatus = (row.recordStatus || '').trim().toLowerCase();
+    
+    // Determine lifecycle from record status
+    let lifecycle: 'active' | 'planned' | 'retired' = 'active';
+    if (recordStatus === 'retired' || recordStatus === 'inactive' || recordStatus === 'closed permanently') {
+      lifecycle = 'retired';
+    } else if (recordStatus === 'draft' || recordStatus === 'planned' || recordStatus === 'pre-opening') {
+      lifecycle = 'planned';
+    }
+    
+    // Check if there's a temporary closure (operationalStatus === 'closed')
+    const hasTemporaryClosure = operationalStatus === 'closed' && lifecycle === 'active';
+
     let smData: ParsedLocationRow['smData'] = undefined;
     const storeManagerName = (row.storeManager || '').trim();
     if (storeManagerName) {
@@ -612,11 +627,11 @@ function parseAndValidateRows(
       standardHours = convertLegacyHours(legacyHours.standardHours);
     }
 
-    const data: Partial<Omit<Location, 'id'>> = {
+    const data: Partial<Omit<Location, 'id'>> & { hasTemporaryClosure?: boolean } = {
       storeNumber,
       kind,
       name: name || existingEntry?.data.name,
-      lifecycle: 'active',
+      lifecycle,
       address,
       timeZone: timeZone || existingEntry?.data.timeZone || 'America/Los_Angeles',
       mainPhone: mainPhone || existingEntry?.data.mainPhone || '',
@@ -627,6 +642,7 @@ function parseAndValidateRows(
       storeType: storeType || existingEntry?.data.storeType,
       mallOrCenterName: mallOrCenterName || existingEntry?.data.mallOrCenterName,
       wayfindingDirections: wayfindingDirections || existingEntry?.data.wayfindingDirections,
+      hasTemporaryClosure,
     };
 
     if (standardHours) {
@@ -653,6 +669,8 @@ function parseAndValidateRows(
       if (wayfindingDirections && wayfindingDirections !== existingLoc.wayfindingDirections) changes.push(`Wayfinding directions updated`);
       if (kind && kind !== existingLoc.kind) changes.push(`Kind: ${existingLoc.kind} → ${kind}`);
       if (timeZone && timeZone !== existingLoc.timeZone) changes.push(`Timezone: ${existingLoc.timeZone} → ${timeZone}`);
+      if (lifecycle !== existingLoc.lifecycle) changes.push(`Lifecycle: ${existingLoc.lifecycle} → ${lifecycle}`);
+      if (hasTemporaryClosure) changes.push('Temporary closure will be created');
       if (standardHours) changes.push('Hours updated from import');
 
       if (smData) {
@@ -674,6 +692,8 @@ function parseAndValidateRows(
     } else {
       changes.push('New location');
       if (isFacility) changes.push('(Facility)');
+      if (lifecycle !== 'active') changes.push(`Lifecycle: ${lifecycle}`);
+      if (hasTemporaryClosure) changes.push('Temporary closure will be created');
       if (smData) {
         changes.push(`SM: ${smData.fullName}`);
       }
@@ -821,6 +841,23 @@ async function applyImport(
       const districtId = row.data.districtId || '';
       const storeNumber = row.data.storeNumber || '';
       const normalizedNum = normalizeStoreNumber(storeNumber);
+      
+      // Create closure if operationalStatus was "closed"
+      if (row.data.hasTemporaryClosure) {
+        const closureRef = db.collection(`locations/${locationId}/closures`).doc();
+        await closureRef.set({
+          reason: 'Imported from legacy data - temporary closure',
+          type: 'unknown_end',
+          reasonCode: 'other',
+          reasonNote: 'Imported as closed from legacy system',
+          startsAt: now,
+          status: 'active',
+          createdBy: authUser.uid,
+          createdByEmail: authUser.email,
+          ownerId: null,
+          nextReviewDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10), // 7 days from now
+        });
+      }
 
       if (row.smData) {
         let personId = peopleByName.get(row.smData.fullName.toLowerCase().trim());

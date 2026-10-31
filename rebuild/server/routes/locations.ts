@@ -11,6 +11,7 @@ import type {
   LocationListItem,
   LocationDetail,
   LocationLeadership,
+  Notice,
 } from '../../src/types';
 import { resolveOperatingStatus, getWeekSchedule, getScheduleForDate } from '../../src/lib/operatingState';
 import { formatPhoneNumber } from '../utils/phone';
@@ -157,6 +158,13 @@ export function createLocationsRouter(db: Firestore): Router {
         }
       }
       
+      // Get active notices
+      const noticesSnap = await db.collection('locations').doc(id).collection('notices')
+        .where('status', '==', 'active')
+        .orderBy('effectiveFrom', 'desc')
+        .get();
+      const activeNotices = noticesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Notice[];
+      
       const detail: LocationDetail = {
         ...location,
         statusNow,
@@ -164,6 +172,7 @@ export function createLocationsRouter(db: Firestore): Router {
         weekSchedule,
         hoursExceptions: exceptions,
         activeClosure,
+        activeNotices,
         leadership,
         regionName,
         districtName,

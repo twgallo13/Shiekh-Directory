@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ComingSoonPlaceholder } from './ComingSoonPlaceholder';
+import { MyRequestsView } from './MyRequestsView';
 
 export function SettingsView() {
   const navigate = useNavigate();
@@ -31,6 +32,11 @@ export function SettingsView() {
               <p className="text-xs text-gray-400 mt-0.5">Role: {authUser?.role}</p>
             </div>
           </div>
+        </div>
+
+        {/* My Requests */}
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <MyRequestsView />
         </div>
 
         {/* Planned Settings */}

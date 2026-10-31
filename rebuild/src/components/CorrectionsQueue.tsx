@@ -163,7 +163,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                         correction.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                         correction.status === 'approved' ? 'bg-green-100 text-green-800' :
@@ -171,8 +171,18 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
                       }`}>
                         {correction.type}
                       </span>
+                      {correction.category && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {correction.category}
+                        </span>
+                      )}
                       <span className="font-medium">#{correction.storeNumber} {correction.locationName}</span>
                     </div>
+                    {correction.proposedNote && (
+                      <p className="text-sm text-gray-600 mt-1 italic">
+                        "{correction.proposedNote}"
+                      </p>
+                    )}
                     <p className="text-sm text-gray-500 mt-1">
                       Submitted by {correction.submittedByEmail}
                     </p>

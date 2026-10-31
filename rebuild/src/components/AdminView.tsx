@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History } from 'lucide-react';
+import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ComingSoonPlaceholder, ComingSoonSection } from './ComingSoonPlaceholder';
+import { ClosuresBoard } from './ClosuresBoard';
+import { HoursTemplatesView } from './HoursTemplatesView';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates';
 
 interface User {
   id: string;
@@ -107,6 +109,9 @@ export function AdminView() {
             <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History}>
               Audit Log
             </TabButton>
+            <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock}>
+              Hours Templates
+            </TabButton>
           </div>
         </div>
       </div>
@@ -118,6 +123,7 @@ export function AdminView() {
         {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
         {activeTab === 'communications' && <CommunicationsTab />}
         {activeTab === 'audit-log' && <AuditLogTab />}
+        {activeTab === 'hours-templates' && <HoursTemplatesTab />}
       </div>
     </div>
   );
@@ -1546,6 +1552,14 @@ function CommunicationsTab() {
   );
 }
 
+function HoursTemplatesTab() {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
+      <HoursTemplatesView />
+    </div>
+  );
+}
+
 function AuditLogTab() {
   return (
     <div className="space-y-6">
@@ -1554,11 +1568,11 @@ function AuditLogTab() {
         description="View a unified timeline of all changes across all stores, including hours edits, closures, assignments, and verification responses."
       />
       
-      <div className="space-y-4">
-        <ComingSoonPlaceholder
-          title="Closures Board"
-          description="Dashboard view of all current and upcoming store closures across the company."
-        />
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <ClosuresBoard />
+        </div>
+        
         <ComingSoonPlaceholder
           title="Data Quality / Stale Stores"
           description="Identify stores with outdated information, missing managers, or unverified hours."

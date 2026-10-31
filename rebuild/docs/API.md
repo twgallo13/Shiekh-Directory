@@ -375,6 +375,237 @@ GET /api/v3/location-districts?snapshot={token}&limit=50&kind=store
 
 ---
 
+## Internal App API
+
+The following endpoints are used by the internal web application and require user authentication via Firebase Auth.
+
+### Hours Templates
+
+Hours templates allow admins to create named weekly schedules that can be applied to multiple stores.
+
+#### List Templates
+
+```
+GET /api/app/hours-templates
+GET /api/app/hours-templates?includeArchived=true
+```
+
+Returns all active templates, or includes archived if `includeArchived=true`.
+
+#### Create Template
+
+```
+POST /api/app/hours-templates
+```
+
+**Body:**
+```json
+{
+  "name": "Standard Store Hours",
+  "description": "Default hours for mall stores",
+  "hours": {
+    "monday": { "closed": false, "intervals": [{ "open": "09:00", "close": "21:00" }] },
+    ...
+  }
+}
+```
+
+Requires Steward or Admin role.
+
+#### Update Template
+
+```
+PATCH /api/app/hours-templates/:id
+```
+
+Updates name, description, or hours. Hours changes increment the template version.
+
+#### Apply Template
+
+```
+POST /api/app/hours-templates/:id/apply
+```
+
+**Body:**
+```json
+{
+  "locationId": "loc-007"
+}
+```
+
+Applies template hours to a single location (copy-on-apply - location stores a copy, not a reference).
+
+#### Bulk Apply Template
+
+```
+POST /api/app/hours-templates/:id/bulk-apply
+```
+
+**Body:**
+```json
+{
+  "filters": {
+    "districtId": "dist-01",
+    "regionId": "reg-west",
+    "kind": "store"
+  },
+  "preview": true
+}
+```
+
+With `preview: true`, returns what would change without making changes. With `preview: false`, applies to all matching locations.
+
+---
+
+### Closures
+
+#### Create Closure
+
+```
+POST /api/app/edit/locations/:id/closures
+```
+
+**Body:**
+```json
+{
+  "reason": "Water damage repair",
+  "type": "same_day",
+  "reasonCode": "maintenance",
+  "reasonNote": "Internal detail",
+  "publicExplanation": "Closed for repairs"
+}
+```
+
+**Closure Types:**
+| Type | Description |
+|------|-------------|
+| `same_day` | Expires at local midnight, can be renewed |
+| `multi_day` | Has explicit end date |
+| `unknown_end` | Requires owner and next review date |
+
+**Reason Codes:**
+| Code | Label |
+|------|-------|
+| `ac_hvac` | AC/HVAC Issue |
+| `power` | Power/Utility |
+| `mall_landlord` | Mall/Landlord Issue |
+| `safety` | Safety/Security |
+| `weather` | Weather |
+| `staffing` | Staffing |
+| `maintenance` | Maintenance |
+| `remodel` | Remodel |
+| `relocation` | Relocation |
+| `other` | Other (requires note) |
+
+#### Renew Same-Day Closure
+
+```
+POST /api/app/edit/locations/:locationId/closures/:closureId/renew
+```
+
+Extends a same-day closure to the next local midnight. Tracks renewal count.
+
+#### End Closure
+
+```
+POST /api/app/edit/locations/:locationId/closures/:closureId/end
+```
+
+Ends an active closure immediately.
+
+---
+
+### Notices
+
+Store notices communicate information without closing the store.
+
+#### List Notices
+
+```
+GET /api/app/locations/:locationId/notices
+GET /api/app/locations/:locationId/notices?status=active
+```
+
+#### Create Notice
+
+```
+POST /api/app/locations/:locationId/notices
+```
+
+**Body:**
+```json
+{
+  "text": "Entrance temporarily moved to west side",
+  "audience": "public",
+  "effectiveFrom": "2026-10-31T00:00:00Z",
+  "effectiveUntil": "2026-11-15T00:00:00Z",
+  "expectedResolution": "After construction"
+}
+```
+
+**Audience Values:**
+| Value | Description |
+|-------|-------------|
+| `internal` | Only visible to internal users |
+| `public` | May be shown externally |
+
+#### Update Notice
+
+```
+PATCH /api/app/locations/:locationId/notices/:noticeId
+```
+
+Can update text, audience, status, and timing fields.
+
+---
+
+### Correction Requests
+
+Correction requests allow any signed-in user to report problems with store information.
+
+#### Create Correction Request
+
+```
+POST /api/app/corrections
+```
+
+**Body:**
+```json
+{
+  "locationId": "loc-007",
+  "category": "phone",
+  "proposedNote": "The phone number shown is for the old location"
+}
+```
+
+**Categories:**
+| Category | Description |
+|----------|-------------|
+| `address` | Address is wrong |
+| `suite` | Suite/unit number is wrong |
+| `directions` | Wayfinding directions need update |
+| `phone` | Phone number is incorrect |
+| `hours` | Hours are incorrect |
+| `manager` | Manager info is wrong |
+| `other` | Other issue |
+
+#### List My Requests
+
+```
+GET /api/app/corrections?myRequests=true
+GET /api/app/corrections?status=pending&category=phone
+```
+
+#### Cancel Request
+
+```
+POST /api/app/corrections/:id/cancel
+```
+
+Only the submitter can cancel their own pending requests.
+
+---
+
 ## Rate Limits
 
 - **1000 requests per minute** per API client

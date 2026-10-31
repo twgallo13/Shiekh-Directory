@@ -439,7 +439,7 @@ function projectStaffing(
     };
   };
 
-  const recordStatus = location.lifecycle === 'active' ? 'active' : location.lifecycle === 'retired' ? 'retired' : 'draft';
+  const recordStatus = location.lifecycle === 'active' ? 'active' : location.lifecycle === 'retired' ? 'retired' : 'planned';
 
   const smHolders = smAssignments
     .filter(a => isAssignmentActive(a, localDate))

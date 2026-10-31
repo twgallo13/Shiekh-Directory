@@ -11,6 +11,7 @@ import { AuditHistory } from './AuditHistory';
 import { AssignmentPanel } from './AssignmentPanel';
 import { StoreVerificationPanel } from './StoreVerificationPanel';
 import { CapacityBadge, VacantBadge } from './CapacityBadge';
+import { ReportProblemDialog } from './ReportProblemDialog';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -20,6 +21,7 @@ export function LocationDetailView() {
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | null>(null);
   const [showAssignments, setShowAssignments] = useState(false);
+  const [showReportProblem, setShowReportProblem] = useState(false);
   const [assignments, setAssignments] = useState<{
     id: string;
     personId: string;
@@ -609,6 +611,26 @@ export function LocationDetailView() {
           </dl>
         </div>
         
+        {/* Report a Problem - available to all signed-in users */}
+        {authUser && (
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-gray-900">See something wrong?</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Report incorrect information for this location
+                </p>
+              </div>
+              <button
+                onClick={() => setShowReportProblem(true)}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors min-h-[44px]"
+              >
+                Report a Problem
+              </button>
+            </div>
+          </div>
+        )}
+        
         {/* Audit History - visible to Leader/Steward/Admin */}
         <AuditHistory
           locationId={location.id}
@@ -641,6 +663,17 @@ export function LocationDetailView() {
             fetchAssignments();
           }}
           onCancel={() => setShowAssignments(false)}
+        />
+      )}
+      
+      {/* Report Problem Dialog */}
+      {showReportProblem && location && (
+        <ReportProblemDialog
+          location={location}
+          onClose={() => setShowReportProblem(false)}
+          onSuccess={() => {
+            alert('Your request has been submitted and will be reviewed.');
+          }}
         />
       )}
       

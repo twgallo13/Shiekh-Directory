@@ -232,7 +232,7 @@ describe('Operating State - Unknown Fallback', () => {
   it('should return Unknown for inactive location', () => {
     const inactiveLocation: Location = {
       ...baseLocation,
-      lifecycle: 'draft',
+      lifecycle: 'planned',
     };
     
     const result = resolveOperatingStatus(inactiveLocation, [], [], new Date());

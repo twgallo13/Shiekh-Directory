@@ -187,7 +187,7 @@ This document maps legacy API fields to the new rebuild model, enabling the rebu
 |--------------|---------------|-------|
 | `locationId` | `location.id` | |
 | `storeNumber` | `location.storeNumber` | Keep leading zeros |
-| `recordStatus` | `'active'` / `'retired'` / `'draft'` | From lifecycle |
+| `recordStatus` | `'active'` / `'retired'` / `'planned'` | From lifecycle |
 | `regionId` | `region.id` | |
 | `districtId` | `district.id` | |
 | `hierarchy.regionName` | `region.name` | |
@@ -305,7 +305,7 @@ The `positionStatus` object provides structured vacancy and multi-holder informa
 | Rebuild `lifecycle` | Legacy `recordStatus` |
 |--------------------|----------------------|
 | `'active'` | `'Active'` or `'active'` |
-| `'draft'` | `'Draft'` or `'draft'` |
+| `'planned'` | `'Planned'` or `'planned'` |
 | `'retired'` | `'Retired'` or `'retired'` |
 
 ### Person Lifecycle Mapping

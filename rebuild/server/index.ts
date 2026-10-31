@@ -22,6 +22,8 @@ import { createAdminRouter } from './routes/admin';
 import { createLegacyImportRouter } from './routes/legacyImport';
 import { createBackupRouter } from './routes/backup';
 import { createHierarchyRouter } from './routes/hierarchy';
+import { createHoursTemplatesRouter } from './routes/hoursTemplates';
+import { createNoticesRouter } from './routes/notices';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -52,6 +54,8 @@ app.use('/api/app/admin', createAdminRouter(db));
 app.use('/api/app/import/legacy', createLegacyImportRouter(db));
 app.use('/api/app/backups', createBackupRouter(db));
 app.use('/api/app/hierarchy', createHierarchyRouter(db));
+app.use('/api/app/hours-templates', createHoursTemplatesRouter(db));
+app.use('/api/app', createNoticesRouter(db));
 
 // Legacy API routes (v1/v2/v3)
 app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));

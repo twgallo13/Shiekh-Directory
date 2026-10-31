@@ -1,7 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import type { User, AuthUser, UserRole, Location } from '../../src/types';
+import type { User, AuthUser, UserRole, Location, HoursTemplate, StandardHours, StoreTypeCode, DayOfWeek } from '../../src/types';
+import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
 
 const VALID_ROLES: UserRole[] = ['Viewer', 'Store', 'Leader', 'Steward', 'Admin'];
 
@@ -457,5 +458,235 @@ export function createAdminRouter(db: Firestore): Router {
     }
   });
 
+  // Import hours templates from legacy JSON format
+  // Expected format: { templates: [{ id, name, description, weeklySchedule, defaultForTypes, isDefault }] }
+  router.post('/import/hours-templates', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { templates, dryRun } = req.body;
+
+      if (!Array.isArray(templates)) {
+        return res.status(400).json({
+          error: { code: 'invalid_input', message: 'templates must be an array', requestId: res.locals.requestId },
+        });
+      }
+
+      const results: { id: string; name: string; action: 'created' | 'updated' | 'skipped'; error?: string }[] = [];
+      const now = new Date().toISOString();
+
+      for (const template of templates) {
+        try {
+          const { id, name, description, weeklySchedule, defaultForTypes, isDefault } = template;
+
+          if (!name?.trim()) {
+            results.push({ id: id || 'unknown', name: name || 'unknown', action: 'skipped', error: 'Name is required' });
+            continue;
+          }
+
+          // Parse legacy weekly schedule to StandardHours
+          const hours = parseLegacyWeeklySchedule(weeklySchedule);
+          if (!hours) {
+            results.push({ id: id || 'unknown', name, action: 'skipped', error: 'Invalid weekly schedule' });
+            continue;
+          }
+
+          // Validate and convert defaultForTypes
+          let validatedDefaultForTypes: StoreTypeCode[] | undefined;
+          if (defaultForTypes && Array.isArray(defaultForTypes)) {
+            validatedDefaultForTypes = [];
+            for (const typeLabel of defaultForTypes) {
+              if (typeof typeLabel === 'string') {
+                // Try direct code first, then label lookup
+                if (isValidStoreTypeCode(typeLabel)) {
+                  validatedDefaultForTypes.push(typeLabel);
+                } else if (STORE_TYPE_CODE_FROM_LABEL[typeLabel]) {
+                  validatedDefaultForTypes.push(STORE_TYPE_CODE_FROM_LABEL[typeLabel]);
+                }
+              }
+            }
+          }
+
+          const templateData: Omit<HoursTemplate, 'id'> = {
+            name: name.trim(),
+            description: description?.trim() || undefined,
+            hours,
+            version: 1,
+            createdAt: now,
+            createdBy: authUser.uid,
+            updatedAt: now,
+            updatedBy: authUser.uid,
+            lifecycle: 'active',
+            defaultForTypes: validatedDefaultForTypes?.length ? validatedDefaultForTypes : undefined,
+            isDefault: isDefault === true ? true : undefined,
+          };
+
+          if (!dryRun) {
+            // Check if template with same name exists
+            const existing = await db.collection('hoursTemplates')
+              .where('name', '==', name.trim())
+              .limit(1)
+              .get();
+
+            if (!existing.empty) {
+              const existingDoc = existing.docs[0];
+              await existingDoc.ref.update({
+                ...templateData,
+                createdAt: existingDoc.data().createdAt,
+                createdBy: existingDoc.data().createdBy,
+                version: (existingDoc.data().version || 0) + 1,
+              });
+              results.push({ id: existingDoc.id, name, action: 'updated' });
+            } else {
+              const newRef = db.collection('hoursTemplates').doc();
+              await newRef.set(templateData);
+              results.push({ id: newRef.id, name, action: 'created' });
+            }
+          } else {
+            results.push({ id: id || 'new', name, action: 'created' });
+          }
+        } catch (err) {
+          results.push({ id: template.id || 'unknown', name: template.name || 'unknown', action: 'skipped', error: String(err) });
+        }
+      }
+
+      res.json({
+        data: {
+          dryRun: !!dryRun,
+          total: templates.length,
+          created: results.filter(r => r.action === 'created').length,
+          updated: results.filter(r => r.action === 'updated').length,
+          skipped: results.filter(r => r.action === 'skipped').length,
+          results,
+        },
+      });
+    } catch (error) {
+      console.error('Import hours templates error:', error);
+      res.status(500).json({ error: { code: 'import_error', message: 'Failed to import hours templates' } });
+    }
+  });
+
+  // Import per-store types from legacy JSON format
+  // Expected format: { storeTypes: { "storeNumber": "type label", ... } }
+  router.post('/import/store-types', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { storeTypes, dryRun } = req.body;
+
+      if (!storeTypes || typeof storeTypes !== 'object') {
+        return res.status(400).json({
+          error: { code: 'invalid_input', message: 'storeTypes must be an object mapping storeNumber to type', requestId: res.locals.requestId },
+        });
+      }
+
+      // Get all active locations
+      const locationsSnap = await db.collection('locations').where('lifecycle', '==', 'active').get();
+      const locationsByNumber = new Map<string, { id: string; storeNumber: string }>();
+      for (const doc of locationsSnap.docs) {
+        const data = doc.data() as Location;
+        locationsByNumber.set(data.storeNumber, { id: doc.id, storeNumber: data.storeNumber });
+        // Also index without leading zeros
+        const normalized = data.storeNumber.replace(/^0+/, '');
+        if (normalized !== data.storeNumber) {
+          locationsByNumber.set(normalized, { id: doc.id, storeNumber: data.storeNumber });
+        }
+      }
+
+      const results: { storeNumber: string; action: 'updated' | 'skipped'; storeType?: string; error?: string }[] = [];
+      const now = new Date().toISOString();
+      const batch = db.batch();
+      let batchCount = 0;
+
+      for (const [storeNumber, typeLabel] of Object.entries(storeTypes)) {
+        if (typeof typeLabel !== 'string') {
+          results.push({ storeNumber, action: 'skipped', error: 'Type must be a string' });
+          continue;
+        }
+
+        const location = locationsByNumber.get(storeNumber);
+        if (!location) {
+          results.push({ storeNumber, action: 'skipped', error: 'Store not found' });
+          continue;
+        }
+
+        // Convert type label to code
+        let storeTypeCode: StoreTypeCode | undefined;
+        if (isValidStoreTypeCode(typeLabel)) {
+          storeTypeCode = typeLabel;
+        } else if (STORE_TYPE_CODE_FROM_LABEL[typeLabel]) {
+          storeTypeCode = STORE_TYPE_CODE_FROM_LABEL[typeLabel];
+        } else {
+          results.push({ storeNumber: location.storeNumber, action: 'skipped', error: `Unknown type: ${typeLabel}` });
+          continue;
+        }
+
+        if (!dryRun) {
+          batch.update(db.collection('locations').doc(location.id), {
+            storeType: storeTypeCode,
+            updatedAt: now,
+            updatedBy: authUser.uid,
+          });
+          batchCount++;
+        }
+        results.push({ storeNumber: location.storeNumber, action: 'updated', storeType: storeTypeCode });
+      }
+
+      if (!dryRun && batchCount > 0) {
+        await batch.commit();
+      }
+
+      res.json({
+        data: {
+          dryRun: !!dryRun,
+          total: Object.keys(storeTypes).length,
+          updated: results.filter(r => r.action === 'updated').length,
+          skipped: results.filter(r => r.action === 'skipped').length,
+          results,
+        },
+      });
+    } catch (error) {
+      console.error('Import store types error:', error);
+      res.status(500).json({ error: { code: 'import_error', message: 'Failed to import store types' } });
+    }
+  });
+
   return router;
+}
+
+// Helper to parse legacy weekly schedule format
+function parseLegacyWeeklySchedule(schedule: unknown): StandardHours | null {
+  if (!schedule || typeof schedule !== 'object') return null;
+
+  const result: Partial<StandardHours> = {};
+  const days: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+  for (const day of days) {
+    const daySchedule = (schedule as Record<string, unknown>)[day];
+    if (!daySchedule || typeof daySchedule !== 'object') {
+      result[day] = { closed: true, intervals: [] };
+      continue;
+    }
+
+    const ds = daySchedule as Record<string, unknown>;
+    if (ds.isClosed === true || ds.closed === true) {
+      result[day] = { closed: true, intervals: [] };
+    } else {
+      const open = typeof ds.open === 'string' ? ds.open : typeof ds.openTime === 'string' ? ds.openTime : '10:00';
+      const close = typeof ds.close === 'string' ? ds.close : typeof ds.closeTime === 'string' ? ds.closeTime : '21:00';
+      result[day] = {
+        closed: false,
+        intervals: [{ open: normalizeTimeString(open), close: normalizeTimeString(close) }],
+      };
+    }
+  }
+
+  return result as StandardHours;
+}
+
+function normalizeTimeString(time: string): string {
+  // Handle various time formats and normalize to HH:MM
+  const match = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    return `${match[1].padStart(2, '0')}:${match[2]}`;
+  }
+  return time;
 }

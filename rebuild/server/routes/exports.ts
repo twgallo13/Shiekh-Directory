@@ -276,16 +276,17 @@ function mapExportLocation(
     .map(a => people.get(a.personId)?.fullName)
     .filter((name): name is string => !!name);
 
+  const addr = location.address || {};
   return {
     id: location.id,
     storeNumber: location.storeNumber,
     name: location.name,
     kind: location.kind,
-    address: location.address.street,
-    suite: location.address.suite || '',
-    city: location.address.city,
-    state: location.address.state,
-    zip: location.address.zip,
+    address: addr.street || '',
+    suite: addr.suite || '',
+    city: addr.city || '',
+    state: addr.state || '',
+    zip: addr.zip || '',
     phone: location.mainPhone,
     phoneFormatted: formatPhone(location.mainPhone),
     sharedInboxEmail: location.sharedInboxEmail || '',

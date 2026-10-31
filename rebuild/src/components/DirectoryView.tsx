@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store, Printer, Users, Network, FileCheck, Settings, AlertTriangle, Clock } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Building2, Warehouse, Store } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
 import { StatusBadge } from './StatusBadge';
-import { canApproveCorrections } from '../lib/permissions';
 
 const KIND_ICONS: Record<LocationKind, typeof Store> = {
   store: Store,
@@ -25,14 +24,10 @@ export function DirectoryView() {
   const [selectedKind, setSelectedKind] = useState<string>(searchParams.get('kind') || 'store');
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   
-  const { getIdToken, signOut, user, authUser } = useAuth();
+  const { getIdToken } = useAuth();
   const navigate = useNavigate();
-  
-  const showCorrectionsLink = authUser && canApproveCorrections(authUser);
-  const showHolidaysLink = authUser && (authUser.role === 'Admin' || authUser.role === 'Steward');
   
   const fetchLocations = useCallback(async () => {
     try {
@@ -154,167 +149,7 @@ export function DirectoryView() {
   const showSearchResults = searchQuery.trim().length > 0;
   
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-blue-700 text-white sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <a href="/" className="flex items-center" onClick={(e) => { e.preventDefault(); navigate('/'); }}>
-            <img 
-              src="/shiekh-logo.svg" 
-              alt="Shiekh" 
-              className="h-7 brightness-0 invert"
-            />
-          </a>
-          <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="p-2 hover:bg-blue-600 rounded-lg"
-            aria-label="Menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-        </div>
-        
-        {menuOpen && (
-          <div className="absolute right-4 top-14 bg-white text-gray-900 rounded-lg shadow-lg border border-gray-200 py-2 min-w-48">
-            <div className="px-4 py-2 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-gray-500" />
-                <div>
-                  <span className="text-sm block">{user?.email || 'User'}</span>
-                  {authUser && (
-                    <span className="text-xs text-gray-500">{authUser.role}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-            {showCorrectionsLink && (
-              <button
-                onClick={() => {
-                  navigate('/corrections');
-                  setMenuOpen(false);
-                }}
-                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-              >
-                <ClipboardCheck className="w-4 h-4" />
-                Approval Queue
-              </button>
-            )}
-            {showHolidaysLink && (
-              <button
-                onClick={() => {
-                  navigate('/holidays');
-                  setMenuOpen(false);
-                }}
-                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-              >
-                <Calendar className="w-4 h-4" />
-                Manage Holidays
-              </button>
-            )}
-            {(authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin') && (
-              <>
-                <button
-                  onClick={() => {
-                    navigate('/verification');
-                    setMenuOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                >
-                  <FileCheck className="w-4 h-4" />
-                  Store Verification
-                </button>
-                <button
-                  onClick={() => {
-                    navigate('/closures');
-                    setMenuOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                >
-                  <AlertTriangle className="w-4 h-4" />
-                  Closures Board
-                </button>
-                <button
-                  onClick={() => {
-                    navigate('/stale-stores');
-                    setMenuOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                >
-                  <Clock className="w-4 h-4" />
-                  Stale Stores
-                </button>
-              </>
-            )}
-            <button
-              onClick={() => {
-                navigate('/print');
-                setMenuOpen(false);
-              }}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-            >
-              <Printer className="w-4 h-4" />
-              Print / Export
-            </button>
-            {(authUser?.role === 'Steward' || authUser?.role === 'Admin') && (
-              <>
-                <button
-                  onClick={() => {
-                    navigate('/people');
-                    setMenuOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                >
-                  <Users className="w-4 h-4" />
-                  People
-                </button>
-                <button
-                  onClick={() => {
-                    navigate('/hierarchy');
-                    setMenuOpen(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                >
-                  <Network className="w-4 h-4" />
-                  Hierarchy
-                </button>
-              </>
-            )}
-            {authUser?.role === 'Admin' && (
-              <button
-                onClick={() => {
-                  navigate('/admin');
-                  setMenuOpen(false);
-                }}
-                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-              >
-                <User className="w-4 h-4" />
-                Admin
-              </button>
-            )}
-            <button
-              onClick={() => {
-                navigate('/settings');
-                setMenuOpen(false);
-              }}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-            >
-              <Settings className="w-4 h-4" />
-              Settings
-            </button>
-            <button
-              onClick={() => {
-                signOut();
-                setMenuOpen(false);
-              }}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign Out
-            </button>
-          </div>
-        )}
-      </header>
-      
+    <div className="bg-gray-50">
       {/* Search */}
       <div className="bg-white border-b border-gray-200 sticky top-[52px] z-10">
         <div className="max-w-3xl mx-auto px-4 py-3">

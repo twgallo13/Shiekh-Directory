@@ -85,13 +85,14 @@ export function createLocationsRouter(db: Firestore): Router {
         // Get active closure if any
         const activeClosure = closures.length > 0 ? closures[0] : undefined;
 
+        const addr = location.address || {};
         locations.push({
           id: location.id,
           kind: location.kind,
           storeNumber: location.storeNumber,
           name: location.name,
-          city: location.address.city,
-          state: location.address.state,
+          city: addr.city || '',
+          state: addr.state || '',
           statusNow,
           phone: location.mainPhone,
           phoneFormatted: location.phonePublic ? formatPhoneNumber(location.mainPhone) : 'Private',

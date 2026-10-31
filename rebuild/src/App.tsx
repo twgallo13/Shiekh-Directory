@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { AppLayout } from './components/AppLayout';
 import { DirectoryView } from './components/DirectoryView';
 import { LocationDetailView } from './components/LocationDetailView';
 import { PersonDetailView } from './components/PersonDetailView';
@@ -17,13 +18,14 @@ import { StaleStoresView } from './components/StaleStoresView';
 import { StoreSignInView } from './components/StoreSignInView';
 import { VerifyActionView } from './components/VerifyActionView';
 import { DMVerifyView } from './components/DMVerifyView';
+import { MyRequestsView } from './components/MyRequestsView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
   return <CorrectionsQueue onBack={() => navigate('/')} />;
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children, withLayout = true }: { children: React.ReactNode; withLayout?: boolean }) {
   const { user, loading } = useAuth();
   
   if (loading) {
@@ -41,6 +43,31 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/signin" replace />;
   }
   
+  if (withLayout) {
+    return <AppLayout>{children}</AppLayout>;
+  }
+  
+  return <>{children}</>;
+}
+
+function OptionalAuthLayout({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  if (user) {
+    return <AppLayout>{children}</AppLayout>;
+  }
+  
   return <>{children}</>;
 }
 
@@ -50,7 +77,7 @@ function AppRoutes() {
       <Route path="/signin" element={<SignInView />} />
       <Route path="/store-signin" element={<StoreSignInView />} />
       <Route path="/verify-action" element={<VerifyActionView />} />
-      <Route path="/dm-verify/:id" element={<DMVerifyView />} />
+      <Route path="/dm-verify/:id" element={<OptionalAuthLayout><DMVerifyView /></OptionalAuthLayout>} />
       <Route
         path="/"
         element={
@@ -152,6 +179,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <StaleStoresView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/my-requests"
+        element={
+          <ProtectedRoute>
+            <MyRequestsView />
           </ProtectedRoute>
         }
       />

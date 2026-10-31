@@ -15,9 +15,23 @@ import type {
   DayOfWeek,
   Address,
   StoreTypeCode,
+  AuditLogEntry,
+  AuthUser,
 } from '../../src/types';
 import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
 import { normalizePhoneNumber } from '../utils/phone';
+
+async function addAuditEntry(
+  db: Firestore,
+  entry: Omit<AuditLogEntry, 'id' | 'timestamp'>
+): Promise<void> {
+  const auditRef = db.collection('auditLog').doc();
+  await auditRef.set({
+    ...entry,
+    id: auditRef.id,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 interface CsvRow {
   [key: string]: string;
@@ -89,16 +103,21 @@ export function createImportRouter(db: Firestore): Router {
         assignmentsToRemove: 0,
       };
       
+      const authUser = res.locals.authUser as AuthUser | undefined;
+      const userId = authUser?.uid || res.locals.user?.uid || 'system';
+      const userEmail = authUser?.email || 'system@import';
+      const userRole = authUser?.role || 'Admin';
+      
       if (type === 'locations' || type === 'all') {
-        await processLocations(db, records, preview, dryRun, res.locals.user?.uid || 'system');
+        await processLocations(db, records, preview, dryRun, userId);
       }
       
       if (type === 'people' || type === 'all') {
-        await processPeople(db, records, preview, dryRun, res.locals.user?.uid || 'system');
+        await processPeople(db, records, preview, dryRun, userId);
       }
       
       if (type === 'assignments' || type === 'all') {
-        await processAssignments(db, records, preview, dryRun, res.locals.user?.uid || 'system');
+        await processAssignments(db, records, preview, dryRun, userId);
       }
       
       preview.valid = errors.length === 0;
@@ -130,6 +149,26 @@ export function createImportRouter(db: Firestore): Router {
         assignmentsRemoved: preview.assignmentsToRemove,
         errors: [],
       };
+      
+      // Audit log for canonical import
+      await addAuditEntry(db, {
+        userId,
+        userEmail,
+        userRole,
+        action: 'create',
+        entityType: 'import' as AuditLogEntry['entityType'],
+        entityId: `import-${new Date().toISOString()}`,
+        entityName: `Canonical Import (${type})`,
+        changes: [
+          { field: 'type', newValue: type },
+          { field: 'locationsCreated', newValue: result.locationsCreated },
+          { field: 'locationsUpdated', newValue: result.locationsUpdated },
+          { field: 'peopleCreated', newValue: result.peopleCreated },
+          { field: 'peopleUpdated', newValue: result.peopleUpdated },
+          { field: 'assignmentsCreated', newValue: result.assignmentsCreated },
+          { field: 'assignmentsRemoved', newValue: result.assignmentsRemoved },
+        ],
+      });
       
       return res.json({ data: result });
     } catch (error) {

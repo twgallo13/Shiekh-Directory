@@ -7,9 +7,22 @@ import type {
   Location,
   AppliedHoursTemplate,
   StoreTypeCode,
+  AuditLogEntry,
 } from '../../src/types';
 import { hasPermission } from '../../src/lib/permissions';
 import { isValidStoreTypeCode } from '../../src/types';
+
+async function addAuditEntry(
+  db: Firestore,
+  entry: Omit<AuditLogEntry, 'id' | 'timestamp'>
+): Promise<void> {
+  const auditRef = db.collection('auditLog').doc();
+  await auditRef.set({
+    ...entry,
+    id: auditRef.id,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 export function createHoursTemplatesRouter(db: Firestore): Router {
   const router = Router();
@@ -196,6 +209,21 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
 
       await templateRef.set(template);
 
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'create',
+        entityType: 'hours-template' as AuditLogEntry['entityType'],
+        entityId: templateRef.id,
+        entityName: template.name,
+        changes: [
+          { field: 'name', newValue: template.name },
+          { field: 'defaultForTypes', newValue: validatedDefaultForTypes?.join(', ') || 'none' },
+          { field: 'isDefault', newValue: isDefault === true },
+        ],
+      });
+
       return res.status(201).json({ data: { id: templateRef.id, ...template } });
     } catch (error) {
       console.error('Create hours template error:', error);
@@ -291,6 +319,25 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
 
       await db.collection('hoursTemplates').doc(id).update(updates);
 
+      const changes: { field: string; oldValue?: unknown; newValue?: unknown }[] = [];
+      if (updates.name !== undefined) changes.push({ field: 'name', oldValue: existing.name, newValue: updates.name });
+      if (updates.hours !== undefined) changes.push({ field: 'hours', oldValue: 'previous schedule', newValue: 'updated schedule' });
+      if (updates.defaultForTypes !== undefined) changes.push({ field: 'defaultForTypes', oldValue: existing.defaultForTypes?.join(', '), newValue: updates.defaultForTypes?.join(', ') || 'none' });
+      if (updates.isDefault !== undefined) changes.push({ field: 'isDefault', oldValue: existing.isDefault, newValue: updates.isDefault });
+
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'hours-template' as AuditLogEntry['entityType'],
+        entityId: id,
+        entityName: updates.name || existing.name,
+        changes,
+        previousVersion: existing.version,
+        newVersion: updates.version || existing.version,
+      });
+
       return res.json({ data: { ...existing, ...updates, id } });
     } catch (error) {
       console.error('Update hours template error:', error);
@@ -325,10 +372,23 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
         });
       }
 
+      const templateData = doc.data() as HoursTemplate;
+      
       await db.collection('hoursTemplates').doc(id).update({
         lifecycle: 'archived',
         updatedAt: new Date().toISOString(),
         updatedBy: authUser.uid,
+      });
+
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'hours-template' as AuditLogEntry['entityType'],
+        entityId: id,
+        entityName: templateData.name,
+        changes: [{ field: 'lifecycle', oldValue: templateData.lifecycle, newValue: 'archived' }],
       });
 
       return res.json({ data: { success: true } });
@@ -394,11 +454,28 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
         appliedBy: authUser.uid,
       };
 
+      const location = locationDoc.data() as Location;
+      
       await db.collection('locations').doc(locationId).update({
         standardHours: template.hours,
         appliedTemplate,
         updatedAt: new Date().toISOString(),
         updatedBy: authUser.uid,
+      });
+
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'location',
+        entityId: locationId,
+        entityName: location.storeNumber || location.name,
+        locationId,
+        changes: [
+          { field: 'appliedTemplate', oldValue: location.appliedTemplate?.templateName, newValue: template.name },
+          { field: 'templateVersion', newValue: template.version },
+        ],
       });
 
       return res.json({ data: { success: true, appliedTemplate } });
@@ -520,10 +597,28 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
 
       await batch.commit();
 
+      const appliedCount = results.filter(r => r.success).length;
+      if (appliedCount > 0) {
+        await addAuditEntry(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'update',
+          entityType: 'hours-template' as AuditLogEntry['entityType'],
+          entityId: id,
+          entityName: template.name,
+          changes: [
+            { field: 'bulk-apply', newValue: `Applied to ${appliedCount} locations` },
+            { field: 'templateVersion', newValue: template.version },
+            { field: 'filters', newValue: JSON.stringify(filters || {}) },
+          ],
+        });
+      }
+
       return res.json({
         data: {
           success: true,
-          appliedCount: results.filter(r => r.success).length,
+          appliedCount,
           failedCount: results.filter(r => !r.success).length,
           results,
         },
@@ -578,7 +673,20 @@ export function createHoursTemplatesRouter(db: Firestore): Router {
         });
       }
 
+      const templateData = doc.data() as HoursTemplate;
+      
       await db.collection('hoursTemplates').doc(id).delete();
+
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'delete',
+        entityType: 'hours-template' as AuditLogEntry['entityType'],
+        entityId: id,
+        entityName: templateData.name,
+        changes: [{ field: 'deleted', oldValue: templateData.name }],
+      });
 
       return res.json({ data: { success: true } });
     } catch (error) {

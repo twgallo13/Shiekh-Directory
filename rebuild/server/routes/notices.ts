@@ -3,8 +3,22 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type {
   Notice,
   AuthUser,
+  AuditLogEntry,
+  Location,
 } from '../../src/types';
 import { hasPermission } from '../../src/lib/permissions';
+
+async function addAuditEntry(
+  db: Firestore,
+  entry: Omit<AuditLogEntry, 'id' | 'timestamp'>
+): Promise<void> {
+  const auditRef = db.collection('auditLog').doc();
+  await auditRef.set({
+    ...entry,
+    id: auditRef.id,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 export function createNoticesRouter(db: Firestore): Router {
   const router = Router();
@@ -68,6 +82,7 @@ export function createNoticesRouter(db: Firestore): Router {
           error: { code: 'location_not_found', message: 'Location not found', requestId: res.locals.requestId },
         });
       }
+      const locationData = locationDoc.data() as Location;
 
       if (!text?.trim()) {
         return res.status(400).json({
@@ -102,6 +117,21 @@ export function createNoticesRouter(db: Firestore): Router {
       };
 
       await noticeRef.set(notice);
+
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'create',
+        entityType: 'notice' as AuditLogEntry['entityType'],
+        entityId: noticeRef.id,
+        entityName: `Notice for ${locationData.storeNumber || locationData.name}`,
+        locationId,
+        changes: [
+          { field: 'text', newValue: text.trim().slice(0, 50) + (text.length > 50 ? '...' : '') },
+          { field: 'audience', newValue: audience || 'internal' },
+        ],
+      });
 
       return res.status(201).json({ data: { id: noticeRef.id, ...notice } });
     } catch (error) {
@@ -140,7 +170,9 @@ export function createNoticesRouter(db: Firestore): Router {
         });
       }
 
+      const existingNotice = noticeDoc.data() as Notice;
       const updates: Partial<Notice> = {};
+      const auditChanges: { field: string; oldValue?: unknown; newValue?: unknown }[] = [];
 
       if (text !== undefined) {
         if (!text.trim()) {
@@ -154,6 +186,7 @@ export function createNoticesRouter(db: Firestore): Router {
           });
         }
         updates.text = text.trim();
+        auditChanges.push({ field: 'text', oldValue: existingNotice.text?.slice(0, 50), newValue: text.trim().slice(0, 50) });
       }
 
       if (audience !== undefined) {
@@ -163,6 +196,7 @@ export function createNoticesRouter(db: Firestore): Router {
           });
         }
         updates.audience = audience;
+        auditChanges.push({ field: 'audience', oldValue: existingNotice.audience, newValue: audience });
       }
 
       if (status !== undefined) {
@@ -172,6 +206,7 @@ export function createNoticesRouter(db: Firestore): Router {
           });
         }
         updates.status = status;
+        auditChanges.push({ field: 'status', oldValue: existingNotice.status, newValue: status });
         if (status === 'resolved') {
           updates.resolvedAt = new Date().toISOString();
           updates.resolvedBy = authUser.uid;
@@ -180,13 +215,29 @@ export function createNoticesRouter(db: Firestore): Router {
 
       if (effectiveUntil !== undefined) {
         updates.effectiveUntil = effectiveUntil || undefined;
+        auditChanges.push({ field: 'effectiveUntil', oldValue: existingNotice.effectiveUntil, newValue: effectiveUntil || null });
       }
 
       if (expectedResolution !== undefined) {
         updates.expectedResolution = expectedResolution?.trim() || undefined;
+        auditChanges.push({ field: 'expectedResolution', oldValue: existingNotice.expectedResolution, newValue: expectedResolution?.trim() || null });
       }
 
       await noticeRef.update(updates);
+
+      if (auditChanges.length > 0) {
+        await addAuditEntry(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'update',
+          entityType: 'notice' as AuditLogEntry['entityType'],
+          entityId: noticeId,
+          entityName: `Notice for location ${locationId}`,
+          locationId,
+          changes: auditChanges,
+        });
+      }
 
       const updated = await noticeRef.get();
       return res.json({ data: { id: noticeId, ...updated.data() } });
@@ -224,7 +275,20 @@ export function createNoticesRouter(db: Firestore): Router {
         });
       }
 
+      const noticeData = noticeDoc.data() as Notice;
       await noticeRef.delete();
+
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'delete',
+        entityType: 'notice' as AuditLogEntry['entityType'],
+        entityId: noticeId,
+        entityName: `Notice for location ${locationId}`,
+        locationId,
+        changes: [{ field: 'deleted', oldValue: noticeData.text?.slice(0, 50) }],
+      });
 
       return res.json({ data: { success: true } });
     } catch (error) {

@@ -1,8 +1,20 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import type { User, AuthUser, UserRole, Location, HoursTemplate, StandardHours, StoreTypeCode, DayOfWeek } from '../../src/types';
+import type { User, AuthUser, UserRole, Location, HoursTemplate, StandardHours, StoreTypeCode, DayOfWeek, AuditLogEntry } from '../../src/types';
 import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
+
+async function addAuditEntry(
+  db: Firestore,
+  entry: Omit<AuditLogEntry, 'id' | 'timestamp'>
+): Promise<void> {
+  const auditRef = db.collection('auditLog').doc();
+  await auditRef.set({
+    ...entry,
+    id: auditRef.id,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 const VALID_ROLES: UserRole[] = ['Viewer', 'Store', 'Leader', 'Steward', 'Admin'];
 
@@ -549,12 +561,33 @@ export function createAdminRouter(db: Firestore): Router {
         }
       }
 
+      const createdCount = results.filter(r => r.action === 'created').length;
+      const updatedCount = results.filter(r => r.action === 'updated').length;
+      
+      if (!dryRun && (createdCount > 0 || updatedCount > 0)) {
+        await addAuditEntry(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'create',
+          entityType: 'hours-template' as AuditLogEntry['entityType'],
+          entityId: 'import-batch',
+          entityName: 'Hours Templates Import',
+          changes: [
+            { field: 'imported', newValue: templates.length },
+            { field: 'created', newValue: createdCount },
+            { field: 'updated', newValue: updatedCount },
+            { field: 'skipped', newValue: results.filter(r => r.action === 'skipped').length },
+          ],
+        });
+      }
+
       res.json({
         data: {
           dryRun: !!dryRun,
           total: templates.length,
-          created: results.filter(r => r.action === 'created').length,
-          updated: results.filter(r => r.action === 'updated').length,
+          created: createdCount,
+          updated: updatedCount,
           skipped: results.filter(r => r.action === 'skipped').length,
           results,
         },
@@ -578,20 +611,20 @@ export function createAdminRouter(db: Firestore): Router {
         });
       }
 
-      // Get all active locations
+      // Get all active locations with their kind
       const locationsSnap = await db.collection('locations').where('lifecycle', '==', 'active').get();
-      const locationsByNumber = new Map<string, { id: string; storeNumber: string }>();
+      const locationsByNumber = new Map<string, { id: string; storeNumber: string; kind: string }>();
       for (const doc of locationsSnap.docs) {
         const data = doc.data() as Location;
-        locationsByNumber.set(data.storeNumber, { id: doc.id, storeNumber: data.storeNumber });
+        locationsByNumber.set(data.storeNumber, { id: doc.id, storeNumber: data.storeNumber, kind: data.kind || 'store' });
         // Also index without leading zeros
         const normalized = data.storeNumber.replace(/^0+/, '');
         if (normalized !== data.storeNumber) {
-          locationsByNumber.set(normalized, { id: doc.id, storeNumber: data.storeNumber });
+          locationsByNumber.set(normalized, { id: doc.id, storeNumber: data.storeNumber, kind: data.kind || 'store' });
         }
       }
 
-      const results: { storeNumber: string; action: 'updated' | 'skipped'; storeType?: string; error?: string }[] = [];
+      const results: { storeNumber: string; action: 'updated' | 'skipped' | 'facility'; storeType?: string; error?: string; kind?: string }[] = [];
       const now = new Date().toISOString();
       const batch = db.batch();
       let batchCount = 0;
@@ -604,7 +637,13 @@ export function createAdminRouter(db: Firestore): Router {
 
         const location = locationsByNumber.get(storeNumber);
         if (!location) {
-          results.push({ storeNumber, action: 'skipped', error: 'Store not found' });
+          results.push({ storeNumber, action: 'skipped', error: 'Location not found' });
+          continue;
+        }
+
+        // Report facilities separately - don't count as store updates
+        if (location.kind === 'facility' || location.kind === 'warehouse' || location.kind === 'office') {
+          results.push({ storeNumber: location.storeNumber, action: 'facility', kind: location.kind, error: `Non-store location (${location.kind})` });
           continue;
         }
 
@@ -634,12 +673,34 @@ export function createAdminRouter(db: Firestore): Router {
         await batch.commit();
       }
 
+      const storesUpdated = results.filter(r => r.action === 'updated').length;
+      const facilitiesFound = results.filter(r => r.action === 'facility').length;
+      const skipped = results.filter(r => r.action === 'skipped').length;
+
+      if (!dryRun && storesUpdated > 0) {
+        await addAuditEntry(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'update',
+          entityType: 'location',
+          entityId: 'import-batch',
+          entityName: 'Store Types Import',
+          changes: [
+            { field: 'storesUpdated', newValue: storesUpdated },
+            { field: 'facilitiesSkipped', newValue: facilitiesFound },
+            { field: 'skipped', newValue: skipped },
+          ],
+        });
+      }
+
       res.json({
         data: {
           dryRun: !!dryRun,
           total: Object.keys(storeTypes).length,
-          updated: results.filter(r => r.action === 'updated').length,
-          skipped: results.filter(r => r.action === 'skipped').length,
+          storesUpdated,
+          facilitiesFound,
+          skipped,
           results,
         },
       });

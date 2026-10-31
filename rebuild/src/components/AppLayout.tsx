@@ -222,7 +222,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   </div>
                   <div className="text-xs text-blue-200">
                     {authUser?.role}
-                    {isStoreUser && storeSession && ` • Store #${storeSession.storeNumber}`}
+                    {authUser?.role === 'Store' && storeSession?.storeNumber && ` • Store #${storeSession.storeNumber}`}
                   </div>
                 </div>
                 <button
@@ -272,7 +272,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     {authUser && (
                       <span className="text-xs text-gray-500">{authUser.role}</span>
                     )}
-                    {isStoreUser && storeSession && (
+                    {authUser?.role === 'Store' && storeSession?.storeNumber && (
                       <span className="text-xs text-blue-600 ml-2">Store #{storeSession.storeNumber}</span>
                     )}
                   </div>

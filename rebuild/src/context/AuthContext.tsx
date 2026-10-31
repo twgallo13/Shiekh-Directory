@@ -5,6 +5,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithCustomToken as firebaseSignInWithCustomToken,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
@@ -52,6 +53,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  signInWithCustomToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string>;
   refreshAuthUser: () => Promise<void>;
@@ -158,6 +160,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) throw new Error('Auth not initialized');
     await signInWithPopup(auth, googleProvider);
   };
+
+  const signInWithCustomToken = async (token: string) => {
+    if (!auth) throw new Error('Auth not initialized');
+    await firebaseSignInWithCustomToken(auth, token);
+  };
   
   const signOut = async () => {
     if (!auth) return;
@@ -175,7 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   
   return (
-    <AuthContext.Provider value={{ user, authUser, loading, signIn, signInWithGoogle: signInWithGoogleHandler, signOut, getIdToken, refreshAuthUser, sendPasswordReset }}>
+    <AuthContext.Provider value={{ user, authUser, loading, signIn, signInWithGoogle: signInWithGoogleHandler, signInWithCustomToken, signOut, getIdToken, refreshAuthUser, sendPasswordReset }}>
       {children}
     </AuthContext.Provider>
   );

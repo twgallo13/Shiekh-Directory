@@ -488,8 +488,29 @@ export function createStoreAuthRouter(db: Firestore): Router {
         });
       }
 
+      const storeUid = `store_${location.id}`;
+      const auth = getAuthClient();
+      const customToken = await auth.createCustomToken(storeUid, {
+        role: 'Store',
+        storeLocationId: location.id,
+        storeNumber: location.storeNumber,
+        email: tokenData.storeEmail,
+      });
+
+      await db.collection('users').doc(storeUid).set({
+        email: tokenData.storeEmail,
+        displayName: `Store ${location.storeNumber}`,
+        role: 'Store',
+        storeLocationId: location.id,
+        status: 'active',
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        updatedBy: 'one-click-update',
+        version: 1,
+      }, { merge: true });
+
       await logAudit(db, {
-        userId: tokenData.storeEmail,
+        userId: storeUid,
         userEmail: tokenData.storeEmail,
         userRole: 'Store',
         action: 'one-click-update',
@@ -503,7 +524,8 @@ export function createStoreAuthRouter(db: Firestore): Router {
       return res.json({
         success: true,
         action: 'update',
-        message: 'Please sign in to update your store information',
+        customToken,
+        message: 'You have been signed in to update your store information',
         locationId: location.id,
         storeNumber: location.storeNumber,
         storeName: location.name,

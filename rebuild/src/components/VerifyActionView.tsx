@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2, Edit, ArrowRight } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export function VerifyActionView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { signInWithCustomToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState<{
@@ -22,6 +24,7 @@ export function VerifyActionView() {
   useEffect(() => {
     if (token && action) {
       processAction(token, action);
+      window.history.replaceState({}, '', window.location.pathname);
     } else {
       setError('Invalid verification link');
       setLoading(false);
@@ -55,14 +58,8 @@ export function VerifyActionView() {
         email: data.email,
       });
 
-      if (data.action === 'update' && data.locationId) {
-        sessionStorage.setItem('storeAuth', JSON.stringify({
-          locationId: data.locationId,
-          storeNumber: data.storeNumber,
-          storeName: data.storeName,
-          email: data.email,
-          signedInAt: new Date().toISOString(),
-        }));
+      if (data.action === 'update' && data.customToken) {
+        await signInWithCustomToken(data.customToken);
       }
     } catch {
       setError('Failed to process verification');

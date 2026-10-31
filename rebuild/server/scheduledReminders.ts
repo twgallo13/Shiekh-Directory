@@ -45,6 +45,10 @@ export const sendVerificationReminders = onSchedule(
         }
 
         const location = locationDoc.data() as Location;
+        if (location.kind === 'facility') {
+          console.log(`[Reminders] Skipping facility ${request.locationId}`);
+          continue;
+        }
         if (!location.sharedInboxEmail) {
           console.log(`[Reminders] No email for location ${request.locationId}`);
           continue;

@@ -394,22 +394,32 @@ export function createAdminRouter(db: Firestore): Router {
     }
   });
 
-  router.get('/stores', async (_req: Request, res: Response) => {
+  router.get('/stores', async (req: Request, res: Response) => {
     try {
-      const snapshot = await db.collection('locations')
-        .where('lifecycle', '==', 'active')
-        .orderBy('storeNumber')
-        .get();
+      const { includeAll } = req.query;
       
-      const stores = snapshot.docs.map(doc => {
+      let query = db.collection('locations').orderBy('storeNumber');
+      
+      if (includeAll !== 'true') {
+        query = query.where('lifecycle', '==', 'active');
+      }
+      
+      const snapshot = await query.get();
+      
+      let stores = snapshot.docs.map(doc => {
         const data = doc.data() as Location;
         return {
           id: doc.id,
           storeNumber: data.storeNumber,
           name: data.name,
           kind: data.kind,
+          lifecycle: data.lifecycle,
         };
       });
+
+      if (includeAll !== 'true') {
+        stores = stores.filter(s => s.kind !== 'facility');
+      }
 
       res.json({ stores });
     } catch (error) {

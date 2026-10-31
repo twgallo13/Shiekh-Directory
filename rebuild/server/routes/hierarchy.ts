@@ -342,14 +342,52 @@ export function createHierarchyRouter(db: Firestore): Router {
         });
       }
 
-      const now = new Date().toISOString();
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
 
-      await regionDoc.ref.update({
+      const activeAssignments = await db.collection('assignments')
+        .where('scopeType', '==', 'region')
+        .where('scopeId', '==', id)
+        .get();
+
+      const batch = db.batch();
+      let assignmentsEnded = 0;
+
+      for (const doc of activeAssignments.docs) {
+        const assignment = doc.data() as Assignment;
+        if (isAssignmentActive(assignment, todayStr)) {
+          batch.update(doc.ref, {
+            endDate: todayStr,
+            endedAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+            updatedBy: authUser.uid,
+          });
+          assignmentsEnded++;
+
+          await logAudit(db, {
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'unassign',
+            entityType: 'assignment',
+            entityId: doc.id,
+            entityName: `${assignment.role} assignment ended (region retired)`,
+            changes: [
+              { field: 'endDate', newValue: todayStr },
+              { field: 'reason', newValue: 'region retired' },
+            ],
+          });
+        }
+      }
+
+      batch.update(regionDoc.ref, {
         lifecycle: 'retired',
-        updatedAt: now,
+        updatedAt: now.toISOString(),
         updatedBy: authUser.uid,
         version: (currentRegion.version || 0) + 1,
       });
+
+      await batch.commit();
 
       await logAudit(db, {
         userId: authUser.uid,
@@ -364,7 +402,7 @@ export function createHierarchyRouter(db: Firestore): Router {
         ],
       });
 
-      return res.json({ data: { id, retired: true } });
+      return res.json({ data: { id, retired: true, assignmentsEnded } });
     } catch (error) {
       console.error('Retire region error:', error);
       return res.status(500).json({
@@ -619,14 +657,52 @@ export function createHierarchyRouter(db: Firestore): Router {
         });
       }
 
-      const now = new Date().toISOString();
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
 
-      await districtDoc.ref.update({
+      const activeAssignments = await db.collection('assignments')
+        .where('scopeType', '==', 'district')
+        .where('scopeId', '==', id)
+        .get();
+
+      const batch = db.batch();
+      let assignmentsEnded = 0;
+
+      for (const doc of activeAssignments.docs) {
+        const assignment = doc.data() as Assignment;
+        if (isAssignmentActive(assignment, todayStr)) {
+          batch.update(doc.ref, {
+            endDate: todayStr,
+            endedAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+            updatedBy: authUser.uid,
+          });
+          assignmentsEnded++;
+
+          await logAudit(db, {
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'unassign',
+            entityType: 'assignment',
+            entityId: doc.id,
+            entityName: `${assignment.role} assignment ended (district retired)`,
+            changes: [
+              { field: 'endDate', newValue: todayStr },
+              { field: 'reason', newValue: 'district retired' },
+            ],
+          });
+        }
+      }
+
+      batch.update(districtDoc.ref, {
         lifecycle: 'retired',
-        updatedAt: now,
+        updatedAt: now.toISOString(),
         updatedBy: authUser.uid,
         version: (currentDistrict.version || 0) + 1,
       });
+
+      await batch.commit();
 
       await logAudit(db, {
         userId: authUser.uid,
@@ -641,7 +717,7 @@ export function createHierarchyRouter(db: Firestore): Router {
         ],
       });
 
-      return res.json({ data: { id, retired: true } });
+      return res.json({ data: { id, retired: true, assignmentsEnded } });
     } catch (error) {
       console.error('Retire district error:', error);
       return res.status(500).json({
@@ -667,11 +743,11 @@ export function createHierarchyRouter(db: Firestore): Router {
         });
       }
 
-      const { districtId } = req.body;
+      const { districtId, regionId } = req.body;
 
-      if (!districtId) {
+      if (!districtId && !regionId) {
         return res.status(400).json({
-          error: { code: 'invalid_request', message: 'districtId is required', requestId: res.locals.requestId },
+          error: { code: 'invalid_request', message: 'districtId or regionId is required', requestId: res.locals.requestId },
         });
       }
 
@@ -683,20 +759,40 @@ export function createHierarchyRouter(db: Firestore): Router {
       }
 
       const currentLocation = locationDoc.data() as Location;
+      const now = new Date().toISOString();
+      const changes: { field: string; oldValue?: string | null; newValue?: string | null }[] = [];
 
-      const districtDoc = await db.collection('districts').doc(districtId).get();
-      if (!districtDoc.exists || (districtDoc.data() as District).lifecycle !== 'active') {
-        return res.status(400).json({
-          error: { code: 'invalid_district', message: 'District not found or not active', requestId: res.locals.requestId },
-        });
+      let newDistrictId = currentLocation.districtId;
+      let newRegionId = currentLocation.regionId;
+
+      if (districtId) {
+        const districtDoc = await db.collection('districts').doc(districtId).get();
+        if (!districtDoc.exists || (districtDoc.data() as District).lifecycle !== 'active') {
+          return res.status(400).json({
+            error: { code: 'invalid_district', message: 'District not found or not active', requestId: res.locals.requestId },
+          });
+        }
+        const district = districtDoc.data() as District;
+        newDistrictId = districtId;
+        newRegionId = district.regionId;
+        changes.push({ field: 'districtId', oldValue: currentLocation.districtId, newValue: districtId });
+        changes.push({ field: 'regionId', oldValue: currentLocation.regionId, newValue: district.regionId });
+      } else if (regionId) {
+        const regionDoc = await db.collection('regions').doc(regionId).get();
+        if (!regionDoc.exists || (regionDoc.data() as Region).lifecycle !== 'active') {
+          return res.status(400).json({
+            error: { code: 'invalid_region', message: 'Region not found or not active', requestId: res.locals.requestId },
+          });
+        }
+        newDistrictId = '';
+        newRegionId = regionId;
+        changes.push({ field: 'districtId', oldValue: currentLocation.districtId, newValue: '' });
+        changes.push({ field: 'regionId', oldValue: currentLocation.regionId, newValue: regionId });
       }
 
-      const district = districtDoc.data() as District;
-      const now = new Date().toISOString();
-
       await locationDoc.ref.update({
-        districtId,
-        regionId: district.regionId,
+        districtId: newDistrictId,
+        regionId: newRegionId,
         updatedAt: now,
         updatedBy: authUser.uid,
         version: (currentLocation.version || 0) + 1,
@@ -711,10 +807,7 @@ export function createHierarchyRouter(db: Firestore): Router {
         entityId: id,
         entityName: `#${currentLocation.storeNumber} ${currentLocation.name}`,
         locationId: id,
-        changes: [
-          { field: 'districtId', oldValue: currentLocation.districtId, newValue: districtId },
-          { field: 'regionId', oldValue: currentLocation.regionId, newValue: district.regionId },
-        ],
+        changes,
       });
 
       const updatedDoc = await db.collection('locations').doc(id).get();
@@ -853,9 +946,9 @@ export function createHierarchyRouter(db: Firestore): Router {
         });
       }
 
-      if (!districtId) {
+      if (!districtId && !req.body.regionId) {
         return res.status(400).json({
-          error: { code: 'invalid_request', message: 'districtId is required', requestId: res.locals.requestId },
+          error: { code: 'invalid_request', message: 'districtId or regionId is required', requestId: res.locals.requestId },
         });
       }
 
@@ -876,14 +969,29 @@ export function createHierarchyRouter(db: Firestore): Router {
         });
       }
 
-      const districtDoc = await db.collection('districts').doc(districtId).get();
-      if (!districtDoc.exists || (districtDoc.data() as District).lifecycle !== 'active') {
-        return res.status(400).json({
-          error: { code: 'invalid_district', message: 'District not found or not active', requestId: res.locals.requestId },
-        });
+      let finalDistrictId = '';
+      let finalRegionId = '';
+
+      if (districtId) {
+        const districtDoc = await db.collection('districts').doc(districtId).get();
+        if (!districtDoc.exists || (districtDoc.data() as District).lifecycle !== 'active') {
+          return res.status(400).json({
+            error: { code: 'invalid_district', message: 'District not found or not active', requestId: res.locals.requestId },
+          });
+        }
+        const district = districtDoc.data() as District;
+        finalDistrictId = districtId;
+        finalRegionId = district.regionId;
+      } else if (req.body.regionId) {
+        const regionDoc = await db.collection('regions').doc(req.body.regionId).get();
+        if (!regionDoc.exists || (regionDoc.data() as Region).lifecycle !== 'active') {
+          return res.status(400).json({
+            error: { code: 'invalid_region', message: 'Region not found or not active', requestId: res.locals.requestId },
+          });
+        }
+        finalRegionId = req.body.regionId;
       }
 
-      const district = districtDoc.data() as District;
       const now = new Date().toISOString();
       const locationRef = db.collection('locations').doc();
 
@@ -892,8 +1000,8 @@ export function createHierarchyRouter(db: Firestore): Router {
         name: name.trim(),
         kind,
         lifecycle: 'active',
-        districtId,
-        regionId: district.regionId,
+        districtId: finalDistrictId,
+        regionId: finalRegionId,
         address: {
           street: address.street.trim(),
           suite: address.suite?.trim() || undefined,

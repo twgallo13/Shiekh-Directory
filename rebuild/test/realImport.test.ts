@@ -1,7 +1,7 @@
 /**
  * Tests for Real CSV Import functionality
  * 
- * Tests the legacy importer with real.csv (Theo's actual roster) and legacy_hours.json:
+ * Tests the legacy importer with sample-stores.csv and sample-hours.json fixtures:
  * 1. Store number normalization (07, 007, 7 all match same store)
  * 2. Facility location type detection (#01, #04, #86)
  * 3. District Manager assignments from DM column
@@ -14,8 +14,13 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'fs';
-import { seedTestUsers, seedTestHierarchy, getTestDb } from './testHelpers';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { seedTestUsers, getTestDb } from './testHelpers';
 import { normalizeStoreNumber, storeNumbersMatch } from '../server/routes/legacyImport';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FIXTURES_DIR = join(__dirname, 'fixtures');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 
@@ -62,7 +67,6 @@ describe('Store Number Normalization', () => {
 });
 
 describe('Real CSV Dry-Run', () => {
-  let hierarchyIds: { regionId: string; districtIds: string[] };
   let realCsv: string;
   let hoursJson: string;
 
@@ -82,7 +86,6 @@ describe('Real CSV Dry-Run', () => {
       version: 1,
     });
     
-    const districtIds: string[] = [];
     const districts = [
       { code: '01', name: 'Central & Southern California' },
       { code: '02', name: 'Inland Empire San Diego & LA South' },
@@ -90,7 +93,7 @@ describe('Real CSV Dry-Run', () => {
     ];
     
     for (const d of districts) {
-      const ref = await db.collection('districts').add({
+      await db.collection('districts').add({
         code: d.code,
         name: d.name,
         regionId: regionRef.id,
@@ -100,13 +103,10 @@ describe('Real CSV Dry-Run', () => {
         updatedBy: 'test',
         version: 1,
       });
-      districtIds.push(ref.id);
     }
-    
-    hierarchyIds = { regionId: regionRef.id, districtIds };
 
-    realCsv = readFileSync('/home/ubuntu/.cursor/projects/workspace/uploads/real_341b.csv', 'utf-8');
-    hoursJson = readFileSync('/home/ubuntu/.cursor/projects/workspace/uploads/legacy_hours_8396.json', 'utf-8');
+    realCsv = readFileSync(join(FIXTURES_DIR, 'sample-stores.csv'), 'utf-8');
+    hoursJson = readFileSync(join(FIXTURES_DIR, 'sample-hours.json'), 'utf-8');
   });
 
   it('dry-run real.csv with 0 errors when region 01 and districts 01-03 exist', async () => {
@@ -130,8 +130,8 @@ describe('Real CSV Dry-Run', () => {
       `should have 0 errors, got ${previewBody.preview.errorCount}`);
     assert.strictEqual(previewBody.preview.valid, true, 'preview should be valid');
     
-    assert.ok(previewBody.preview.totalRows >= 50, 
-      `should have at least 50 rows (got ${previewBody.preview.totalRows})`);
+    assert.ok(previewBody.preview.totalRows >= 5, 
+      `should have at least 5 rows (got ${previewBody.preview.totalRows})`);
   });
 
   it('detects facilities from store numbers #01 and #86', async () => {
@@ -208,7 +208,6 @@ describe('Real CSV Dry-Run', () => {
 });
 
 describe('Real CSV Apply', () => {
-  let hierarchyIds: { regionId: string; districtIds: string[] };
   let realCsv: string;
   let hoursJson: string;
 
@@ -239,7 +238,6 @@ describe('Real CSV Apply', () => {
       regionId = existingRegion.docs[0].id;
     }
     
-    const districtIds: string[] = [];
     const districts = [
       { code: '01', name: 'Central & Southern California' },
       { code: '02', name: 'Inland Empire San Diego & LA South' },
@@ -253,7 +251,7 @@ describe('Real CSV Apply', () => {
         .get();
       
       if (existing.empty) {
-        const ref = await db.collection('districts').add({
+        await db.collection('districts').add({
           code: d.code,
           name: d.name,
           regionId,
@@ -263,16 +261,11 @@ describe('Real CSV Apply', () => {
           updatedBy: 'test',
           version: 1,
         });
-        districtIds.push(ref.id);
-      } else {
-        districtIds.push(existing.docs[0].id);
       }
     }
-    
-    hierarchyIds = { regionId, districtIds };
 
-    realCsv = readFileSync('/home/ubuntu/.cursor/projects/workspace/uploads/real_341b.csv', 'utf-8');
-    hoursJson = readFileSync('/home/ubuntu/.cursor/projects/workspace/uploads/legacy_hours_8396.json', 'utf-8');
+    realCsv = readFileSync(join(FIXTURES_DIR, 'sample-stores.csv'), 'utf-8');
+    hoursJson = readFileSync(join(FIXTURES_DIR, 'sample-hours.json'), 'utf-8');
   });
 
   it('applies import and creates locations with correct kinds', async () => {

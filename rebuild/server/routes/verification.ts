@@ -129,6 +129,12 @@ export function createVerificationRouter(db: Firestore): Router {
       }
 
       const location = locationDoc.data() as Location;
+
+      if (location.kind === 'facility') {
+        return res.status(400).json({
+          error: { code: 'facility_excluded', message: 'Verification requests cannot be created for facilities', requestId: res.locals.requestId },
+        });
+      }
       
       if (!location.sharedInboxEmail) {
         return res.status(400).json({

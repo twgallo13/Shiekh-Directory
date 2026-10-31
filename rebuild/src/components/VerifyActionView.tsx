@@ -22,9 +22,17 @@ export function VerifyActionView() {
   const action = searchParams.get('action');
 
   useEffect(() => {
+    const meta = document.createElement('meta');
+    meta.name = 'referrer';
+    meta.content = 'no-referrer';
+    document.head.appendChild(meta);
+    return () => { document.head.removeChild(meta); };
+  }, []);
+
+  useEffect(() => {
     if (token && action) {
-      processAction(token, action);
       window.history.replaceState({}, '', window.location.pathname);
+      processAction(token, action);
     } else {
       setError('Invalid verification link');
       setLoading(false);

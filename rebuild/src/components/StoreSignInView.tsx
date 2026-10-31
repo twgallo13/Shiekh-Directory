@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Mail, Loader2, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export function StoreSignInView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { signInWithCustomToken } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -19,7 +21,16 @@ export function StoreSignInView() {
   const token = searchParams.get('token');
 
   useEffect(() => {
+    const meta = document.createElement('meta');
+    meta.name = 'referrer';
+    meta.content = 'no-referrer';
+    document.head.appendChild(meta);
+    return () => { document.head.removeChild(meta); };
+  }, []);
+
+  useEffect(() => {
     if (token) {
+      window.history.replaceState({}, '', window.location.pathname);
       verifyToken(token);
     }
   }, [token]);
@@ -48,13 +59,9 @@ export function StoreSignInView() {
         storeName: data.storeName,
       });
 
-      sessionStorage.setItem('storeAuth', JSON.stringify({
-        locationId: data.locationId,
-        storeNumber: data.storeNumber,
-        storeName: data.storeName,
-        email: data.email,
-        signedInAt: new Date().toISOString(),
-      }));
+      if (data.customToken) {
+        await signInWithCustomToken(data.customToken);
+      }
 
       setTimeout(() => {
         navigate(`/location/${data.locationId}`);

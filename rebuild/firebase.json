@@ -5,6 +5,20 @@
     "predeploy": [
       "npm run build"
     ],
+    "headers": [
+      {
+        "source": "/verify-action**",
+        "headers": [
+          { "key": "Referrer-Policy", "value": "no-referrer" }
+        ]
+      },
+      {
+        "source": "/store-signin**",
+        "headers": [
+          { "key": "Referrer-Policy", "value": "no-referrer" }
+        ]
+      }
+    ],
     "rewrites": [
       {
         "source": "/api/**",

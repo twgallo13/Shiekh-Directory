@@ -10,8 +10,27 @@ import type {
 import { createMailService } from '../services/mail';
 import { createVerificationRequestEmail } from '../services/mailTemplates';
 
-const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
+
+function getAppUrl(req: Request): string {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL;
+  }
+  const origin = req.get('origin') || req.get('x-forwarded-host');
+  if (origin) {
+    if (origin.startsWith('http')) {
+      return origin;
+    }
+    const protocol = req.get('x-forwarded-proto') || 'https';
+    return `${protocol}://${origin}`;
+  }
+  const host = req.get('host');
+  if (host) {
+    const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+    return `${protocol}://${host}`;
+  }
+  return 'https://directory.shiekh.com';
+}
 
 function generateToken(): string {
   return randomBytes(32).toString('base64url');
@@ -234,13 +253,14 @@ export function createVerificationRouter(db: Firestore): Router {
         createdBy: authUser.uid,
       });
 
-      const confirmUrl = `${APP_URL}/verify-action?token=${confirmToken}&action=confirm`;
-      const updateUrl = `${APP_URL}/verify-action?token=${updateToken}&action=update`;
-      const confirmUrlRedacted = `${APP_URL}/verify-action?token=[REDACTED:${confirmTokenId}]&action=confirm`;
-      const updateUrlRedacted = `${APP_URL}/verify-action?token=[REDACTED:${updateTokenId}]&action=update`;
+      const appUrl = getAppUrl(req);
+      const confirmUrl = `${appUrl}/verify-action?token=${confirmToken}&action=confirm`;
+      const updateUrl = `${appUrl}/verify-action?token=${updateToken}&action=update`;
+      const confirmUrlRedacted = `${appUrl}/verify-action?token=[REDACTED:${confirmTokenId}]&action=confirm`;
+      const updateUrlRedacted = `${appUrl}/verify-action?token=[REDACTED:${updateTokenId}]&action=update`;
 
       const mailService = createMailService(db);
-      const verificationUrl = `${APP_URL}/verify/${requestRef.id}`;
+      const verificationUrl = `${appUrl}/verify/${requestRef.id}`;
       const emailData = {
         storeName: location.name,
         storeNumber: location.storeNumber,
@@ -267,8 +287,8 @@ export function createVerificationRouter(db: Firestore): Router {
           emailError: mailResult.reason,
         });
         console.log(`[Verification] Email blocked for ${location.storeNumber}: ${mailResult.reason}`);
-        console.log(`[Verification] One-click confirm URL: ${confirmUrl}`);
-        console.log(`[Verification] One-click update URL: ${updateUrl}`);
+        console.log(`[Verification] One-click confirm token ID: ${confirmTokenId}`);
+        console.log(`[Verification] One-click update token ID: ${updateTokenId}`);
       } else {
         await requestRef.update({
           emailSent: false,
@@ -789,7 +809,8 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      const testUrl = `${APP_URL}/verify-action?token=${tokenData.token}&action=${tokenData.action}`;
+      const appUrl = getAppUrl(req);
+      const testUrl = `${appUrl}/verify-action?token=${tokenData.token}&action=${tokenData.action}`;
 
       await logAudit(db, {
         userId: authUser.uid,

@@ -1,6 +1,6 @@
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { seedTestUsers } from './testHelpers';
+import { seedTestUsers, seedTestHierarchy, getTestDb } from './testHelpers';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 
@@ -89,6 +89,122 @@ describe('Stale Stores API', () => {
         );
       }
     });
+  });
+});
+
+describe('Stale Stores - v2 Data Shape', () => {
+  let testLocationId: string;
+  const db = getTestDb();
+
+  before(async () => {
+    await seedTestHierarchy();
+    const now = new Date().toISOString();
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString();
+    
+    const locationRef = db.collection('locations').doc();
+    await locationRef.set({
+      kind: 'store',
+      lifecycle: 'active',
+      storeNumber: 'V2T001',
+      name: 'V2 Test Store',
+      districtId: 'test-district-1',
+      regionId: 'test-region-1',
+      lastVerifiedAt: old,
+      address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
+      timeZone: 'America/Los_Angeles',
+      mainPhone: '+12135559999',
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+      version: 1,
+    });
+    testLocationId = locationRef.id;
+  });
+
+  after(async () => {
+    if (testLocationId) {
+      await db.collection('locations').doc(testLocationId).delete();
+    }
+  });
+
+  it('queries locations using v2 fields (lifecycle=active, kind=store)', async () => {
+    const res = await fetch(`${API_BASE}/api/app/stale-stores`, {
+      headers: {
+        'Authorization': 'Bearer test-token-admin',
+        'Accept': 'application/json',
+      },
+    });
+    assert.strictEqual(res.status, 200, 'should return 200');
+    const body = await res.json();
+    
+    const v2Store = body.staleStores.find((s: { storeNumber: string }) => s.storeNumber === 'V2T001');
+    assert.ok(v2Store, 'should find the v2-shaped store in stale stores');
+    assert.strictEqual(v2Store.name, 'V2 Test Store', 'should have correct name');
+    assert.ok(v2Store.daysSinceVerification > 90, 'should be stale (>90 days)');
+  });
+
+  it('excludes locations with lifecycle!=active', async () => {
+    const now = new Date().toISOString();
+    const retiredRef = db.collection('locations').doc();
+    await retiredRef.set({
+      kind: 'store',
+      lifecycle: 'retired',
+      storeNumber: 'V2T002',
+      name: 'Retired V2 Store',
+      districtId: 'test-district-1',
+      regionId: 'test-region-1',
+      address: { street: '456 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
+      timeZone: 'America/Los_Angeles',
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    });
+
+    try {
+      const res = await fetch(`${API_BASE}/api/app/stale-stores`, {
+        headers: {
+          'Authorization': 'Bearer test-token-admin',
+          'Accept': 'application/json',
+        },
+      });
+      const body = await res.json();
+      const retiredStore = body.staleStores.find((s: { storeNumber: string }) => s.storeNumber === 'V2T002');
+      assert.strictEqual(retiredStore, undefined, 'should not include retired stores');
+    } finally {
+      await retiredRef.delete();
+    }
+  });
+
+  it('excludes locations with kind!=store', async () => {
+    const now = new Date().toISOString();
+    const warehouseRef = db.collection('locations').doc();
+    await warehouseRef.set({
+      kind: 'warehouse',
+      lifecycle: 'active',
+      storeNumber: 'WH001',
+      name: 'Test Warehouse',
+      districtId: 'test-district-1',
+      regionId: 'test-region-1',
+      address: { street: '789 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
+      timeZone: 'America/Los_Angeles',
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    });
+
+    try {
+      const res = await fetch(`${API_BASE}/api/app/stale-stores`, {
+        headers: {
+          'Authorization': 'Bearer test-token-admin',
+          'Accept': 'application/json',
+        },
+      });
+      const body = await res.json();
+      const warehouse = body.staleStores.find((s: { storeNumber: string }) => s.storeNumber === 'WH001');
+      assert.strictEqual(warehouse, undefined, 'should not include warehouses');
+    } finally {
+      await warehouseRef.delete();
+    }
   });
 });
 

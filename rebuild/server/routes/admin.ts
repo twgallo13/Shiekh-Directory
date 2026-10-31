@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import type { User, AuthUser, UserRole, Location } from '../../src/types';
 
 const VALID_ROLES: UserRole[] = ['Viewer', 'Store', 'Leader', 'Steward', 'Admin'];
@@ -339,6 +340,57 @@ export function createAdminRouter(db: Firestore): Router {
     } catch (error) {
       console.error('Delete custom field error:', error);
       res.status(500).json({ error: { code: 'internal_error', message: 'Failed to delete custom field' } });
+    }
+  });
+
+  router.delete('/users/:id', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { id } = req.params;
+
+      const userRef = db.collection('users').doc(id);
+      const userDoc = await userRef.get();
+
+      if (!userDoc.exists) {
+        return res.status(404).json({ error: { code: 'not_found', message: 'User not found' } });
+      }
+
+      const userData = userDoc.data() as User;
+
+      if (userData.id === authUser.uid || userData.email === authUser.email) {
+        return res.status(400).json({ error: { code: 'self_delete', message: 'Cannot delete your own account' } });
+      }
+
+      const auth = getAuth();
+      try {
+        const firebaseUser = await auth.getUserByEmail(userData.email);
+        await auth.deleteUser(firebaseUser.uid);
+      } catch (authError: unknown) {
+        const errorCode = (authError as { code?: string })?.code;
+        if (errorCode !== 'auth/user-not-found') {
+          console.error('Firebase Auth deletion error:', authError);
+        }
+      }
+
+      await userRef.delete();
+
+      const now = new Date().toISOString();
+      await db.collection('auditLog').add({
+        timestamp: now,
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'delete',
+        entityType: 'user',
+        entityId: id,
+        entityName: userData.email,
+        changes: [{ field: 'deleted', oldValue: userData.role, newValue: null }],
+      });
+
+      res.json({ success: true, message: 'User deleted' });
+    } catch (error) {
+      console.error('Delete user error:', error);
+      res.status(500).json({ error: { code: 'internal_error', message: 'Failed to delete user' } });
     }
   });
 

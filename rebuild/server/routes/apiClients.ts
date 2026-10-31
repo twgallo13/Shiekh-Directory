@@ -281,5 +281,62 @@ export function createApiClientsRouter(db: Firestore): Router {
     }
   });
 
+  router.delete('/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const docRef = db.collection('apiClients').doc(id);
+      const doc = await docRef.get();
+
+      if (!doc.exists) {
+        return res.status(404).json({
+          error: {
+            code: 'not_found',
+            message: 'API client not found',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      const data = doc.data() as Omit<ApiClientDocument, 'id'>;
+
+      if (data.active) {
+        return res.status(400).json({
+          error: {
+            code: 'invalid_request',
+            message: 'Cannot delete an active API client. Revoke it first.',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      await docRef.delete();
+
+      const now = new Date().toISOString();
+      const authUser = res.locals.authUser as AuthUser;
+      await db.collection('audit').add({
+        timestamp: now,
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'delete',
+        entityType: 'api-client',
+        entityId: id,
+        entityName: data.name,
+        changes: [],
+      });
+
+      res.json({ success: true, message: 'API client deleted' });
+    } catch (error) {
+      console.error('Error deleting API client:', error);
+      res.status(500).json({
+        error: {
+          code: 'internal_error',
+          message: 'Failed to delete API client',
+          requestId: res.locals.requestId || 'unknown',
+        },
+      });
+    }
+  });
+
   return router;
 }

@@ -298,7 +298,11 @@ export function PrintableDirectoryView() {
                           {store.name}
                         </td>
                         <td className="py-px px-0.5 text-gray-600 truncate max-w-[150px] print:max-w-[120px]">
-                          {store.address}{store.suite ? ` #${store.suite}` : ''}
+                          {store.address}{store.suite ? (
+                            /^(Suite|Ste|Floor|Unit)\b/i.test(store.suite) 
+                              ? `, ${store.suite}` 
+                              : ` #${store.suite}`
+                          ) : ''}
                         </td>
                         <td className="py-px px-0.5 text-gray-800 whitespace-nowrap truncate">
                           {store.city}

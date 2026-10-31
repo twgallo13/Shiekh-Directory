@@ -162,4 +162,44 @@ describe('Admin API', () => {
       assert.ok(Array.isArray(body.stores), 'should return stores array');
     });
   });
+
+  describe('DELETE /api/app/admin/users/:id', () => {
+    it('requires admin role', async () => {
+      const res = await fetch(`${API_BASE}/api/app/admin/users/some-user-id`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer test-token-viewer' },
+      });
+      assert.strictEqual(res.status, 403, 'should return 403 for non-admin');
+    });
+
+    it('returns 404 for non-existent user', async () => {
+      const res = await fetchApi('/api/app/admin/users/non-existent-user-id', {
+        method: 'DELETE',
+      });
+      assert.strictEqual(res.status, 404, 'should return 404 for non-existent user');
+    });
+
+    it('deletes user and returns success', async () => {
+      const email = `delete-test-${Date.now()}@example.com`;
+      const createRes = await fetchApi('/api/app/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({ email, displayName: 'Delete Test', role: 'Viewer' }),
+      });
+      assert.strictEqual(createRes.status, 201);
+      const { user } = await createRes.json();
+
+      const deleteRes = await fetchApi(`/api/app/admin/users/${user.id}`, {
+        method: 'DELETE',
+      });
+      assert.strictEqual(deleteRes.status, 200, 'should return 200 on successful delete');
+
+      const body = await deleteRes.json();
+      assert.strictEqual(body.success, true, 'should return success: true');
+
+      const getRes = await fetchApi(`/api/app/admin/users/${user.id}`);
+      const getBody = await getRes.json();
+      const found = getBody.users?.find((u: { id: string }) => u.id === user.id);
+      assert.ok(!found, 'deleted user should not be found');
+    });
+  });
 });

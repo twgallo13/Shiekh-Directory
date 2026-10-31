@@ -101,4 +101,52 @@ describe('API Client Endpoints', () => {
       assert.strictEqual(res.status, 400, 'should return 400 for invalid scope');
     });
   });
+
+  describe('DELETE /api/app/api-clients/:id', () => {
+    it('cannot delete active client', async () => {
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Delete Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      assert.strictEqual(createRes.status, 201);
+      const { client } = await createRes.json();
+
+      const deleteRes = await fetchApi(`/api/app/api-clients/${client.id}`, {
+        method: 'DELETE',
+      });
+      assert.strictEqual(deleteRes.status, 400, 'should return 400 for active client');
+
+      const body = await deleteRes.json();
+      assert.ok(body.error?.message?.includes('Revoke'), 'error should mention revoking first');
+    });
+
+    it('deletes revoked client successfully', async () => {
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Delete Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      assert.strictEqual(createRes.status, 201);
+      const { client } = await createRes.json();
+
+      const revokeRes = await fetchApi(`/api/app/api-clients/${client.id}/revoke`, {
+        method: 'POST',
+      });
+      assert.strictEqual(revokeRes.status, 200, 'should revoke successfully');
+
+      const deleteRes = await fetchApi(`/api/app/api-clients/${client.id}`, {
+        method: 'DELETE',
+      });
+      assert.strictEqual(deleteRes.status, 200, 'should delete revoked client');
+
+      const body = await deleteRes.json();
+      assert.strictEqual(body.success, true);
+    });
+
+    it('returns 404 for non-existent client', async () => {
+      const res = await fetchApi('/api/app/api-clients/non-existent-id', {
+        method: 'DELETE',
+      });
+      assert.strictEqual(res.status, 404);
+    });
+  });
 });

@@ -181,6 +181,7 @@ export function createLegacyV3Router(db: Firestore): Router {
       const isDetail = req.params.id !== undefined;
       const id = req.params.id;
       const credential = res.locals.apiCredential as ApiCredential;
+      const hasContactsScope = credential.scopes.includes('district-leadership:contacts:read');
 
       const allowed = isDetail ? ['snapshot'] : ['snapshot', 'cursor', 'limit', 'kind'];
       if (Object.keys(req.query).some(key => !allowed.includes(key))) {
@@ -240,7 +241,7 @@ export function createLegacyV3Router(db: Firestore): Router {
             mode: 'full',
             snapshotAt: snapshot.at,
             contractVersion: LEADERSHIP_CONTRACT_VERSION,
-            contactAccess: 'none',
+            contactAccess: hasContactsScope ? 'work-email' : 'none',
           },
         });
       }
@@ -289,7 +290,7 @@ export function createLegacyV3Router(db: Firestore): Router {
           mode: 'full',
           snapshotAt: snapshot.at,
           contractVersion: LEADERSHIP_CONTRACT_VERSION,
-          contactAccess: 'none',
+          contactAccess: hasContactsScope ? 'work-email' : 'none',
         },
       });
     } catch (error) {

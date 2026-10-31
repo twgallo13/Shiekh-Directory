@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 type TabId = 'users' | 'api-clients' | 'custom-fields';
@@ -307,6 +307,8 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
   const [status, setStatus] = useState(user?.status || 'active');
   const [storeLocationId, setStoreLocationId] = useState(user?.storeLocationId || '');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [error, setError] = useState('');
 
   const handleSave = async () => {
@@ -343,6 +345,34 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
     }
   };
 
+  const handleDelete = async () => {
+    if (!user) return;
+    
+    try {
+      setDeleting(true);
+      setError('');
+      const token = await getIdToken();
+      
+      const res = await fetch(`/api/app/admin/users/${user.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || 'Failed to delete user');
+      }
+
+      onSaved();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete');
+      setShowDeleteConfirm(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
@@ -352,85 +382,132 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="p-4 space-y-4">
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={!!user}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            >
-              {ROLES.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
-          {role === 'Store' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Store</label>
-              <select
-                value={storeLocationId}
-                onChange={(e) => setStoreLocationId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="">Select a store...</option>
-                {stores.filter(s => s.kind === 'store').map(s => (
-                  <option key={s.id} value={s.id}>#{s.storeNumber} - {s.name}</option>
-                ))}
-              </select>
+        
+        {showDeleteConfirm ? (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <AlertTriangle className="w-6 h-6" />
+              <span className="font-medium">Delete User?</span>
             </div>
-          )}
-          {user && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            <p className="text-sm text-gray-600">
+              This will permanently delete <strong>{user?.email}</strong> and remove their Firebase Auth account. This action cannot be undone.
+            </p>
+            {error && (
+              <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
+            )}
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
               >
-                <option value="active">Active</option>
-                <option value="disabled">Disabled</option>
-              </select>
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete User'}
+              </button>
             </div>
-          )}
-        </div>
-        <div className="flex justify-end gap-3 px-4 py-3 border-t border-gray-200">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="p-4 space-y-4">
+              {error && (
+                <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={!!user}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  {ROLES.map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              {role === 'Store' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Store</label>
+                  <select
+                    value={storeLocationId}
+                    onChange={(e) => setStoreLocationId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="">Select a store...</option>
+                    {stores.filter(s => s.kind === 'store').map(s => (
+                      <option key={s.id} value={s.id}>#{s.storeNumber} - {s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {user && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  >
+                    <option value="active">Active</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+              <div>
+                {user && (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -475,6 +552,24 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       }
     } catch (error) {
       console.error('Revoke error:', error);
+    }
+  };
+
+  const handleDelete = async (clientId: string) => {
+    if (!confirm('Permanently delete this revoked API client?')) return;
+    
+    try {
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/api-clients/${clientId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (res.ok) {
+        loadClients();
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
     }
   };
 
@@ -550,12 +645,20 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                     {client.lastUsedAt ? new Date(client.lastUsedAt).toLocaleDateString() : 'Never'}
                   </td>
                   <td className="px-4 py-3">
-                    {client.active && (
+                    {client.active ? (
                       <button
                         onClick={() => handleRevoke(client.id)}
                         className="text-red-600 hover:text-red-800 text-sm"
                       >
                         Revoke
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleDelete(client.id)}
+                        className="flex items-center gap-1 text-gray-500 hover:text-red-600 text-sm"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
                       </button>
                     )}
                   </td>

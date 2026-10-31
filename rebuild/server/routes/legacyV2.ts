@@ -11,6 +11,7 @@ import {
 } from '../middleware/legacyApiAuth';
 import type { Location, Region, District, Person, Assignment } from '../../src/types';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+import { resolvePositionHolders } from '../utils/positionHolder';
 
 const PERSONNEL_CONTRACT_VERSION = 'personnel-staffing-v2.1';
 const SNAPSHOT_TTL_MS = 15 * 60_000;
@@ -353,22 +354,30 @@ function projectStaffing(
   const localDate = getLocalDate(location.timeZone);
 
   const locationAssignments = assignments.filter(a => 
-    a.scopeType === 'location' && a.scopeId === location.id && isAssignmentActive(a, localDate)
+    a.scopeType === 'location' && a.scopeId === location.id
   );
 
   const districtAssignments = assignments.filter(a =>
-    a.scopeType === 'district' && a.scopeId === location.districtId && isAssignmentActive(a, localDate)
+    a.scopeType === 'district' && a.scopeId === location.districtId
   );
 
   const regionAssignments = assignments.filter(a =>
-    a.scopeType === 'region' && a.scopeId === location.regionId && isAssignmentActive(a, localDate)
+    a.scopeType === 'region' && a.scopeId === location.regionId
   );
 
-  const smAssignment = locationAssignments.find(a => a.role === 'SM' && a.slot === 'primary');
-  const dmAssignment = districtAssignments.find(a => a.role === 'DM');
-  const rmAssignment = regionAssignments.find(a => a.role === 'RM');
-  const asmAssignments = locationAssignments.filter(a => a.role === 'ASM');
-  const khAssignments = locationAssignments.filter(a => a.role === 'KH');
+  const smAssignments = locationAssignments.filter(a => a.role === 'SM');
+  const dmAssignments = districtAssignments.filter(a => a.role === 'DM');
+  const rmAssignments = regionAssignments.filter(a => a.role === 'RM');
+  const asmAssignments = locationAssignments.filter(a => a.role === 'ASM' && isAssignmentActive(a, localDate));
+  const khAssignments = locationAssignments.filter(a => a.role === 'KH' && isAssignmentActive(a, localDate));
+
+  const smResult = resolvePositionHolders(smAssignments, people, localDate);
+  const dmResult = resolvePositionHolders(dmAssignments, people, localDate);
+  const rmResult = resolvePositionHolders(rmAssignments, people, localDate);
+  
+  const smAssignment = smResult.primary ? smAssignments.find(a => a.personId === smResult.primary!.personId && isAssignmentActive(a, localDate)) : undefined;
+  const dmAssignment = dmResult.primary ? dmAssignments.find(a => a.personId === dmResult.primary!.personId && isAssignmentActive(a, localDate)) : undefined;
+  const rmAssignment = rmResult.primary ? rmAssignments.find(a => a.personId === rmResult.primary!.personId && isAssignmentActive(a, localDate)) : undefined;
 
   const resolvePerson = (personId: string | undefined, field: string): { personId: string; fullName: string | null; lifecycle: string; issues: { code: string; field: string }[] } | null => {
     if (!personId) return null;
@@ -432,14 +441,23 @@ function projectStaffing(
 
   const recordStatus = location.lifecycle === 'active' ? 'active' : location.lifecycle === 'retired' ? 'retired' : 'draft';
 
-  const smHolders = locationAssignments
-    .filter(a => a.role === 'SM')
+  const smHolders = smAssignments
+    .filter(a => isAssignmentActive(a, localDate))
     .map(a => resolveHolder(a, 'storeManagerId'))
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort((a, b) => (a!.capacity === 'primary' ? -1 : 1) - (b!.capacity === 'primary' ? -1 : 1));
   const asmHolders = asmAssignments.map(a => resolveHolder(a, 'assistantStoreManagerIds')).filter(Boolean);
   const khHolders = khAssignments.map(a => resolveHolder(a, 'keyHolderIds')).filter(Boolean);
-  const dmHolders = dmAssignment ? [resolveHolder(dmAssignment, 'districtManagerId')].filter(Boolean) : [];
-  const rmHolders = rmAssignment ? [resolveHolder(rmAssignment, 'regionalManagerId')].filter(Boolean) : [];
+  const dmHolders = dmAssignments
+    .filter(a => isAssignmentActive(a, localDate))
+    .map(a => resolveHolder(a, 'districtManagerId'))
+    .filter(Boolean)
+    .sort((a, b) => (a!.capacity === 'primary' ? -1 : 1) - (b!.capacity === 'primary' ? -1 : 1));
+  const rmHolders = rmAssignments
+    .filter(a => isAssignmentActive(a, localDate))
+    .map(a => resolveHolder(a, 'regionalManagerId'))
+    .filter(Boolean)
+    .sort((a, b) => (a!.capacity === 'primary' ? -1 : 1) - (b!.capacity === 'primary' ? -1 : 1));
 
   return {
     locationId: location.id,

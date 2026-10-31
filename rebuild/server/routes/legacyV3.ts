@@ -10,6 +10,7 @@ import {
 } from '../middleware/legacyApiAuth';
 import type { Location, Region, District, Person, Assignment } from '../../src/types';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+import { resolvePositionHolders } from '../utils/positionHolder';
 
 const LEADERSHIP_CONTRACT_VERSION = 'district-leadership-v3.1';
 const SNAPSHOT_TTL_MS = 15 * 60_000;
@@ -328,17 +329,29 @@ function projectDistrictLeadership(
   }
 
   const localDate = getLocalDate();
-  const dmAssignment = dmAssignments.find(a => 
-    a.scopeType === 'district' && a.scopeId === district.id && isAssignmentActive(a, localDate)
+  const districtDmAssignments = dmAssignments.filter(a => 
+    a.scopeType === 'district' && a.scopeId === district.id
   );
+  
+  const dmResult = resolvePositionHolders(districtDmAssignments, people, localDate);
+  const dmAssignment = dmResult.primary 
+    ? districtDmAssignments.find(a => a.personId === dmResult.primary!.personId && isAssignmentActive(a, localDate))
+    : undefined;
 
   type AssignmentState = 'assigned' | 'vacant' | 'unmanaged' | 'invalid' | 'unresolved';
   let assignmentState: AssignmentState;
   let districtManager: Record<string, unknown> | null = null;
 
-  if (!dmAssignment) {
+  if (!dmAssignment && !dmResult.others.length) {
     assignmentState = 'vacant';
-  } else {
+  } else if (!dmAssignment && dmResult.others.length > 0) {
+    assignmentState = 'vacant';
+    const firstOther = dmResult.others[0];
+    const person = people.get(firstOther.personId);
+    if (person) {
+      districtManager = buildDistrictManagerObject(person, includeWorkEmail, firstOther.capacity);
+    }
+  } else if (dmAssignment) {
     const person = people.get(dmAssignment.personId);
     const personIssues: { code: string; field: string }[] = [];
     
@@ -393,6 +406,8 @@ function projectDistrictLeadership(
         issues: personIssues,
       };
     }
+  } else {
+    assignmentState = 'vacant';
   }
 
   const recordStatus = district.lifecycle === 'active' ? 'active' : 'retired';
@@ -407,6 +422,53 @@ function projectDistrictLeadership(
     assignmentState,
     districtManager,
     issues,
+  };
+}
+
+function buildDistrictManagerObject(
+  person: Person,
+  includeWorkEmail: boolean,
+  capacity?: string
+): Record<string, unknown> {
+  const personIssues: { code: string; field: string }[] = [];
+  
+  if (!person.fullName?.trim()) {
+    personIssues.push({ code: 'invalid_name', field: 'fullName' });
+  }
+  if (person.lifecycle !== 'active') {
+    personIssues.push({ 
+      code: person.lifecycle === 'inactive' ? 'inactive_person' : 'unknown_person_state', 
+      field: 'lifecycle' 
+    });
+  }
+
+  let workEmail: string | null = null;
+  let workEmailStatus: string;
+
+  if (!includeWorkEmail) {
+    workEmailStatus = 'not_granted';
+  } else if (person.lifecycle !== 'active') {
+    workEmailStatus = person.lifecycle === 'inactive' ? 'withheld_inactive' : 'withheld_unknown_lifecycle';
+  } else if (!person.workEmail) {
+    workEmailStatus = 'missing';
+  } else {
+    const email = person.workEmail.toLowerCase().trim();
+    if (email.endsWith('@shiekhshoes.com') || email.endsWith('@shiekhshoes.org')) {
+      workEmail = person.workEmail;
+      workEmailStatus = 'available';
+    } else {
+      workEmailStatus = 'unapproved_domain';
+    }
+  }
+
+  return {
+    personId: person.id,
+    fullName: person.fullName?.trim() || null,
+    lifecycle: person.lifecycle,
+    capacity: capacity || 'primary',
+    workEmail,
+    workEmailStatus,
+    issues: personIssues,
   };
 }
 

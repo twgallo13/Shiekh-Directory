@@ -495,6 +495,79 @@ describe('Legacy API v3 - District Leadership', () => {
   });
 });
 
+describe('Legacy API Primary Holder Selection', () => {
+  describe('v2 location-staffing prioritizes primary capacity', () => {
+    it('positionStatus.dm holders sorted with primary first', async () => {
+      const snapRes = await fetchApi('/api/v2/snapshot');
+      if (snapRes.status !== 200) return;
+      
+      const snapBody = await snapRes.json();
+      const res = await fetchApi(`/api/v2/location-staffing?snapshot=${encodeURIComponent(snapBody.snapshot)}&limit=50`);
+      assert.strictEqual(res.status, 200);
+
+      const body = await res.json();
+      
+      for (const staffing of body.data) {
+        if (staffing.positionStatus?.dm?.holders?.length > 1) {
+          const holders = staffing.positionStatus.dm.holders;
+          const primaryIdx = holders.findIndex((h: { capacity: string }) => h.capacity === 'primary');
+          if (primaryIdx > 0) {
+            assert.fail(`Primary DM should be first in holders list, but found at index ${primaryIdx}`);
+          }
+        }
+      }
+    });
+
+    it('districtManagerId returns primary holder personId', async () => {
+      const snapRes = await fetchApi('/api/v2/snapshot');
+      if (snapRes.status !== 200) return;
+      
+      const snapBody = await snapRes.json();
+      const res = await fetchApi(`/api/v2/location-staffing?snapshot=${encodeURIComponent(snapBody.snapshot)}&limit=50`);
+      assert.strictEqual(res.status, 200);
+
+      const body = await res.json();
+      
+      for (const staffing of body.data) {
+        if (staffing.positionStatus?.dm?.holders?.length > 0) {
+          const primaryHolder = staffing.positionStatus.dm.holders.find(
+            (h: { capacity: string }) => h.capacity === 'primary'
+          );
+          if (primaryHolder && staffing.districtManagerId) {
+            assert.strictEqual(
+              staffing.districtManagerId, 
+              primaryHolder.personId,
+              'districtManagerId should match primary holder'
+            );
+          }
+        }
+      }
+    });
+  });
+
+  describe('v3 district-leadership prioritizes primary DM', () => {
+    it('districtManager shows primary holder when multiple DMs exist', async () => {
+      const snapRes = await fetchApi('/api/v3/snapshot');
+      if (snapRes.status !== 200) return;
+      
+      const snapBody = await snapRes.json();
+      const res = await fetchApi(`/api/v3/district-leadership?snapshot=${encodeURIComponent(snapBody.snapshot)}&limit=50`);
+      assert.strictEqual(res.status, 200);
+
+      const body = await res.json();
+      
+      for (const district of body.data) {
+        if (district.districtManager && district.assignmentState === 'assigned') {
+          const dm = district.districtManager as { capacity?: string };
+          if (dm.capacity) {
+            assert.strictEqual(dm.capacity, 'primary', 'assigned DM should be primary capacity');
+          }
+        }
+      }
+    });
+  });
+});
+
 describe('Store Number "007" Preservation', () => {
   it('v1 locations preserves 007', async () => {
     const res = await fetchApi('/api/v1/locations?limit=100');

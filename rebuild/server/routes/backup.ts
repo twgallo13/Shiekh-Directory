@@ -105,6 +105,7 @@ export function createBackupRouter(db: Firestore): Router {
           chunkCount: data.chunkCount,
           collections: data.metadata?.collections || [],
           status: data.status || 'completed',
+          documentCount: data.documentCount,
         };
       });
 
@@ -225,6 +226,63 @@ export function createBackupRouter(db: Firestore): Router {
     } catch (error) {
       console.error('Create snapshot error:', error);
       res.status(500).json({ error: { code: 'internal_error', message: 'Failed to create snapshot' } });
+    }
+  });
+
+  router.delete('/snapshots/:id', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { id } = req.params;
+      const { confirm } = req.query;
+
+      if (confirm !== 'true') {
+        return res.status(400).json({
+          error: {
+            code: 'confirmation_required',
+            message: 'Delete requires confirmation. Set ?confirm=true to proceed.',
+            requestId: res.locals.requestId,
+          },
+        });
+      }
+
+      const snapshotRef = db.collection('snapshots').doc(id);
+      const snapshotDoc = await snapshotRef.get();
+
+      if (!snapshotDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Snapshot not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const snapshotData = snapshotDoc.data()!;
+
+      const chunksSnap = await snapshotRef.collection('chunks').get();
+      const batch = db.batch();
+      for (const chunk of chunksSnap.docs) {
+        batch.delete(chunk.ref);
+      }
+      batch.delete(snapshotRef);
+      await batch.commit();
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'delete',
+        entityType: 'location',
+        entityId: id,
+        entityName: `Snapshot ${id} deleted`,
+        changes: [
+          { field: 'documentCount', oldValue: snapshotData.documentCount },
+          { field: 'collections', oldValue: snapshotData.metadata?.collections?.join(', ') },
+          { field: 'chunkCount', oldValue: chunksSnap.size },
+        ],
+      });
+
+      res.json({ success: true, deleted: id, chunksDeleted: chunksSnap.size });
+    } catch (error) {
+      console.error('Delete snapshot error:', error);
+      res.status(500).json({ error: { code: 'internal_error', message: 'Failed to delete snapshot' } });
     }
   });
 

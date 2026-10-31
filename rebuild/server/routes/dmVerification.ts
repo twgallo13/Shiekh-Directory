@@ -766,6 +766,74 @@ export function createDMVerificationRouter(db: Firestore): Router {
     }
   });
 
+  router.post('/:id/cancel', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+      const { reason } = req.body;
+
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Admin and Steward can cancel DM verifications', requestId: res.locals.requestId },
+        });
+      }
+
+      const requestDoc = await db.collection('dmVerificationRequests').doc(id).get();
+      if (!requestDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'DM verification request not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const request = { id: requestDoc.id, ...requestDoc.data() } as DMVerificationRequest;
+
+      if (request.status === 'confirmed' || request.status === 'cancelled') {
+        return res.status(400).json({
+          error: { code: 'invalid_status', message: `Cannot cancel a ${request.status} request`, requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date();
+      await requestDoc.ref.update({
+        status: 'cancelled',
+        cancelledAt: now.toISOString(),
+        cancelledBy: authUser.uid,
+        cancelReason: reason || null,
+        updatedAt: now.toISOString(),
+        updatedBy: authUser.uid,
+        version: (request.version || 0) + 1,
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'cancel',
+        entityType: 'verification',
+        entityId: id,
+        entityName: `DM verification cancelled for ${request.districtName}`,
+        changes: [
+          { field: 'status', oldValue: request.status, newValue: 'cancelled' },
+          ...(reason ? [{ field: 'cancelReason', newValue: reason }] : []),
+        ],
+      });
+
+      return res.json({
+        data: {
+          id,
+          status: 'cancelled',
+          cancelledAt: now.toISOString(),
+          cancelledBy: authUser.uid,
+        },
+      });
+    } catch (error) {
+      console.error('Cancel DM verification error:', error);
+      return res.status(500).json({
+        error: { code: 'cancel_error', message: 'Failed to cancel DM verification', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   return router;
 }
 

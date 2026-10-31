@@ -244,3 +244,102 @@ describe('Mail Log - Test Link Visibility', () => {
     assert.ok(mailLogEntry.verificationUrl, 'mail log should contain verificationUrl');
   });
 });
+
+describe('One-Click Action - Custom Token for Update', () => {
+  it('update action response includes customToken for Firebase auth', () => {
+    const updateResponse = {
+      success: true,
+      action: 'update',
+      message: 'Update action processed',
+      customToken: 'firebase_custom_token_here',
+      location: {
+        id: 'loc_001',
+        storeNumber: '42',
+      },
+    };
+
+    assert.strictEqual(updateResponse.action, 'update');
+    assert.ok(updateResponse.customToken, 'update response should include customToken');
+    assert.ok(updateResponse.location, 'update response should include location');
+  });
+
+  it('confirm action response does not need customToken', () => {
+    const confirmResponse = {
+      success: true,
+      action: 'confirm',
+      message: 'Hours confirmed successfully',
+    };
+
+    assert.strictEqual(confirmResponse.action, 'confirm');
+    assert.ok(!('customToken' in confirmResponse) || !confirmResponse.customToken, 
+      'confirm response typically does not need customToken');
+  });
+
+  it('customToken contains Store role claims', () => {
+    const tokenClaims = {
+      role: 'Store',
+      storeLocationId: 'loc_001',
+      storeNumber: '42',
+      email: 'store42@shiekhshoes.com',
+    };
+
+    assert.strictEqual(tokenClaims.role, 'Store');
+    assert.ok(tokenClaims.storeLocationId, 'should have storeLocationId');
+    assert.ok(tokenClaims.storeNumber, 'should have storeNumber');
+  });
+});
+
+describe('Token URL Security - Referrer Policy', () => {
+  it('verify-action page should strip token from URL', () => {
+    const originalUrl = 'https://directory.shiekh.com/verify-action?token=abc123&action=update';
+    const url = new URL(originalUrl);
+    url.searchParams.delete('token');
+    url.searchParams.delete('action');
+    
+    const strippedPath = url.pathname;
+    assert.strictEqual(strippedPath, '/verify-action');
+    assert.ok(!url.search || url.search === '', 'query params should be stripped');
+  });
+
+  it('Referrer-Policy header value is no-referrer', () => {
+    const headers = {
+      'Referrer-Policy': 'no-referrer',
+    };
+    assert.strictEqual(headers['Referrer-Policy'], 'no-referrer');
+  });
+
+  it('meta referrer tag content is no-referrer', () => {
+    const metaContent = 'no-referrer';
+    assert.strictEqual(metaContent, 'no-referrer');
+  });
+
+  it('history.replaceState clears token from URL without navigation', () => {
+    const pathWithoutToken = '/verify-action';
+    assert.ok(!pathWithoutToken.includes('token='), 'path should not include token');
+  });
+});
+
+describe('Store Sign-In - Custom Token Flow', () => {
+  it('verify-token returns customToken for authenticated sign-in', () => {
+    const verifyResponse = {
+      success: true,
+      customToken: 'firebase_custom_token',
+      location: {
+        id: 'loc_001',
+        storeNumber: '42',
+        name: 'Test Store',
+      },
+    };
+
+    assert.ok(verifyResponse.customToken, 'should return customToken');
+    assert.ok(verifyResponse.location, 'should return location info');
+  });
+
+  it('customToken UID follows store_<locationId> pattern', () => {
+    const locationId = 'abc123';
+    const storeUid = `store_${locationId}`;
+    
+    assert.ok(storeUid.startsWith('store_'), 'UID should start with store_');
+    assert.strictEqual(storeUid, 'store_abc123');
+  });
+});

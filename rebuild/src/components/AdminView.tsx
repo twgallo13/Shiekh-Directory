@@ -1676,6 +1676,8 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [runningDrill, setRunningDrill] = useState<string | null>(null);
+  const [deletingSnapshot, setDeletingSnapshot] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -1765,6 +1767,30 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
     }
   };
 
+  const deleteSnapshot = async (snapshotId: string) => {
+    try {
+      setDeletingSnapshot(snapshotId);
+      setError(null);
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/backups/snapshots/${snapshotId}?confirm=true`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || 'Failed to delete snapshot');
+      }
+
+      setConfirmDelete(null);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete snapshot');
+    } finally {
+      setDeletingSnapshot(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1809,21 +1835,30 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                 <div>
                   <p className="font-medium text-gray-900">{snapshot.id}</p>
                   <p className="text-sm text-gray-500">
-                    {new Date(snapshot.createdAt).toLocaleString()} • {snapshot.documentCount || '?'} docs • {snapshot.collections?.length || '?'} collections
+                    {new Date(snapshot.createdAt).toLocaleString()} • {snapshot.documentCount ?? '?'} docs • {snapshot.collections?.length || '?'} collections
                   </p>
                 </div>
-                <button
-                  onClick={() => runDrill(snapshot.id)}
-                  disabled={runningDrill === snapshot.id}
-                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                >
-                  {runningDrill === snapshot.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Play className="w-4 h-4" />
-                  )}
-                  Run Drill
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => runDrill(snapshot.id)}
+                    disabled={runningDrill === snapshot.id}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {runningDrill === snapshot.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                    Run Drill
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(snapshot)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded"
+                    title="Delete snapshot"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1868,6 +1903,53 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           </div>
         )}
       </div>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <h2 className="font-semibold text-gray-900">Delete Snapshot</h2>
+              <button onClick={() => setConfirmDelete(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 text-red-600">
+                <AlertTriangle className="w-6 h-6" />
+                <span className="font-medium">Permanently delete this snapshot?</span>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="font-medium text-gray-900">{confirmDelete.id}</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {confirmDelete.documentCount ?? '?'} documents • {confirmDelete.collections?.length || '?'} collections
+                </p>
+                <p className="text-sm text-gray-500">
+                  Created {new Date(confirmDelete.createdAt).toLocaleString()}
+                </p>
+              </div>
+              <p className="text-sm text-gray-600">
+                This action cannot be undone. The snapshot and all its data chunks will be permanently deleted.
+              </p>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setConfirmDelete(null)}
+                  disabled={deletingSnapshot === confirmDelete.id}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deleteSnapshot(confirmDelete.id)}
+                  disabled={deletingSnapshot === confirmDelete.id}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50"
+                >
+                  {deletingSnapshot === confirmDelete.id ? 'Deleting...' : 'Delete Snapshot'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

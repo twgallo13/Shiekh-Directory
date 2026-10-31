@@ -541,6 +541,7 @@ export interface DMVerificationRequest extends RecordMetadata {
   storeResponses?: DMVerificationStoreResponse[];
   cancelledAt?: string;
   cancelledBy?: string;
+  cancelReason?: string;
   emailSent?: boolean;
   emailMessageId?: string;
   emailError?: string;

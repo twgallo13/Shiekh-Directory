@@ -449,6 +449,7 @@ export type AuditAction =
   | 'send'
   | 'respond'
   | 'cancel'
+  | 'deny'
   | 'request-signin'
   | 'use-signin-token'
   | 'one-click-confirm'
@@ -461,7 +462,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store

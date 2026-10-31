@@ -21,6 +21,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   send: 'Sent',
   respond: 'Responded',
   cancel: 'Cancelled',
+  deny: 'Access denied',
   'request-signin': 'Sign-in requested',
   'use-signin-token': 'Sign-in token used',
   'one-click-confirm': 'One-click confirmed',

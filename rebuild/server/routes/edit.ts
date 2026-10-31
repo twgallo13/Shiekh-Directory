@@ -8,6 +8,7 @@ import type {
   AuditChange,
   Correction,
 } from '../../src/types';
+import { isValidStoreTypeCode } from '../../src/types';
 import { hasPermission, canEditLocation } from '../../src/lib/permissions';
 import { normalizePhoneNumber } from '../utils/phone';
 
@@ -104,13 +105,28 @@ export function createEditRouter(db: Firestore): Router {
 
           case 'name':
           case 'mallOrCenterName':
-          case 'storeType':
             if (authUser.role === 'Steward' || authUser.role === 'Admin') {
               updateData[field] = value;
               auditChanges.push({ field, oldValue: (location[field as keyof Location] as string) ?? null, newValue: value as string });
             } else {
               return res.status(403).json({
                 error: { code: 'forbidden', message: `Only Steward or Admin can edit ${field}`, requestId: res.locals.requestId },
+              });
+            }
+            break;
+
+          case 'storeType':
+            if (authUser.role === 'Steward' || authUser.role === 'Admin') {
+              if (value && !isValidStoreTypeCode(value as string)) {
+                return res.status(400).json({
+                  error: { code: 'invalid_store_type', message: 'Invalid store type code', requestId: res.locals.requestId },
+                });
+              }
+              updateData[field] = value || null;
+              auditChanges.push({ field, oldValue: (location.storeType as string) ?? null, newValue: (value as string) || null });
+            } else {
+              return res.status(403).json({
+                error: { code: 'forbidden', message: 'Only Steward or Admin can edit store type', requestId: res.locals.requestId },
               });
             }
             break;

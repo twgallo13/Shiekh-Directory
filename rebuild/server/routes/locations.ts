@@ -24,7 +24,7 @@ export function createLocationsRouter(db: Firestore): Router {
 
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const { districtId, regionId, kind } = req.query;
+      const { districtId, regionId, kind, storeType } = req.query;
       
       let query = db.collection('locations')
         .where('lifecycle', '==', 'active');
@@ -38,6 +38,10 @@ export function createLocationsRouter(db: Firestore): Router {
         query = query.where('districtId', '==', districtId);
       } else if (regionId) {
         query = query.where('regionId', '==', regionId);
+      }
+      
+      if (storeType && typeof storeType === 'string') {
+        query = query.where('storeType', '==', storeType);
       }
       
       const locationsSnap = await query.get();

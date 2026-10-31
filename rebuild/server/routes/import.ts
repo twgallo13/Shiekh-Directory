@@ -14,7 +14,9 @@ import type {
   StandardHours,
   DayOfWeek,
   Address,
+  StoreTypeCode,
 } from '../../src/types';
+import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
 import { normalizePhoneNumber } from '../utils/phone';
 
 interface CsvRow {
@@ -265,6 +267,23 @@ async function processLocations(
       continue;
     }
     
+    // Parse storeType - accept code or label
+    let storeType: StoreTypeCode | undefined = undefined;
+    if (row.storeType?.trim()) {
+      const rawType = row.storeType.trim();
+      if (isValidStoreTypeCode(rawType)) {
+        storeType = rawType;
+      } else if (STORE_TYPE_CODE_FROM_LABEL[rawType]) {
+        storeType = STORE_TYPE_CODE_FROM_LABEL[rawType];
+      } else {
+        preview.warnings.push({
+          row: rowNum,
+          column: 'storeType',
+          message: `Unknown store type: ${rawType}. Valid types: Enclosed Mall, Strip Center / Shopping Center, Street / Standalone Location, Corporate Office, Warehouse / Distribution Center, Other Company Location`,
+        });
+      }
+    }
+    
     const locationData: Omit<Location, 'id'> = {
       kind: kindValue,
       storeNumber,
@@ -277,7 +296,7 @@ async function processLocations(
       sharedInboxEmail: row.sharedInboxEmail?.trim() || undefined,
       regionId,
       districtId,
-      storeType: row.storeType?.trim() || undefined,
+      storeType,
       mallOrCenterName: row.mallOrCenterName?.trim() || undefined,
       wayfindingDirections: row.wayfindingDirections?.trim().slice(0, 1000) || undefined,
       standardHours,

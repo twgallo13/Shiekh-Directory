@@ -10,7 +10,9 @@ import type {
   Address,
   Assignment,
   StandardHours,
+  StoreTypeCode,
 } from '../../src/types';
+import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
 import { normalizePhoneNumber } from '../utils/phone';
 import { createPreImportBackup } from '../scheduledBackup';
 
@@ -498,8 +500,18 @@ function parseAndValidateRows(
     const isUpdate = !!existingEntry;
 
     const name = (row.name || '').trim();
-    const storeType = (row.storeType || '').trim();
-    const kind = mapLocationKind(storeType, normalizedNum);
+    const rawStoreType = (row.storeType || '').trim();
+    const kind = mapLocationKind(rawStoreType, normalizedNum);
+    
+    // Convert storeType to canonical code
+    let storeType: StoreTypeCode | undefined = undefined;
+    if (rawStoreType) {
+      if (isValidStoreTypeCode(rawStoreType)) {
+        storeType = rawStoreType;
+      } else if (STORE_TYPE_CODE_FROM_LABEL[rawStoreType]) {
+        storeType = STORE_TYPE_CODE_FROM_LABEL[rawStoreType];
+      }
+    }
     const isFacility = kind === 'facility';
 
     if (!name && !isUpdate) {

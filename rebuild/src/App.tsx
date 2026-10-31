@@ -13,6 +13,7 @@ import { PeopleListView } from './components/PeopleListView';
 import { HierarchyView } from './components/HierarchyView';
 import { SettingsView } from './components/SettingsView';
 import { ClosuresBoardPage } from './components/ClosuresBoardPage';
+import { StaleStoresView } from './components/StaleStoresView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -137,6 +138,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <ClosuresBoardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/stale-stores"
+        element={
+          <ProtectedRoute>
+            <StaleStoresView />
           </ProtectedRoute>
         }
       />

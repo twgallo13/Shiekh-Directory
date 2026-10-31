@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store, Printer, Users, Network, FileCheck, Settings, AlertTriangle } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Menu, User, LogOut, ClipboardCheck, Calendar, Building2, Warehouse, Store, Printer, Users, Network, FileCheck, Settings, AlertTriangle, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -232,6 +232,16 @@ export function DirectoryView() {
                 >
                   <AlertTriangle className="w-4 h-4" />
                   Closures Board
+                </button>
+                <button
+                  onClick={() => {
+                    navigate('/stale-stores');
+                    setMenuOpen(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <Clock className="w-4 h-4" />
+                  Stale Stores
                 </button>
               </>
             )}

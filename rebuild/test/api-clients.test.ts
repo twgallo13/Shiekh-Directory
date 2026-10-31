@@ -102,6 +102,70 @@ describe('API Client Endpoints', () => {
     });
   });
 
+  describe('POST /api/app/api-clients/:id/rate-limit', () => {
+    it('requires admin role', async () => {
+      const res = await fetch(`${API_BASE}/api/app/api-clients/test-id/rate-limit`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer test-token-viewer',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ rateLimit: 100 }),
+      });
+      assert.strictEqual(res.status, 403, 'should return 403 for non-admin');
+    });
+
+    it('validates rate limit is a number', async () => {
+      const res = await fetchApi('/api/app/api-clients/test-id/rate-limit', {
+        method: 'POST',
+        body: JSON.stringify({ rateLimit: 'unlimited' }),
+      });
+      assert.strictEqual(res.status, 400, 'should return 400 for non-numeric rate limit');
+    });
+
+    it('validates rate limit is within range', async () => {
+      const res = await fetchApi('/api/app/api-clients/test-id/rate-limit', {
+        method: 'POST',
+        body: JSON.stringify({ rateLimit: 20000 }),
+      });
+      assert.strictEqual(res.status, 400, 'should return 400 for rate limit > 10000');
+    });
+
+    it('accepts 0 for unlimited', async () => {
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Rate Limit Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      assert.strictEqual(createRes.status, 201);
+      const { client } = await createRes.json();
+
+      const res = await fetchApi(`/api/app/api-clients/${client.id}/rate-limit`, {
+        method: 'POST',
+        body: JSON.stringify({ rateLimit: 0 }),
+      });
+      assert.strictEqual(res.status, 200, 'should accept 0 for unlimited');
+      const body = await res.json();
+      assert.strictEqual(body.client.rateLimit, 0);
+    });
+
+    it('updates rate limit successfully', async () => {
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Rate Limit Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      assert.strictEqual(createRes.status, 201);
+      const { client } = await createRes.json();
+
+      const res = await fetchApi(`/api/app/api-clients/${client.id}/rate-limit`, {
+        method: 'POST',
+        body: JSON.stringify({ rateLimit: 120 }),
+      });
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.strictEqual(body.client.rateLimit, 120);
+    });
+  });
+
   describe('DELETE /api/app/api-clients/:id', () => {
     it('cannot delete active client', async () => {
       const createRes = await fetchApi('/api/app/api-clients', {

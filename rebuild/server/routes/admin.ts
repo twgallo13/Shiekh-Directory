@@ -394,6 +394,35 @@ export function createAdminRouter(db: Firestore): Router {
     }
   });
 
+  router.get('/last-drill', async (_req: Request, res: Response) => {
+    try {
+      const snapshot = await db.collection('drillReports')
+        .orderBy('completedAt', 'desc')
+        .limit(1)
+        .get();
+
+      if (snapshot.empty) {
+        return res.json({ lastDrill: null });
+      }
+
+      const doc = snapshot.docs[0];
+      const data = doc.data();
+      
+      res.json({
+        lastDrill: {
+          drillId: data.drillId,
+          completedAt: data.completedAt,
+          status: data.status,
+          totalExpected: data.totalExpected,
+          totalRestored: data.totalRestored,
+        },
+      });
+    } catch (error) {
+      console.error('Get last drill error:', error);
+      res.status(500).json({ error: { code: 'internal_error', message: 'Failed to get drill status' } });
+    }
+  });
+
   router.get('/stores', async (req: Request, res: Response) => {
     try {
       const { includeAll } = req.query;

@@ -26,7 +26,28 @@ export interface ApiClientDocument {
   version: number;
   createdAt: string;
   lastUsedAt?: string;
+  // Rate limiting: requests per minute (default: 60, 0 = unlimited)
+  rateLimit?: number;
 }
+
+// In-memory rate limit counters: clientId -> { count, windowStart }
+interface RateLimitEntry {
+  count: number;
+  windowStart: number;
+}
+const rateLimitCounters = new Map<string, RateLimitEntry>();
+const DEFAULT_RATE_LIMIT = 60; // requests per minute
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+
+// Clean up old entries periodically (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitCounters.entries()) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitCounters.delete(key);
+    }
+  }
+}, 5 * 60_000);
 
 const TEST_TOKEN_SECRET = 'test-cursor-signing-key-for-rebuild';
 const LAST_USED_THROTTLE_MS = 15 * 60_000;
@@ -116,6 +137,55 @@ export function createLegacyApiAuthMiddleware(db: Firestore): Router {
         cursorSigningKey: client.tokenHash.slice(0, 43),
         grantsVersion: client.version,
       } as ApiCredential;
+
+      // Rate limiting check
+      const rateLimit = client.rateLimit ?? DEFAULT_RATE_LIMIT;
+      if (rateLimit > 0) {
+        const now = Date.now();
+        const key = client.id;
+        let entry = rateLimitCounters.get(key);
+        
+        // Reset window if expired
+        if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
+          entry = { count: 0, windowStart: now };
+        }
+        
+        entry.count++;
+        rateLimitCounters.set(key, entry);
+        
+        // Check if over limit
+        if (entry.count > rateLimit) {
+          const retryAfterSeconds = Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
+          
+          // Log rate limit exceeded
+          try {
+            await db.collection('rateLimitLog').add({
+              clientId: client.id,
+              clientName: client.name,
+              timestamp: new Date().toISOString(),
+              requestCount: entry.count,
+              limit: rateLimit,
+              path: req.path,
+              method: req.method,
+            });
+          } catch {
+            // Don't fail the request if logging fails
+          }
+          
+          res.setHeader('Retry-After', retryAfterSeconds.toString());
+          res.setHeader('X-RateLimit-Limit', rateLimit.toString());
+          res.setHeader('X-RateLimit-Remaining', '0');
+          res.setHeader('X-RateLimit-Reset', Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS) / 1000).toString());
+          
+          return sendLegacyError(res, 429, 'rate_limit_exceeded', 
+            `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`);
+        }
+        
+        // Add rate limit headers to successful responses
+        res.setHeader('X-RateLimit-Limit', rateLimit.toString());
+        res.setHeader('X-RateLimit-Remaining', Math.max(0, rateLimit - entry.count).toString());
+        res.setHeader('X-RateLimit-Reset', Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS) / 1000).toString());
+      }
 
       return next();
     } catch (error) {

@@ -1568,11 +1568,93 @@ function AuditLogTab() {
       />
       
       <div className="space-y-6">
-        <ComingSoonPlaceholder
-          title="Data Quality / Stale Stores"
-          description="Identify stores with outdated information, missing managers, or unverified hours."
-        />
+        <div className="border border-gray-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Data Quality / Stale Stores</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            Identify stores with verification older than 90 days or never verified. Leaders see only stores in their district.
+          </p>
+          <a
+            href="/stale-stores"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
+          >
+            View Stale Stores
+          </a>
+        </div>
+
+        <DrillStatusCard />
       </div>
+    </div>
+  );
+}
+
+function DrillStatusCard() {
+  const { user } = useAuth();
+  const [lastDrill, setLastDrill] = useState<{
+    drillId: string;
+    completedAt: string;
+    status: string;
+    totalExpected: number;
+    totalRestored: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchLastDrill() {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/app/admin/last-drill', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setLastDrill(data.lastDrill);
+        }
+      } catch {
+        // Ignore errors - drill status is optional
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchLastDrill();
+  }, [user]);
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-6">
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">Restore Drill Status</h3>
+      <p className="text-sm text-gray-600 mb-4">
+        Periodic restore drills validate backup integrity without affecting production data.
+        See <a href="https://github.com/shiekh-directory/docs/restore-drill.md" className="text-blue-600 underline">restore-drill.md</a> for the runbook.
+      </p>
+      {loading ? (
+        <p className="text-sm text-gray-500">Loading drill status...</p>
+      ) : lastDrill ? (
+        <div className="bg-gray-50 rounded-md p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">Last Drill:</span>
+            <span className="text-sm text-gray-900">{lastDrill.drillId}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">Completed:</span>
+            <span className="text-sm text-gray-900">{new Date(lastDrill.completedAt).toLocaleString()}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">Status:</span>
+            <span className={`text-sm font-semibold ${lastDrill.status === 'success' ? 'text-green-600' : lastDrill.status === 'partial' ? 'text-amber-600' : 'text-red-600'}`}>
+              {lastDrill.status.toUpperCase()}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">Documents Validated:</span>
+            <span className="text-sm text-gray-900">{lastDrill.totalRestored} / {lastDrill.totalExpected}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+          <p className="text-sm text-amber-800">No restore drills have been run yet.</p>
+          <p className="text-xs text-amber-600 mt-1">Run: npx ts-node scripts/restore-drill.ts --project shiekh-directory-v2 --snapshot &lt;id&gt;</p>
+        </div>
+      )}
     </div>
   );
 }

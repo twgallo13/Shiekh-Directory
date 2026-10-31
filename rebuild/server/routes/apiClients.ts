@@ -47,6 +47,7 @@ export function createApiClientsRouter(db: Firestore): Router {
           version: data.version,
           createdAt: data.createdAt,
           lastUsedAt: data.lastUsedAt,
+          rateLimit: data.rateLimit,
         };
       });
       res.json({ clients });
@@ -124,6 +125,7 @@ export function createApiClientsRouter(db: Firestore): Router {
           active: true,
           version: 1,
           createdAt: now,
+          rateLimit: 60,
         },
         token,
       });
@@ -133,6 +135,77 @@ export function createApiClientsRouter(db: Firestore): Router {
         error: {
           code: 'internal_error',
           message: 'Failed to create API client',
+          requestId: res.locals.requestId || 'unknown',
+        },
+      });
+    }
+  });
+
+  router.post('/:id/rate-limit', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { rateLimit } = req.body;
+
+      if (typeof rateLimit !== 'number' || rateLimit < 0 || rateLimit > 10000) {
+        return res.status(400).json({
+          error: {
+            code: 'invalid_request',
+            message: 'Rate limit must be a number between 0 (unlimited) and 10000',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      const docRef = db.collection('apiClients').doc(id);
+      const doc = await docRef.get();
+
+      if (!doc.exists) {
+        return res.status(404).json({
+          error: {
+            code: 'not_found',
+            message: 'API client not found',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      const data = doc.data() as Omit<ApiClientDocument, 'id'>;
+      const oldRateLimit = data.rateLimit ?? 60;
+      const now = new Date().toISOString();
+
+      await docRef.update({ rateLimit });
+
+      const authUser = res.locals.authUser as AuthUser;
+      await db.collection('audit').add({
+        timestamp: now,
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'api-client',
+        entityId: id,
+        entityName: data.name,
+        changes: [{ field: 'rateLimit', oldValue: oldRateLimit, newValue: rateLimit }],
+      });
+
+      res.json({
+        client: {
+          id,
+          name: data.name,
+          scopes: data.scopes,
+          active: data.active,
+          version: data.version,
+          createdAt: data.createdAt,
+          lastUsedAt: data.lastUsedAt,
+          rateLimit,
+        },
+      });
+    } catch (error) {
+      console.error('Error updating rate limit:', error);
+      res.status(500).json({
+        error: {
+          code: 'internal_error',
+          message: 'Failed to update rate limit',
           requestId: res.locals.requestId || 'unknown',
         },
       });
@@ -194,6 +267,7 @@ export function createApiClientsRouter(db: Firestore): Router {
           version: data.version + 1,
           createdAt: data.createdAt,
           lastUsedAt: data.lastUsedAt,
+          rateLimit: data.rateLimit,
         },
       });
     } catch (error) {
@@ -266,6 +340,7 @@ export function createApiClientsRouter(db: Firestore): Router {
           version: data.version + 1,
           createdAt: data.createdAt,
           lastUsedAt: data.lastUsedAt,
+          rateLimit: data.rateLimit,
         },
         token,
       });

@@ -9,14 +9,16 @@ import {
   revokeApiClient,
   rotateApiClient,
   updateApiClientScopes,
+  updateApiClientRateLimit,
   type ApiClientSummary,
 } from '../../lib/apiClientAdminClient';
 import { API_SCOPES, parseApiScopes, type ApiScope } from '../../lib/apiScopes';
 
 type PendingAction = {
-  kind: 'disable' | 'rotate' | 'rotate-immediate' | 'revoke' | 'scopes';
+  kind: 'disable' | 'rotate' | 'rotate-immediate' | 'revoke' | 'scopes' | 'rate-limit';
   client: ApiClientSummary;
   scopes?: ApiScope[];
+  rateLimit?: number;
 };
 
 export function ApiClientsPanel() {
@@ -24,6 +26,7 @@ export function ApiClientsPanel() {
   const [name, setName] = useState('');
   const [newScopes, setNewScopes] = useState<ApiScope[]>(['locations:read']);
   const [scopeDraft, setScopeDraft] = useState<{ client: ApiClientSummary; scopes: ApiScope[] } | null>(null);
+  const [rateLimitDraft, setRateLimitDraft] = useState<{ client: ApiClientSummary; rateLimit: number } | null>(null);
   const [issuedToken, setIssuedToken] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [confirmationValue, setConfirmationValue] = useState('');
@@ -73,6 +76,9 @@ export function ApiClientsPanel() {
       if (action.kind === 'scopes' && action.scopes) {
         replaceClient(await updateApiClientScopes(action.client, action.scopes));
         setScopeDraft(null); setNotice(`${action.client.name} grants updated for all active tokens.`);
+      } else if (action.kind === 'rate-limit' && action.rateLimit !== undefined) {
+        replaceClient(await updateApiClientRateLimit(action.client.id, action.rateLimit));
+        setRateLimitDraft(null); setNotice(`${action.client.name} rate limit updated to ${action.rateLimit === 0 ? 'unlimited' : `${action.rateLimit}/min`}.`);
       } else if (action.kind === 'disable') {
         replaceClient(await disableApiClient(action.client.id)); setNotice(`${action.client.name} disabled.`);
       } else if (action.kind === 'revoke') {
@@ -121,9 +127,10 @@ export function ApiClientsPanel() {
         {clients.map(client => <article key={client.id} className="space-y-3 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="text-sm font-semibold text-neutral-900">{client.name}</h4><p className="mt-1 break-all font-mono text-xs text-neutral-500">{client.scopes.join(', ')}</p></div><span className={`rounded px-2 py-1 text-xs font-semibold ${client.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : client.status === 'Disabled' ? 'bg-amber-100 text-amber-900' : 'bg-red-100 text-red-800'}`}>{client.status}</span></div>
           <p className="break-all text-[11px] text-neutral-500">Client ID: <code>{client.id}</code></p>
-          <dl className="grid gap-1 text-xs text-neutral-600 sm:grid-cols-2"><div><dt className="inline font-semibold text-neutral-800">Last used: </dt><dd className="inline">{client.lastUsedAt ? new Date(client.lastUsedAt).toLocaleString() : 'Never'}</dd></div><div><dt className="inline font-semibold text-neutral-800">Token versions: </dt><dd className="inline">{client.tokenVersions.length}</dd></div></dl>
+          <dl className="grid gap-1 text-xs text-neutral-600 sm:grid-cols-2"><div><dt className="inline font-semibold text-neutral-800">Last used: </dt><dd className="inline">{client.lastUsedAt ? new Date(client.lastUsedAt).toLocaleString() : 'Never'}</dd></div><div><dt className="inline font-semibold text-neutral-800">Token versions: </dt><dd className="inline">{client.tokenVersions.length}</dd></div><div><dt className="inline font-semibold text-neutral-800">Rate limit: </dt><dd className="inline">{(client.rateLimit ?? 60) === 0 ? 'Unlimited' : `${client.rateLimit ?? 60}/min`}</dd></div></dl>
           {client.status !== 'Revoked' && <div className="flex flex-wrap gap-2">
             <button type="button" disabled={controlsLocked} onClick={() => setScopeDraft({ client, scopes: [...client.scopes] })} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">Edit grants</button>
+            <button type="button" disabled={controlsLocked} onClick={() => setRateLimitDraft({ client, rateLimit: client.rateLimit ?? 60 })} className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">Edit rate limit</button>
             {client.status === 'Active' ? <button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'disable', client })} className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-2.5 py-1.5 text-xs font-semibold text-amber-900"><ShieldOff className="h-3.5 w-3.5" />Disable</button> : <button type="button" disabled={controlsLocked} onClick={() => void enable(client)} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 px-2.5 py-1.5 text-xs font-semibold text-emerald-800"><ShieldCheck className="h-3.5 w-3.5" />Re-enable</button>}
             {client.status === 'Active' && <><button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'rotate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold text-neutral-700"><KeyRound className="h-3.5 w-3.5" />Rotate, 24h overlap</button><button type="button" disabled={controlsLocked} onClick={() => setPending({ kind: 'rotate-immediate', client })} className="inline-flex items-center gap-1.5 rounded-md border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700"><KeyRound className="h-3.5 w-3.5" />Rotate immediately</button></>}
             <button type="button" disabled={controlsLocked} onClick={() => { setConfirmationValue(''); setPending({ kind: 'revoke', client }); }} className="inline-flex items-center gap-1.5 rounded-md bg-red-700 px-2.5 py-1.5 text-xs font-semibold text-white">Revoke</button>
@@ -136,6 +143,23 @@ export function ApiClientsPanel() {
         <button type="button" disabled={busy || !parseApiScopes(scopeDraft.scopes)} onClick={() => setPending({ kind: 'scopes', client: scopeDraft.client, scopes: [...scopeDraft.scopes] })} className="rounded border px-3 py-2 text-xs">Review grant change</button>
         <button type="button" disabled={busy} onClick={() => setScopeDraft(null)} className="ml-2 text-xs underline">Cancel grant edit</button>
       </div>}
+      {rateLimitDraft && <div className="space-y-3 rounded-md border border-blue-300 p-3">
+        <label className="block text-xs font-semibold">Rate limit for {rateLimitDraft.client.name}
+          <select disabled={busy} value={rateLimitDraft.rateLimit} onChange={e => setRateLimitDraft({ ...rateLimitDraft, rateLimit: Number(e.target.value) })} className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm">
+            <option value={0}>Unlimited</option>
+            <option value={10}>10 requests/min</option>
+            <option value={30}>30 requests/min</option>
+            <option value={60}>60 requests/min (default)</option>
+            <option value={120}>120 requests/min</option>
+            <option value={300}>300 requests/min</option>
+            <option value={600}>600 requests/min</option>
+            <option value={1000}>1000 requests/min</option>
+          </select>
+        </label>
+        <p className="text-xs">Rate limiting protects the API from abuse. Requests over the limit receive 429 with a Retry-After header.</p>
+        <button type="button" disabled={busy} onClick={() => setPending({ kind: 'rate-limit', client: rateLimitDraft.client, rateLimit: rateLimitDraft.rateLimit })} className="rounded border px-3 py-2 text-xs">Confirm rate limit</button>
+        <button type="button" disabled={busy} onClick={() => setRateLimitDraft(null)} className="ml-2 text-xs underline">Cancel</button>
+      </div>}
 
       <ConfirmDialog isOpen={Boolean(pending)} title={confirmationTitle(pending)} description={confirmationDescription(pending)} confirmLabel={confirmationLabel(pending)} confirmationText={pending?.kind === 'revoke' ? pending.client.name : undefined} confirmationValue={confirmationValue} onConfirmationValueChange={setConfirmationValue} tone={pending?.kind === 'revoke' || pending?.kind === 'rotate-immediate' ? 'danger' : 'primary'} confirmDisabled={busy} cancelDisabled={busy} onConfirm={() => void confirmAction()} onCancel={() => { if (!busy) { setPending(null); setConfirmationValue(''); } }} />
     </section>
@@ -144,6 +168,7 @@ export function ApiClientsPanel() {
 
 function confirmationTitle(pending: PendingAction | null): string {
   if (pending?.kind === 'scopes') return `Change ${pending.client.name} grants?`;
+  if (pending?.kind === 'rate-limit') return `Change ${pending.client.name} rate limit?`;
   if (pending?.kind === 'disable') return `Disable ${pending.client.name}?`;
   if (pending?.kind === 'rotate') return `Rotate ${pending.client.name}?`;
   if (pending?.kind === 'rotate-immediate') return `Retire old token immediately?`;
@@ -152,6 +177,7 @@ function confirmationTitle(pending: PendingAction | null): string {
 
 function confirmationDescription(pending: PendingAction | null): string {
   if (pending?.kind === 'scopes') return `Client ${pending.client.id}. Current: ${pending.client.scopes.join(', ')}. Proposed: ${pending.scopes?.join(', ')}. This immediately changes every active token's access and invalidates existing snapshots; tokens are not rotated. Work email is contact only, never account permission.`;
+  if (pending?.kind === 'rate-limit') return `Current: ${(pending.client.rateLimit ?? 60) === 0 ? 'Unlimited' : `${pending.client.rateLimit ?? 60}/min`}. New: ${pending.rateLimit === 0 ? 'Unlimited' : `${pending.rateLimit}/min`}. This takes effect immediately for all requests.`;
   if (pending?.kind === 'disable') return 'Requests from every token for this client will be denied until the client is re-enabled.';
   if (pending?.kind === 'rotate') return 'A new token will be shown once. Existing active tokens will remain valid for at most 24 hours.';
   if (pending?.kind === 'rotate-immediate') return 'A new token will be shown once and every previous token will stop working immediately.';
@@ -160,6 +186,7 @@ function confirmationDescription(pending: PendingAction | null): string {
 
 function confirmationLabel(pending: PendingAction | null): string {
   if (pending?.kind === 'scopes') return 'Confirm explicit grants';
+  if (pending?.kind === 'rate-limit') return 'Update rate limit';
   if (pending?.kind === 'disable') return 'Disable client';
   if (pending?.kind === 'rotate') return 'Rotate with overlap';
   if (pending?.kind === 'rotate-immediate') return 'Rotate and retire now';

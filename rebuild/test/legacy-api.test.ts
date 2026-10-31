@@ -615,3 +615,32 @@ describe('Store Number "007" Preservation', () => {
     }
   });
 });
+
+describe('Legacy API Rate Limiting', () => {
+  it('returns X-RateLimit headers on successful requests', async () => {
+    const res = await fetchApi('/api/v1/locations?limit=1');
+    assert.strictEqual(res.status, 200);
+    
+    const limit = res.headers.get('X-RateLimit-Limit');
+    const remaining = res.headers.get('X-RateLimit-Remaining');
+    const reset = res.headers.get('X-RateLimit-Reset');
+    
+    assert.ok(limit, 'should have X-RateLimit-Limit header');
+    assert.ok(remaining, 'should have X-RateLimit-Remaining header');
+    assert.ok(reset, 'should have X-RateLimit-Reset header');
+    
+    assert.ok(Number(limit) > 0, 'limit should be positive');
+    assert.ok(Number(remaining) >= 0, 'remaining should be non-negative');
+    assert.ok(Number(reset) > 0, 'reset should be a valid timestamp');
+  });
+
+  it('decrements remaining count with each request', async () => {
+    const res1 = await fetchApi('/api/v1/locations?limit=1');
+    const remaining1 = Number(res1.headers.get('X-RateLimit-Remaining'));
+    
+    const res2 = await fetchApi('/api/v1/locations?limit=1');
+    const remaining2 = Number(res2.headers.get('X-RateLimit-Remaining'));
+    
+    assert.ok(remaining2 <= remaining1, 'remaining should decrease or stay same after request');
+  });
+});

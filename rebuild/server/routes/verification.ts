@@ -25,25 +25,56 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      if (authUser.role !== 'Admin' && authUser.role !== 'Steward') {
+      const isAdminOrSteward = authUser.role === 'Admin' || authUser.role === 'Steward';
+      const isLeaderWithScope = authUser.role === 'Leader' && authUser.leaderScope?.locationIds?.length;
+
+      if (!isAdminOrSteward && !isLeaderWithScope) {
         return res.status(403).json({
-          error: { code: 'forbidden', message: 'Only Admin and Steward can view verification requests', requestId: res.locals.requestId },
+          error: { code: 'forbidden', message: 'Access denied to verification requests', requestId: res.locals.requestId },
         });
       }
 
-      let query = db.collection('verificationRequests')
-        .orderBy('sentAt', 'desc')
-        .limit(100);
+      let snapshot;
 
-      if (status) {
-        query = query.where('status', '==', status);
+      if (isLeaderWithScope && !isAdminOrSteward) {
+        const leaderLocationIds = authUser.leaderScope!.locationIds;
+        
+        if (locationId && !leaderLocationIds.includes(locationId as string)) {
+          return res.status(403).json({
+            error: { code: 'forbidden', message: 'You can only view verification requests for your stores', requestId: res.locals.requestId },
+          });
+        }
+
+        const targetLocationIds = locationId 
+          ? [locationId as string] 
+          : leaderLocationIds.slice(0, 30);
+
+        let query = db.collection('verificationRequests')
+          .where('locationId', 'in', targetLocationIds)
+          .orderBy('sentAt', 'desc')
+          .limit(100);
+
+        if (status) {
+          query = query.where('status', '==', status);
+        }
+
+        snapshot = await query.get();
+      } else {
+        let query = db.collection('verificationRequests')
+          .orderBy('sentAt', 'desc')
+          .limit(100);
+
+        if (status) {
+          query = query.where('status', '==', status);
+        }
+
+        if (locationId) {
+          query = query.where('locationId', '==', locationId);
+        }
+
+        snapshot = await query.get();
       }
 
-      if (locationId) {
-        query = query.where('locationId', '==', locationId);
-      }
-
-      const snapshot = await query.get();
       const requests = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),

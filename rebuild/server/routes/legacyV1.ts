@@ -29,9 +29,26 @@ export function createLegacyV1Router(db: Firestore): Router {
 
   router.use(requireLegacyScope('locations:read'));
 
-  router.get('/location-fields', (_req: Request, res: Response) => {
-    const version = computeVersion([]);
-    res.json({ version, fields: [] });
+  router.get('/location-fields', async (_req: Request, res: Response) => {
+    try {
+      const snapshot = await db.collection('customFields').orderBy('name').get();
+      const fields = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name,
+          type: data.type,
+          options: data.options,
+          required: data.required,
+          description: data.description,
+        };
+      });
+      const version = computeVersion(fields);
+      res.json({ version, fields });
+    } catch (error) {
+      console.error('Get location fields error:', error);
+      res.json({ version: computeVersion([]), fields: [] });
+    }
   });
 
   router.get('/locations', async (req: Request, res: Response) => {

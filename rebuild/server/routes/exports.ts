@@ -319,7 +319,7 @@ function generateCsv(locations: ExportLocation[], userRole: string): string {
   ];
 
   const rows = locations.map(loc => [
-    escapeCsvValue(loc.storeNumber),
+    formatStoreNumberForExcel(loc.storeNumber),
     escapeCsvValue(loc.name),
     escapeCsvValue(loc.kind),
     escapeCsvValue(loc.address),
@@ -334,8 +334,8 @@ function generateCsv(locations: ExportLocation[], userRole: string): string {
     escapeCsvValue(loc.districtId),
     escapeCsvValue(loc.districtName),
     escapeCsvValue(loc.storeManager),
-    escapeCsvValue(loc.storeManagerPhone),
-    ...(showMobile ? [escapeCsvValue(loc.storeManagerMobile)] : []),
+    escapeCsvValue(formatPhoneForCsv(loc.storeManagerPhone)),
+    ...(showMobile ? [escapeCsvValue(formatPhoneForCsv(loc.storeManagerMobile))] : []),
     escapeCsvValue(loc.districtManager),
     escapeCsvValue(loc.assistantStoreManagers.join('; ')),
     escapeCsvValue(loc.keyHolders.join('; ')),
@@ -346,12 +346,29 @@ function generateCsv(locations: ExportLocation[], userRole: string): string {
   return bom + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
 }
 
+function formatStoreNumberForExcel(storeNumber: string): string {
+  return `="${storeNumber}"`;
+}
+
+function formatPhoneForCsv(phone: string): string {
+  if (!phone) return '';
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 11 && cleaned.startsWith('1')) {
+    const digits = cleaned.slice(1);
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (cleaned.length === 10) {
+    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+  }
+  return phone;
+}
+
 function escapeCsvValue(value: string): string {
   if (!value) return '';
   if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
     return `"${value.replace(/"/g, '""')}"`;
   }
-  if (/^[=+\-@\t\r]/.test(value)) {
+  if (/^[=@\-\t]/.test(value)) {
     return `"'${value}"`;
   }
   return value;

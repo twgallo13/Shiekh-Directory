@@ -1,37 +1,8 @@
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
-import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { seedTestUsers } from './testHelpers';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
-const PROJECT_ID = process.env.GCLOUD_PROJECT || 'shiekh-directory-rebuild-placeholder';
-
-function getTestDb() {
-  if (getApps().length === 0) {
-    initializeApp({ projectId: PROJECT_ID });
-  }
-  const db = getFirestore();
-  db.settings({ ignoreUndefinedProperties: true });
-  return db;
-}
-
-async function seedTestUsers(): Promise<void> {
-  const db = getTestDb();
-  const users = [
-    { id: 'admin', email: 'admin@test.com', displayName: 'Test Admin', role: 'Admin', status: 'active', version: 1 },
-    { id: 'viewer', email: 'viewer@test.com', displayName: 'Test Viewer', role: 'Viewer', status: 'active', version: 1 },
-    { id: 'steward', email: 'steward@test.com', displayName: 'Test Steward', role: 'Steward', status: 'active', version: 1 },
-    { id: 'leader', email: 'leader@test.com', displayName: 'Test Leader', role: 'Leader', status: 'active', version: 1 },
-  ];
-
-  for (const user of users) {
-    await db.collection('users').doc(user.id).set({
-      ...user,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-  }
-}
 
 async function fetchApi(path: string, options: RequestInit = {}): Promise<Response> {
   return fetch(`${API_BASE}${path}`, {

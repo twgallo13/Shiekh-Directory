@@ -166,7 +166,7 @@ export function createLegacyV2Router(db: Firestore): Router {
       const id = req.params.id;
       const credential = res.locals.apiCredential as ApiCredential;
 
-      const allowed = isDetail ? ['snapshot'] : ['snapshot', 'cursor', 'limit'];
+      const allowed = isDetail ? ['snapshot'] : ['snapshot', 'cursor', 'limit', 'kind'];
       if (Object.keys(req.query).some(key => !allowed.includes(key))) {
         return sendLegacyError(res, 400, 'invalid_query', 'A snapshot is required; only documented query parameters are accepted.');
       }
@@ -228,8 +228,19 @@ export function createLegacyV2Router(db: Firestore): Router {
         });
       }
 
+      const kindParam = req.query.kind;
+      const kinds = kindParam 
+        ? String(kindParam).split(',').map(k => k.trim()).filter(Boolean)
+        : ['store'];
+      
+      const validKinds = ['store', 'warehouse', 'office'];
+      if (!kinds.every(k => validKinds.includes(k))) {
+        return sendLegacyError(res, 400, 'invalid_kind', `kind must be one or more of: ${validKinds.join(', ')}`);
+      }
+
       let query = db.collection('locations')
         .where('lifecycle', '==', 'active')
+        .where('kind', 'in', kinds)
         .orderBy('__name__')
         .limit(limit + 1);
 

@@ -8,6 +8,7 @@ import { CorrectionsQueue } from './components/CorrectionsQueue';
 import { BulkHolidayManager } from './components/BulkHolidayManager';
 import { VerificationRequestsView } from './components/VerificationRequestsView';
 import { PrintableDirectoryView } from './components/PrintableDirectoryView';
+import { AdminView } from './components/AdminView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -92,6 +93,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <PrintableDirectoryView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminView />
           </ProtectedRoute>
         }
       />

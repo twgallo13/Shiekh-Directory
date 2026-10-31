@@ -214,6 +214,18 @@ export function DirectoryView() {
               <Printer className="w-4 h-4" />
               Print / Export
             </button>
+            {authUser?.role === 'Admin' && (
+              <button
+                onClick={() => {
+                  navigate('/admin');
+                  setMenuOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+              >
+                <User className="w-4 h-4" />
+                Admin
+              </button>
+            )}
             <button
               onClick={() => {
                 signOut();

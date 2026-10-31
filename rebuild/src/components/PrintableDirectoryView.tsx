@@ -228,105 +228,92 @@ export function PrintableDirectoryView() {
       <div className="max-w-[1200px] mx-auto p-4 print:p-0 print:max-w-none">
         <div className="bg-white rounded-lg border border-gray-200 p-6 print:border-none print:rounded-none print:shadow-none">
           {/* Header */}
-          <div className="mb-4 flex items-center justify-between border-b-2 border-gray-900 pb-2">
+          <div className="mb-2 print:mb-1 flex items-center justify-between border-b-2 border-gray-900 pb-1">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="bg-red-600 text-white text-[11px] font-black px-2 py-0.5 rounded tracking-wider">
+              <div className="flex items-center gap-1">
+                <span className="bg-red-600 text-white text-[9px] print:text-[8px] font-black px-1.5 py-px rounded tracking-wider">
                   SHIEKH
                 </span>
-                <h1 className="text-base font-black tracking-tight text-gray-900 uppercase">
-                  Master Retail Store Directory
+                <h1 className="text-sm print:text-[10px] font-black tracking-tight text-gray-900 uppercase">
+                  Store Directory
                 </h1>
               </div>
-              <p className="text-[10px] text-gray-600 mt-0.5 font-medium">
-                Official Corporate Fleet Roster • Shiekh Shoes Operational Directory
-              </p>
             </div>
             <div className="text-right">
-              <div className="text-[11px] font-bold text-gray-900 font-mono">
-                Total Stores: {totalStores}
-              </div>
-              <div className="text-[9px] text-gray-500">
-                Published: {currentDate} • Internal Operational Reference
-              </div>
+              <span className="text-[9px] print:text-[8px] font-bold text-gray-900 font-mono">
+                {totalStores} Stores
+              </span>
+              <span className="text-[8px] print:text-[7px] text-gray-500 ml-2">
+                {currentDate}
+              </span>
             </div>
           </div>
 
           {/* Role Notice */}
           {!exportData?.canViewMobilePhones && (
-            <div className="mb-3 text-[9px] text-amber-700 bg-amber-50 px-2 py-1 rounded">
-              Mobile phone numbers are restricted. Contact information shown is work phone only.
+            <div className="mb-1 print:mb-0.5 text-[8px] print:text-[7px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded print:hidden">
+              Mobile numbers restricted to authorized roles.
             </div>
           )}
 
           {/* Districts */}
-          <div className="space-y-4 print:space-y-1">
+          <div className="print:space-y-0">
             {filteredDistricts.map(district => (
-              <div key={district.id} className="break-inside-avoid">
+              <div key={district.id}>
                 {/* District Header */}
-                <div className="mb-1 flex items-center justify-between border-y border-gray-300 bg-gray-100 px-3 py-1 text-[11px] font-bold text-gray-900">
-                  <span className="uppercase tracking-wider text-red-700">
-                    {district.name} ({district.stores.length} Stores)
+                <div className="flex items-center justify-between border-y border-gray-300 bg-gray-100 px-1 py-0.5 print:py-px text-[9px] print:text-[8px] font-bold text-gray-900">
+                  <span className="uppercase tracking-wide text-red-700">
+                    {district.name} ({district.stores.length})
                   </span>
                   {district.districtManager && (
-                    <span className="text-gray-700 text-[10px] font-medium">
-                      District Manager: <strong className="text-gray-900 font-semibold">{district.districtManager}</strong>
+                    <span className="text-gray-700 text-[8px] print:text-[7px] font-medium">
+                      DM: <strong className="text-gray-900">{district.districtManager}</strong>
                     </span>
                   )}
                 </div>
 
                 {/* Stores Table */}
-                <table className="w-full text-left text-[10px] border-collapse">
+                <table className="w-full text-left text-[9px] print:text-[8px] border-collapse">
                   <thead>
-                    <tr className="border-b border-gray-200 text-gray-500 uppercase text-[8.5px] tracking-wider font-semibold">
-                      <th className="py-1 px-1.5 w-12">Store #</th>
-                      <th className="py-1 px-1.5">Store / Center Name</th>
-                      <th className="py-1 px-1.5">Street Address</th>
-                      <th className="py-1 px-1.5 w-24">City</th>
-                      <th className="py-1 px-1.5 w-8">ST</th>
-                      <th className="py-1 px-1.5 w-28">Phone</th>
-                      <th className="py-1 px-1.5 w-36">Store Manager</th>
-                      <th className="py-1 px-1.5 w-32">District Manager</th>
+                    <tr className="border-b border-gray-200 text-gray-500 uppercase text-[7px] print:text-[6px] tracking-wide font-semibold">
+                      <th className="py-px px-0.5 w-8 print:w-6">#</th>
+                      <th className="py-px px-0.5">Store Name</th>
+                      <th className="py-px px-0.5">Address</th>
+                      <th className="py-px px-0.5 w-20 print:w-16">City</th>
+                      <th className="py-px px-0.5 w-6 print:w-5">ST</th>
+                      <th className="py-px px-0.5 w-24 print:w-20">Phone</th>
+                      <th className="py-px px-0.5 w-32 print:w-28">Store Manager</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100 font-normal">
+                  <tbody className="font-normal">
                     {district.stores.map((store, idx) => (
                       <tr
                         key={store.id}
-                        className={`hover:bg-gray-50/60 ${idx % 2 === 1 ? 'bg-gray-50/30' : ''}`}
+                        className={`print:break-inside-avoid ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}
                       >
-                        <td className="py-1 px-1.5 font-mono font-bold text-gray-900 whitespace-nowrap">
-                          #{store.storeNumber}
+                        <td className="py-px px-0.5 font-mono font-bold text-gray-900 whitespace-nowrap">
+                          {store.storeNumber}
                         </td>
-                        <td className="py-1 px-1.5 font-medium text-gray-900">
-                          <span>{store.name}</span>
-                          {store.assistantStoreManagers.length > 0 && (
-                            <span className="block text-[9px] font-normal text-gray-600">
-                              ASM: {store.assistantStoreManagers.join(', ')}
-                            </span>
-                          )}
+                        <td className="py-px px-0.5 font-medium text-gray-900 truncate max-w-[120px] print:max-w-[100px]">
+                          {store.name}
                         </td>
-                        <td className="py-1 px-1.5 text-gray-600 truncate max-w-[180px]">
-                          {store.address}
-                          {store.suite && `, ${store.suite}`}
+                        <td className="py-px px-0.5 text-gray-600 truncate max-w-[150px] print:max-w-[120px]">
+                          {store.address}{store.suite ? ` #${store.suite}` : ''}
                         </td>
-                        <td className="py-1 px-1.5 text-gray-800 whitespace-nowrap font-medium">
+                        <td className="py-px px-0.5 text-gray-800 whitespace-nowrap truncate">
                           {store.city}
                         </td>
-                        <td className="py-1 px-1.5 text-gray-700 font-bold whitespace-nowrap">
+                        <td className="py-px px-0.5 text-gray-700 font-bold whitespace-nowrap">
                           {store.state}
                         </td>
-                        <td className="py-1 px-1.5 font-mono font-semibold text-gray-900 whitespace-nowrap">
+                        <td className="py-px px-0.5 font-mono text-gray-900 whitespace-nowrap text-[8px] print:text-[7px]">
                           {store.phoneFormatted}
                         </td>
-                        <td className="py-1 px-1.5 text-gray-700 truncate max-w-[140px]">
-                          {store.storeManager || <span className="text-gray-400 italic">Open Position</span>}
+                        <td className="py-px px-0.5 text-gray-700 truncate max-w-[130px] print:max-w-[110px]">
+                          {store.storeManager || <span className="text-gray-400 italic text-[7px]">Open</span>}
                           {exportData?.canViewMobilePhones && store.storeManagerMobile && (
-                            <span className="block text-[8px] text-gray-500">📱 {store.storeManagerMobile}</span>
+                            <span className="text-[7px] text-gray-500 ml-1">📱{store.storeManagerMobile.replace(/[^\d]/g, '').slice(-4)}</span>
                           )}
-                        </td>
-                        <td className="py-1 px-1.5 text-gray-700 truncate max-w-[130px]">
-                          {store.districtManager || <span className="text-gray-400 italic">Unassigned</span>}
                         </td>
                       </tr>
                     ))}
@@ -337,12 +324,12 @@ export function PrintableDirectoryView() {
           </div>
 
           {/* Footer */}
-          <div className="mt-4 flex items-center justify-between border-t border-gray-300 pt-2 text-[9px] text-gray-500">
+          <div className="mt-1 print:mt-0.5 flex items-center justify-between border-t border-gray-300 pt-1 print:pt-0.5 text-[8px] print:text-[7px] text-gray-500">
             <div>
-              Exported by {authUser?.email || 'User'} ({authUser?.role || 'Unknown'})
+              {authUser?.email || 'User'}
             </div>
             <div>
-              Shiekh Shoes Retail Directory • Confidential & Proprietary
+              Shiekh Confidential • {currentDate}
             </div>
           </div>
         </div>
@@ -352,13 +339,18 @@ export function PrintableDirectoryView() {
       <style>{`
         @media print {
           @page {
-            size: landscape;
-            margin: 0.25in;
+            size: letter landscape;
+            margin: 0.2in 0.15in;
           }
           body {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            font-size: 8px !important;
+            line-height: 1.1 !important;
           }
+          table { border-collapse: collapse; }
+          tr { break-inside: avoid; }
+          td, th { padding: 1px 2px !important; }
         }
       `}</style>
     </div>

@@ -304,25 +304,25 @@ export function HierarchyView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="bg-gray-50 min-h-[calc(100vh-56px)] flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-3">
+    <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
+      <header className="bg-white border-b border-gray-200 sticky top-14 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate('/')} className="text-gray-600 hover:text-gray-900">
+            <button onClick={() => navigate('/')} className="text-gray-600 hover:text-gray-900 lg:hidden">
               <ArrowLeft className="w-6 h-6" />
             </button>
             <h1 className="text-xl font-bold text-gray-900">Organizational Hierarchy</h1>
             {canManage && (
               <button
                 onClick={openCreateRegion}
-                className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
               >
                 <Plus className="w-4 h-4" />
                 Add Region
@@ -332,7 +332,7 @@ export function HierarchyView() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto p-4">
+      <div className="max-w-7xl mx-auto p-4 lg:p-6">
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
             {error}

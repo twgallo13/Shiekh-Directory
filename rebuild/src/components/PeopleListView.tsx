@@ -85,18 +85,18 @@ export function PeopleListView() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-3">
+    <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
+      <header className="bg-white border-b border-gray-200 sticky top-14 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate('/')} className="text-gray-600 hover:text-gray-900">
+            <button onClick={() => navigate('/')} className="text-gray-600 hover:text-gray-900 lg:hidden">
               <ArrowLeft className="w-6 h-6" />
             </button>
             <h1 className="text-xl font-bold text-gray-900">People</h1>
             {canManage && (
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="ml-auto flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
               >
                 <UserPlus className="w-4 h-4" />
                 Add Person
@@ -106,9 +106,9 @@ export function PeopleListView() {
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto p-4">
-        <div className="flex gap-2 mb-4">
-          <div className="relative flex-1">
+      <div className="max-w-7xl mx-auto p-4 lg:p-6">
+        <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <div className="relative flex-1 lg:max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
@@ -144,7 +144,7 @@ export function PeopleListView() {
             {searchQuery ? 'No people match your search' : 'No people found'}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {people.map((person) => (
               <button
                 key={person.id}

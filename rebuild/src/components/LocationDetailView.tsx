@@ -106,17 +106,10 @@ export function LocationDetailView() {
   
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-blue-700 text-white sticky top-0 z-20">
-          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-1 hover:bg-blue-600 rounded-lg">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-lg font-semibold">Loading...</h1>
-          </div>
-        </header>
+      <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
     );
@@ -124,15 +117,7 @@ export function LocationDetailView() {
   
   if (error || !location) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-blue-700 text-white sticky top-0 z-20">
-          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-1 hover:bg-blue-600 rounded-lg">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-lg font-semibold">Error</h1>
-          </div>
-        </header>
+      <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
         <div className="text-center py-12">
           <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto" />
           <p className="mt-4 text-gray-600">{error || 'Location not found'}</p>
@@ -148,22 +133,40 @@ export function LocationDetailView() {
   }
   
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
-      {/* Header */}
-      <header className="bg-blue-700 text-white sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-1 hover:bg-blue-600 rounded-lg">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-semibold truncate">
-              #{location.storeNumber} {location.name}
-            </h1>
+    <div className="bg-gray-50 pb-8 min-h-[calc(100vh-56px)]">
+      {/* Page Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => navigate(-1)} 
+              className="p-2 hover:bg-gray-100 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center lg:hidden"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-600" />
+            </button>
+            <button 
+              onClick={() => navigate('/')} 
+              className="hidden lg:flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Directory
+            </button>
+            <div className="flex-1 min-w-0 lg:text-center lg:flex-none">
+              <h1 className="text-xl font-semibold text-gray-900 truncate">
+                #{location.storeNumber} {location.name}
+              </h1>
+              <p className="text-sm text-gray-500 hidden lg:block">
+                {location.districtName} • {location.regionName}
+              </p>
+            </div>
+            <div className="hidden lg:block">
+              <StatusBadge status={location.statusNow.state} large />
+            </div>
           </div>
         </div>
-      </header>
+      </div>
       
-      <main className="max-w-3xl mx-auto px-4 py-4 space-y-4">
+      <main className="max-w-7xl mx-auto px-4 py-4 lg:py-6 space-y-4 lg:space-y-6">
         {/* Store Verification for Store accounts */}
         {authUser?.role === 'Store' && (
           <StoreVerificationPanel
@@ -172,19 +175,21 @@ export function LocationDetailView() {
           />
         )}
         
-        {/* Status & Basic Info */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">
-                #{location.storeNumber} {location.name}
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                {location.districtName} • {location.regionName}
-              </p>
+        {/* Desktop: Grid layout for cards */}
+        <div className="grid gap-4 lg:gap-6 lg:grid-cols-2">
+          {/* Status & Basic Info */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 lg:col-span-2 xl:col-span-1">
+            <div className="flex items-start justify-between gap-3 mb-4 lg:hidden">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  #{location.storeNumber} {location.name}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {location.districtName} • {location.regionName}
+                </p>
+              </div>
+              <StatusBadge status={location.statusNow.state} large />
             </div>
-            <StatusBadge status={location.statusNow.state} large />
-          </div>
           
           {/* Closure Alert */}
           {location.activeClosure && (
@@ -357,7 +362,7 @@ export function LocationDetailView() {
         </div>
         
         {/* Address */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <MapPin className="w-4 h-4" />
@@ -390,7 +395,7 @@ export function LocationDetailView() {
         </div>
 
         {/* How to Find Us - Wayfinding Directions */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <Navigation className="w-4 h-4" />
@@ -416,7 +421,7 @@ export function LocationDetailView() {
         </div>
         
         {/* Hours */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <Clock className="w-4 h-4" />
@@ -494,7 +499,7 @@ export function LocationDetailView() {
         </div>
         
         {/* Leadership */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 lg:col-span-2 xl:col-span-1">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <User className="w-4 h-4" />
@@ -691,7 +696,7 @@ export function LocationDetailView() {
         </div>
         
         {/* Store Info */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
           <h3 className="font-semibold text-gray-900 mb-3">Store Information</h3>
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
@@ -721,7 +726,7 @@ export function LocationDetailView() {
         
         {/* Report a Problem - available to all signed-in users */}
         {authUser && (
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-gray-900">See something wrong?</h3>
@@ -738,8 +743,9 @@ export function LocationDetailView() {
             </div>
           </div>
         )}
+        </div>
         
-        {/* Audit History - visible to Leader/Steward/Admin */}
+        {/* Audit History - visible to Leader/Steward/Admin - full width */}
         <AuditHistory
           locationId={location.id}
           locationName={`${location.storeNumber} ${location.name}`}

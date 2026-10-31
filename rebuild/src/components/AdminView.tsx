@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
+import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ComingSoonPlaceholder, ComingSoonSection } from './ComingSoonPlaceholder';
 import { HoursTemplatesView } from './HoursTemplatesView';
@@ -76,21 +76,13 @@ export function AdminView() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3">
+    <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
+      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => navigate('/')}
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <h1 className="text-xl font-bold text-gray-900">Admin</h1>
-            </div>
+            <h1 className="text-xl font-bold text-gray-900">Admin</h1>
           </div>
-          <div className="flex gap-1 mt-3 -mb-px overflow-x-auto">
+          <div className="flex gap-1 mt-3 -mb-px overflow-x-auto scrollbar-hide">
             <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users}>
               Users
             </TabButton>
@@ -119,7 +111,7 @@ export function AdminView() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-4 py-6">
         {activeTab === 'users' && <UsersTab getIdToken={getIdToken} />}
         {activeTab === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
         {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}

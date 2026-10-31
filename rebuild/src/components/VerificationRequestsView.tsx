@@ -135,7 +135,7 @@ export function VerificationRequestsView() {
 
   if (!authUser || !hasAccess) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="bg-gray-50 min-h-[calc(100vh-56px)] flex items-center justify-center">
         <div className="text-center">
           <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto" />
           <p className="mt-4 text-gray-600">Access denied</p>
@@ -145,29 +145,35 @@ export function VerificationRequestsView() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-blue-700 text-white sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate('/')} className="p-1 hover:bg-blue-600 rounded-lg">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h1 className="text-lg font-semibold flex-1">
-            Store Verification
-            {isLeader && <span className="text-sm font-normal ml-2 opacity-75">(Your Stores)</span>}
-          </h1>
-          {isAdminOrSteward && (
-            <button
-              onClick={() => setShowNewRequest(true)}
-              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-sm font-medium"
-            >
-              <Send className="w-4 h-4" />
-              Send Request
-            </button>
-          )}
+    <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
+      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => navigate('/')} className="p-2 hover:bg-gray-100 rounded-lg lg:hidden">
+                <ArrowLeft className="w-5 h-5 text-gray-600" />
+              </button>
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">
+                  Store Verification
+                </h1>
+                {isLeader && <p className="text-sm text-gray-500">Showing your stores only</p>}
+              </div>
+            </div>
+            {isAdminOrSteward && (
+              <button
+                onClick={() => setShowNewRequest(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                <Send className="w-4 h-4" />
+                <span className="hidden sm:inline">Send Request</span>
+              </button>
+            )}
+          </div>
         </div>
-      </header>
+      </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto px-4 py-4 lg:py-6">
         <div className="flex flex-wrap gap-2 mb-4">
           {(['pending', 'confirmed', 'expired', 'cancelled'] as const).map(status => (
             <button

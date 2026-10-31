@@ -1,4 +1,7 @@
 code,name,regionCode,lifecycle
+01,Central & Southern California,01,active
+02,Inland Empire San Diego & LA South,01,active
+03,Northern California Nevada & Texas,01,active
 LA-CENTRAL,LA Central District,WEST,active
 LA-NORTH,LA North District,WEST,active
 LA-WEST,LA West District,WEST,active

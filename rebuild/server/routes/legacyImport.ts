@@ -9,6 +9,7 @@ import type {
   AuthUser,
   Address,
   Assignment,
+  StandardHours,
 } from '../../src/types';
 import { normalizePhoneNumber } from '../utils/phone';
 import { createPreImportBackup } from '../scheduledBackup';
@@ -40,6 +41,7 @@ interface LegacyImportPreview {
 interface LegacyImportSession {
   preview: LegacyImportPreview;
   parsedRows: ParsedLocationRow[];
+  hoursData?: LegacyHoursData;
   userId: string;
   createdAt: string;
   expiresAt: string;
@@ -51,9 +53,33 @@ interface ParsedLocationRow {
   existingId?: string;
   data: Partial<Omit<Location, 'id'>>;
   smData?: { fullName: string; workPhone?: string; mobilePhone?: string };
+  dmData?: { fullName: string };
+  asmData?: { fullName: string }[];
   errors: string[];
   changes: string[];
 }
+
+interface LegacyHoursEntry {
+  open: string;
+  close: string;
+  isClosed: boolean;
+}
+
+interface LegacyHolidayHours {
+  id?: string;
+  holidayName: string;
+  date: string;
+  hours: LegacyHoursEntry;
+}
+
+interface LegacyStoreHours {
+  standardHours: Record<string, LegacyHoursEntry>;
+  holidayHours?: LegacyHolidayHours[];
+  hoursMode?: string;
+  timeZone?: string;
+}
+
+type LegacyHoursData = Record<string, LegacyStoreHours>;
 
 const LEGACY_COLUMN_MAP: Record<string, string> = {
   'storenumber': 'storeNumber',
@@ -110,9 +136,26 @@ const LEGACY_COLUMN_MAP: Record<string, string> = {
   'store manager phone': 'storeManagerPhone',
   'storemanagermobile': 'storeManagerMobile',
   'store manager mobile': 'storeManagerMobile',
+  'districtmanager': 'districtManager',
+  'district manager': 'districtManager',
+  'assistantstoremanagers': 'assistantStoreManagers',
+  'assistant store managers': 'assistantStoreManagers',
+  'asms': 'assistantStoreManagers',
 };
 
+const FACILITY_STORE_NUMBERS = new Set(['01', '04', '86']);
+
 const IMPORT_SESSION_TTL_MS = 30 * 60_000;
+
+export function normalizeStoreNumber(storeNumber: string): string {
+  const cleaned = storeNumber.replace(/^#/, '').trim();
+  const numeric = cleaned.replace(/^0+/, '') || '0';
+  return numeric.padStart(2, '0');
+}
+
+export function storeNumbersMatch(a: string, b: string): boolean {
+  return normalizeStoreNumber(a) === normalizeStoreNumber(b);
+}
 
 export function createLegacyImportRouter(db: Firestore): Router {
   const router = Router();
@@ -130,7 +173,7 @@ export function createLegacyImportRouter(db: Firestore): Router {
   router.post('/preview', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
-      const { csv } = req.body;
+      const { csv, hoursJson } = req.body;
 
       if (!csv || typeof csv !== 'string') {
         return res.status(400).json({
@@ -144,6 +187,21 @@ export function createLegacyImportRouter(db: Firestore): Router {
         });
       }
 
+      let hoursData: LegacyHoursData | undefined;
+      if (hoursJson) {
+        if (typeof hoursJson === 'string') {
+          try {
+            hoursData = JSON.parse(hoursJson) as LegacyHoursData;
+          } catch {
+            return res.status(400).json({
+              error: { code: 'invalid_hours', message: 'Invalid hours JSON format', requestId: res.locals.requestId },
+            });
+          }
+        } else if (typeof hoursJson === 'object') {
+          hoursData = hoursJson as LegacyHoursData;
+        }
+      }
+
       const records = parseCsv(csv);
       if (records.length === 0) {
         return res.status(400).json({
@@ -152,7 +210,7 @@ export function createLegacyImportRouter(db: Firestore): Router {
       }
 
       const existingData = await loadExistingData(db);
-      const parsedRows = parseAndValidateRows(records, existingData);
+      const parsedRows = parseAndValidateRows(records, existingData, hoursData);
       const preview = buildPreview(parsedRows);
 
       const sessionId = `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -162,6 +220,7 @@ export function createLegacyImportRouter(db: Firestore): Router {
       const session: LegacyImportSession = {
         preview,
         parsedRows,
+        hoursData,
         userId: authUser.uid,
         createdAt: now.toISOString(),
         expiresAt: expiresAt.toISOString(),
@@ -225,7 +284,7 @@ export function createLegacyImportRouter(db: Firestore): Router {
         });
       }
 
-      const result = await applyImport(db, session.parsedRows, authUser);
+      const result = await applyImport(db, session.parsedRows, session.hoursData, authUser);
       await sessionDoc.ref.delete();
 
       await db.collection('auditLog').add({
@@ -313,6 +372,7 @@ function normalizeColumnName(col: string): string {
 function mapLegacyColumns(row: CsvRow): Record<string, string> {
   const mapped: Record<string, string> = {};
   for (const [key, value] of Object.entries(row)) {
+    if (key.toLowerCase().includes('spreadsheetencoding')) continue;
     const normalizedKey = normalizeColumnName(key);
     const mappedKey = LEGACY_COLUMN_MAP[normalizedKey] || LEGACY_COLUMN_MAP[key.toLowerCase()] || key;
     mapped[mappedKey] = value;
@@ -323,6 +383,7 @@ function mapLegacyColumns(row: CsvRow): Record<string, string> {
 interface ExistingData {
   locations: Map<string, { id: string; data: Location }>;
   locationsById: Map<string, { id: string; data: Location }>;
+  locationsByNormalizedNum: Map<string, { id: string; data: Location }>;
   regions: Map<string, Region>;
   regionsById: Map<string, Region>;
   districts: Map<string, District>;
@@ -330,6 +391,7 @@ interface ExistingData {
   people: Map<string, Person>;
   peopleByName: Map<string, Person>;
   assignments: Map<string, Assignment[]>;
+  districtAssignments: Map<string, Assignment[]>;
 }
 
 async function loadExistingData(db: Firestore): Promise<ExistingData> {
@@ -343,10 +405,12 @@ async function loadExistingData(db: Firestore): Promise<ExistingData> {
 
   const locations = new Map<string, { id: string; data: Location }>();
   const locationsById = new Map<string, { id: string; data: Location }>();
+  const locationsByNormalizedNum = new Map<string, { id: string; data: Location }>();
   for (const doc of locationsSnap.docs) {
     const data = { id: doc.id, ...doc.data() } as Location;
     if (data.lifecycle !== 'retired') {
       locations.set(data.storeNumber, { id: doc.id, data });
+      locationsByNormalizedNum.set(normalizeStoreNumber(data.storeNumber), { id: doc.id, data });
     }
     locationsById.set(doc.id, { id: doc.id, data });
   }
@@ -376,21 +440,34 @@ async function loadExistingData(db: Firestore): Promise<ExistingData> {
   }
 
   const assignments = new Map<string, Assignment[]>();
+  const districtAssignments = new Map<string, Assignment[]>();
   for (const doc of assignmentsSnap.docs) {
     const assignment = { id: doc.id, ...doc.data() } as Assignment;
     if (assignment.scopeType === 'location') {
       const existing = assignments.get(assignment.scopeId) || [];
       existing.push(assignment);
       assignments.set(assignment.scopeId, existing);
+    } else if (assignment.scopeType === 'district') {
+      const existing = districtAssignments.get(assignment.scopeId) || [];
+      existing.push(assignment);
+      districtAssignments.set(assignment.scopeId, existing);
     }
   }
 
-  return { locations, locationsById, regions, regionsById, districts, districtsById, people, peopleByName, assignments };
+  return { 
+    locations, locationsById, locationsByNormalizedNum, 
+    regions, regionsById, districts, districtsById, 
+    people, peopleByName, assignments, districtAssignments 
+  };
 }
 
-function parseAndValidateRows(records: CsvRow[], existing: ExistingData): ParsedLocationRow[] {
+function parseAndValidateRows(
+  records: CsvRow[], 
+  existing: ExistingData,
+  hoursData?: LegacyHoursData
+): ParsedLocationRow[] {
   const results: ParsedLocationRow[] = [];
-  const seenStoreNumbers = new Set<string>();
+  const seenNormalizedNumbers = new Set<string>();
 
   for (let i = 0; i < records.length; i++) {
     const rowNum = i + 2;
@@ -399,23 +476,32 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
     const errors: string[] = [];
     const changes: string[] = [];
 
-    const storeNumber = (row.storeNumber || '').trim();
-    if (!storeNumber) {
+    const rawStoreNumber = (row.storeNumber || '').trim();
+    if (!rawStoreNumber) {
       results.push({ row: rowNum, action: 'skip', data: {}, errors: ['No store number'], changes: [] });
       continue;
     }
 
-    if (seenStoreNumbers.has(storeNumber)) {
-      results.push({ row: rowNum, action: 'error', data: {}, errors: [`Duplicate store number in file: ${storeNumber}`], changes: [] });
+    const normalizedNum = normalizeStoreNumber(rawStoreNumber);
+    const storeNumber = normalizedNum;
+
+    if (seenNormalizedNumbers.has(normalizedNum)) {
+      results.push({ row: rowNum, action: 'error', data: {}, errors: [`Duplicate store number in file: ${rawStoreNumber}`], changes: [] });
       continue;
     }
-    seenStoreNumbers.add(storeNumber);
+    seenNormalizedNumbers.add(normalizedNum);
 
     const locationId = (row.locationId || '').trim();
-    let existingEntry = locationId ? existing.locationsById.get(locationId) : existing.locations.get(storeNumber);
+    let existingEntry = locationId 
+      ? existing.locationsById.get(locationId) 
+      : existing.locationsByNormalizedNum.get(normalizedNum);
     const isUpdate = !!existingEntry;
 
     const name = (row.name || '').trim();
+    const storeType = (row.storeType || '').trim();
+    const kind = mapLocationKind(storeType, normalizedNum);
+    const isFacility = kind === 'facility';
+
     if (!name && !isUpdate) {
       errors.push('Store name is required for new locations');
     }
@@ -440,36 +526,43 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
       errors.push('Invalid phone number format');
     }
 
-    const timeZone = (row.timeZone || 'America/Los_Angeles').trim();
+    const timeZone = (row.timeZone || hoursData?.[normalizedNum]?.timeZone || 'America/Los_Angeles').trim();
     const validTimeZones = ['America/Los_Angeles', 'America/Denver', 'America/Chicago', 'America/New_York'];
     if (!validTimeZones.includes(timeZone)) {
       errors.push(`Invalid timezone: ${timeZone}`);
     }
 
     let regionId = '';
-    if (row.regionId) {
-      const region = existing.regionsById.get(row.regionId) || existing.regions.get(row.regionId);
+    const rawRegionId = (row.regionId || '').trim();
+    if (rawRegionId) {
+      const normalizedRegionId = normalizeStoreNumber(rawRegionId);
+      const region = existing.regionsById.get(rawRegionId) || 
+                     existing.regions.get(rawRegionId) ||
+                     existing.regions.get(normalizedRegionId);
       if (region) {
         regionId = region.id;
-      } else {
-        errors.push(`Region not found: ${row.regionId}`);
+      } else if (!isFacility) {
+        errors.push(`Region not found: ${rawRegionId}`);
       }
     }
 
     let districtId = '';
-    if (row.districtId) {
-      const district = existing.districtsById.get(row.districtId) || existing.districts.get(row.districtId);
+    const rawDistrictId = (row.districtId || '').trim();
+    if (rawDistrictId) {
+      const normalizedDistrictId = normalizeStoreNumber(rawDistrictId);
+      const district = existing.districtsById.get(rawDistrictId) || 
+                       existing.districts.get(rawDistrictId) ||
+                       existing.districts.get(normalizedDistrictId);
       if (district) {
         districtId = district.id;
         if (!regionId && district.regionId) {
           regionId = district.regionId;
         }
-      } else {
-        errors.push(`District not found: ${row.districtId}`);
+      } else if (!isFacility) {
+        errors.push(`District not found: ${rawDistrictId}`);
       }
     }
 
-    const kind = mapLocationKind(row.kind || row.storeType);
     const sharedInboxEmail = (row.sharedInboxEmail || '').trim();
     const mallOrCenterName = (row.mallOrCenterName || '').trim();
     const wayfindingDirections = (row.wayfindingDirections || '').trim().slice(0, 1000);
@@ -482,6 +575,21 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
         workPhone: normalizePhoneNumber(row.storeManagerPhone || '') || undefined,
         mobilePhone: normalizePhoneNumber(row.storeManagerMobile || '') || undefined,
       };
+    }
+
+    let dmData: ParsedLocationRow['dmData'] = undefined;
+    const districtManagerName = (row.districtManager || '').trim();
+    if (districtManagerName && districtId) {
+      dmData = { fullName: districtManagerName };
+    }
+
+    let asmData: ParsedLocationRow['asmData'] = undefined;
+    const asmRaw = (row.assistantStoreManagers || '').trim();
+    if (asmRaw) {
+      const asmNames = asmRaw.split(',').map(n => n.trim()).filter(n => n.length > 0);
+      if (asmNames.length > 0) {
+        asmData = asmNames.map(fullName => ({ fullName }));
+      }
     }
 
     if (errors.length > 0) {
@@ -498,6 +606,12 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
       country: 'US',
     };
 
+    let standardHours: StandardHours | undefined;
+    const legacyHours = hoursData?.[normalizedNum] || hoursData?.[rawStoreNumber];
+    if (legacyHours?.standardHours) {
+      standardHours = convertLegacyHours(legacyHours.standardHours);
+    }
+
     const data: Partial<Omit<Location, 'id'>> = {
       storeNumber,
       kind,
@@ -510,58 +624,104 @@ function parseAndValidateRows(records: CsvRow[], existing: ExistingData): Parsed
       sharedInboxEmail: sharedInboxEmail || existingEntry?.data.sharedInboxEmail,
       regionId: regionId || existingEntry?.data.regionId || '',
       districtId: districtId || existingEntry?.data.districtId || '',
-      storeType: (row.storeType || '').trim() || existingEntry?.data.storeType,
+      storeType: storeType || existingEntry?.data.storeType,
       mallOrCenterName: mallOrCenterName || existingEntry?.data.mallOrCenterName,
       wayfindingDirections: wayfindingDirections || existingEntry?.data.wayfindingDirections,
     };
 
+    if (standardHours) {
+      data.standardHours = standardHours;
+    }
+
     if (isUpdate && existingEntry) {
-      data.standardHours = existingEntry.data.standardHours;
+      if (!standardHours && existingEntry.data.standardHours) {
+        data.standardHours = existingEntry.data.standardHours;
+      }
 
-      const existing = existingEntry.data;
-      if (name && name !== existing.name) changes.push(`Name: "${existing.name}" → "${name}"`);
-      if (mainPhone && mainPhone !== existing.mainPhone) changes.push(`Phone: ${existing.mainPhone || '(empty)'} → ${mainPhone}`);
-      if (street && street !== existing.address.street) changes.push(`Street: "${existing.address.street}" → "${street}"`);
-      if (suite && suite !== existing.address.suite) changes.push(`Suite: "${existing.address.suite || ''}" → "${suite}"`);
-      if (city && city !== existing.address.city) changes.push(`City: "${existing.address.city}" → "${city}"`);
-      if (state && state !== existing.address.state) changes.push(`State: ${existing.address.state} → ${state}`);
-      if (zip && zip !== existing.address.zip) changes.push(`ZIP: ${existing.address.zip} → ${zip}`);
-      if (regionId && regionId !== existing.regionId) changes.push(`Region updated`);
-      if (districtId && districtId !== existing.districtId) changes.push(`District updated`);
-      if (sharedInboxEmail && sharedInboxEmail !== existing.sharedInboxEmail) changes.push(`Inbox: ${existing.sharedInboxEmail || '(empty)'} → ${sharedInboxEmail}`);
-      if (mallOrCenterName && mallOrCenterName !== existing.mallOrCenterName) changes.push(`Mall/Center: "${existing.mallOrCenterName || ''}" → "${mallOrCenterName}"`);
-      if (wayfindingDirections && wayfindingDirections !== existing.wayfindingDirections) changes.push(`Wayfinding directions updated`);
-      if (kind && kind !== existing.kind) changes.push(`Kind: ${existing.kind} → ${kind}`);
-      if (timeZone && timeZone !== existing.timeZone) changes.push(`Timezone: ${existing.timeZone} → ${timeZone}`);
+      const existingLoc = existingEntry.data;
+      if (name && name !== existingLoc.name) changes.push(`Name: "${existingLoc.name}" → "${name}"`);
+      if (mainPhone && mainPhone !== existingLoc.mainPhone) changes.push(`Phone: ${existingLoc.mainPhone || '(empty)'} → ${mainPhone}`);
+      if (street && street !== existingLoc.address.street) changes.push(`Street: "${existingLoc.address.street}" → "${street}"`);
+      if (suite && suite !== existingLoc.address.suite) changes.push(`Suite: "${existingLoc.address.suite || ''}" → "${suite}"`);
+      if (city && city !== existingLoc.address.city) changes.push(`City: "${existingLoc.address.city}" → "${city}"`);
+      if (state && state !== existingLoc.address.state) changes.push(`State: ${existingLoc.address.state} → ${state}`);
+      if (zip && zip !== existingLoc.address.zip) changes.push(`ZIP: ${existingLoc.address.zip} → ${zip}`);
+      if (regionId && regionId !== existingLoc.regionId) changes.push(`Region updated`);
+      if (districtId && districtId !== existingLoc.districtId) changes.push(`District updated`);
+      if (sharedInboxEmail && sharedInboxEmail !== existingLoc.sharedInboxEmail) changes.push(`Inbox: ${existingLoc.sharedInboxEmail || '(empty)'} → ${sharedInboxEmail}`);
+      if (mallOrCenterName && mallOrCenterName !== existingLoc.mallOrCenterName) changes.push(`Mall/Center: "${existingLoc.mallOrCenterName || ''}" → "${mallOrCenterName}"`);
+      if (wayfindingDirections && wayfindingDirections !== existingLoc.wayfindingDirections) changes.push(`Wayfinding directions updated`);
+      if (kind && kind !== existingLoc.kind) changes.push(`Kind: ${existingLoc.kind} → ${kind}`);
+      if (timeZone && timeZone !== existingLoc.timeZone) changes.push(`Timezone: ${existingLoc.timeZone} → ${timeZone}`);
+      if (standardHours) changes.push('Hours updated from import');
 
-      if (smData && existingEntry) {
+      if (smData) {
         changes.push(`SM: ${smData.fullName} (will be assigned if not already)`);
+      }
+      if (dmData) {
+        changes.push(`DM: ${dmData.fullName} (will be assigned to district if not already)`);
+      }
+      if (asmData && asmData.length > 0) {
+        changes.push(`ASMs: ${asmData.map(a => a.fullName).join(', ')}`);
       }
 
       if (changes.length === 0) {
-        results.push({ row: rowNum, action: 'skip', existingId: existingEntry.id, data, smData, errors: [], changes: ['No changes detected'] });
+        results.push({ row: rowNum, action: 'skip', existingId: existingEntry.id, data, smData, dmData, asmData, errors: [], changes: ['No changes detected'] });
         continue;
       }
 
-      results.push({ row: rowNum, action: 'update', existingId: existingEntry.id, data, smData, errors: [], changes });
+      results.push({ row: rowNum, action: 'update', existingId: existingEntry.id, data, smData, dmData, asmData, errors: [], changes });
     } else {
       changes.push('New location');
+      if (isFacility) changes.push('(Facility)');
       if (smData) {
         changes.push(`SM: ${smData.fullName}`);
       }
-      results.push({ row: rowNum, action: 'create', data, smData, errors: [], changes });
+      if (dmData) {
+        changes.push(`DM: ${dmData.fullName}`);
+      }
+      if (asmData && asmData.length > 0) {
+        changes.push(`ASMs: ${asmData.map(a => a.fullName).join(', ')}`);
+      }
+      if (standardHours) {
+        changes.push('Hours imported');
+      }
+      results.push({ row: rowNum, action: 'create', data, smData, dmData, asmData, errors: [], changes });
     }
   }
 
   return results;
 }
 
-function mapLocationKind(type: string | undefined): Location['kind'] {
+function mapLocationKind(type: string | undefined, normalizedStoreNumber: string): Location['kind'] {
+  if (FACILITY_STORE_NUMBERS.has(normalizedStoreNumber)) {
+    return 'facility';
+  }
   if (!type) return 'store';
   const lower = type.toLowerCase();
   if (lower.includes('warehouse') || lower.includes('distribution')) return 'warehouse';
   if (lower.includes('office') || lower.includes('corporate')) return 'office';
+  if (lower.includes('other company')) return 'facility';
   return 'store';
+}
+
+function convertLegacyHours(legacy: Record<string, LegacyHoursEntry>): StandardHours {
+  const days: (keyof StandardHours)[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const result: StandardHours = {} as StandardHours;
+  
+  for (const day of days) {
+    const entry = legacy[day];
+    if (!entry || entry.isClosed) {
+      result[day] = { closed: true, intervals: [] };
+    } else {
+      result[day] = {
+        closed: false,
+        intervals: [{ open: entry.open, close: entry.close }],
+      };
+    }
+  }
+  
+  return result;
 }
 
 function buildPreview(rows: ParsedLocationRow[]): LegacyImportPreview {
@@ -592,13 +752,15 @@ function buildPreview(rows: ParsedLocationRow[]): LegacyImportPreview {
 async function applyImport(
   db: Firestore,
   rows: ParsedLocationRow[],
+  hoursData: LegacyHoursData | undefined,
   authUser: AuthUser
-): Promise<{ created: number; updated: number; skipped: number; assignmentsCreated: number }> {
+): Promise<{ created: number; updated: number; skipped: number; assignmentsCreated: number; hoursExceptionsCreated: number }> {
   const now = new Date().toISOString();
   let created = 0;
   let updated = 0;
   let skipped = 0;
   let assignmentsCreated = 0;
+  let hoursExceptionsCreated = 0;
 
   const actionableRows = rows.filter(r => r.action === 'create' || r.action === 'update');
   const MAX_BATCH = 500;
@@ -608,6 +770,19 @@ async function applyImport(
   for (const doc of peopleSnap.docs) {
     const person = doc.data() as Person;
     peopleByName.set(person.fullName.toLowerCase().trim(), doc.id);
+  }
+
+  const districtDmAssigned = new Set<string>();
+  const existingDmSnap = await db.collection('assignments')
+    .where('scopeType', '==', 'district')
+    .where('role', '==', 'DM')
+    .where('slot', '==', 'primary')
+    .get();
+  for (const doc of existingDmSnap.docs) {
+    const a = doc.data() as Assignment;
+    if (!a.endDate) {
+      districtDmAssigned.add(a.scopeId);
+    }
   }
 
   for (let i = 0; i < actionableRows.length; i += MAX_BATCH) {
@@ -626,9 +801,7 @@ async function applyImport(
           version: 1,
         });
         created++;
-        if (row.smData) {
-          newLocationIds.push({ row, docRef });
-        }
+        newLocationIds.push({ row, docRef });
       } else if (row.action === 'update' && row.existingId) {
         const docRef = db.collection('locations').doc(row.existingId);
         batch.update(docRef, {
@@ -637,51 +810,86 @@ async function applyImport(
           updatedBy: authUser.uid,
         });
         updated++;
-        if (row.smData) {
-          newLocationIds.push({ row, docRef: db.collection('locations').doc(row.existingId) });
-        }
+        newLocationIds.push({ row, docRef: db.collection('locations').doc(row.existingId) });
       }
     }
 
     await batch.commit();
 
     for (const { row, docRef } of newLocationIds) {
-      if (!row.smData) continue;
-
       const locationId = docRef.id;
-      let personId = peopleByName.get(row.smData.fullName.toLowerCase().trim());
+      const districtId = row.data.districtId || '';
+      const storeNumber = row.data.storeNumber || '';
+      const normalizedNum = normalizeStoreNumber(storeNumber);
 
-      if (!personId) {
-        const personRef = db.collection('people').doc();
-        await personRef.set({
-          fullName: row.smData.fullName,
-          lifecycle: 'active',
-          workPhone: row.smData.workPhone || null,
-          mobilePhone: row.smData.mobilePhone || null,
-          createdAt: now,
-          updatedAt: now,
-          updatedBy: authUser.uid,
-          version: 1,
-        });
-        personId = personRef.id;
-        peopleByName.set(row.smData.fullName.toLowerCase().trim(), personId);
+      if (row.smData) {
+        let personId = peopleByName.get(row.smData.fullName.toLowerCase().trim());
+
+        if (!personId) {
+          const personRef = db.collection('people').doc();
+          await personRef.set({
+            fullName: row.smData.fullName,
+            lifecycle: 'active',
+            workPhone: row.smData.workPhone || null,
+            mobilePhone: row.smData.mobilePhone || null,
+            createdAt: now,
+            updatedAt: now,
+            updatedBy: authUser.uid,
+            version: 1,
+          });
+          personId = personRef.id;
+          peopleByName.set(row.smData.fullName.toLowerCase().trim(), personId);
+        }
+
+        const existingSmSnap = await db.collection('assignments')
+          .where('scopeType', '==', 'location')
+          .where('scopeId', '==', locationId)
+          .where('role', '==', 'SM')
+          .where('slot', '==', 'primary')
+          .limit(1)
+          .get();
+
+        if (existingSmSnap.empty) {
+          const assignmentRef = db.collection('assignments').doc();
+          await assignmentRef.set({
+            personId,
+            role: 'SM',
+            scopeType: 'location',
+            scopeId: locationId,
+            slot: 'primary',
+            startDate: now.slice(0, 10),
+            createdAt: now,
+            updatedAt: now,
+            updatedBy: authUser.uid,
+            version: 1,
+          });
+          assignmentsCreated++;
+        }
       }
 
-      const existingSmSnap = await db.collection('assignments')
-        .where('scopeType', '==', 'location')
-        .where('scopeId', '==', locationId)
-        .where('role', '==', 'SM')
-        .where('slot', '==', 'primary')
-        .limit(1)
-        .get();
+      if (row.dmData && districtId && !districtDmAssigned.has(districtId)) {
+        let personId = peopleByName.get(row.dmData.fullName.toLowerCase().trim());
 
-      if (existingSmSnap.empty) {
+        if (!personId) {
+          const personRef = db.collection('people').doc();
+          await personRef.set({
+            fullName: row.dmData.fullName,
+            lifecycle: 'active',
+            createdAt: now,
+            updatedAt: now,
+            updatedBy: authUser.uid,
+            version: 1,
+          });
+          personId = personRef.id;
+          peopleByName.set(row.dmData.fullName.toLowerCase().trim(), personId);
+        }
+
         const assignmentRef = db.collection('assignments').doc();
         await assignmentRef.set({
           personId,
-          role: 'SM',
-          scopeType: 'location',
-          scopeId: locationId,
+          role: 'DM',
+          scopeType: 'district',
+          scopeId: districtId,
           slot: 'primary',
           startDate: now.slice(0, 10),
           createdAt: now,
@@ -690,10 +898,73 @@ async function applyImport(
           version: 1,
         });
         assignmentsCreated++;
+        districtDmAssigned.add(districtId);
+      }
+
+      if (row.asmData && row.asmData.length > 0) {
+        for (const asm of row.asmData) {
+          let personId = peopleByName.get(asm.fullName.toLowerCase().trim());
+
+          if (!personId) {
+            const personRef = db.collection('people').doc();
+            await personRef.set({
+              fullName: asm.fullName,
+              lifecycle: 'active',
+              createdAt: now,
+              updatedAt: now,
+              updatedBy: authUser.uid,
+              version: 1,
+            });
+            personId = personRef.id;
+            peopleByName.set(asm.fullName.toLowerCase().trim(), personId);
+          }
+
+          const existingAsmSnap = await db.collection('assignments')
+            .where('scopeType', '==', 'location')
+            .where('scopeId', '==', locationId)
+            .where('role', '==', 'ASM')
+            .where('personId', '==', personId)
+            .limit(1)
+            .get();
+
+          if (existingAsmSnap.empty) {
+            const assignmentRef = db.collection('assignments').doc();
+            await assignmentRef.set({
+              personId,
+              role: 'ASM',
+              scopeType: 'location',
+              scopeId: locationId,
+              slot: 'support',
+              startDate: now.slice(0, 10),
+              createdAt: now,
+              updatedAt: now,
+              updatedBy: authUser.uid,
+              version: 1,
+            });
+            assignmentsCreated++;
+          }
+        }
+      }
+
+      const legacyHours = hoursData?.[normalizedNum] || hoursData?.[storeNumber];
+      if (legacyHours?.holidayHours && legacyHours.holidayHours.length > 0) {
+        for (const holiday of legacyHours.holidayHours) {
+          const exceptionRef = db.collection(`locations/${locationId}/hoursExceptions`).doc();
+          await exceptionRef.set({
+            type: 'holiday',
+            label: holiday.holidayName,
+            startDate: holiday.date,
+            endDate: holiday.date,
+            closed: holiday.hours.isClosed,
+            intervals: holiday.hours.isClosed ? [] : [{ open: holiday.hours.open, close: holiday.hours.close }],
+            source: 'import',
+          });
+          hoursExceptionsCreated++;
+        }
       }
     }
   }
 
   skipped = rows.filter(r => r.action === 'skip').length;
-  return { created, updated, skipped, assignmentsCreated };
+  return { created, updated, skipped, assignmentsCreated, hoursExceptionsCreated };
 }

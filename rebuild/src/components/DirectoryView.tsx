@@ -10,6 +10,7 @@ const KIND_ICONS: Record<LocationKind, typeof Store> = {
   store: Store,
   warehouse: Warehouse,
   office: Building2,
+  facility: Building2,
 };
 
 export function DirectoryView() {

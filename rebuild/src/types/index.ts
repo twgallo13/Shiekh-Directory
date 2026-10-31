@@ -59,7 +59,7 @@ export interface Closure {
 }
 
 // === Location ===
-export type LocationKind = 'store' | 'warehouse' | 'office';
+export type LocationKind = 'store' | 'warehouse' | 'office' | 'facility';
 export type LocationLifecycle = 'draft' | 'active' | 'retired';
 
 export interface Location extends RecordMetadata {

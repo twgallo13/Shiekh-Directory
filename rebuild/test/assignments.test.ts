@@ -557,6 +557,285 @@ describe('Assignment Capacity and Vacancy', () => {
   });
 });
 
+describe('Primary Holder Selection (Bug Fix)', () => {
+  type AssignmentCapacity = 'primary' | 'training' | 'acting';
+  type PositionStatus = 'filled' | 'vacant';
+
+  interface PositionHolder {
+    personId: string;
+    fullName: string;
+    capacity: AssignmentCapacity;
+    slot?: 'primary' | 'additional';
+  }
+
+  interface PositionResult {
+    primary: PositionHolder | null;
+    others: PositionHolder[];
+    displayName: string;
+    status: PositionStatus;
+  }
+
+  interface Assignment {
+    id: string;
+    personId: string;
+    role: string;
+    capacity?: AssignmentCapacity;
+    slot?: 'primary' | 'additional';
+    endDate?: string;
+    endedAt?: string;
+  }
+
+  interface Person {
+    id: string;
+    fullName: string;
+    lifecycle: 'active' | 'retired';
+  }
+
+  function isActive(assignment: Assignment, localDate: string): boolean {
+    if (assignment.endedAt) return false;
+    if (!assignment.endDate) return true;
+    return assignment.endDate >= localDate;
+  }
+
+  function resolvePositionHolders(
+    assignments: Assignment[],
+    people: Map<string, Person>,
+    localDate: string
+  ): PositionResult {
+    const activeAssignments = assignments.filter(a => isActive(a, localDate));
+    
+    const holders: PositionHolder[] = [];
+    
+    for (const assignment of activeAssignments) {
+      const person = people.get(assignment.personId);
+      if (!person || person.lifecycle !== 'active') continue;
+      
+      holders.push({
+        personId: assignment.personId,
+        fullName: person.fullName,
+        capacity: assignment.capacity || 'primary',
+        slot: assignment.slot,
+      });
+    }
+    
+    const primaryHolder = holders.find(h => h.capacity === 'primary');
+    const otherHolders = holders.filter(h => h.capacity !== 'primary');
+    
+    let displayName = '';
+    let status: PositionStatus = 'vacant';
+    
+    if (primaryHolder) {
+      displayName = primaryHolder.fullName;
+      status = 'filled';
+    } else if (otherHolders.length > 0) {
+      const firstOther = otherHolders[0];
+      const capacityLabel = firstOther.capacity === 'training' ? 'In Training' : 'Acting';
+      displayName = `Vacant (${capacityLabel}: ${firstOther.fullName})`;
+      status = 'vacant';
+    }
+    
+    return {
+      primary: primaryHolder || null,
+      others: otherHolders,
+      displayName,
+      status,
+    };
+  }
+
+  describe('Primary + Training combination', () => {
+    it('chooses primary holder, not training holder', () => {
+      const assignments: Assignment[] = [
+        { id: '1', personId: 'p1', role: 'DM', capacity: 'primary', slot: 'primary' },
+        { id: '2', personId: 'p2', role: 'DM', capacity: 'training', slot: 'additional' },
+      ];
+      const people = new Map<string, Person>([
+        ['p1', { id: 'p1', fullName: 'John Primary', lifecycle: 'active' }],
+        ['p2', { id: 'p2', fullName: 'Jane Training', lifecycle: 'active' }],
+      ]);
+      const localDate = '2026-10-31';
+
+      const result = resolvePositionHolders(assignments, people, localDate);
+
+      assert.strictEqual(result.displayName, 'John Primary');
+      assert.strictEqual(result.status, 'filled');
+      assert.strictEqual(result.primary?.fullName, 'John Primary');
+      assert.strictEqual(result.others.length, 1);
+      assert.strictEqual(result.others[0].fullName, 'Jane Training');
+      assert.strictEqual(result.others[0].capacity, 'training');
+    });
+
+    it('training holder does not replace primary even if processed last', () => {
+      const assignments: Assignment[] = [
+        { id: '2', personId: 'p2', role: 'DM', capacity: 'training', slot: 'additional' },
+        { id: '1', personId: 'p1', role: 'DM', capacity: 'primary', slot: 'primary' },
+      ];
+      const people = new Map<string, Person>([
+        ['p1', { id: 'p1', fullName: 'John Primary', lifecycle: 'active' }],
+        ['p2', { id: 'p2', fullName: 'Jane Training', lifecycle: 'active' }],
+      ]);
+      const localDate = '2026-10-31';
+
+      const result = resolvePositionHolders(assignments, people, localDate);
+
+      assert.strictEqual(result.displayName, 'John Primary');
+      assert.strictEqual(result.status, 'filled');
+    });
+  });
+
+  describe('Acting only (no primary)', () => {
+    it('shows Vacant with acting holder info', () => {
+      const assignments: Assignment[] = [
+        { id: '1', personId: 'p1', role: 'DM', capacity: 'acting', slot: 'additional' },
+      ];
+      const people = new Map<string, Person>([
+        ['p1', { id: 'p1', fullName: 'Alice Acting', lifecycle: 'active' }],
+      ]);
+      const localDate = '2026-10-31';
+
+      const result = resolvePositionHolders(assignments, people, localDate);
+
+      assert.strictEqual(result.displayName, 'Vacant (Acting: Alice Acting)');
+      assert.strictEqual(result.status, 'vacant');
+      assert.strictEqual(result.primary, null);
+      assert.strictEqual(result.others.length, 1);
+      assert.strictEqual(result.others[0].fullName, 'Alice Acting');
+    });
+
+    it('shows Vacant with training holder info when training only', () => {
+      const assignments: Assignment[] = [
+        { id: '1', personId: 'p1', role: 'DM', capacity: 'training', slot: 'additional' },
+      ];
+      const people = new Map<string, Person>([
+        ['p1', { id: 'p1', fullName: 'Bob Training', lifecycle: 'active' }],
+      ]);
+      const localDate = '2026-10-31';
+
+      const result = resolvePositionHolders(assignments, people, localDate);
+
+      assert.strictEqual(result.displayName, 'Vacant (In Training: Bob Training)');
+      assert.strictEqual(result.status, 'vacant');
+      assert.strictEqual(result.primary, null);
+    });
+  });
+
+  describe('Vacant position (no assignments)', () => {
+    it('returns vacant status with empty displayName', () => {
+      const assignments: Assignment[] = [];
+      const people = new Map<string, Person>();
+      const localDate = '2026-10-31';
+
+      const result = resolvePositionHolders(assignments, people, localDate);
+
+      assert.strictEqual(result.displayName, '');
+      assert.strictEqual(result.status, 'vacant');
+      assert.strictEqual(result.primary, null);
+      assert.strictEqual(result.others.length, 0);
+    });
+
+    it('treats ended assignments as vacant', () => {
+      const assignments: Assignment[] = [
+        { id: '1', personId: 'p1', role: 'DM', capacity: 'primary', endDate: '2026-10-30' },
+      ];
+      const people = new Map<string, Person>([
+        ['p1', { id: 'p1', fullName: 'Former DM', lifecycle: 'active' }],
+      ]);
+      const localDate = '2026-10-31';
+
+      const result = resolvePositionHolders(assignments, people, localDate);
+
+      assert.strictEqual(result.displayName, '');
+      assert.strictEqual(result.status, 'vacant');
+      assert.strictEqual(result.primary, null);
+    });
+
+    it('treats retired person assignments as vacant', () => {
+      const assignments: Assignment[] = [
+        { id: '1', personId: 'p1', role: 'DM', capacity: 'primary' },
+      ];
+      const people = new Map<string, Person>([
+        ['p1', { id: 'p1', fullName: 'Retired Person', lifecycle: 'retired' }],
+      ]);
+      const localDate = '2026-10-31';
+
+      const result = resolvePositionHolders(assignments, people, localDate);
+
+      assert.strictEqual(result.displayName, '');
+      assert.strictEqual(result.status, 'vacant');
+    });
+  });
+
+  describe('CSV formatting for other holders', () => {
+    function formatOtherHoldersForCsv(result: PositionResult): string {
+      return result.others
+        .map(h => {
+          const label = h.capacity === 'training' ? 'In Training' : 'Acting';
+          return `${h.fullName} (${label})`;
+        })
+        .join('; ');
+    }
+
+    it('formats multiple other holders with capacity badges', () => {
+      const result: PositionResult = {
+        primary: { personId: 'p1', fullName: 'John Primary', capacity: 'primary' },
+        others: [
+          { personId: 'p2', fullName: 'Jane Training', capacity: 'training' },
+          { personId: 'p3', fullName: 'Bob Acting', capacity: 'acting' },
+        ],
+        displayName: 'John Primary',
+        status: 'filled',
+      };
+
+      const csv = formatOtherHoldersForCsv(result);
+
+      assert.strictEqual(csv, 'Jane Training (In Training); Bob Acting (Acting)');
+    });
+
+    it('returns empty string when no others', () => {
+      const result: PositionResult = {
+        primary: { personId: 'p1', fullName: 'John Primary', capacity: 'primary' },
+        others: [],
+        displayName: 'John Primary',
+        status: 'filled',
+      };
+
+      const csv = formatOtherHoldersForCsv(result);
+
+      assert.strictEqual(csv, '');
+    });
+  });
+
+  describe('Multiple positions per location', () => {
+    it('handles RM, DM, and SM independently', () => {
+      const rmAssignments: Assignment[] = [
+        { id: '1', personId: 'rm1', role: 'RM', capacity: 'primary' },
+      ];
+      const dmAssignments: Assignment[] = [
+        { id: '2', personId: 'dm1', role: 'DM', capacity: 'acting' },
+      ];
+      const smAssignments: Assignment[] = [];
+
+      const people = new Map<string, Person>([
+        ['rm1', { id: 'rm1', fullName: 'Regional Manager', lifecycle: 'active' }],
+        ['dm1', { id: 'dm1', fullName: 'Acting DM', lifecycle: 'active' }],
+      ]);
+      const localDate = '2026-10-31';
+
+      const rmResult = resolvePositionHolders(rmAssignments, people, localDate);
+      const dmResult = resolvePositionHolders(dmAssignments, people, localDate);
+      const smResult = resolvePositionHolders(smAssignments, people, localDate);
+
+      assert.strictEqual(rmResult.status, 'filled');
+      assert.strictEqual(rmResult.displayName, 'Regional Manager');
+
+      assert.strictEqual(dmResult.status, 'vacant');
+      assert.strictEqual(dmResult.displayName, 'Vacant (Acting: Acting DM)');
+
+      assert.strictEqual(smResult.status, 'vacant');
+      assert.strictEqual(smResult.displayName, '');
+    });
+  });
+});
+
 describe('Centralized Assignment Active Check', () => {
   function isAssignmentActive(
     assignment: { endDate?: string; endedAt?: string },

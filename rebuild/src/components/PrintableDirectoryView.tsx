@@ -210,51 +210,51 @@ export function PrintableDirectoryView() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 print:bg-white">
+    <div className="min-h-screen bg-gray-50 print:bg-white overflow-x-hidden">
       {/* Controls - Hidden in print */}
       <div className="print:hidden bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-[1200px] mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 min-h-[44px]"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            <span>Back to Directory</span>
-          </button>
+        <div className="max-w-[1200px] mx-auto px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 min-h-[44px]"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span className="hidden sm:inline">Back to Directory</span>
+            </button>
 
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+            <div className="flex items-center gap-2 text-sm text-gray-600 flex-1 min-w-0">
               <Filter className="w-4 h-4 flex-shrink-0" />
               <select
                 value={districtFilter}
                 onChange={(e) => setDistrictFilter(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full sm:w-auto min-h-[44px]"
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-0 flex-1 sm:flex-initial sm:w-auto min-h-[44px]"
               >
-                <option value="all">All Districts ({exportData?.locationCount || 0} stores)</option>
+                <option value="all">All ({exportData?.locationCount || 0})</option>
                 {exportData?.districts.map(d => (
                   <option key={d.id} value={d.id}>
-                    {d.name} ({d.stores.length} stores)
+                    {d.name} ({d.stores.length})
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-shrink-0">
               <button
                 onClick={handleDownloadCsv}
                 disabled={preparing}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm min-h-[44px]"
+                className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm min-h-[44px]"
               >
                 <Download className="w-4 h-4" />
-                <span className="whitespace-nowrap">Download CSV</span>
+                <span className="hidden sm:inline">CSV</span>
               </button>
 
               <button
                 onClick={handlePrint}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm min-h-[44px]"
+                className="flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm min-h-[44px]"
               >
                 <Printer className="w-4 h-4" />
-                <span className="whitespace-nowrap">Print 1-Sheet</span>
+                <span className="hidden sm:inline">Print</span>
               </button>
             </div>
           </div>
@@ -276,8 +276,8 @@ export function PrintableDirectoryView() {
       </div>
 
       {/* Printable Content */}
-      <div className="max-w-[1200px] mx-auto p-4 print:p-0 print:max-w-none">
-        <div className="bg-white rounded-lg border border-gray-200 p-6 print:border-none print:rounded-none print:shadow-none">
+      <div className="max-w-[1200px] mx-auto p-4 print:p-0 print:max-w-none overflow-x-auto">
+        <div className="bg-white rounded-lg border border-gray-200 p-6 print:border-none print:rounded-none print:shadow-none min-w-[585px]">
           {/* Header */}
           <div className="mb-2 print:mb-1 flex items-center justify-between border-b-2 border-gray-900 pb-1">
             <div className="flex items-center gap-2">

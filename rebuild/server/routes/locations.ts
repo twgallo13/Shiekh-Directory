@@ -16,6 +16,7 @@ import { resolveOperatingStatus, getWeekSchedule, getScheduleForDate } from '../
 import { formatPhoneNumber } from '../utils/phone';
 import { formatAddress, getMapsUrl } from '../utils/address';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+import { resolvePositionHolders } from '../utils/positionHolder';
 
 export function createLocationsRouter(db: Firestore): Router {
   const router = Router();
@@ -252,47 +253,73 @@ async function getLocationLeadership(
   });
   
   if (location.districtId) {
-    const dmAssignments = await db.collection('assignments')
+    const dmAssignmentsSnap = await db.collection('assignments')
       .where('scopeType', '==', 'district')
       .where('scopeId', '==', location.districtId)
       .where('role', '==', 'DM')
       .get();
     
-    for (const doc of dmAssignments.docs) {
-      const assignment = doc.data() as Assignment;
-      if (isAssignmentActive(assignment, localDate)) {
-        const personDoc = await db.collection('people').doc(assignment.personId).get();
-        if (personDoc.exists) {
-          const person = personDoc.data() as Person;
-          const capacity = assignment.capacity || 'primary';
-          leadership.dm = { id: assignment.personId, name: person.fullName, capacity };
-          leadership.dmStatus = 'filled';
-          break; // Use first active assignment
-        }
+    const dmAssignments = dmAssignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Assignment));
+    
+    const personIds = new Set(dmAssignments.map(a => a.personId));
+    const dmPeopleMap = new Map<string, Person>();
+    for (const personId of personIds) {
+      const personDoc = await db.collection('people').doc(personId).get();
+      if (personDoc.exists) {
+        dmPeopleMap.set(personId, { id: personId, ...personDoc.data() } as Person);
       }
     }
+    
+    const dmResult = resolvePositionHolders(dmAssignments, dmPeopleMap, localDate);
+    leadership.dmStatus = dmResult.status;
+    
+    if (dmResult.primary) {
+      leadership.dm = { id: dmResult.primary.personId, name: dmResult.primary.fullName, capacity: dmResult.primary.capacity };
+    } else if (dmResult.others.length > 0) {
+      const firstOther = dmResult.others[0];
+      leadership.dm = { id: firstOther.personId, name: dmResult.displayName, capacity: firstOther.capacity };
+    }
+    
+    leadership.dmOthers = dmResult.others.map(h => ({
+      id: h.personId,
+      name: h.fullName,
+      capacity: h.capacity,
+    }));
   }
   
   if (location.regionId) {
-    const rmAssignments = await db.collection('assignments')
+    const rmAssignmentsSnap = await db.collection('assignments')
       .where('scopeType', '==', 'region')
       .where('scopeId', '==', location.regionId)
       .where('role', '==', 'RM')
       .get();
     
-    for (const doc of rmAssignments.docs) {
-      const assignment = doc.data() as Assignment;
-      if (isAssignmentActive(assignment, localDate)) {
-        const personDoc = await db.collection('people').doc(assignment.personId).get();
-        if (personDoc.exists) {
-          const person = personDoc.data() as Person;
-          const capacity = assignment.capacity || 'primary';
-          leadership.rm = { id: assignment.personId, name: person.fullName, capacity };
-          leadership.rmStatus = 'filled';
-          break; // Use first active assignment
-        }
+    const rmAssignments = rmAssignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Assignment));
+    
+    const personIds = new Set(rmAssignments.map(a => a.personId));
+    const rmPeopleMap = new Map<string, Person>();
+    for (const personId of personIds) {
+      const personDoc = await db.collection('people').doc(personId).get();
+      if (personDoc.exists) {
+        rmPeopleMap.set(personId, { id: personId, ...personDoc.data() } as Person);
       }
     }
+    
+    const rmResult = resolvePositionHolders(rmAssignments, rmPeopleMap, localDate);
+    leadership.rmStatus = rmResult.status;
+    
+    if (rmResult.primary) {
+      leadership.rm = { id: rmResult.primary.personId, name: rmResult.primary.fullName, capacity: rmResult.primary.capacity };
+    } else if (rmResult.others.length > 0) {
+      const firstOther = rmResult.others[0];
+      leadership.rm = { id: firstOther.personId, name: rmResult.displayName, capacity: firstOther.capacity };
+    }
+    
+    leadership.rmOthers = rmResult.others.map(h => ({
+      id: h.personId,
+      name: h.fullName,
+      capacity: h.capacity,
+    }));
   }
   
   return leadership;

@@ -7,8 +7,10 @@ import type {
   AuthUser,
   AuditLogEntry,
   Assignment,
+  Person,
 } from '../../src/types';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+import { resolvePositionHolders, formatOtherHoldersForCsv } from '../utils/positionHolder';
 
 function canManageHierarchy(role: string): boolean {
   return ['Steward', 'Admin'].includes(role);
@@ -48,62 +50,75 @@ export function createHierarchyRouter(db: Firestore): Router {
         ? await db.collection('people').where('lifecycle', '==', 'active').get()
         : { docs: [] };
 
-      const peopleMap = new Map(
-        peopleSnap.docs.map(doc => [doc.id, doc.data().fullName as string])
-      );
-
       const localDate = getLocalDate();
+
+      const peopleById = new Map<string, Person>();
+      for (const doc of peopleSnap.docs) {
+        peopleById.set(doc.id, { id: doc.id, ...doc.data() } as Person);
+      }
 
       const regions = regionsSnap.docs.map(doc => {
         const region = { id: doc.id, ...doc.data() } as Region;
         
-        const rmAssignment = assignmentsSnap.docs.find(a => {
-          const assignment = a.data() as Assignment;
-          return assignment.scopeType === 'region' 
-            && assignment.scopeId === doc.id 
-            && assignment.role === 'RM'
-            && isAssignmentActive(assignment, localDate);
-        });
+        const rmAssignments = assignmentsSnap.docs
+          .filter(a => {
+            const assignment = a.data() as Assignment;
+            return assignment.scopeType === 'region' 
+              && assignment.scopeId === doc.id 
+              && assignment.role === 'RM';
+          })
+          .map(a => ({ id: a.id, ...a.data() } as Assignment));
+        
+        const rmResult = resolvePositionHolders(rmAssignments, peopleById, localDate);
 
         return {
           id: region.id,
           code: region.code,
           name: region.name,
-          rmName: rmAssignment ? peopleMap.get((rmAssignment.data() as Assignment).personId) : undefined,
+          rmName: rmResult.displayName || undefined,
+          rmStatus: rmResult.status,
+          rmOthers: formatOtherHoldersForCsv(rmResult) || undefined,
         };
       }).sort((a, b) => a.name.localeCompare(b.name));
 
       const districts = districtsSnap.docs.map(doc => {
         const district = { id: doc.id, ...doc.data() } as District;
 
-        const dmAssignment = assignmentsSnap.docs.find(a => {
-          const assignment = a.data() as Assignment;
-          return assignment.scopeType === 'district' 
-            && assignment.scopeId === doc.id 
-            && assignment.role === 'DM'
-            && isAssignmentActive(assignment, localDate);
-        });
+        const dmAssignments = assignmentsSnap.docs
+          .filter(a => {
+            const assignment = a.data() as Assignment;
+            return assignment.scopeType === 'district' 
+              && assignment.scopeId === doc.id 
+              && assignment.role === 'DM';
+          })
+          .map(a => ({ id: a.id, ...a.data() } as Assignment));
+        
+        const dmResult = resolvePositionHolders(dmAssignments, peopleById, localDate);
 
         return {
           id: district.id,
           code: district.code,
           name: district.name,
           regionId: district.regionId,
-          dmName: dmAssignment ? peopleMap.get((dmAssignment.data() as Assignment).personId) : undefined,
+          dmName: dmResult.displayName || undefined,
+          dmStatus: dmResult.status,
+          dmOthers: formatOtherHoldersForCsv(dmResult) || undefined,
         };
       }).sort((a, b) => a.name.localeCompare(b.name));
 
       const locations = locationsSnap.docs.map(doc => {
         const location = { id: doc.id, ...doc.data() } as Location;
 
-        const smAssignment = assignmentsSnap.docs.find(a => {
-          const assignment = a.data() as Assignment;
-          return assignment.scopeType === 'location' 
-            && assignment.scopeId === doc.id 
-            && assignment.role === 'SM'
-            && assignment.slot === 'primary'
-            && isAssignmentActive(assignment, localDate);
-        });
+        const smAssignments = assignmentsSnap.docs
+          .filter(a => {
+            const assignment = a.data() as Assignment;
+            return assignment.scopeType === 'location' 
+              && assignment.scopeId === doc.id 
+              && assignment.role === 'SM';
+          })
+          .map(a => ({ id: a.id, ...a.data() } as Assignment));
+        
+        const smResult = resolvePositionHolders(smAssignments, peopleById, localDate);
 
         return {
           id: location.id,
@@ -112,7 +127,9 @@ export function createHierarchyRouter(db: Firestore): Router {
           kind: location.kind,
           districtId: location.districtId,
           regionId: location.regionId,
-          smName: smAssignment ? peopleMap.get((smAssignment.data() as Assignment).personId) : undefined,
+          smName: smResult.displayName || undefined,
+          smStatus: smResult.status,
+          smOthers: formatOtherHoldersForCsv(smResult) || undefined,
         };
       }).sort((a, b) => {
         const numA = parseInt(a.storeNumber, 10);

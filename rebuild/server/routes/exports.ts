@@ -3,6 +3,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { createHash, randomUUID } from 'crypto';
 import type { AuthUser, Location, Person, Region, District, Assignment } from '../../src/types';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+import { resolvePositionHolders, formatOtherHoldersForCsv } from '../utils/positionHolder';
 
 
 interface ExportToken {
@@ -36,11 +37,16 @@ interface ExportLocation {
   districtId: string;
   districtName: string;
   storeManager: string;
+  storeManagerOther: string;
   storeManagerStatus: 'filled' | 'vacant';
   storeManagerPhone: string;
   storeManagerMobile: string;
   districtManager: string;
+  districtManagerOther: string;
   districtManagerStatus: 'filled' | 'vacant';
+  regionalManager: string;
+  regionalManagerOther: string;
+  regionalManagerStatus: 'filled' | 'vacant';
   assistantStoreManagers: string[];
   asmStatus: 'filled' | 'vacant';
   keyHolders: string[];
@@ -241,20 +247,26 @@ function mapExportLocation(
   const localDate = getLocalDate(location.timeZone);
 
   const locationAssignments = assignments.filter(a =>
-    a.scopeType === 'location' && a.scopeId === location.id && isAssignmentActive(a, localDate)
+    a.scopeType === 'location' && a.scopeId === location.id
   );
   const districtAssignments = assignments.filter(a =>
-    a.scopeType === 'district' && a.scopeId === location.districtId && isAssignmentActive(a, localDate)
+    a.scopeType === 'district' && a.scopeId === location.districtId
+  );
+  const regionAssignments = assignments.filter(a =>
+    a.scopeType === 'region' && a.scopeId === location.regionId
   );
 
-  const smAssignment = locationAssignments.find(a => a.role === 'SM' && a.slot === 'primary');
-  const asmAssignments = locationAssignments.filter(a => a.role === 'ASM');
-  const khAssignments = locationAssignments.filter(a => a.role === 'KH');
-  const dmAssignment = districtAssignments.find(a => a.role === 'DM');
+  const smAssignments = locationAssignments.filter(a => a.role === 'SM');
+  const asmAssignments = locationAssignments.filter(a => a.role === 'ASM' && isAssignmentActive(a, localDate));
+  const khAssignments = locationAssignments.filter(a => a.role === 'KH' && isAssignmentActive(a, localDate));
+  const dmAssignments = districtAssignments.filter(a => a.role === 'DM');
+  const rmAssignments = regionAssignments.filter(a => a.role === 'RM');
 
-  const smPerson = smAssignment ? people.get(smAssignment.personId) : undefined;
-  const dmPerson = dmAssignment ? people.get(dmAssignment.personId) : undefined;
+  const smResult = resolvePositionHolders(smAssignments, people, localDate);
+  const dmResult = resolvePositionHolders(dmAssignments, people, localDate);
+  const rmResult = resolvePositionHolders(rmAssignments, people, localDate);
 
+  const smPerson = smResult.primary ? people.get(smResult.primary.personId) : undefined;
   const showMobile = canViewMobilePhones(userRole);
 
   const asmNames = asmAssignments
@@ -281,12 +293,17 @@ function mapExportLocation(
     regionName: region?.name || '',
     districtId: district?.code || '',
     districtName: district?.name || '',
-    storeManager: smPerson?.fullName || '',
-    storeManagerStatus: smPerson ? 'filled' : 'vacant',
+    storeManager: smResult.primary?.fullName || '',
+    storeManagerOther: formatOtherHoldersForCsv(smResult),
+    storeManagerStatus: smResult.status,
     storeManagerPhone: smPerson?.workPhone || '',
     storeManagerMobile: showMobile ? (smPerson?.mobilePhone || '') : '',
-    districtManager: dmPerson?.fullName || '',
-    districtManagerStatus: dmPerson ? 'filled' : 'vacant',
+    districtManager: dmResult.primary?.fullName || '',
+    districtManagerOther: formatOtherHoldersForCsv(dmResult),
+    districtManagerStatus: dmResult.status,
+    regionalManager: rmResult.primary?.fullName || '',
+    regionalManagerOther: formatOtherHoldersForCsv(rmResult),
+    regionalManagerStatus: rmResult.status,
     assistantStoreManagers: asmNames,
     asmStatus: asmNames.length > 0 ? 'filled' : 'vacant',
     keyHolders: khNames,
@@ -324,12 +341,16 @@ function generateCsv(locations: ExportLocation[], userRole: string): string {
     'LocationInboxEmail',
     'RegionId',
     'RegionName',
+    'RegionalManager',
+    'RegionalManagerOther',
     'DistrictId',
     'DistrictName',
+    'DistrictManager',
+    'DistrictManagerOther',
     'StoreManager',
+    'StoreManagerOther',
     'StoreManagerPhone',
     ...(showMobile ? ['StoreManagerMobile'] : []),
-    'DistrictManager',
     'AssistantStoreManagers',
     'KeyHolders',
     'OperationalStatus',
@@ -348,12 +369,16 @@ function generateCsv(locations: ExportLocation[], userRole: string): string {
     escapeCsvValue(loc.sharedInboxEmail),
     escapeCsvValue(loc.regionId),
     escapeCsvValue(loc.regionName),
+    escapeCsvValue(loc.regionalManagerStatus === 'vacant' ? 'VACANT' : loc.regionalManager),
+    escapeCsvValue(loc.regionalManagerOther),
     escapeCsvValue(loc.districtId),
     escapeCsvValue(loc.districtName),
+    escapeCsvValue(loc.districtManagerStatus === 'vacant' ? 'VACANT' : loc.districtManager),
+    escapeCsvValue(loc.districtManagerOther),
     escapeCsvValue(loc.storeManagerStatus === 'vacant' ? 'VACANT' : loc.storeManager),
+    escapeCsvValue(loc.storeManagerOther),
     escapeCsvValue(formatPhoneForCsv(loc.storeManagerPhone)),
     ...(showMobile ? [escapeCsvValue(formatPhoneForCsv(loc.storeManagerMobile))] : []),
-    escapeCsvValue(loc.districtManagerStatus === 'vacant' ? 'VACANT' : loc.districtManager),
     escapeCsvValue(loc.asmStatus === 'vacant' ? 'VACANT' : loc.assistantStoreManagers.join('; ')),
     escapeCsvValue(loc.khStatus === 'vacant' ? 'VACANT' : loc.keyHolders.join('; ')),
     escapeCsvValue(loc.lifecycle === 'active' ? 'Active' : loc.lifecycle),

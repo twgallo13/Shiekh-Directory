@@ -209,8 +209,10 @@ export interface LocationLeadership {
   kh: { id: string; name: string; slot: AssignmentSlot; capacity?: AssignmentCapacity }[];
   khStatus: PositionStatus;
   dm?: { id: string; name: string; capacity?: AssignmentCapacity };
+  dmOthers?: { id: string; name: string; capacity: AssignmentCapacity }[];
   dmStatus: PositionStatus;
   rm?: { id: string; name: string; capacity?: AssignmentCapacity };
+  rmOthers?: { id: string; name: string; capacity: AssignmentCapacity }[];
   rmStatus: PositionStatus;
 }
 

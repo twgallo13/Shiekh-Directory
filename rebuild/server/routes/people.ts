@@ -10,8 +10,25 @@ import type {
   Location,
   District,
   Region,
+  AuditLogEntry,
 } from '../../src/types';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+
+function canManagePeople(role: string): boolean {
+  return ['Steward', 'Admin'].includes(role);
+}
+
+async function logAudit(
+  db: Firestore,
+  entry: Omit<AuditLogEntry, 'id' | 'timestamp'>
+): Promise<void> {
+  const auditRef = db.collection('auditLog').doc();
+  await auditRef.set({
+    ...entry,
+    id: auditRef.id,
+    timestamp: new Date().toISOString(),
+  });
+}
 
 export function createPeopleRouter(db: Firestore): Router {
   const router = Router();
@@ -149,6 +166,340 @@ export function createPeopleRouter(db: Firestore): Router {
       console.error('Get person error:', error);
       return res.status(500).json({
         error: { code: 'get_error', message: 'Failed to get person', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.post('/', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!canManagePeople(authUser.role)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Steward and Admin can create people', requestId: res.locals.requestId },
+        });
+      }
+
+      const { fullName, workEmail, workPhone, mobilePhone, homeLocationId } = req.body;
+
+      if (!fullName || typeof fullName !== 'string' || fullName.trim().length === 0) {
+        return res.status(400).json({
+          error: { code: 'invalid_request', message: 'fullName is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (workEmail) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(workEmail)) {
+          return res.status(400).json({
+            error: { code: 'invalid_request', message: 'Invalid email format', requestId: res.locals.requestId },
+          });
+        }
+      }
+
+      const now = new Date().toISOString();
+      const personRef = db.collection('people').doc();
+      
+      const person: Omit<Person, 'id'> = {
+        fullName: fullName.trim(),
+        lifecycle: 'active',
+        workEmail: workEmail?.trim() || undefined,
+        workPhone: workPhone?.trim() || undefined,
+        mobilePhone: mobilePhone?.trim() || undefined,
+        homeLocationId: homeLocationId || undefined,
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: authUser.uid,
+        version: 1,
+      };
+
+      await personRef.set(person);
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'create',
+        entityType: 'person',
+        entityId: personRef.id,
+        entityName: person.fullName,
+        changes: [
+          { field: 'fullName', newValue: person.fullName },
+          { field: 'lifecycle', newValue: 'active' },
+        ],
+      });
+
+      return res.status(201).json({
+        data: { id: personRef.id, ...person },
+      });
+    } catch (error) {
+      console.error('Create person error:', error);
+      return res.status(500).json({
+        error: { code: 'create_error', message: 'Failed to create person', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.patch('/:id', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!canManagePeople(authUser.role)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Steward and Admin can update people', requestId: res.locals.requestId },
+        });
+      }
+
+      const personDoc = await db.collection('people').doc(id).get();
+      if (!personDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Person not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const currentPerson = personDoc.data() as Person;
+      const { fullName, workEmail, workPhone, mobilePhone, homeLocationId, version } = req.body;
+
+      if (version !== undefined && version !== currentPerson.version) {
+        return res.status(409).json({
+          error: { 
+            code: 'version_conflict', 
+            message: 'Person was modified by another user', 
+            requestId: res.locals.requestId 
+          },
+        });
+      }
+
+      if (workEmail) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(workEmail)) {
+          return res.status(400).json({
+            error: { code: 'invalid_request', message: 'Invalid email format', requestId: res.locals.requestId },
+          });
+        }
+      }
+
+      const changes: { field: string; oldValue?: string | null; newValue?: string | null }[] = [];
+      const updateData: Record<string, unknown> = {
+        updatedAt: new Date().toISOString(),
+        updatedBy: authUser.uid,
+        version: (currentPerson.version || 0) + 1,
+      };
+
+      if (fullName !== undefined && fullName !== currentPerson.fullName) {
+        updateData.fullName = fullName.trim();
+        changes.push({ field: 'fullName', oldValue: currentPerson.fullName, newValue: fullName.trim() });
+      }
+
+      if (workEmail !== undefined && workEmail !== currentPerson.workEmail) {
+        updateData.workEmail = workEmail?.trim() || null;
+        changes.push({ field: 'workEmail', oldValue: currentPerson.workEmail || null, newValue: workEmail?.trim() || null });
+      }
+
+      if (workPhone !== undefined && workPhone !== currentPerson.workPhone) {
+        updateData.workPhone = workPhone?.trim() || null;
+        changes.push({ field: 'workPhone', oldValue: currentPerson.workPhone || null, newValue: workPhone?.trim() || null });
+      }
+
+      if (mobilePhone !== undefined && mobilePhone !== currentPerson.mobilePhone) {
+        updateData.mobilePhone = mobilePhone?.trim() || null;
+        changes.push({ field: 'mobilePhone', oldValue: currentPerson.mobilePhone || null, newValue: mobilePhone?.trim() || null });
+      }
+
+      if (homeLocationId !== undefined && homeLocationId !== currentPerson.homeLocationId) {
+        updateData.homeLocationId = homeLocationId || null;
+        changes.push({ field: 'homeLocationId', oldValue: currentPerson.homeLocationId || null, newValue: homeLocationId || null });
+      }
+
+      if (changes.length === 0) {
+        const { id: _id, ...personData } = currentPerson;
+        return res.json({ data: { id, ...personData } });
+      }
+
+      await personDoc.ref.update(updateData);
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'person',
+        entityId: id,
+        entityName: (updateData.fullName as string) || currentPerson.fullName,
+        previousVersion: currentPerson.version,
+        newVersion: updateData.version as number,
+        changes,
+      });
+
+      const updatedDoc = await db.collection('people').doc(id).get();
+      return res.json({ data: { id, ...updatedDoc.data() } });
+    } catch (error) {
+      console.error('Update person error:', error);
+      return res.status(500).json({
+        error: { code: 'update_error', message: 'Failed to update person', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.post('/:id/retire', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!canManagePeople(authUser.role)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Steward and Admin can retire people', requestId: res.locals.requestId },
+        });
+      }
+
+      const personDoc = await db.collection('people').doc(id).get();
+      if (!personDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Person not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const currentPerson = personDoc.data() as Person;
+
+      if (currentPerson.lifecycle === 'inactive') {
+        return res.status(400).json({
+          error: { code: 'already_retired', message: 'Person is already inactive', requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+
+      const activeAssignments = await db.collection('assignments')
+        .where('personId', '==', id)
+        .get();
+
+      const batch = db.batch();
+
+      for (const doc of activeAssignments.docs) {
+        const assignment = doc.data() as Assignment;
+        if (isAssignmentActive(assignment, todayStr)) {
+          batch.update(doc.ref, {
+            endDate: todayStr,
+            endedAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+            updatedBy: authUser.uid,
+          });
+        }
+      }
+
+      batch.update(personDoc.ref, {
+        lifecycle: 'inactive',
+        updatedAt: now.toISOString(),
+        updatedBy: authUser.uid,
+        version: (currentPerson.version || 0) + 1,
+      });
+
+      await batch.commit();
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'person',
+        entityId: id,
+        entityName: currentPerson.fullName,
+        changes: [
+          { field: 'lifecycle', oldValue: 'active', newValue: 'inactive' },
+        ],
+      });
+
+      return res.json({
+        data: { id, retired: true, assignmentsEnded: activeAssignments.size },
+      });
+    } catch (error) {
+      console.error('Retire person error:', error);
+      return res.status(500).json({
+        error: { code: 'retire_error', message: 'Failed to retire person', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.post('/:id/reactivate', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!canManagePeople(authUser.role)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Steward and Admin can reactivate people', requestId: res.locals.requestId },
+        });
+      }
+
+      const personDoc = await db.collection('people').doc(id).get();
+      if (!personDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Person not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const currentPerson = personDoc.data() as Person;
+
+      if (currentPerson.lifecycle === 'active') {
+        return res.status(400).json({
+          error: { code: 'already_active', message: 'Person is already active', requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date().toISOString();
+
+      await personDoc.ref.update({
+        lifecycle: 'active',
+        updatedAt: now,
+        updatedBy: authUser.uid,
+        version: (currentPerson.version || 0) + 1,
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'person',
+        entityId: id,
+        entityName: currentPerson.fullName,
+        changes: [
+          { field: 'lifecycle', oldValue: 'inactive', newValue: 'active' },
+        ],
+      });
+
+      const updatedDoc = await db.collection('people').doc(id).get();
+      return res.json({ data: { id, ...updatedDoc.data() } });
+    } catch (error) {
+      console.error('Reactivate person error:', error);
+      return res.status(500).json({
+        error: { code: 'reactivate_error', message: 'Failed to reactivate person', requestId: res.locals.requestId },
       });
     }
   });

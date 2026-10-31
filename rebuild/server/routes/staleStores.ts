@@ -37,21 +37,37 @@ export function createStaleStoresRouter(db: Firestore): Router {
       const now = Date.now();
       const thresholdDate = new Date(now - STALE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
 
-      let locationsQuery = db.collection('locations')
+      const baseQuery = db.collection('locations')
         .where('recordStatus', '==', 'Active')
         .where('locationType', '==', 'Retail Store');
 
+      let snapshots: FirebaseFirestore.QuerySnapshot[] = [];
+      
       if (authUser.role === 'Leader' && authUser.leaderScope?.districtIds?.length) {
-        locationsQuery = locationsQuery.where('districtId', 'in', authUser.leaderScope.districtIds);
+        const uniqueDistrictIds = [...new Set(authUser.leaderScope.districtIds)];
+        const BATCH_SIZE = 30;
+        for (let i = 0; i < uniqueDistrictIds.length; i += BATCH_SIZE) {
+          const batch = uniqueDistrictIds.slice(i, i + BATCH_SIZE);
+          const batchQuery = baseQuery.where('districtId', 'in', batch);
+          snapshots.push(await batchQuery.get());
+        }
+      } else {
+        snapshots.push(await baseQuery.get());
       }
-
-      const snapshot = await locationsQuery.get();
+      
+      const allDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      for (const snapshot of snapshots) {
+        allDocs.push(...snapshot.docs);
+      }
 
       const districtIds = new Set<string>();
       const regionIds = new Set<string>();
       const locations: Location[] = [];
+      const seenLocationIds = new Set<string>();
 
-      snapshot.docs.forEach(doc => {
+      allDocs.forEach(doc => {
+        if (seenLocationIds.has(doc.id)) return;
+        seenLocationIds.add(doc.id);
         const data = { id: doc.id, ...doc.data() } as Location;
         locations.push(data);
         if (data.districtId) districtIds.add(data.districtId);

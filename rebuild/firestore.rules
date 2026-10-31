@@ -50,5 +50,17 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false;
     }
+    
+    // testTokens collection - server-only, no client access
+    match /testTokens/{tokenId} {
+      allow read: if false;
+      allow write: if false;
+    }
+    
+    // storeAuthTokens collection - server-only, no client access
+    match /storeAuthTokens/{tokenId} {
+      allow read: if false;
+      allow write: if false;
+    }
   }
 }

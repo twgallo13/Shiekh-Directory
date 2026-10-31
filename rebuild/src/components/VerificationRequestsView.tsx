@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem } from '../types';
 import { ComingSoonPlaceholder } from './ComingSoonPlaceholder';
@@ -13,7 +13,8 @@ export function VerificationRequestsView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'pending' | 'confirmed' | 'expired'>('pending');
+  const [filter, setFilter] = useState<'pending' | 'confirmed' | 'expired' | 'cancelled'>('pending');
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const [showNewRequest, setShowNewRequest] = useState(false);
 
   const isAdminOrSteward = authUser?.role === 'Admin' || authUser?.role === 'Steward';
@@ -72,6 +73,64 @@ export function VerificationRequestsView() {
     }
   };
 
+  const handleCancel = async (id: string) => {
+    setCancelling(id);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const response = await fetch(`/api/app/verification/${id}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        setError(result.error?.message || 'Failed to cancel');
+        return;
+      }
+
+      setSelectedId(null);
+      loadRequests();
+    } catch (err) {
+      setError('Failed to cancel verification request');
+    } finally {
+      setCancelling(null);
+    }
+  };
+
+  const handleReissue = async (locationId: string) => {
+    setProcessing(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ locationId }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        setError(result.error?.message || 'Failed to reissue');
+        return;
+      }
+
+      setSelectedId(null);
+      setFilter('pending');
+      loadRequests();
+    } catch (err) {
+      setError('Failed to reissue verification request');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const selectedRequest = requests.find(r => r.id === selectedId);
 
   if (!authUser || !hasAccess) {
@@ -109,12 +168,12 @@ export function VerificationRequestsView() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 py-4">
-        <div className="flex gap-2 mb-4">
-          {(['pending', 'confirmed', 'expired'] as const).map(status => (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {(['pending', 'confirmed', 'expired', 'cancelled'] as const).map(status => (
             <button
               key={status}
               onClick={() => setFilter(status)}
-              className={`px-4 py-2 rounded-full text-sm font-medium ${
+              className={`px-4 py-2 min-h-[44px] rounded-full text-sm font-medium ${
                 filter === status
                   ? 'bg-blue-600 text-white'
                   : 'bg-white text-gray-700 border border-gray-300'
@@ -163,10 +222,12 @@ export function VerificationRequestsView() {
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                         request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                         request.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                        request.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-700'
                       }`}>
                         {request.status === 'pending' ? <Clock className="w-3 h-3" /> :
                          request.status === 'confirmed' ? <CheckCircle className="w-3 h-3" /> :
+                         request.status === 'cancelled' ? <Ban className="w-3 h-3" /> :
                          <X className="w-3 h-3" />}
                         {request.status}
                       </span>
@@ -212,6 +273,7 @@ export function VerificationRequestsView() {
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                     selectedRequest.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                     selectedRequest.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                    selectedRequest.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                     'bg-gray-100 text-gray-700'
                   }`}>
                     {selectedRequest.status}
@@ -268,6 +330,18 @@ export function VerificationRequestsView() {
                   )}
                 </div>
               )}
+
+              {selectedRequest.cancelledAt && (
+                <div className="bg-red-50 rounded-lg p-3">
+                  <p className="text-sm font-medium text-red-800 flex items-center gap-1">
+                    <Ban className="w-4 h-4" />
+                    Cancelled
+                  </p>
+                  <p className="text-xs text-red-600 mt-1">
+                    {new Date(selectedRequest.cancelledAt).toLocaleString()}
+                  </p>
+                </div>
+              )}
             </div>
 
             {selectedRequest.status === 'pending' && selectedRequest.respondedAt && isAdminOrSteward && (
@@ -276,16 +350,16 @@ export function VerificationRequestsView() {
                   <>
                     <button
                       onClick={() => handleApprove(selectedRequest.id, true)}
-                      disabled={processing}
-                      className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                      disabled={processing || cancelling === selectedRequest.id}
+                      className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <Check className="w-4 h-4" />
                       Approve & Apply Changes
                     </button>
                     <button
                       onClick={() => handleApprove(selectedRequest.id, false)}
-                      disabled={processing}
-                      className="w-full py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                      disabled={processing || cancelling === selectedRequest.id}
+                      className="w-full min-h-[44px] py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       Mark Verified (No Changes)
                     </button>
@@ -293,13 +367,37 @@ export function VerificationRequestsView() {
                 ) : (
                   <button
                     onClick={() => handleApprove(selectedRequest.id, false)}
-                    disabled={processing}
-                    className="w-full py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                    disabled={processing || cancelling === selectedRequest.id}
+                    className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     <Check className="w-4 h-4" />
                     Mark as Verified
                   </button>
                 )}
+                <button
+                  onClick={() => handleCancel(selectedRequest.id)}
+                  disabled={processing || cancelling === selectedRequest.id}
+                  className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Ban className="w-4 h-4" />
+                  {cancelling === selectedRequest.id ? 'Cancelling...' : 'Cancel Request'}
+                </button>
+              </div>
+            )}
+
+            {selectedRequest.status === 'pending' && !selectedRequest.respondedAt && isAdminOrSteward && (
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 space-y-2">
+                <p className="text-sm text-gray-500 text-center mb-2">
+                  Awaiting store response
+                </p>
+                <button
+                  onClick={() => handleCancel(selectedRequest.id)}
+                  disabled={cancelling === selectedRequest.id}
+                  className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Ban className="w-4 h-4" />
+                  {cancelling === selectedRequest.id ? 'Cancelling...' : 'Cancel Request'}
+                </button>
               </div>
             )}
             
@@ -308,6 +406,19 @@ export function VerificationRequestsView() {
                 <p className="text-sm text-gray-500 text-center">
                   Awaiting Steward/Admin review
                 </p>
+              </div>
+            )}
+
+            {selectedRequest.status === 'cancelled' && isAdminOrSteward && (
+              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3">
+                <button
+                  onClick={() => handleReissue(selectedRequest.locationId)}
+                  disabled={processing}
+                  className="w-full min-h-[44px] py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  {processing ? 'Sending...' : 'Reissue Verification Request'}
+                </button>
               </div>
             )}
           </div>

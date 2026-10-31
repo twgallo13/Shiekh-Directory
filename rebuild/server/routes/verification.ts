@@ -524,6 +524,78 @@ export function createVerificationRouter(db: Firestore): Router {
     }
   });
 
+  router.post('/:id/cancel', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (authUser.role !== 'Admin' && authUser.role !== 'Steward') {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Admin and Steward can cancel verification requests', requestId: res.locals.requestId },
+        });
+      }
+
+      const requestDoc = await db.collection('verificationRequests').doc(id).get();
+      if (!requestDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Verification request not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const request = { id: requestDoc.id, ...requestDoc.data() } as VerificationRequest;
+
+      if (request.status !== 'pending') {
+        return res.status(400).json({
+          error: { code: 'invalid_status', message: `Cannot cancel a verification request that is ${request.status}`, requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date();
+
+      await db.collection('verificationRequests').doc(id).update({
+        status: 'cancelled',
+        cancelledAt: now.toISOString(),
+        cancelledBy: authUser.uid,
+        updatedAt: now.toISOString(),
+        updatedBy: authUser.uid,
+        version: (request.version || 0) + 1,
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'cancel',
+        entityType: 'verification',
+        entityId: id,
+        entityName: `${request.storeNumber} verification cancelled`,
+        locationId: request.locationId,
+        changes: [
+          { field: 'status', oldValue: 'pending', newValue: 'cancelled' },
+        ],
+      });
+
+      return res.json({
+        data: {
+          id,
+          status: 'cancelled',
+          cancelledAt: now.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('Cancel verification error:', error);
+      return res.status(500).json({
+        error: { code: 'cancel_error', message: 'Failed to cancel verification request', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   router.get('/pending/for-store', async (_req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;

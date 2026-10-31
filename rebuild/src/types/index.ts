@@ -364,7 +364,8 @@ export type AuditAction =
   | 'closure:start'
   | 'closure:end'
   | 'send'
-  | 'respond';
+  | 'respond'
+  | 'cancel';
 
 export interface AuditLogEntry {
   id: string;
@@ -389,7 +390,7 @@ export interface AuditChange {
 }
 
 // === Verification ===
-export type VerificationStatus = 'pending' | 'confirmed' | 'expired';
+export type VerificationStatus = 'pending' | 'confirmed' | 'expired' | 'cancelled';
 
 export interface VerificationRequest extends RecordMetadata {
   id: string;
@@ -408,6 +409,8 @@ export interface VerificationRequest extends RecordMetadata {
   reviewedAt?: string;
   reviewedBy?: string;
   reviewNotes?: string;
+  cancelledAt?: string; // ISO timestamp
+  cancelledBy?: string; // User ID (Admin/Steward who cancelled)
   // Email tracking
   emailSent?: boolean;
   emailMessageId?: string;

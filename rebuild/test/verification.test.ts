@@ -489,7 +489,118 @@ describe('Verification - Audit Trail', () => {
   });
 });
 
+describe('Verification - Cancel and Reissue', () => {
+  describe('Cancel Logic', () => {
+    it('only pending requests can be cancelled', () => {
+      const statuses: VerificationStatus[] = ['pending', 'confirmed', 'expired', 'cancelled'];
+      
+      const canCancel = statuses.map(status => ({
+        status,
+        canCancel: status === 'pending',
+      }));
+
+      assert.strictEqual(canCancel.find(s => s.status === 'pending')?.canCancel, true);
+      assert.strictEqual(canCancel.find(s => s.status === 'confirmed')?.canCancel, false);
+      assert.strictEqual(canCancel.find(s => s.status === 'expired')?.canCancel, false);
+      assert.strictEqual(canCancel.find(s => s.status === 'cancelled')?.canCancel, false);
+    });
+
+    it('only Admin and Steward can cancel requests', () => {
+      const rolesAllowedToCancel = ['Admin', 'Steward'];
+      
+      assert.ok(rolesAllowedToCancel.includes('Admin'));
+      assert.ok(rolesAllowedToCancel.includes('Steward'));
+      assert.ok(!rolesAllowedToCancel.includes('Store'));
+      assert.ok(!rolesAllowedToCancel.includes('Leader'));
+      assert.ok(!rolesAllowedToCancel.includes('Viewer'));
+    });
+
+    it('cancelled request records cancellation info', () => {
+      const now = new Date();
+      const cancelledBy = 'admin-123';
+
+      const request: Partial<VerificationRequest> = {
+        status: 'cancelled',
+        cancelledAt: now.toISOString(),
+        cancelledBy,
+      };
+
+      assert.strictEqual(request.status, 'cancelled');
+      assert.ok(request.cancelledAt);
+      assert.strictEqual(request.cancelledBy, 'admin-123');
+    });
+  });
+
+  describe('Reissue After Cancel', () => {
+    it('cancelled request allows new request for same location', () => {
+      const existingRequests = [
+        { locationId: 'loc-001', status: 'cancelled' as const },
+        { locationId: 'loc-002', status: 'pending' as const },
+      ];
+
+      const newRequestLocationId = 'loc-001';
+      
+      const hasPendingRequest = existingRequests.some(
+        r => r.locationId === newRequestLocationId && r.status === 'pending'
+      );
+
+      assert.strictEqual(hasPendingRequest, false, 'Should allow reissue since previous was cancelled');
+    });
+
+    it('cannot reissue while pending request exists', () => {
+      const existingRequests = [
+        { locationId: 'loc-001', status: 'pending' as const },
+      ];
+
+      const newRequestLocationId = 'loc-001';
+      
+      const hasPendingRequest = existingRequests.some(
+        r => r.locationId === newRequestLocationId && r.status === 'pending'
+      );
+
+      assert.strictEqual(hasPendingRequest, true, 'Should block reissue while pending');
+    });
+  });
+
+  describe('Audit for Cancel', () => {
+    it('logs cancellation with status change', () => {
+      const auditEntry = {
+        action: 'cancel',
+        entityType: 'verification',
+        entityId: 'ver-001',
+        changes: [
+          { field: 'status', oldValue: 'pending', newValue: 'cancelled' },
+        ],
+      };
+
+      assert.strictEqual(auditEntry.action, 'cancel');
+      assert.strictEqual(auditEntry.changes[0].oldValue, 'pending');
+      assert.strictEqual(auditEntry.changes[0].newValue, 'cancelled');
+    });
+  });
+});
+
 describe('Verification - UI Filter Logic', () => {
+  it('filters requests by status including cancelled', () => {
+    const requests = [
+      { id: '1', status: 'pending' },
+      { id: '2', status: 'confirmed' },
+      { id: '3', status: 'pending' },
+      { id: '4', status: 'expired' },
+      { id: '5', status: 'cancelled' },
+    ];
+
+    const pending = requests.filter(r => r.status === 'pending');
+    const confirmed = requests.filter(r => r.status === 'confirmed');
+    const expired = requests.filter(r => r.status === 'expired');
+    const cancelled = requests.filter(r => r.status === 'cancelled');
+
+    assert.strictEqual(pending.length, 2);
+    assert.strictEqual(confirmed.length, 1);
+    assert.strictEqual(expired.length, 1);
+    assert.strictEqual(cancelled.length, 1);
+  });
+
   it('filters requests by status', () => {
     const requests = [
       { id: '1', status: 'pending' },

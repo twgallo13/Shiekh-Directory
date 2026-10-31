@@ -20,6 +20,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'closure:end': 'Closure ended',
   send: 'Sent',
   respond: 'Responded',
+  cancel: 'Cancelled',
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {

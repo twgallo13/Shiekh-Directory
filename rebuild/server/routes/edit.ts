@@ -287,9 +287,21 @@ export function createEditRouter(db: Firestore): Router {
       let expiryUnresolved = false;
       const closureType = type || 'same_day';
       
+      // Fail-closed safety: require timezone for same-day closures
       if (closureType === 'same_day' && !endsAt) {
-        // Calculate local midnight
-        const timeZone = location.timeZone || 'America/Los_Angeles';
+        const timeZone = location.timeZone;
+        
+        if (!timeZone) {
+          // Fail-closed: reject closure creation if no timezone
+          return res.status(400).json({
+            error: { 
+              code: 'missing_timezone', 
+              message: 'Cannot create same-day closure: store has no timezone configured. Please set a timezone first, or use a multi-day closure with an explicit end date.',
+              requestId: res.locals.requestId,
+            },
+          });
+        }
+        
         try {
           const now = new Date();
           // Get today's date in the store's timezone and calculate next midnight
@@ -303,8 +315,14 @@ export function createEditRouter(db: Firestore): Router {
           const utcMidnight = new Date(midnight.getTime() - offsetHours * 60 * 60 * 1000);
           calculatedEndsAt = utcMidnight.toISOString();
         } catch {
-          // If timezone is invalid, set expiry as unresolved
-          expiryUnresolved = true;
+          // If timezone is invalid, reject rather than defaulting
+          return res.status(400).json({
+            error: { 
+              code: 'invalid_timezone', 
+              message: 'Cannot create same-day closure: store timezone is invalid. Please correct the timezone first.',
+              requestId: res.locals.requestId,
+            },
+          });
         }
       }
 
@@ -525,18 +543,40 @@ export function createEditRouter(db: Firestore): Router {
       const locationDoc = await db.collection('locations').doc(locationId).get();
       const location = locationDoc.data() as Location;
 
-      // Calculate new endsAt as next local midnight
-      const timeZone = location?.timeZone || 'America/Los_Angeles';
+      // Calculate new endsAt as next local midnight after the current expiry
+      // This extends the closure by one day, not to today's midnight
+      const timeZone = location?.timeZone;
+      
+      // Fail-closed safety: if no timezone, reject the renewal
+      if (!timeZone) {
+        return res.status(400).json({
+          error: { 
+            code: 'missing_timezone', 
+            message: 'Cannot renew closure: store has no timezone configured. Please set a timezone first.',
+            requestId: res.locals.requestId,
+          },
+        });
+      }
+      
       let newEndsAt: string;
       try {
-        const now = new Date();
+        // Start from the current expiry, or now if no expiry
+        const baseDate = closure.endsAt ? new Date(closure.endsAt) : new Date();
+        // Add one day to get the next midnight
+        const nextDay = new Date(baseDate.getTime() + 24 * 60 * 60 * 1000);
+        
+        // Get the date in the store's timezone
         const formatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
-        const localDate = formatter.format(now);
-        const midnight = new Date(`${localDate}T23:59:59`);
-        const tzOffset = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(now).find(p => p.type === 'timeZoneName')?.value || '';
+        const localDate = formatter.format(nextDay);
+        
+        // Calculate midnight in the store's timezone
+        const tzOffset = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(nextDay).find(p => p.type === 'timeZoneName')?.value || '';
         const offsetMatch = tzOffset.match(/GMT([+-]\d+)/);
         const offsetHours = offsetMatch ? parseInt(offsetMatch[1]) : 0;
-        const utcMidnight = new Date(midnight.getTime() - offsetHours * 60 * 60 * 1000);
+        
+        // Create midnight in local time, then convert to UTC
+        const midnightLocal = new Date(`${localDate}T23:59:59`);
+        const utcMidnight = new Date(midnightLocal.getTime() - offsetHours * 60 * 60 * 1000);
         newEndsAt = utcMidnight.toISOString();
       } catch {
         return res.status(400).json({

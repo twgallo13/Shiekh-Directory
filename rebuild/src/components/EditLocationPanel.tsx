@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { X, Save, AlertTriangle } from 'lucide-react';
-import type { LocationDetail, StandardHours, Address, DayOfWeek } from '../types';
+import type { LocationDetail, StandardHours, Address, DayOfWeek, ClosureType, ClosureReasonCode } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 interface EditLocationPanelProps {
@@ -21,6 +21,25 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
   sunday: 'Sunday',
 };
 
+const CLOSURE_REASONS: { code: ClosureReasonCode; label: string }[] = [
+  { code: 'ac_hvac', label: 'AC/HVAC Issue' },
+  { code: 'power', label: 'Power/Utility Failure' },
+  { code: 'mall_landlord', label: 'Mall/Landlord Issue' },
+  { code: 'safety', label: 'Safety/Security Concern' },
+  { code: 'weather', label: 'Weather-Related' },
+  { code: 'staffing', label: 'Staffing Shortage' },
+  { code: 'maintenance', label: 'Maintenance/Repair' },
+  { code: 'remodel', label: 'Remodel/Renovation' },
+  { code: 'relocation', label: 'Store Relocation' },
+  { code: 'other', label: 'Other (specify)' },
+];
+
+const CLOSURE_TYPES: { type: ClosureType; label: string; description: string }[] = [
+  { type: 'same_day', label: 'Same-day', description: 'Closes tonight at local midnight' },
+  { type: 'multi_day', label: 'Multi-day', description: 'Specify an end date' },
+  { type: 'unknown_end', label: 'Unknown end', description: 'Review date required' },
+];
+
 export function EditLocationPanel({ location, field, onSave, onCancel }: EditLocationPanelProps) {
   const { getIdToken, authUser } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -40,8 +59,32 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
     sunday: { closed: true, intervals: [] },
   });
 
-  const [closureReason, setClosureReason] = useState('');
+  // Closure form state
+  const [closureReasonCode, setClosureReasonCode] = useState<ClosureReasonCode | ''>('');
+  const [closureReasonText, setClosureReasonText] = useState('');
+  const [closureReasonNote, setClosureReasonNote] = useState('');
+  const [closurePublicExplanation, setClosurePublicExplanation] = useState('');
+  const [closureType, setClosureType] = useState<ClosureType>('same_day');
   const [closureEndsAt, setClosureEndsAt] = useState('');
+  const [closureOwnerId] = useState('');
+  const [closureOwnerName, setClosureOwnerName] = useState('');
+  const [closureNextReviewDate, setClosureNextReviewDate] = useState('');
+
+  // Calculate expiry preview for same-day closures
+  const expiryPreview = useMemo(() => {
+    if (closureType !== 'same_day' || !location.timeZone) return null;
+    try {
+      const now = new Date();
+      // Get timezone abbreviation
+      const tzAbbr = new Intl.DateTimeFormat('en-US', { 
+        timeZone: location.timeZone, 
+        timeZoneName: 'short' 
+      }).formatToParts(now).find(p => p.type === 'timeZoneName')?.value || '';
+      return `Ends tonight at 11:59 PM ${tzAbbr}`;
+    } catch {
+      return null;
+    }
+  }, [closureType, location.timeZone]);
 
   const handleSave = async () => {
     setError(null);
@@ -104,8 +147,21 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
   };
 
   const handleAddClosure = async () => {
-    if (!closureReason.trim()) {
-      setError('Please enter a reason for the closure');
+    // Validation
+    if (!closureReasonCode) {
+      setError('Please select a reason for the closure');
+      return;
+    }
+    if (closureReasonCode === 'other' && !closureReasonNote.trim()) {
+      setError('Please provide details when selecting "Other"');
+      return;
+    }
+    if (closureType === 'multi_day' && !closureEndsAt) {
+      setError('Please select an end date for multi-day closure');
+      return;
+    }
+    if (closureType === 'unknown_end' && !closureNextReviewDate) {
+      setError('Please select a next review date');
       return;
     }
 
@@ -114,6 +170,11 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
 
     try {
       const token = await getIdToken();
+      
+      // Build the reason text from code or custom text
+      const reasonLabel = CLOSURE_REASONS.find(r => r.code === closureReasonCode)?.label || closureReasonCode;
+      const reason = closureReasonText.trim() || reasonLabel;
+
       const response = await fetch(`/api/app/edit/locations/${location.id}/closures`, {
         method: 'POST',
         headers: {
@@ -121,8 +182,15 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          reason: closureReason,
-          endsAt: closureEndsAt || undefined,
+          reason,
+          type: closureType,
+          reasonCode: closureReasonCode || undefined,
+          reasonNote: closureReasonNote.trim() || undefined,
+          publicExplanation: closurePublicExplanation.trim() || undefined,
+          endsAt: closureType === 'multi_day' ? new Date(closureEndsAt).toISOString() : undefined,
+          ownerId: (closureType === 'multi_day' || closureType === 'unknown_end') ? closureOwnerId || undefined : undefined,
+          ownerName: (closureType === 'multi_day' || closureType === 'unknown_end') ? closureOwnerName.trim() || undefined : undefined,
+          nextReviewDate: closureType === 'unknown_end' ? closureNextReviewDate : undefined,
         }),
       });
 
@@ -292,26 +360,164 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
 
           {field === 'closure' && (
             <>
+              {/* Reason Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Closure *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+                <select
+                  value={closureReasonCode}
+                  onChange={(e) => setClosureReasonCode(e.target.value as ClosureReasonCode)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a reason...</option>
+                  {CLOSURE_REASONS.map(r => (
+                    <option key={r.code} value={r.code}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Custom reason text (optional override) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason text (optional)</label>
                 <input
                   type="text"
-                  value={closureReason}
-                  onChange={(e) => setClosureReason(e.target.value)}
+                  value={closureReasonText}
+                  onChange={(e) => setClosureReasonText(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Water damage repair"
+                  placeholder="Override default reason text if needed"
                 />
               </div>
+
+              {/* Note required for 'other' */}
+              {closureReasonCode === 'other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Details *</label>
+                  <textarea
+                    value={closureReasonNote}
+                    onChange={(e) => setClosureReasonNote(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    rows={2}
+                    placeholder="Please explain the closure reason..."
+                  />
+                </div>
+              )}
+
+              {/* Internal note (optional for all) */}
+              {closureReasonCode && closureReasonCode !== 'other' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Internal note (optional)</label>
+                  <textarea
+                    value={closureReasonNote}
+                    onChange={(e) => setClosureReasonNote(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    rows={2}
+                    placeholder="Additional details for staff..."
+                  />
+                </div>
+              )}
+
+              {/* Public explanation */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expected End (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Public explanation (optional)</label>
                 <input
-                  type="datetime-local"
-                  value={closureEndsAt}
-                  onChange={(e) => setClosureEndsAt(e.target.value)}
+                  type="text"
+                  value={closurePublicExplanation}
+                  onChange={(e) => setClosurePublicExplanation(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="Safe explanation for customers"
                 />
-                <p className="text-xs text-gray-500 mt-1">Leave empty to end at local midnight</p>
               </div>
+
+              {/* Closure Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Duration *</label>
+                <div className="space-y-2">
+                  {CLOSURE_TYPES.map(t => (
+                    <label
+                      key={t.type}
+                      className={`flex items-start p-3 rounded-lg border-2 cursor-pointer ${
+                        closureType === t.type ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="closureType"
+                        value={t.type}
+                        checked={closureType === t.type}
+                        onChange={(e) => setClosureType(e.target.value as ClosureType)}
+                        className="mt-0.5 mr-3"
+                      />
+                      <div>
+                        <div className="font-medium text-sm">{t.label}</div>
+                        <div className="text-xs text-gray-500">{t.description}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Expiry Preview for same-day */}
+              {closureType === 'same_day' && expiryPreview && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <p className="text-sm text-yellow-800 font-medium">{expiryPreview}</p>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    The closure will automatically end at local midnight. Use "Renew" to extend.
+                  </p>
+                </div>
+              )}
+
+              {closureType === 'same_day' && !location.timeZone && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-800 font-medium">⚠️ No timezone configured</p>
+                  <p className="text-xs text-red-600 mt-1">
+                    Same-day closures require a timezone. Please set the store's timezone first, or use a multi-day closure with an explicit end date.
+                  </p>
+                </div>
+              )}
+
+              {/* End date for multi-day */}
+              {closureType === 'multi_day' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End date *</label>
+                  <input
+                    type="datetime-local"
+                    value={closureEndsAt}
+                    onChange={(e) => setClosureEndsAt(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
+              {/* Owner and review date for multi-day and unknown-end */}
+              {(closureType === 'multi_day' || closureType === 'unknown_end') && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Owner name {closureType === 'unknown_end' ? '*' : '(optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      value={closureOwnerName}
+                      onChange={(e) => setClosureOwnerName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Who is responsible for this closure?"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Next review date {closureType === 'unknown_end' ? '*' : '(optional)'}
+                    </label>
+                    <input
+                      type="date"
+                      value={closureNextReviewDate}
+                      onChange={(e) => setClosureNextReviewDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      When should we check on this closure?
+                    </p>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

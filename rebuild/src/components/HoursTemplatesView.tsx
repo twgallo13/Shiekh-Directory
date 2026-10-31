@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import type { HoursTemplate, StandardHours, DayOfWeek, District, Region, LocationKind } from '../types';
 
 const DAYS: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -34,8 +35,10 @@ interface BulkApplyPreview {
 }
 
 export function HoursTemplatesView() {
+  const { getIdToken } = useAuth();
   const [templates, setTemplates] = useState<HoursTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<HoursTemplate | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -45,6 +48,7 @@ export function HoursTemplatesView() {
     hours: createEmptyHours(),
   });
   const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Bulk apply state
   const [showBulkApply, setShowBulkApply] = useState(false);
@@ -54,30 +58,34 @@ export function HoursTemplatesView() {
   const [bulkPreview, setBulkPreview] = useState<BulkApplyPreview | null>(null);
   const [applying, setApplying] = useState(false);
 
-  useEffect(() => {
-    loadTemplates();
-    loadFiltersData();
-  }, []);
-
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/app/hours-templates');
-      if (!response.ok) throw new Error('Failed to load templates');
+      setError(null);
+      const token = await getIdToken();
+      const response = await fetch('/api/app/hours-templates', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Failed to load templates');
+      }
       const { data } = await response.json();
       setTemplates(data || []);
-    } catch (error) {
-      console.error('Failed to load templates:', error);
+    } catch (err) {
+      console.error('Failed to load templates:', err);
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [getIdToken]);
 
-  const loadFiltersData = async () => {
+  const loadFiltersData = useCallback(async () => {
     try {
+      const token = await getIdToken();
       const [districtsRes, regionsRes] = await Promise.all([
-        fetch('/api/app/districts'),
-        fetch('/api/app/regions'),
+        fetch('/api/app/districts', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/app/regions', { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       if (districtsRes.ok) {
         const { data } = await districtsRes.json();
@@ -87,10 +95,15 @@ export function HoursTemplatesView() {
         const { data } = await regionsRes.json();
         setRegions(data || []);
       }
-    } catch (error) {
-      console.error('Failed to load filter data:', error);
+    } catch (err) {
+      console.error('Failed to load filter data:', err);
     }
-  };
+  }, [getIdToken]);
+
+  useEffect(() => {
+    loadTemplates();
+    loadFiltersData();
+  }, [loadTemplates, loadFiltersData]);
 
   const handleCreate = () => {
     setIsCreating(true);
@@ -101,6 +114,7 @@ export function HoursTemplatesView() {
       description: '',
       hours: createEmptyHours(),
     });
+    setActionError(null);
   };
 
   const handleEdit = (template: HoursTemplate) => {
@@ -112,22 +126,28 @@ export function HoursTemplatesView() {
       description: template.description || '',
       hours: JSON.parse(JSON.stringify(template.hours)),
     });
+    setActionError(null);
   };
 
   const handleSave = async () => {
     if (!editData.name.trim()) {
-      alert('Template name is required');
+      setActionError('Template name is required');
       return;
     }
 
     try {
       setSaving(true);
+      setActionError(null);
+      const token = await getIdToken();
       const url = isCreating ? '/api/app/hours-templates' : `/api/app/hours-templates/${selectedTemplate!.id}`;
       const method = isCreating ? 'POST' : 'PATCH';
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
           name: editData.name.trim(),
           description: editData.description.trim() || undefined,
@@ -136,16 +156,16 @@ export function HoursTemplatesView() {
       });
 
       if (!response.ok) {
-        const { error } = await response.json();
-        throw new Error(error?.message || 'Failed to save template');
+        const { error: err } = await response.json().catch(() => ({}));
+        throw new Error(err?.message || 'Failed to save template');
       }
 
       await loadTemplates();
       setIsEditing(false);
       setIsCreating(false);
       setSelectedTemplate(null);
-    } catch (error) {
-      alert((error as Error).message);
+    } catch (err) {
+      setActionError((err as Error).message);
     } finally {
       setSaving(false);
     }
@@ -155,13 +175,19 @@ export function HoursTemplatesView() {
     if (!confirm(`Archive template "${template.name}"? It can no longer be applied to stores.`)) return;
 
     try {
+      setActionError(null);
+      const token = await getIdToken();
       const response = await fetch(`/api/app/hours-templates/${template.id}/archive`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('Failed to archive template');
+      if (!response.ok) {
+        const { error: err } = await response.json().catch(() => ({}));
+        throw new Error(err?.message || 'Failed to archive template');
+      }
       await loadTemplates();
-    } catch (error) {
-      alert((error as Error).message);
+    } catch (err) {
+      setActionError((err as Error).message);
     }
   };
 
@@ -170,26 +196,35 @@ export function HoursTemplatesView() {
     setShowBulkApply(true);
     setBulkFilters({});
     setBulkPreview(null);
+    setActionError(null);
   };
 
   const handlePreview = async () => {
     if (!selectedTemplate) return;
 
     try {
+      setActionError(null);
+      const token = await getIdToken();
       const response = await fetch(`/api/app/hours-templates/${selectedTemplate.id}/bulk-apply`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
           filters: bulkFilters,
           preview: true,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to load preview');
+      if (!response.ok) {
+        const { error: err } = await response.json().catch(() => ({}));
+        throw new Error(err?.message || 'Failed to load preview');
+      }
       const { data } = await response.json();
       setBulkPreview(data);
-    } catch (error) {
-      alert((error as Error).message);
+    } catch (err) {
+      setActionError((err as Error).message);
     }
   };
 
@@ -199,22 +234,30 @@ export function HoursTemplatesView() {
 
     try {
       setApplying(true);
+      setActionError(null);
+      const token = await getIdToken();
       const response = await fetch(`/api/app/hours-templates/${selectedTemplate.id}/bulk-apply`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
           filters: bulkFilters,
           preview: false,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to apply template');
+      if (!response.ok) {
+        const { error: err } = await response.json().catch(() => ({}));
+        throw new Error(err?.message || 'Failed to apply template');
+      }
       const { data } = await response.json();
       alert(`Applied to ${data.appliedCount} locations`);
       setShowBulkApply(false);
       setBulkPreview(null);
-    } catch (error) {
-      alert((error as Error).message);
+    } catch (err) {
+      setActionError((err as Error).message);
     } finally {
       setApplying(false);
     }
@@ -249,12 +292,33 @@ export function HoursTemplatesView() {
     );
   }
 
+  if (error) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <div style={{ color: '#dc2626', marginBottom: '1rem' }}>{error}</div>
+        <button
+          onClick={loadTemplates}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.25rem',
+            cursor: 'pointer',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   if (showBulkApply && selectedTemplate) {
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
           <button
-            onClick={() => { setShowBulkApply(false); setBulkPreview(null); }}
+            onClick={() => { setShowBulkApply(false); setBulkPreview(null); setActionError(null); }}
             style={{
               padding: '0.5rem',
               borderRadius: '0.25rem',
@@ -271,6 +335,19 @@ export function HoursTemplatesView() {
             Bulk Apply: {selectedTemplate.name}
           </h2>
         </div>
+
+        {actionError && (
+          <div style={{
+            padding: '0.75rem',
+            backgroundColor: '#fee2e2',
+            color: '#991b1b',
+            borderRadius: '0.375rem',
+            marginBottom: '1rem',
+            fontSize: '0.875rem',
+          }}>
+            {actionError}
+          </div>
+        )}
 
         <div style={{ 
           display: 'grid', 
@@ -417,7 +494,7 @@ export function HoursTemplatesView() {
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
           <button
-            onClick={() => { setIsEditing(false); setIsCreating(false); }}
+            onClick={() => { setIsEditing(false); setIsCreating(false); setActionError(null); }}
             style={{
               padding: '0.5rem',
               borderRadius: '0.25rem',
@@ -434,6 +511,19 @@ export function HoursTemplatesView() {
             {isCreating ? 'Create Template' : 'Edit Template'}
           </h2>
         </div>
+
+        {actionError && (
+          <div style={{
+            padding: '0.75rem',
+            backgroundColor: '#fee2e2',
+            color: '#991b1b',
+            borderRadius: '0.375rem',
+            marginBottom: '1rem',
+            fontSize: '0.875rem',
+          }}>
+            {actionError}
+          </div>
+        )}
 
         <div style={{ maxWidth: '600px' }}>
           <div style={{ marginBottom: '1rem' }}>
@@ -550,7 +640,7 @@ export function HoursTemplatesView() {
 
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             <button
-              onClick={() => { setIsEditing(false); setIsCreating(false); }}
+              onClick={() => { setIsEditing(false); setIsCreating(false); setActionError(null); }}
               style={{
                 padding: '0.5rem 1rem',
                 borderRadius: '0.375rem',
@@ -609,6 +699,19 @@ export function HoursTemplatesView() {
           + Create Template
         </button>
       </div>
+
+      {actionError && (
+        <div style={{
+          padding: '0.75rem',
+          backgroundColor: '#fee2e2',
+          color: '#991b1b',
+          borderRadius: '0.375rem',
+          marginBottom: '1rem',
+          fontSize: '0.875rem',
+        }}>
+          {actionError}
+        </div>
+      )}
 
       {templates.length === 0 ? (
         <div style={{

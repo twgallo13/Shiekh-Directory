@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import type { Closure, District, Location } from '../types';
+import { useEffect, useState, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import type { Closure, District, LocationListItem } from '../types';
 
 interface ClosureBoardItem {
   id: string;
@@ -25,90 +26,115 @@ const REASON_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
-export function ClosuresBoard() {
+interface ClosuresBoardProps {
+  districtFilter?: string;
+}
+
+export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
+  const { getIdToken } = useAuth();
   const [items, setItems] = useState<ClosureBoardItem[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDistrict, setSelectedDistrict] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [selectedDistrict, setSelectedDistrict] = useState<string>(districtFilter || '');
   const [statusFilter, setStatusFilter] = useState<'active' | 'ended' | 'all'>('active');
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadClosures();
-    loadDistricts();
-  }, []);
-
-  const loadClosures = async () => {
+  const loadClosures = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/app/locations?lifecycle=active');
-      if (!response.ok) throw new Error('Failed to load locations');
+      setError(null);
+      const token = await getIdToken();
+      
+      const response = await fetch('/api/app/locations?lifecycle=active', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Failed to load locations');
+      }
       const { data: locations } = await response.json();
 
       const closureItems: ClosureBoardItem[] = [];
 
-      for (const loc of locations as Location[]) {
-        const closuresResp = await fetch(`/api/app/edit/locations/${loc.id}/closures`);
-        if (closuresResp.ok) {
-          const { data: closures } = await closuresResp.json();
-          if (closures && Array.isArray(closures)) {
-            for (const closure of closures as Closure[]) {
-              closureItems.push({
-                id: `${loc.id}-${closure.id}`,
-                closureId: closure.id,
-                locationId: loc.id,
-                storeNumber: loc.storeNumber,
-                locationName: loc.name,
-                districtId: loc.districtId,
-                districtName: '', // Will be filled from district lookup
-                closure,
-              });
-            }
-          }
+      for (const loc of locations as LocationListItem[]) {
+        if (loc.activeClosure) {
+          closureItems.push({
+            id: `${loc.id}-${loc.activeClosure.id}`,
+            closureId: loc.activeClosure.id,
+            locationId: loc.id,
+            storeNumber: loc.storeNumber,
+            locationName: loc.name,
+            districtId: loc.districtId || '',
+            districtName: loc.districtName || '',
+            closure: loc.activeClosure,
+          });
         }
       }
 
       setItems(closureItems);
-    } catch (error) {
-      console.error('Failed to load closures:', error);
+    } catch (err) {
+      console.error('Failed to load closures:', err);
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [getIdToken]);
 
-  const loadDistricts = async () => {
+  const loadDistricts = useCallback(async () => {
     try {
-      const response = await fetch('/api/app/districts');
+      const token = await getIdToken();
+      const response = await fetch('/api/app/districts', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!response.ok) throw new Error('Failed to load districts');
       const { data } = await response.json();
       setDistricts(data || []);
-    } catch (error) {
-      console.error('Failed to load districts:', error);
+    } catch (err) {
+      console.error('Failed to load districts:', err);
     }
-  };
+  }, [getIdToken]);
+
+  useEffect(() => {
+    loadClosures();
+    loadDistricts();
+  }, [loadClosures, loadDistricts]);
 
   const handleEndClosure = async (locationId: string, closureId: string) => {
     try {
+      setActionError(null);
+      const token = await getIdToken();
       const response = await fetch(`/api/app/edit/locations/${locationId}/closures/${closureId}/end`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.ok) {
-        loadClosures();
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Failed to end closure');
       }
-    } catch (error) {
-      console.error('Failed to end closure:', error);
+      loadClosures();
+    } catch (err) {
+      console.error('Failed to end closure:', err);
+      setActionError((err as Error).message);
     }
   };
 
   const handleRenewClosure = async (locationId: string, closureId: string) => {
     try {
+      setActionError(null);
+      const token = await getIdToken();
       const response = await fetch(`/api/app/edit/locations/${locationId}/closures/${closureId}/renew`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.ok) {
-        loadClosures();
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Failed to renew closure');
       }
-    } catch (error) {
-      console.error('Failed to renew closure:', error);
+      loadClosures();
+    } catch (err) {
+      console.error('Failed to renew closure:', err);
+      setActionError((err as Error).message);
     }
   };
 
@@ -147,6 +173,27 @@ export function ClosuresBoard() {
     );
   }
 
+  if (error) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <div style={{ color: '#dc2626', marginBottom: '1rem' }}>{error}</div>
+        <button
+          onClick={loadClosures}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.25rem',
+            cursor: 'pointer',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ 
@@ -159,22 +206,24 @@ export function ClosuresBoard() {
       }}>
         <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>Closures Board</h2>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <select
-            value={selectedDistrict}
-            onChange={(e) => setSelectedDistrict(e.target.value)}
-            style={{
-              padding: '0.5rem',
-              borderRadius: '0.375rem',
-              border: '1px solid #d1d5db',
-              fontSize: '0.875rem',
-              minWidth: '150px',
-            }}
-          >
-            <option value="">All Districts</option>
-            {districts.map(d => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
+          {!districtFilter && (
+            <select
+              value={selectedDistrict}
+              onChange={(e) => setSelectedDistrict(e.target.value)}
+              style={{
+                padding: '0.5rem',
+                borderRadius: '0.375rem',
+                border: '1px solid #d1d5db',
+                fontSize: '0.875rem',
+                minWidth: '150px',
+              }}
+            >
+              <option value="">All Districts</option>
+              {districts.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'active' | 'ended' | 'all')}
@@ -191,6 +240,19 @@ export function ClosuresBoard() {
           </select>
         </div>
       </div>
+
+      {actionError && (
+        <div style={{
+          padding: '0.75rem',
+          backgroundColor: '#fee2e2',
+          color: '#991b1b',
+          borderRadius: '0.375rem',
+          marginBottom: '1rem',
+          fontSize: '0.875rem',
+        }}>
+          {actionError}
+        </div>
+      )}
 
       {filteredItems.length === 0 ? (
         <div style={{

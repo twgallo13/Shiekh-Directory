@@ -12,6 +12,7 @@ import { AdminView } from './components/AdminView';
 import { PeopleListView } from './components/PeopleListView';
 import { HierarchyView } from './components/HierarchyView';
 import { SettingsView } from './components/SettingsView';
+import { ClosuresBoardPage } from './components/ClosuresBoardPage';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -128,6 +129,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <SettingsView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/closures"
+        element={
+          <ProtectedRoute>
+            <ClosuresBoardPage />
           </ProtectedRoute>
         }
       />

@@ -73,6 +73,18 @@ export function createLocationsRouter(db: Firestore): Router {
           }
         }
         
+        // Get district name if available
+        let districtName: string | undefined;
+        if (location.districtId) {
+          const districtDoc = await db.collection('districts').doc(location.districtId).get();
+          if (districtDoc.exists) {
+            districtName = (districtDoc.data() as District).name;
+          }
+        }
+
+        // Get active closure if any
+        const activeClosure = closures.length > 0 ? closures[0] : undefined;
+
         locations.push({
           id: location.id,
           kind: location.kind,
@@ -85,6 +97,9 @@ export function createLocationsRouter(db: Firestore): Router {
           phoneFormatted: location.phonePublic ? formatPhoneNumber(location.mainPhone) : 'Private',
           smName,
           sharedInboxEmail: location.sharedInboxEmail,
+          districtId: location.districtId,
+          districtName,
+          activeClosure,
         });
       }
       

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, X, Users } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationDetail, AssignmentCapacity } from '../types';
 import { StatusBadge } from './StatusBadge';
@@ -196,11 +196,56 @@ export function LocationDetailView() {
                   <p className="text-sm text-red-700">{location.activeClosure.reason}</p>
                   {location.activeClosure.endsAt && (
                     <p className="text-sm text-red-600 mt-1">
-                      Expected to reopen: {new Date(location.activeClosure.endsAt).toLocaleDateString()}
+                      Expires: {new Date(location.activeClosure.endsAt).toLocaleString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        timeZoneName: 'short',
+                      })}
+                    </p>
+                  )}
+                  {location.activeClosure.type === 'unknown_end' && location.activeClosure.nextReviewDate && (
+                    <p className="text-sm text-red-600 mt-1">
+                      Next review: {location.activeClosure.nextReviewDate}
+                      {location.activeClosure.ownerName && ` · Owner: ${location.activeClosure.ownerName}`}
+                    </p>
+                  )}
+                  {location.activeClosure.renewalCount && location.activeClosure.renewalCount > 0 && (
+                    <p className="text-xs text-purple-600 mt-1">
+                      Renewed {location.activeClosure.renewalCount} time{location.activeClosure.renewalCount > 1 ? 's' : ''}
                     </p>
                   )}
                 </div>
-                {editPermissions.closure && (
+              </div>
+              {editPermissions.closure && (
+                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-red-200">
+                  {(!location.activeClosure.type || location.activeClosure.type === 'same_day') && (
+                    <button
+                      onClick={async () => {
+                        const token = await getIdToken();
+                        const resp = await fetch(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/renew`, {
+                          method: 'POST',
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        if (!resp.ok) {
+                          const err = await resp.json().catch(() => ({}));
+                          alert(err.error?.message || 'Failed to renew closure');
+                        }
+                        fetchLocation();
+                      }}
+                      className="text-sm bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 min-h-[44px]"
+                    >
+                      Renew (extend to tomorrow)
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setEditingField('closure')}
+                    className="text-sm bg-orange-600 text-white px-3 py-1.5 rounded hover:bg-orange-700 min-h-[44px]"
+                  >
+                    Needs longer closure
+                  </button>
                   <button
                     onClick={async () => {
                       const token = await getIdToken();
@@ -210,13 +255,53 @@ export function LocationDetailView() {
                       });
                       fetchLocation();
                     }}
-                    className="text-xs text-red-700 hover:bg-red-100 px-2 py-1 rounded"
+                    className="text-sm bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 min-h-[44px]"
                   >
-                    <X className="w-3 h-3 inline mr-1" />
-                    End
+                    Reopen Store
                   </button>
-                )}
-              </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Active Notices */}
+          {location.activeNotices && location.activeNotices.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {location.activeNotices.map((notice) => (
+                <div
+                  key={notice.id}
+                  className={`rounded-lg p-3 ${
+                    notice.audience === 'public'
+                      ? 'bg-blue-50 border border-blue-200'
+                      : 'bg-yellow-50 border border-yellow-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                      notice.audience === 'public' ? 'text-blue-600' : 'text-yellow-600'
+                    }`} />
+                    <div className="flex-1">
+                      <p className={`text-sm ${
+                        notice.audience === 'public' ? 'text-blue-800' : 'text-yellow-800'
+                      }`}>
+                        {notice.text}
+                      </p>
+                      {notice.expectedResolution && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Expected resolution: {notice.expectedResolution}
+                        </p>
+                      )}
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      notice.audience === 'public'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {notice.audience === 'public' ? 'Public' : 'Internal'}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
           

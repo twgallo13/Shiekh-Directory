@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import type { Location, CorrectionCategory } from '../types';
 
 interface Props {
@@ -18,6 +19,7 @@ const CATEGORIES: { value: CorrectionCategory; label: string; description: strin
 ];
 
 export function ReportProblemDialog({ location, onClose, onSuccess }: Props) {
+  const { getIdToken } = useAuth();
   const [category, setCategory] = useState<CorrectionCategory | ''>('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -34,9 +36,13 @@ export function ReportProblemDialog({ location, onClose, onSuccess }: Props) {
       setSubmitting(true);
       setError(null);
 
+      const token = await getIdToken();
       const response = await fetch('/api/app/corrections', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
           locationId: location.id,
           category,
@@ -45,7 +51,7 @@ export function ReportProblemDialog({ location, onClose, onSuccess }: Props) {
       });
 
       if (!response.ok) {
-        const { error: err } = await response.json();
+        const { error: err } = await response.json().catch(() => ({}));
         throw new Error(err?.message || 'Failed to submit request');
       }
 

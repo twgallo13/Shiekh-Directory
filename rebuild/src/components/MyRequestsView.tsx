@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import type { Correction, CorrectionCategory } from '../types';
 
 const CATEGORY_LABELS: Record<CorrectionCategory, string> = {
@@ -19,54 +20,67 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
 };
 
 export function MyRequestsView() {
+  const { getIdToken } = useAuth();
   const [requests, setRequests] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadRequests();
-  }, []);
-
-  const loadRequests = async () => {
+  const loadRequests = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
+      const token = await getIdToken();
       const statuses = ['pending', 'approved', 'rejected', 'cancelled'];
       const allRequests: Correction[] = [];
 
       for (const status of statuses) {
-        const response = await fetch(`/api/app/corrections?status=${status}&myRequests=true`);
+        const response = await fetch(`/api/app/corrections?status=${status}&myRequests=true`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (response.ok) {
           const { data } = await response.json();
           allRequests.push(...(data || []));
+        } else if (response.status === 401) {
+          throw new Error('Please sign in to view your requests');
         }
       }
 
       allRequests.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
       setRequests(allRequests);
-    } catch (error) {
-      console.error('Failed to load requests:', error);
+    } catch (err) {
+      console.error('Failed to load requests:', err);
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [getIdToken]);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
 
   const handleCancel = async (id: string) => {
     if (!confirm('Are you sure you want to cancel this request?')) return;
 
     try {
       setCancelling(id);
+      setActionError(null);
+      const token = await getIdToken();
       const response = await fetch(`/api/app/corrections/${id}/cancel`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.ok) {
-        loadRequests();
-      } else {
-        const { error } = await response.json();
-        alert(error?.message || 'Failed to cancel request');
+      if (!response.ok) {
+        const { error: err } = await response.json().catch(() => ({}));
+        throw new Error(err?.message || 'Failed to cancel request');
       }
-    } catch (error) {
-      console.error('Failed to cancel request:', error);
+      loadRequests();
+    } catch (err) {
+      console.error('Failed to cancel request:', err);
+      setActionError((err as Error).message);
     } finally {
       setCancelling(null);
     }
@@ -98,6 +112,27 @@ export function MyRequestsView() {
     );
   }
 
+  if (error) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <div style={{ color: '#dc2626', marginBottom: '1rem' }}>{error}</div>
+        <button
+          onClick={loadRequests}
+          style={{
+            padding: '0.5rem 1rem',
+            backgroundColor: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.25rem',
+            cursor: 'pointer',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ 
@@ -125,6 +160,19 @@ export function MyRequestsView() {
           <option value="rejected">Rejected ({rejectedCount})</option>
         </select>
       </div>
+
+      {actionError && (
+        <div style={{
+          padding: '0.75rem',
+          backgroundColor: '#fee2e2',
+          color: '#991b1b',
+          borderRadius: '0.375rem',
+          marginBottom: '1rem',
+          fontSize: '0.875rem',
+        }}>
+          {actionError}
+        </div>
+      )}
 
       {filteredRequests.length === 0 ? (
         <div style={{

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ComingSoonPlaceholder, ComingSoonSection } from './ComingSoonPlaceholder';
-import { ClosuresBoard } from './ClosuresBoard';
 import { HoursTemplatesView } from './HoursTemplatesView';
 
 type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates';
@@ -1569,10 +1568,6 @@ function AuditLogTab() {
       />
       
       <div className="space-y-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <ClosuresBoard />
-        </div>
-        
         <ComingSoonPlaceholder
           title="Data Quality / Stale Stores"
           description="Identify stores with outdated information, missing managers, or unverified hours."

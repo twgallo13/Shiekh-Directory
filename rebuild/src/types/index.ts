@@ -260,6 +260,9 @@ export interface LocationListItem {
   phoneFormatted: string;
   smName?: string;
   sharedInboxEmail?: string;
+  districtId?: string;
+  districtName?: string;
+  activeClosure?: Closure;
 }
 
 export interface LeadershipHolder {

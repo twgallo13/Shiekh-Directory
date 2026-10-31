@@ -1,5 +1,5 @@
 import { type Request, type Response, type NextFunction, Router } from 'express';
-import { randomUUID, createHash, createHmac, timingSafeEqual } from 'crypto';
+import { randomUUID, createHash, createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 
 export type LegacyApiScope =
@@ -17,12 +17,49 @@ export interface ApiCredential {
   grantsVersion?: number;
 }
 
-const TEST_TOKEN_SECRET = 'test-cursor-signing-key-for-rebuild';
+export interface ApiClientDocument {
+  id: string;
+  name: string;
+  tokenHash: string;
+  scopes: LegacyApiScope[];
+  active: boolean;
+  version: number;
+  createdAt: string;
+  lastUsedAt?: string;
+}
 
-export function createLegacyApiAuthMiddleware(_db: Firestore): Router {
+const TEST_TOKEN_SECRET = 'test-cursor-signing-key-for-rebuild';
+const LAST_USED_THROTTLE_MS = 15 * 60_000;
+
+function getTokenPepper(): string {
+  return process.env.API_TOKEN_PEPPER || process.env.VITE_API_TOKEN_PEPPER || 'default-dev-pepper-not-for-production';
+}
+
+export function hashToken(token: string): string {
+  const pepper = getTokenPepper();
+  return createHash('sha256').update(`${pepper}:${token}`).digest('hex');
+}
+
+export function generateApiToken(): string {
+  return `shk_${randomBytes(32).toString('base64url')}`;
+}
+
+export function generateCursorSigningKey(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function isEmulatorEnvironment(): boolean {
+  return !!(
+    process.env.FUNCTIONS_EMULATOR ||
+    process.env.FIREBASE_AUTH_EMULATOR_HOST ||
+    process.env.FIRESTORE_EMULATOR_HOST
+  );
+}
+
+export function createLegacyApiAuthMiddleware(db: Firestore): Router {
   const router = Router();
 
-  router.use((req: Request, res: Response, next: NextFunction) => {
+  router.use(async (req: Request, res: Response, next: NextFunction) => {
     res.locals.requestId = randomUUID();
     res.setHeader('X-Request-ID', res.locals.requestId);
     res.setHeader('Cache-Control', 'no-store');
@@ -37,8 +74,7 @@ export function createLegacyApiAuthMiddleware(_db: Firestore): Router {
       return sendLegacyError(res, 401, 'invalid_token', 'A valid Bearer token is required.');
     }
 
-    const isDev = process.env.FIREBASE_AUTH_EMULATOR_HOST || process.env.NODE_ENV !== 'production';
-    if (isDev && token.startsWith('test-api-token-')) {
+    if (isEmulatorEnvironment() && token.startsWith('test-api-token-')) {
       const scopePart = token.replace('test-api-token-', '');
       const scopes = parseTestScopes(scopePart);
       
@@ -52,7 +88,40 @@ export function createLegacyApiAuthMiddleware(_db: Firestore): Router {
       return next();
     }
 
-    return sendLegacyError(res, 401, 'invalid_token', 'A valid Bearer token is required.');
+    try {
+      const tokenHash = hashToken(token);
+      const clientsRef = db.collection('apiClients');
+      const snapshot = await clientsRef.where('tokenHash', '==', tokenHash).limit(1).get();
+
+      if (snapshot.empty) {
+        return sendLegacyError(res, 401, 'invalid_token', 'A valid Bearer token is required.');
+      }
+
+      const doc = snapshot.docs[0];
+      const client = { id: doc.id, ...doc.data() } as ApiClientDocument;
+
+      if (!client.active) {
+        return sendLegacyError(res, 401, 'invalid_token', 'A valid Bearer token is required.');
+      }
+
+      const now = new Date();
+      if (!client.lastUsedAt || now.getTime() - new Date(client.lastUsedAt).getTime() >= LAST_USED_THROTTLE_MS) {
+        await doc.ref.update({ lastUsedAt: now.toISOString() });
+      }
+
+      res.locals.apiCredential = {
+        clientId: client.id,
+        tokenVersionId: `v${client.version}`,
+        scopes: client.scopes,
+        cursorSigningKey: client.tokenHash.slice(0, 43),
+        grantsVersion: client.version,
+      } as ApiCredential;
+
+      return next();
+    } catch (error) {
+      console.error('API auth error:', error);
+      return sendLegacyError(res, 401, 'invalid_token', 'A valid Bearer token is required.');
+    }
   });
 
   return router;

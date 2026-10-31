@@ -87,8 +87,21 @@ export function createLegacyV1Router(db: Firestore): Router {
         return sendLegacyError(res, 409, 'hierarchy_changed', 'The Region/District registry changed. Restart a full reconciliation without a cursor, updatedSince, customFieldsVersion, or hierarchyVersion.');
       }
 
+      const kindParam = req.query.kind;
+      const kinds = kindParam 
+        ? String(kindParam).split(',').map(k => k.trim()).filter(Boolean)
+        : ['store'];
+      
+      const validKinds = ['store', 'warehouse', 'office'];
+      for (const k of kinds) {
+        if (!validKinds.includes(k)) {
+          return sendLegacyError(res, 400, 'invalid_kind', `Invalid kind "${k}". Valid kinds: ${validKinds.join(', ')}`);
+        }
+      }
+
       let query = db.collection('locations')
         .where('lifecycle', '==', 'active')
+        .where('kind', 'in', kinds)
         .orderBy('__name__')
         .limit(limit + 1);
 

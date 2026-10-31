@@ -16,6 +16,8 @@ import { createLegacyApiAuthMiddleware } from './middleware/legacyApiAuth';
 import { createLegacyV1Router } from './routes/legacyV1';
 import { createLegacyV2Router } from './routes/legacyV2';
 import { createLegacyV3Router } from './routes/legacyV3';
+import { createApiClientsRouter } from './routes/apiClients';
+import { createExportsRouter } from './routes/exports';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -40,6 +42,8 @@ app.use('/api/app/people', createPeopleRouter(db));
 app.use('/api/app/assignments', createAssignmentsRouter(db));
 app.use('/api/app/hours-exceptions', createHoursExceptionsRouter(db));
 app.use('/api/app/verification', createVerificationRouter(db));
+app.use('/api/app/api-clients', createApiClientsRouter(db));
+app.use('/api/app/exports', createExportsRouter(db));
 
 // Legacy API routes (v1/v2/v3)
 app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));

@@ -7,6 +7,7 @@ import { SignInView } from './components/SignInView';
 import { CorrectionsQueue } from './components/CorrectionsQueue';
 import { BulkHolidayManager } from './components/BulkHolidayManager';
 import { VerificationRequestsView } from './components/VerificationRequestsView';
+import { PrintableDirectoryView } from './components/PrintableDirectoryView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -83,6 +84,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <VerificationRequestsView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/print"
+        element={
+          <ProtectedRoute>
+            <PrintableDirectoryView />
           </ProtectedRoute>
         }
       />

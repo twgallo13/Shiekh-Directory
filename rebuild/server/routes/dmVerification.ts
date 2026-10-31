@@ -643,6 +643,12 @@ export function createDMVerificationRouter(db: Firestore): Router {
         });
       }
 
+      if (request.status === 'cancelled') {
+        return res.status(400).json({
+          error: { code: 'cancelled', message: 'This request has been cancelled', requestId: res.locals.requestId },
+        });
+      }
+
       if (request.status === 'expired' || new Date(request.expiresAt) < new Date()) {
         return res.status(400).json({
           error: { code: 'expired', message: 'This request has expired', requestId: res.locals.requestId },

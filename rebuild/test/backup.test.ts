@@ -1,12 +1,13 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before } from 'node:test';
 import assert from 'node:assert';
+import type { Firestore } from 'firebase-admin/firestore';
 import { seedTestUsers, getTestDb } from './testHelpers';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 
 describe('Backup/Snapshot API', () => {
   const testSnapshotId = 'test-snapshot-delete';
-  let db: ReturnType<typeof getTestDb> extends Promise<infer T> ? T : never;
+  let db: Firestore;
 
   before(async () => {
     await seedTestUsers();

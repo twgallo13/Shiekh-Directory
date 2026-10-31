@@ -2,11 +2,12 @@ import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { randomBytes, createHmac } from 'crypto';
 import { createMailService } from '../services/mail';
-import { getAuthClient } from '../firebase';
 import type { Location, AuditLogEntry } from '../../src/types';
 
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
+const SESSION_SECRET = process.env.STORE_SESSION_SECRET || 'dev-session-secret-not-for-production';
 const TOKEN_EXPIRY_HOURS = 24;
+const SESSION_EXPIRY_HOURS = 12;
 
 function getAppUrl(req: Request): string {
   if (process.env.APP_URL) {
@@ -42,12 +43,34 @@ export interface OneClickToken {
   createdBy: string;
 }
 
+export interface StoreSession {
+  locationId: string;
+  storeNumber: string;
+  email: string;
+  role: 'Store';
+  expiresAt: string;
+  revoked: boolean;
+  revokedAt?: string;
+  revokedBy?: string;
+  createdAt: string;
+  createdBy: string;
+  userAgent?: string;
+}
+
 function generateToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+function generateSessionId(): string {
   return randomBytes(32).toString('base64url');
 }
 
 function hashToken(token: string): string {
   return createHmac('sha256', TOKEN_SECRET).update(token).digest('hex');
+}
+
+function hashSessionId(sessionId: string): string {
+  return createHmac('sha256', SESSION_SECRET).update(sessionId).digest('hex');
 }
 
 function parseStoreEmail(email: string): { valid: boolean; storeNumber?: number } {
@@ -61,6 +84,26 @@ function parseStoreEmail(email: string): { valid: boolean; storeNumber?: number 
     return { valid: false };
   }
   return { valid: true, storeNumber };
+}
+
+function setSessionCookie(res: Response, sessionId: string, expiresAt: Date): void {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.cookie('store_session', sessionId, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'strict',
+    expires: expiresAt,
+    path: '/',
+  });
+}
+
+function clearSessionCookie(res: Response): void {
+  res.clearCookie('store_session', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+  });
 }
 
 export function createStoreAuthRouter(db: Firestore): Router {
@@ -215,6 +258,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const tokenHash = hashToken(token);
       const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       const now = new Date();
+      const userAgent = req.get('user-agent');
 
       const result = await db.runTransaction(async (transaction) => {
         const tokenDoc = await transaction.get(tokenRef);
@@ -240,13 +284,46 @@ export function createStoreAuthRouter(db: Firestore): Router {
           return { error: 'store_not_found', status: 404, message: 'Store not found' };
         }
 
+        const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
+
+        const sessionId = generateSessionId();
+        const sessionHash = hashSessionId(sessionId);
+        const expiresAt = new Date(now.getTime() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
+
+        const sessionData: StoreSession = {
+          locationId: location.id,
+          storeNumber: location.storeNumber,
+          email: tokenData.storeEmail,
+          role: 'Store',
+          expiresAt: expiresAt.toISOString(),
+          revoked: false,
+          createdAt: now.toISOString(),
+          createdBy: 'store-signin',
+          userAgent,
+        };
+
+        const sessionRef = db.collection('storeSessions').doc(sessionHash);
+        transaction.set(sessionRef, sessionData);
+
         transaction.update(tokenRef, {
           usedAt: now.toISOString(),
           usedBy: tokenData.storeEmail,
         });
 
-        const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
-        return { success: true, tokenData, location };
+        const userRef = db.collection('users').doc(`store_${location.id}`);
+        transaction.set(userRef, {
+          email: tokenData.storeEmail,
+          displayName: `Store ${location.storeNumber}`,
+          role: 'Store',
+          storeLocationId: location.id,
+          status: 'active',
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          updatedBy: 'store-signin',
+          version: 1,
+        }, { merge: true });
+
+        return { success: true, tokenData, location, sessionId, expiresAt };
       });
 
       if ('error' in result && result.error) {
@@ -255,31 +332,18 @@ export function createStoreAuthRouter(db: Firestore): Router {
         });
       }
 
-      const { tokenData, location } = result as { success: true; tokenData: Omit<OneClickToken, 'id'>; location: Location };
+      const { tokenData, location, sessionId, expiresAt } = result as { 
+        success: true; 
+        tokenData: Omit<OneClickToken, 'id'>; 
+        location: Location; 
+        sessionId: string; 
+        expiresAt: Date;
+      };
 
-      const storeUid = `store_${location.id}`;
-      const auth = getAuthClient();
-      const customToken = await auth.createCustomToken(storeUid, {
-        role: 'Store',
-        storeLocationId: location.id,
-        storeNumber: location.storeNumber,
-        email: tokenData.storeEmail,
-      });
-
-      await db.collection('users').doc(storeUid).set({
-        email: tokenData.storeEmail,
-        displayName: `Store ${location.storeNumber}`,
-        role: 'Store',
-        storeLocationId: location.id,
-        status: 'active',
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString(),
-        updatedBy: 'store-signin',
-        version: 1,
-      }, { merge: true });
+      setSessionCookie(res, sessionId, expiresAt);
 
       await logAudit(db, {
-        userId: storeUid,
+        userId: `store_${location.id}`,
         userEmail: tokenData.storeEmail,
         userRole: 'Store',
         action: 'use-signin-token',
@@ -294,7 +358,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
       res.json({
         valid: true,
-        customToken,
+        sessionId,
         locationId: location.id,
         storeNumber: location.storeNumber,
         storeName: location.name,
@@ -304,6 +368,137 @@ export function createStoreAuthRouter(db: Firestore): Router {
       console.error('Verify store token error:', error);
       res.status(500).json({
         error: { code: 'internal_error', message: 'Failed to verify token', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.post('/logout', async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.cookies?.store_session || 
+        (req.headers.authorization?.startsWith('StoreSession ') 
+          ? req.headers.authorization.slice(13) 
+          : null);
+
+      if (sessionId) {
+        const sessionHash = hashSessionId(sessionId);
+        const sessionRef = db.collection('storeSessions').doc(sessionHash);
+        const sessionDoc = await sessionRef.get();
+
+        if (sessionDoc.exists) {
+          const sessionData = sessionDoc.data() as StoreSession;
+          await sessionRef.update({
+            revoked: true,
+            revokedAt: new Date().toISOString(),
+            revokedBy: 'logout',
+          });
+
+          await logAudit(db, {
+            userId: `store_${sessionData.locationId}`,
+            userEmail: sessionData.email,
+            userRole: 'Store',
+            action: 'logout',
+            entityType: 'store-auth',
+            entityId: sessionData.locationId,
+            entityName: `Store ${sessionData.storeNumber} logged out`,
+            locationId: sessionData.locationId,
+            changes: [],
+          });
+        }
+      }
+
+      clearSessionCookie(res);
+      res.json({ success: true, message: 'Logged out successfully' });
+    } catch (error) {
+      console.error('Logout error:', error);
+      clearSessionCookie(res);
+      res.json({ success: true, message: 'Logged out' });
+    }
+  });
+
+  router.post('/revoke', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser;
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      const { locationId, sessionId } = req.body;
+
+      if (sessionId) {
+        const sessionHash = hashSessionId(sessionId);
+        const sessionRef = db.collection('storeSessions').doc(sessionHash);
+        const sessionDoc = await sessionRef.get();
+
+        if (!sessionDoc.exists) {
+          return res.status(404).json({
+            error: { code: 'not_found', message: 'Session not found', requestId: res.locals.requestId },
+          });
+        }
+
+        const sessionData = sessionDoc.data() as StoreSession;
+        await sessionRef.update({
+          revoked: true,
+          revokedAt: new Date().toISOString(),
+          revokedBy: authUser.uid,
+        });
+
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'revoke-session',
+          entityType: 'store-auth',
+          entityId: sessionData.locationId,
+          entityName: `Session revoked for store ${sessionData.storeNumber}`,
+          locationId: sessionData.locationId,
+          changes: [{ field: 'revokedBy', newValue: authUser.uid }],
+        });
+
+        return res.json({ success: true, revoked: 1 });
+      }
+
+      if (locationId) {
+        const sessionsSnap = await db.collection('storeSessions')
+          .where('locationId', '==', locationId)
+          .where('revoked', '==', false)
+          .get();
+
+        const batch = db.batch();
+        let count = 0;
+        for (const doc of sessionsSnap.docs) {
+          batch.update(doc.ref, {
+            revoked: true,
+            revokedAt: new Date().toISOString(),
+            revokedBy: authUser.uid,
+          });
+          count++;
+        }
+        await batch.commit();
+
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'revoke-all-sessions',
+          entityType: 'store-auth',
+          entityId: locationId,
+          entityName: `All sessions revoked for location ${locationId}`,
+          locationId,
+          changes: [{ field: 'sessionsRevoked', newValue: count }],
+        });
+
+        return res.json({ success: true, revoked: count });
+      }
+
+      return res.status(400).json({
+        error: { code: 'invalid_request', message: 'Either sessionId or locationId required', requestId: res.locals.requestId },
+      });
+    } catch (error) {
+      console.error('Revoke error:', error);
+      res.status(500).json({
+        error: { code: 'internal_error', message: 'Failed to revoke session', requestId: res.locals.requestId },
       });
     }
   });
@@ -396,6 +591,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const tokenHash = hashToken(token);
       const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       const now = new Date();
+      const userAgent = req.get('user-agent');
 
       const result = await db.runTransaction(async (transaction) => {
         const tokenDoc = await transaction.get(tokenRef);
@@ -452,6 +648,42 @@ export function createStoreAuthRouter(db: Firestore): Router {
           usedBy: tokenData.storeEmail,
         });
 
+        if (action === 'update') {
+          const sessionId = generateSessionId();
+          const sessionHash = hashSessionId(sessionId);
+          const expiresAt = new Date(now.getTime() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
+
+          const sessionData: StoreSession = {
+            locationId: location.id,
+            storeNumber: location.storeNumber,
+            email: tokenData.storeEmail,
+            role: 'Store',
+            expiresAt: expiresAt.toISOString(),
+            revoked: false,
+            createdAt: now.toISOString(),
+            createdBy: 'one-click-update',
+            userAgent,
+          };
+
+          const sessionRef = db.collection('storeSessions').doc(sessionHash);
+          transaction.set(sessionRef, sessionData);
+
+          const userRef = db.collection('users').doc(`store_${location.id}`);
+          transaction.set(userRef, {
+            email: tokenData.storeEmail,
+            displayName: `Store ${location.storeNumber}`,
+            role: 'Store',
+            storeLocationId: location.id,
+            status: 'active',
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+            updatedBy: 'one-click-update',
+            version: 1,
+          }, { merge: true });
+
+          return { success: true, tokenData, location, action, sessionId, expiresAt };
+        }
+
         return { success: true, tokenData, location, action };
       });
 
@@ -461,7 +693,14 @@ export function createStoreAuthRouter(db: Firestore): Router {
         });
       }
 
-      const { tokenData, location } = result as { success: true; tokenData: Omit<OneClickToken, 'id'>; location: Location; action: string };
+      const { tokenData, location, sessionId, expiresAt } = result as { 
+        success: true; 
+        tokenData: Omit<OneClickToken, 'id'>; 
+        location: Location; 
+        action: string;
+        sessionId?: string;
+        expiresAt?: Date;
+      };
 
       if (action === 'confirm') {
         await logAudit(db, {
@@ -488,29 +727,12 @@ export function createStoreAuthRouter(db: Firestore): Router {
         });
       }
 
-      const storeUid = `store_${location.id}`;
-      const auth = getAuthClient();
-      const customToken = await auth.createCustomToken(storeUid, {
-        role: 'Store',
-        storeLocationId: location.id,
-        storeNumber: location.storeNumber,
-        email: tokenData.storeEmail,
-      });
-
-      await db.collection('users').doc(storeUid).set({
-        email: tokenData.storeEmail,
-        displayName: `Store ${location.storeNumber}`,
-        role: 'Store',
-        storeLocationId: location.id,
-        status: 'active',
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString(),
-        updatedBy: 'one-click-update',
-        version: 1,
-      }, { merge: true });
+      if (sessionId && expiresAt) {
+        setSessionCookie(res, sessionId, expiresAt);
+      }
 
       await logAudit(db, {
-        userId: storeUid,
+        userId: `store_${location.id}`,
         userEmail: tokenData.storeEmail,
         userRole: 'Store',
         action: 'one-click-update',
@@ -524,7 +746,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
       return res.json({
         success: true,
         action: 'update',
-        customToken,
+        sessionId,
         message: 'You have been signed in to update your store information',
         locationId: location.id,
         storeNumber: location.storeNumber,
@@ -536,6 +758,50 @@ export function createStoreAuthRouter(db: Firestore): Router {
       res.status(500).json({
         error: { code: 'internal_error', message: 'Failed to process action', requestId: res.locals.requestId },
       });
+    }
+  });
+
+  router.get('/session', async (req: Request, res: Response) => {
+    try {
+      const sessionId = req.cookies?.store_session || 
+        (req.headers.authorization?.startsWith('StoreSession ') 
+          ? req.headers.authorization.slice(13) 
+          : null);
+
+      if (!sessionId) {
+        return res.json({ authenticated: false });
+      }
+
+      const sessionHash = hashSessionId(sessionId);
+      const sessionDoc = await db.collection('storeSessions').doc(sessionHash).get();
+
+      if (!sessionDoc.exists) {
+        clearSessionCookie(res);
+        return res.json({ authenticated: false });
+      }
+
+      const session = sessionDoc.data() as StoreSession;
+
+      if (session.revoked || new Date(session.expiresAt) < new Date()) {
+        clearSessionCookie(res);
+        return res.json({ authenticated: false });
+      }
+
+      const locationDoc = await db.collection('locations').doc(session.locationId).get();
+      const location = locationDoc.exists ? { id: locationDoc.id, ...locationDoc.data() } as Location : null;
+
+      res.json({
+        authenticated: true,
+        locationId: session.locationId,
+        storeNumber: session.storeNumber,
+        storeName: location?.name,
+        email: session.email,
+        role: session.role,
+        expiresAt: session.expiresAt,
+      });
+    } catch (error) {
+      console.error('Get session error:', error);
+      res.json({ authenticated: false });
     }
   });
 
@@ -622,4 +888,4 @@ async function logAudit(
   });
 }
 
-export { parseStoreEmail };
+export { parseStoreEmail, hashSessionId };

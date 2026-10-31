@@ -5,7 +5,6 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithCustomToken as firebaseSignInWithCustomToken,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
@@ -47,16 +46,28 @@ try {
   console.error('Firebase init error:', error);
 }
 
+interface StoreSessionData {
+  authenticated: boolean;
+  locationId?: string;
+  storeNumber?: string;
+  storeName?: string;
+  email?: string;
+  role?: string;
+  expiresAt?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   authUser: AuthUser | null;
+  storeSession: StoreSessionData | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signInWithCustomToken: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
   getIdToken: () => Promise<string>;
+  getStoreSessionHeader: () => string | null;
   refreshAuthUser: () => Promise<void>;
+  refreshStoreSession: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
 }
 
@@ -65,7 +76,12 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [storeSession, setStoreSession] = useState<StoreSessionData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const getStoreSessionHeader = useCallback((): string | null => {
+    return null;
+  }, []);
   
   const getIdToken = useCallback(async (): Promise<string> => {
     if (!user) throw new Error('Not authenticated');
@@ -76,6 +92,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     return user.getIdToken();
   }, [user]);
+
+  const refreshStoreSession = useCallback(async () => {
+    try {
+      const response = await fetch('/api/store-auth/session', {
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setStoreSession(data);
+        
+        if (data.authenticated) {
+          setAuthUser({
+            uid: `store_${data.locationId}`,
+            email: data.email || '',
+            displayName: `Store ${data.storeNumber}`,
+            role: 'Store',
+            storeLocationId: data.locationId,
+          });
+        }
+      } else {
+        setStoreSession({ authenticated: false });
+      }
+    } catch {
+      setStoreSession({ authenticated: false });
+    }
+  }, []);
   
   const loadAuthUser = useCallback(async () => {
     if (!user) {
@@ -150,6 +193,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loadAuthUser().finally(() => setLoading(false));
     }
   }, [user, loadAuthUser]);
+
+  useEffect(() => {
+    refreshStoreSession().finally(() => {
+      if (!user) {
+        setLoading(false);
+      }
+    });
+  }, [refreshStoreSession]);
   
   const signIn = async (email: string, password: string) => {
     if (!auth) throw new Error('Auth not initialized');
@@ -160,16 +211,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth) throw new Error('Auth not initialized');
     await signInWithPopup(auth, googleProvider);
   };
-
-  const signInWithCustomToken = async (token: string) => {
-    if (!auth) throw new Error('Auth not initialized');
-    await firebaseSignInWithCustomToken(auth, token);
-  };
   
   const signOut = async () => {
-    if (!auth) return;
-    setAuthUser(null);
-    await firebaseSignOut(auth);
+    if (storeSession?.authenticated) {
+      try {
+        await fetch('/api/store-auth/logout', {
+          method: 'POST',
+          credentials: 'include',
+        });
+      } catch {
+      }
+      setStoreSession({ authenticated: false });
+    }
+    
+    if (auth) {
+      setAuthUser(null);
+      await firebaseSignOut(auth);
+    }
   };
   
   const refreshAuthUser = async () => {
@@ -182,7 +240,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   
   return (
-    <AuthContext.Provider value={{ user, authUser, loading, signIn, signInWithGoogle: signInWithGoogleHandler, signInWithCustomToken, signOut, getIdToken, refreshAuthUser, sendPasswordReset }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      authUser, 
+      storeSession,
+      loading, 
+      signIn, 
+      signInWithGoogle: signInWithGoogleHandler, 
+      signOut, 
+      getIdToken, 
+      getStoreSessionHeader,
+      refreshAuthUser,
+      refreshStoreSession,
+      sendPasswordReset 
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 export function StoreSignInView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { signInWithCustomToken } = useAuth();
+  const { refreshStoreSession } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -42,6 +42,7 @@ export function StoreSignInView() {
       const response = await fetch('/api/store-auth/verify-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ token }),
       });
 
@@ -59,9 +60,7 @@ export function StoreSignInView() {
         storeName: data.storeName,
       });
 
-      if (data.customToken) {
-        await signInWithCustomToken(data.customToken);
-      }
+      await refreshStoreSession();
 
       setTimeout(() => {
         navigate(`/location/${data.locationId}`);

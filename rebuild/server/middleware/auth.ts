@@ -1,15 +1,58 @@
 import { type Request, type Response, type NextFunction, Router } from 'express';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHmac } from 'crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAuthClient } from '../firebase';
 import type { User, AuthUser, Assignment } from '../../src/types';
 
-export function createAuthMiddleware(): Router {
+const SESSION_SECRET = process.env.STORE_SESSION_SECRET || 'dev-session-secret-not-for-production';
+
+function hashSessionId(sessionId: string): string {
+  return createHmac('sha256', SESSION_SECRET).update(sessionId).digest('hex');
+}
+
+interface StoreSession {
+  locationId: string;
+  storeNumber: string;
+  email: string;
+  role: 'Store';
+  expiresAt: string;
+  revoked: boolean;
+}
+
+export function createAuthMiddleware(db?: Firestore): Router {
   const router = Router();
   
   router.use(async (req: Request, res: Response, next: NextFunction) => {
     res.locals.requestId = randomUUID();
     res.setHeader('X-Request-ID', res.locals.requestId);
+    
+    const sessionId = req.cookies?.store_session || 
+      (req.headers.authorization?.startsWith('StoreSession ') 
+        ? req.headers.authorization.slice(13) 
+        : null);
+
+    if (sessionId && db) {
+      try {
+        const sessionHash = hashSessionId(sessionId);
+        const sessionDoc = await db.collection('storeSessions').doc(sessionHash).get();
+
+        if (sessionDoc.exists) {
+          const session = sessionDoc.data() as StoreSession;
+
+          if (!session.revoked && new Date(session.expiresAt) > new Date()) {
+            res.locals.user = {
+              uid: `store_${session.locationId}`,
+              email: session.email,
+              isStoreSession: true,
+            };
+            res.locals.storeSession = session;
+            return next();
+          }
+        }
+      } catch (error) {
+        console.error('Store session validation error:', error);
+      }
+    }
     
     const authHeader = req.headers.authorization;
     
@@ -60,12 +103,98 @@ export function createAuthMiddleware(): Router {
   return router;
 }
 
+export function createOptionalAuthMiddleware(db?: Firestore): Router {
+  const router = Router();
+  
+  router.use(async (req: Request, res: Response, next: NextFunction) => {
+    res.locals.requestId = res.locals.requestId || randomUUID();
+    if (!res.getHeader('X-Request-ID')) {
+      res.setHeader('X-Request-ID', res.locals.requestId);
+    }
+    
+    const sessionId = req.cookies?.store_session || 
+      (req.headers.authorization?.startsWith('StoreSession ') 
+        ? req.headers.authorization.slice(13) 
+        : null);
+
+    if (sessionId && db) {
+      try {
+        const sessionHash = hashSessionId(sessionId);
+        const sessionDoc = await db.collection('storeSessions').doc(sessionHash).get();
+
+        if (sessionDoc.exists) {
+          const session = sessionDoc.data() as StoreSession;
+
+          if (!session.revoked && new Date(session.expiresAt) > new Date()) {
+            res.locals.user = {
+              uid: `store_${session.locationId}`,
+              email: session.email,
+              isStoreSession: true,
+            };
+            res.locals.storeSession = session;
+            return next();
+          }
+        }
+      } catch (error) {
+        console.error('Store session validation error:', error);
+      }
+    }
+    
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+    
+    const token = authHeader.slice(7);
+    
+    try {
+      const isEmulator = process.env.FIREBASE_AUTH_EMULATOR_HOST;
+      
+      if (isEmulator && token.startsWith('test-token-')) {
+        res.locals.user = {
+          uid: token.replace('test-token-', ''),
+          email: 'test@example.com',
+        };
+        return next();
+      }
+      
+      const auth = getAuthClient();
+      const decodedToken = await auth.verifyIdToken(token);
+      res.locals.user = {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        name: decodedToken.name,
+        firebase: decodedToken.firebase,
+      };
+      next();
+    } catch {
+      next();
+    }
+  });
+  
+  return router;
+}
+
 export function createAuthUserMiddleware(db: Firestore): Router {
   const router = Router();
   
   router.use(async (_req: Request, res: Response, next: NextFunction) => {
     const firebaseUser = res.locals.user;
     if (!firebaseUser) {
+      return next();
+    }
+    
+    if (res.locals.storeSession) {
+      const session = res.locals.storeSession as StoreSession;
+      res.locals.authUser = {
+        uid: firebaseUser.uid,
+        email: session.email,
+        displayName: `Store ${session.storeNumber}`,
+        role: 'Store',
+        storeLocationId: session.locationId,
+        isStoreSession: true,
+      } as AuthUser;
       return next();
     }
     
@@ -111,6 +240,40 @@ export function createAuthUserMiddleware(db: Firestore): Router {
   });
   
   return router;
+}
+
+export function requireStoreAccess(locationIdParam: string = 'id'): (req: Request, res: Response, next: NextFunction) => void {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authUser = res.locals.authUser as AuthUser | undefined;
+    if (!authUser) {
+      return res.status(401).json({
+        error: { code: 'unauthorized', message: 'Authentication required', requestId: res.locals.requestId },
+      });
+    }
+
+    if (authUser.role === 'Admin' || authUser.role === 'Steward') {
+      return next();
+    }
+
+    const locationId = req.params[locationIdParam] || req.body?.locationId;
+
+    if (authUser.role === 'Store') {
+      if (authUser.storeLocationId === locationId) {
+        return next();
+      }
+      return res.status(403).json({
+        error: { code: 'forbidden', message: 'You can only access your own store', requestId: res.locals.requestId },
+      });
+    }
+
+    if (authUser.role === 'Leader' && authUser.leaderScope?.locationIds?.includes(locationId)) {
+      return next();
+    }
+
+    return res.status(403).json({
+      error: { code: 'forbidden', message: 'Access denied to this location', requestId: res.locals.requestId },
+    });
+  };
 }
 
 async function computeLeaderScope(

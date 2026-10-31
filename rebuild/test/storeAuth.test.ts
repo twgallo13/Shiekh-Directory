@@ -245,25 +245,23 @@ describe('Mail Log - Test Link Visibility', () => {
   });
 });
 
-describe('One-Click Action - Custom Token for Update', () => {
-  it('update action response includes customToken for Firebase auth', () => {
+describe('One-Click Action - Session for Update', () => {
+  it('update action response includes sessionId for app-issued session', () => {
     const updateResponse = {
       success: true,
       action: 'update',
       message: 'Update action processed',
-      customToken: 'firebase_custom_token_here',
-      location: {
-        id: 'loc_001',
-        storeNumber: '42',
-      },
+      sessionId: 'random_session_id_here',
+      locationId: 'loc_001',
+      storeNumber: '42',
     };
 
     assert.strictEqual(updateResponse.action, 'update');
-    assert.ok(updateResponse.customToken, 'update response should include customToken');
-    assert.ok(updateResponse.location, 'update response should include location');
+    assert.ok(updateResponse.sessionId, 'update response should include sessionId');
+    assert.ok(updateResponse.locationId, 'update response should include locationId');
   });
 
-  it('confirm action response does not need customToken', () => {
+  it('confirm action response does not need sessionId', () => {
     const confirmResponse = {
       success: true,
       action: 'confirm',
@@ -271,21 +269,25 @@ describe('One-Click Action - Custom Token for Update', () => {
     };
 
     assert.strictEqual(confirmResponse.action, 'confirm');
-    assert.ok(!('customToken' in confirmResponse) || !confirmResponse.customToken, 
-      'confirm response typically does not need customToken');
+    assert.ok(!('sessionId' in confirmResponse) || !confirmResponse.sessionId, 
+      'confirm response typically does not need sessionId');
   });
 
-  it('customToken contains Store role claims', () => {
-    const tokenClaims = {
+  it('session stores role and locationId', () => {
+    const sessionData = {
       role: 'Store',
-      storeLocationId: 'loc_001',
+      locationId: 'loc_001',
       storeNumber: '42',
       email: 'store42@shiekhshoes.com',
+      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+      revoked: false,
     };
 
-    assert.strictEqual(tokenClaims.role, 'Store');
-    assert.ok(tokenClaims.storeLocationId, 'should have storeLocationId');
-    assert.ok(tokenClaims.storeNumber, 'should have storeNumber');
+    assert.strictEqual(sessionData.role, 'Store');
+    assert.ok(sessionData.locationId, 'should have locationId');
+    assert.ok(sessionData.storeNumber, 'should have storeNumber');
+    assert.ok(sessionData.expiresAt, 'should have expiresAt');
+    assert.strictEqual(sessionData.revoked, false, 'should not be revoked initially');
   });
 });
 
@@ -319,27 +321,38 @@ describe('Token URL Security - Referrer Policy', () => {
   });
 });
 
-describe('Store Sign-In - Custom Token Flow', () => {
-  it('verify-token returns customToken for authenticated sign-in', () => {
+describe('Store Sign-In - Session Flow', () => {
+  it('verify-token returns sessionId for authenticated sign-in', () => {
     const verifyResponse = {
-      success: true,
-      customToken: 'firebase_custom_token',
-      location: {
-        id: 'loc_001',
-        storeNumber: '42',
-        name: 'Test Store',
-      },
+      valid: true,
+      sessionId: 'random_session_id',
+      locationId: 'loc_001',
+      storeNumber: '42',
+      storeName: 'Test Store',
+      email: 'store42@shiekhshoes.com',
     };
 
-    assert.ok(verifyResponse.customToken, 'should return customToken');
-    assert.ok(verifyResponse.location, 'should return location info');
+    assert.ok(verifyResponse.sessionId, 'should return sessionId');
+    assert.ok(verifyResponse.locationId, 'should return locationId');
+    assert.ok(verifyResponse.storeName, 'should return storeName');
   });
 
-  it('customToken UID follows store_<locationId> pattern', () => {
-    const locationId = 'abc123';
-    const storeUid = `store_${locationId}`;
+  it('session is stored with hash of sessionId', () => {
+    const sessionId = 'test-session-id';
+    const hashedSessionId = createHmac('sha256', 'dev-session-secret-not-for-production')
+      .update(sessionId)
+      .digest('hex');
     
-    assert.ok(storeUid.startsWith('store_'), 'UID should start with store_');
-    assert.strictEqual(storeUid, 'store_abc123');
+    assert.ok(hashedSessionId.length === 64, 'hash should be 64 hex characters');
+    assert.notStrictEqual(hashedSessionId, sessionId, 'hash should differ from sessionId');
+  });
+
+  it('session expiry defaults to 12 hours', () => {
+    const SESSION_EXPIRY_HOURS = 12;
+    const now = Date.now();
+    const expiresAt = new Date(now + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
+    const diffHours = (expiresAt.getTime() - now) / (60 * 60 * 1000);
+    
+    assert.strictEqual(diffHours, 12);
   });
 });

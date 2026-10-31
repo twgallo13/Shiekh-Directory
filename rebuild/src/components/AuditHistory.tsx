@@ -26,6 +26,9 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'use-signin-token': 'Sign-in token used',
   'one-click-confirm': 'One-click confirmed',
   'one-click-update': 'One-click update',
+  'logout': 'Logged out',
+  'revoke-session': 'Session revoked',
+  'revoke-all-sessions': 'All sessions revoked',
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {

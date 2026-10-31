@@ -453,7 +453,10 @@ export type AuditAction =
   | 'request-signin'
   | 'use-signin-token'
   | 'one-click-confirm'
-  | 'one-click-update';
+  | 'one-click-update'
+  | 'logout'
+  | 'revoke-session'
+  | 'revoke-all-sessions';
 
 export interface AuditLogEntry {
   id: string;

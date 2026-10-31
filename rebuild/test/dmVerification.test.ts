@@ -1,13 +1,14 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { seedTestUsers, getTestDb, clearTestCollection } from './testHelpers';
+import type { Firestore } from 'firebase-admin/firestore';
+import { seedTestUsers, getTestDb } from './testHelpers';
 import type { DMVerificationRequest } from '../src/types';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 
 describe('DM Verification - Cancel Endpoint', () => {
   const testRequestId = 'test-dm-verification-cancel';
-  let db: ReturnType<typeof getTestDb> extends Promise<infer T> ? T : never;
+  let db: Firestore;
 
   before(async () => {
     await seedTestUsers();

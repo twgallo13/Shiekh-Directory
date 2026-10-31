@@ -62,5 +62,11 @@ service cloud.firestore {
       allow read: if false;
       allow write: if false;
     }
+    
+    // storeSessions collection - server-only, no client access
+    match /storeSessions/{sessionId} {
+      allow read: if false;
+      allow write: if false;
+    }
   }
 }

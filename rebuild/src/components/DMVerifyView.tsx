@@ -212,6 +212,26 @@ export function DMVerifyView() {
     );
   }
 
+  if (request.status === 'cancelled') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+          <XCircle className="w-16 h-16 text-gray-400 mx-auto" />
+          <h1 className="text-xl font-bold text-gray-900 mt-4">Request Cancelled</h1>
+          <p className="text-gray-600 mt-2">
+            This verification request has been cancelled. Please contact operations if you need assistance.
+          </p>
+          <Link
+            to="/"
+            className="mt-6 inline-block px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Go to Directory
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (request.status === 'expired' || new Date(request.expiresAt) < new Date()) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">

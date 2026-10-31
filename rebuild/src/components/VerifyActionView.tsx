@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 export function VerifyActionView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { signInWithCustomToken } = useAuth();
+  const { refreshStoreSession } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [result, setResult] = useState<{
@@ -47,6 +47,7 @@ export function VerifyActionView() {
       const response = await fetch('/api/store-auth/one-click-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ token, action }),
       });
 
@@ -66,8 +67,8 @@ export function VerifyActionView() {
         email: data.email,
       });
 
-      if (data.action === 'update' && data.customToken) {
-        await signInWithCustomToken(data.customToken);
+      if (data.action === 'update' && data.sessionId) {
+        await refreshStoreSession();
       }
     } catch {
       setError('Failed to process verification');

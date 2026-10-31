@@ -1,4 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
+import cookieParser from 'cookie-parser';
 import { createSearchRouter } from './routes/search';
 import { createLocationsRouter } from './routes/locations';
 import { createImportRouter } from './routes/import';
@@ -11,7 +12,7 @@ import { createPeopleRouter } from './routes/people';
 import { createAssignmentsRouter } from './routes/assignments';
 import { createHoursExceptionsRouter } from './routes/hoursExceptions';
 import { createVerificationRouter } from './routes/verification';
-import { createAuthMiddleware, createAuthUserMiddleware } from './middleware/auth';
+import { createAuthMiddleware, createAuthUserMiddleware, createOptionalAuthMiddleware } from './middleware/auth';
 import { createLegacyApiAuthMiddleware } from './middleware/legacyApiAuth';
 import { createLegacyV1Router } from './routes/legacyV1';
 import { createLegacyV2Router } from './routes/legacyV2';
@@ -34,10 +35,11 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 
 const db = createFirestoreClient();
 
-app.use('/api/app', createAuthMiddleware());
+app.use('/api/app', createAuthMiddleware(db));
 app.use('/api/app', createAuthUserMiddleware(db));
 app.use('/api/app/search', createSearchRouter(db));
 app.use('/api/app/locations', createLocationsRouter(db));
@@ -63,7 +65,7 @@ app.use('/api/app', createNoticesRouter(db));
 app.use('/api/app/stale-stores', createStaleStoresRouter(db));
 app.use('/api/app/dm-verification', createDMVerificationRouter(db));
 app.use('/api/app/restore-drill', createRestoreDrillRouter(db));
-app.use('/api/store-auth', createStoreAuthRouter(db));
+app.use('/api/store-auth', createOptionalAuthMiddleware(db), createAuthUserMiddleware(db), createStoreAuthRouter(db));
 
 // Legacy API routes (v1/v2/v3)
 app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));

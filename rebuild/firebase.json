@@ -17,6 +17,18 @@
         "headers": [
           { "key": "Referrer-Policy", "value": "no-referrer" }
         ]
+      },
+      {
+        "source": "/verify/**",
+        "headers": [
+          { "key": "Referrer-Policy", "value": "no-referrer" }
+        ]
+      },
+      {
+        "source": "/dm-verify/**",
+        "headers": [
+          { "key": "Referrer-Policy", "value": "no-referrer" }
+        ]
       }
     ],
     "rewrites": [

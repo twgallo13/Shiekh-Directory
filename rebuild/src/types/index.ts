@@ -45,6 +45,8 @@ export interface HoursTemplate {
   updatedAt: string;
   updatedBy: string;
   lifecycle: 'active' | 'archived';
+  defaultForTypes?: StoreTypeCode[]; // Auto-suggest this template for these store types
+  isDefault?: boolean; // If true, suggested as fallback when no type-specific default
 }
 
 // Record of template application to a location (versioned copy-on-apply)
@@ -138,6 +140,50 @@ export interface Notice {
 export type LocationKind = 'store' | 'warehouse' | 'office' | 'facility';
 export type LocationLifecycle = 'planned' | 'active' | 'retired';
 
+// Store type codes - canonical identifiers (immutable once assigned)
+export type StoreTypeCode =
+  | 'enclosed_mall'
+  | 'strip_center'
+  | 'street_standalone'
+  | 'corporate_office'
+  | 'warehouse_distribution'
+  | 'other_location';
+
+export const STORE_TYPE_LABELS: Record<StoreTypeCode, string> = {
+  enclosed_mall: 'Enclosed Mall',
+  strip_center: 'Strip Center / Shopping Center',
+  street_standalone: 'Street / Standalone Location',
+  corporate_office: 'Corporate Office',
+  warehouse_distribution: 'Warehouse / Distribution Center',
+  other_location: 'Other Company Location',
+};
+
+export const STORE_TYPES: { code: StoreTypeCode; label: string }[] = [
+  { code: 'enclosed_mall', label: 'Enclosed Mall' },
+  { code: 'strip_center', label: 'Strip Center / Shopping Center' },
+  { code: 'street_standalone', label: 'Street / Standalone Location' },
+  { code: 'corporate_office', label: 'Corporate Office' },
+  { code: 'warehouse_distribution', label: 'Warehouse / Distribution Center' },
+  { code: 'other_location', label: 'Other Company Location' },
+];
+
+export const STORE_TYPE_CODE_FROM_LABEL: Record<string, StoreTypeCode> = {
+  'Enclosed Mall': 'enclosed_mall',
+  'Strip Center / Shopping Center': 'strip_center',
+  'Street / Standalone Location': 'street_standalone',
+  'Corporate Office': 'corporate_office',
+  'Warehouse / Distribution Center': 'warehouse_distribution',
+  'Other Company Location': 'other_location',
+};
+
+export function getStoreTypeLabel(code: StoreTypeCode | undefined): string {
+  return code ? STORE_TYPE_LABELS[code] : '';
+}
+
+export function isValidStoreTypeCode(code: string): code is StoreTypeCode {
+  return code in STORE_TYPE_LABELS;
+}
+
 export interface Location extends RecordMetadata {
   id: string;
   kind: LocationKind;
@@ -151,7 +197,7 @@ export interface Location extends RecordMetadata {
   sharedInboxEmail?: string; // Mailbox, never a login
   regionId: string; // Required when active
   districtId: string; // Required when active
-  storeType?: string;
+  storeType?: StoreTypeCode;
   mallOrCenterName?: string;
   wayfindingDirections?: string; // <= 1000 chars
   standardHours?: StandardHours;

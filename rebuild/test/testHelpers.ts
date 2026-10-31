@@ -48,7 +48,7 @@ export async function seedTestUsers(): Promise<void> {
       ...user,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    }, { merge: true });
   }
 }
 

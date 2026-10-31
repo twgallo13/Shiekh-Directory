@@ -454,49 +454,79 @@ export function LocationDetailView() {
             </div>
             
             {/* District Manager */}
-            <div className="flex items-center justify-between py-2 border-b border-gray-100">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <p className="text-sm text-gray-500">District Manager</p>
-                  {location.leadership.dmStatus === 'vacant' && <VacantBadge />}
-                </div>
-                {location.leadership.dm ? (
-                  <div className="flex items-center gap-2">
-                    <Link
-                      to={`/person/${location.leadership.dm.id}`}
-                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
-                    >
-                      {location.leadership.dm.name}
-                    </Link>
-                    <CapacityBadge capacity={(location.leadership.dm.capacity || 'primary') as AssignmentCapacity} />
-                  </div>
-                ) : (
-                  <p className="font-medium text-gray-400 italic">Not assigned</p>
-                )}
+            <div className="py-2 border-b border-gray-100">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm text-gray-500">District Manager</p>
+                {location.leadership.dmStatus === 'vacant' && <VacantBadge />}
               </div>
+              {location.leadership.dm ? (
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/person/${location.leadership.dm.id}`}
+                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
+                  >
+                    {location.leadership.dm.name}
+                  </Link>
+                  <CapacityBadge capacity={(location.leadership.dm.capacity || 'primary') as AssignmentCapacity} />
+                </div>
+              ) : (
+                <p className="font-medium text-gray-400 italic">Not assigned</p>
+              )}
+              
+              {/* DM Others (Training/Acting) */}
+              {location.leadership.dmOthers && location.leadership.dmOthers.length > 0 && (
+                <div className="mt-2 pl-3 border-l-2 border-gray-200">
+                  {location.leadership.dmOthers.map(dm => (
+                    <div key={dm.id} className="flex items-center gap-2 min-h-[44px]">
+                      <Link
+                        to={`/person/${dm.id}`}
+                        className="text-sm text-blue-600 hover:underline min-h-[44px] inline-flex items-center"
+                      >
+                        {dm.name}
+                      </Link>
+                      <CapacityBadge capacity={dm.capacity} />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             
             {/* Regional Manager */}
-            <div className="flex items-center justify-between py-2 border-b border-gray-100">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <p className="text-sm text-gray-500">Regional Manager</p>
-                  {location.leadership.rmStatus === 'vacant' && <VacantBadge />}
-                </div>
-                {location.leadership.rm ? (
-                  <div className="flex items-center gap-2">
-                    <Link
-                      to={`/person/${location.leadership.rm.id}`}
-                      className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
-                    >
-                      {location.leadership.rm.name}
-                    </Link>
-                    <CapacityBadge capacity={(location.leadership.rm.capacity || 'primary') as AssignmentCapacity} />
-                  </div>
-                ) : (
-                  <p className="font-medium text-gray-400 italic">Not assigned</p>
-                )}
+            <div className="py-2 border-b border-gray-100">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm text-gray-500">Regional Manager</p>
+                {location.leadership.rmStatus === 'vacant' && <VacantBadge />}
               </div>
+              {location.leadership.rm ? (
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/person/${location.leadership.rm.id}`}
+                    className="font-medium text-blue-600 hover:underline inline-flex items-center min-h-[44px]"
+                  >
+                    {location.leadership.rm.name}
+                  </Link>
+                  <CapacityBadge capacity={(location.leadership.rm.capacity || 'primary') as AssignmentCapacity} />
+                </div>
+              ) : (
+                <p className="font-medium text-gray-400 italic">Not assigned</p>
+              )}
+              
+              {/* RM Others (Training/Acting) */}
+              {location.leadership.rmOthers && location.leadership.rmOthers.length > 0 && (
+                <div className="mt-2 pl-3 border-l-2 border-gray-200">
+                  {location.leadership.rmOthers.map(rm => (
+                    <div key={rm.id} className="flex items-center gap-2 min-h-[44px]">
+                      <Link
+                        to={`/person/${rm.id}`}
+                        className="text-sm text-blue-600 hover:underline min-h-[44px] inline-flex items-center"
+                      >
+                        {rm.name}
+                      </Link>
+                      <CapacityBadge capacity={rm.capacity} />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             
             {/* ASMs */}

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock } from 'lucide-react';
+import { ArrowLeft, Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ComingSoonPlaceholder, ComingSoonSection } from './ComingSoonPlaceholder';
 import { HoursTemplatesView } from './HoursTemplatesView';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates' | 'backups';
 
 interface User {
   id: string;
@@ -112,6 +112,9 @@ export function AdminView() {
             <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock}>
               Hours Templates
             </TabButton>
+            <TabButton id="backups" active={activeTab === 'backups'} onClick={setActiveTab} icon={Database}>
+              Backups
+            </TabButton>
           </div>
         </div>
       </div>
@@ -124,6 +127,7 @@ export function AdminView() {
         {activeTab === 'communications' && <CommunicationsTab />}
         {activeTab === 'audit-log' && <AuditLogTab />}
         {activeTab === 'hours-templates' && <HoursTemplatesTab />}
+        {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
       </div>
     </div>
   );
@@ -1641,6 +1645,229 @@ function HoursTemplatesTab() {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
       <HoursTemplatesView />
+    </div>
+  );
+}
+
+interface Snapshot {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  createdByEmail?: string;
+  chunkCount?: number;
+  collections?: string[];
+  status: string;
+  documentCount?: number;
+}
+
+interface DrillReport {
+  drillId: string;
+  snapshotId: string;
+  startedAt: string;
+  completedAt: string;
+  status: 'success' | 'failure' | 'partial';
+  totalExpected: number;
+  totalRestored: number;
+}
+
+function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [drillReports, setDrillReports] = useState<DrillReport[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [runningDrill, setRunningDrill] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const token = await getIdToken();
+      
+      const [snapshotsRes, drillsRes] = await Promise.all([
+        fetch('/api/app/backups/snapshots', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch('/api/app/restore-drill/reports', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      if (snapshotsRes.ok) {
+        const data = await snapshotsRes.json();
+        setSnapshots(data.snapshots || []);
+      }
+      if (drillsRes.ok) {
+        const data = await drillsRes.json();
+        setDrillReports(data.data || []);
+      }
+    } catch (err) {
+      setError('Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  }, [getIdToken]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const createSnapshot = async () => {
+    try {
+      setCreating(true);
+      setError(null);
+      const token = await getIdToken();
+      const res = await fetch('/api/app/backups/snapshots', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ note: 'Manual snapshot from Admin UI' }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || 'Failed to create snapshot');
+      }
+
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create snapshot');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const runDrill = async (snapshotId: string) => {
+    try {
+      setRunningDrill(snapshotId);
+      setError(null);
+      const token = await getIdToken();
+      const res = await fetch('/api/app/restore-drill/run', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ snapshotId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || 'Failed to run drill');
+      }
+
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to run drill');
+    } finally {
+      setRunningDrill(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-700">{error}</p>
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Snapshots</h2>
+            <p className="text-sm text-gray-600">On-demand snapshots for restore drills</p>
+          </div>
+          <button
+            onClick={createSnapshot}
+            disabled={creating}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Create Snapshot
+          </button>
+        </div>
+
+        {snapshots.length === 0 ? (
+          <p className="text-gray-500 text-sm">No snapshots yet. Create one to test restore drills.</p>
+        ) : (
+          <div className="space-y-2">
+            {snapshots.map((snapshot) => (
+              <div
+                key={snapshot.id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+              >
+                <div>
+                  <p className="font-medium text-gray-900">{snapshot.id}</p>
+                  <p className="text-sm text-gray-500">
+                    {new Date(snapshot.createdAt).toLocaleString()} • {snapshot.documentCount || '?'} docs • {snapshot.collections?.length || '?'} collections
+                  </p>
+                </div>
+                <button
+                  onClick={() => runDrill(snapshot.id)}
+                  disabled={runningDrill === snapshot.id}
+                  className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                >
+                  {runningDrill === snapshot.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                  Run Drill
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Drill Reports</h2>
+        {drillReports.length === 0 ? (
+          <p className="text-gray-500 text-sm">No drills have been run yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {drillReports.map((report) => (
+              <div
+                key={report.drillId}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+              >
+                <div>
+                  <p className="font-medium text-gray-900">{report.drillId}</p>
+                  <p className="text-sm text-gray-500">
+                    Snapshot: {report.snapshotId} • {new Date(report.completedAt).toLocaleString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-600">
+                    {report.totalRestored}/{report.totalExpected} docs
+                  </span>
+                  <span
+                    className={`px-2 py-1 text-xs font-semibold rounded ${
+                      report.status === 'success'
+                        ? 'bg-green-100 text-green-700'
+                        : report.status === 'partial'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-red-100 text-red-700'
+                    }`}
+                  >
+                    {report.status.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

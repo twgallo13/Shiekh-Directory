@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Phone, Copy, MapPin, ChevronRight, Building2, Warehouse, Store, User } from 'lucide-react';
+import { Search, Phone, Copy, MapPin, ChevronRight, Building2, Warehouse, Store, User, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
 import { STORE_TYPES } from '../types';
@@ -27,6 +27,7 @@ export function DirectoryView() {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   
   const { getIdToken } = useAuth();
   const navigate = useNavigate();
@@ -34,6 +35,7 @@ export function DirectoryView() {
   const fetchLocations = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = await getIdToken();
       
       const params = new URLSearchParams();
@@ -46,12 +48,16 @@ export function DirectoryView() {
         headers: { Authorization: `Bearer ${token}` },
       });
       
-      if (!response.ok) throw new Error('Failed to fetch locations');
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error?.message || 'Failed to fetch locations');
+      }
       
       const { data } = await response.json();
       setLocations(data);
-    } catch (error) {
-      console.error('Fetch locations error:', error);
+    } catch (err) {
+      console.error('Fetch locations error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load locations');
     } finally {
       setLoading(false);
     }
@@ -236,6 +242,19 @@ export function DirectoryView() {
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading stores...</p>
           </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto" />
+            <p className="mt-4 text-gray-900 font-medium">Failed to load locations</p>
+            <p className="mt-2 text-gray-600">{error}</p>
+            <button
+              onClick={() => fetchLocations()}
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Try Again
+            </button>
+          </div>
         ) : showSearchResults ? (
           <div>
             <p className="text-sm text-gray-500 mb-4">
@@ -268,6 +287,18 @@ export function DirectoryView() {
               </p>
             </div>
             
+            {locations.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+                <Store className="w-12 h-12 text-gray-300 mx-auto" />
+                <p className="mt-4 text-gray-900 font-medium">No locations found</p>
+                <p className="mt-2 text-gray-500 text-sm">
+                  {selectedDistrict || selectedRegion || selectedStoreType
+                    ? 'Try adjusting your filters'
+                    : 'No stores have been added yet'}
+                </p>
+              </div>
+            ) : (
+            <>
             {/* Desktop Table View */}
             <div className="hidden lg:block">
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -408,6 +439,8 @@ export function DirectoryView() {
                 );
               })}
             </div>
+            </>
+            )}
           </div>
         )}
       </div>

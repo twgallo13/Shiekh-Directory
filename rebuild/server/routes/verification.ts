@@ -151,6 +151,12 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
+      if (typeof locationId !== 'string') {
+        return res.status(400).json({
+          error: { code: 'invalid_request', message: 'locationId must be a string', requestId: res.locals.requestId },
+        });
+      }
+
       const locationDoc = await db.collection('locations').doc(locationId).get();
       if (!locationDoc.exists) {
         return res.status(404).json({
@@ -355,6 +361,33 @@ export function createVerificationRouter(db: Firestore): Router {
       console.error('Create verification request error:', error);
       return res.status(500).json({
         error: { code: 'create_error', message: 'Failed to create verification request', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // GET /campaigns must be declared BEFORE /:id to avoid being matched as an id
+  router.get('/campaigns', async (_req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      const campaignsSnap = await db.collection('verificationCampaigns')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
+
+      const campaigns = campaignsSnap.docs.map(doc => doc.data());
+
+      res.json({ campaigns });
+    } catch (error) {
+      console.error('List campaigns error:', error);
+      res.status(500).json({
+        error: { code: 'internal_error', message: 'Failed to list campaigns', requestId: res.locals.requestId },
       });
     }
   });
@@ -867,7 +900,7 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      const { scope, scopeId, skipRecentlyVerified, daysSinceVerification = 90, dryRun = false } = req.body;
+      const { scope, scopeId, skipRecentlyVerified, daysSinceVerification = 90, dryRun } = req.body;
 
       if (!scope || !['district', 'region', 'all'].includes(scope)) {
         return res.status(400).json({
@@ -875,10 +908,39 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
+      if (dryRun !== undefined && typeof dryRun !== 'boolean') {
+        return res.status(400).json({
+          error: { code: 'invalid_request', message: 'dryRun must be a boolean', requestId: res.locals.requestId },
+        });
+      }
+
       if ((scope === 'district' || scope === 'region') && !scopeId) {
         return res.status(400).json({
           error: { code: 'invalid_request', message: 'scopeId is required for district or region scope', requestId: res.locals.requestId },
         });
+      }
+
+      if ((scope === 'district' || scope === 'region') && typeof scopeId !== 'string') {
+        return res.status(400).json({
+          error: { code: 'invalid_request', message: 'scopeId must be a string', requestId: res.locals.requestId },
+        });
+      }
+
+      // Validate scopeId exists
+      if (scope === 'district' && scopeId) {
+        const districtDoc = await db.collection('districts').doc(scopeId).get();
+        if (!districtDoc.exists) {
+          return res.status(404).json({
+            error: { code: 'not_found', message: 'District not found', requestId: res.locals.requestId },
+          });
+        }
+      } else if (scope === 'region' && scopeId) {
+        const regionDoc = await db.collection('regions').doc(scopeId).get();
+        if (!regionDoc.exists) {
+          return res.status(404).json({
+            error: { code: 'not_found', message: 'Region not found', requestId: res.locals.requestId },
+          });
+        }
       }
 
       let locationsQuery = db.collection('locations')
@@ -1083,14 +1145,18 @@ export function createVerificationRouter(db: Firestore): Router {
         }
       }
 
-      if (dryRun) {
+      if (dryRun === true) {
         res.json({
           dryRun: true,
           results: {
             total: results.total,
             wouldSend: results.targetStores.length,
+            sent: 0,
+            logOnly: 0,
             skipped: results.skipped,
+            failed: 0,
             skippedReasons: results.skippedReasons,
+            failedStores: [],
             targetStores: results.targetStores,
           },
         });
@@ -1157,28 +1223,52 @@ export function createVerificationRouter(db: Firestore): Router {
     }
   });
 
-  router.get('/campaigns', async (_req: Request, res: Response) => {
+  router.delete('/campaigns/:campaignId', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
-      
-      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+      const { campaignId } = req.params;
+
+      if (!authUser || authUser.role !== 'Admin') {
         return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
         });
       }
 
-      const campaignsSnap = await db.collection('verificationCampaigns')
-        .orderBy('createdAt', 'desc')
-        .limit(50)
-        .get();
+      const campaignDoc = await db.collection('verificationCampaigns').doc(campaignId).get();
+      if (!campaignDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Campaign not found', requestId: res.locals.requestId },
+        });
+      }
 
-      const campaigns = campaignsSnap.docs.map(doc => doc.data());
+      const campaignData = campaignDoc.data()!;
+      const now = new Date().toISOString();
 
-      res.json({ campaigns });
+      await db.collection('verificationCampaigns').doc(campaignId).update({
+        archived: true,
+        archivedAt: now,
+        archivedBy: authUser.uid,
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'delete',
+        entityType: 'verification-campaign',
+        entityId: campaignId,
+        entityName: `Archived campaign ${campaignId}`,
+        changes: [
+          { field: 'archived', oldValue: false, newValue: true },
+          { field: 'scope', newValue: campaignData.scope },
+        ],
+      });
+
+      res.json({ success: true, campaignId, archivedAt: now });
     } catch (error) {
-      console.error('List campaigns error:', error);
+      console.error('Archive campaign error:', error);
       res.status(500).json({
-        error: { code: 'internal_error', message: 'Failed to list campaigns', requestId: res.locals.requestId },
+        error: { code: 'internal_error', message: 'Failed to archive campaign', requestId: res.locals.requestId },
       });
     }
   });

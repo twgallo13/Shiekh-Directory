@@ -383,10 +383,10 @@ export function createVerificationRouter(db: Firestore): Router {
         .limit(100)
         .get();
 
-      let campaigns = campaignsSnap.docs.map(doc => doc.data());
+      let campaigns = campaignsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Array<{ id: string; status?: string; archived?: boolean; [key: string]: unknown }>;
       
       if (!includeArchived) {
-        campaigns = campaigns.filter(c => c.status !== 'archived');
+        campaigns = campaigns.filter(c => c.status !== 'archived' && !c.archived);
       }
 
       res.json({ campaigns: campaigns.slice(0, 50) });

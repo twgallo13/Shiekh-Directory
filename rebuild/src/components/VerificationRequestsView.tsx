@@ -641,14 +641,10 @@ function BulkVerificationSection({
   const [regions, setRegions] = useState<Region[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
 
-  useEffect(() => {
-    if (expanded && regions.length === 0) {
-      loadHierarchy();
-    }
-  }, [expanded]);
-
-  const loadHierarchy = async () => {
+  const loadHierarchy = useCallback(async () => {
+    if (hierarchyLoaded) return;
     try {
       setLoading(true);
       setError(null);
@@ -670,13 +666,20 @@ function BulkVerificationSection({
       } else {
         throw new Error('Failed to load districts');
       }
+      setHierarchyLoaded(true);
     } catch (err) {
       console.error('Failed to load hierarchy:', err);
       setError(err instanceof Error ? err.message : 'Failed to load hierarchy data');
     } finally {
       setLoading(false);
     }
-  };
+  }, [getIdToken, hierarchyLoaded]);
+
+  useEffect(() => {
+    if (expanded) {
+      loadHierarchy();
+    }
+  }, [expanded, loadHierarchy]);
 
   const handlePreview = async () => {
     if ((scope === 'district' || scope === 'region') && !scopeId) {

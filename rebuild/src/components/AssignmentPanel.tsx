@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Save, UserPlus, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { AssignmentRole, AssignmentSlot, AssignmentCapacity, PersonListItem } from '../types';
@@ -51,13 +51,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
   
   const [endingAssignment, setEndingAssignment] = useState<string | null>(null);
   
-  useEffect(() => {
-    if (mode === 'add') {
-      fetchPeople();
-    }
-  }, [mode]);
-  
-  const fetchPeople = async () => {
+  const fetchPeople = useCallback(async () => {
     try {
       setPeopleLoading(true);
       const token = await getIdToken();
@@ -73,7 +67,13 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
     } finally {
       setPeopleLoading(false);
     }
-  };
+  }, [getIdToken]);
+  
+  useEffect(() => {
+    if (mode === 'add') {
+      fetchPeople();
+    }
+  }, [mode, fetchPeople]);
   
   const handleAddAssignment = async () => {
     if (!selectedPerson) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2, Edit, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -29,17 +29,7 @@ export function VerifyActionView() {
     return () => { document.head.removeChild(meta); };
   }, []);
 
-  useEffect(() => {
-    if (token && action) {
-      window.history.replaceState({}, '', window.location.pathname);
-      processAction(token, action);
-    } else {
-      setError('Invalid verification link');
-      setLoading(false);
-    }
-  }, [token, action]);
-
-  const processAction = async (token: string, action: string) => {
+  const processAction = useCallback(async (tokenValue: string, actionValue: string) => {
     setLoading(true);
     setError('');
 
@@ -48,7 +38,7 @@ export function VerifyActionView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ token, action }),
+        body: JSON.stringify({ token: tokenValue, action: actionValue }),
       });
 
       const data = await response.json();
@@ -75,7 +65,17 @@ export function VerifyActionView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [refreshStoreSession]);
+
+  useEffect(() => {
+    if (token && action) {
+      window.history.replaceState({}, '', window.location.pathname);
+      processAction(token, action);
+    } else {
+      setError('Invalid verification link');
+      setLoading(false);
+    }
+  }, [token, action, processAction]);
 
   if (loading) {
     return (

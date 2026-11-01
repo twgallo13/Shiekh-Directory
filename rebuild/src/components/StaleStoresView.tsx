@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { AlertTriangle, Calendar, RefreshCw, Store, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -29,7 +29,7 @@ export function StaleStoresView() {
   const [error, setError] = useState('');
   const [filterDistrict, setFilterDistrict] = useState('');
 
-  const fetchStaleStores = async () => {
+  const fetchStaleStores = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setError('');
@@ -48,11 +48,11 @@ export function StaleStoresView() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchStaleStores();
-  }, [user]);
+  }, [fetchStaleStores]);
 
   const filteredStores = data?.staleStores.filter(store => {
     if (!filterDistrict) return true;

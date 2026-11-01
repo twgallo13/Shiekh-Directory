@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Mail, Loader2, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -28,14 +28,7 @@ export function StoreSignInView() {
     return () => { document.head.removeChild(meta); };
   }, []);
 
-  useEffect(() => {
-    if (token) {
-      window.history.replaceState({}, '', window.location.pathname);
-      verifyToken(token);
-    }
-  }, [token]);
-
-  const verifyToken = async (token: string) => {
+  const verifyToken = useCallback(async (tokenValue: string) => {
     setVerifying(true);
     setError('');
     try {
@@ -43,7 +36,7 @@ export function StoreSignInView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token: tokenValue }),
       });
 
       const data = await response.json();
@@ -70,7 +63,14 @@ export function StoreSignInView() {
     } finally {
       setVerifying(false);
     }
-  };
+  }, [navigate, refreshStoreSession]);
+
+  useEffect(() => {
+    if (token) {
+      window.history.replaceState({}, '', window.location.pathname);
+      verifyToken(token);
+    }
+  }, [token, verifyToken]);
 
   const handleRequestLink = async (e: React.FormEvent) => {
     e.preventDefault();

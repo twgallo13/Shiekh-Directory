@@ -103,8 +103,9 @@ export function DirectoryView() {
       
       const { data } = await response.json();
       setSearchResults(data);
-    } catch (error) {
-      console.error('Search error:', error);
+    } catch (err) {
+      console.error('Search error:', err);
+      setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
       setSearching(false);
     }

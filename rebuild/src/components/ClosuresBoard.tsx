@@ -92,6 +92,7 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
       setDistricts(data || []);
     } catch (err) {
       console.error('Failed to load districts:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load districts');
     }
   }, [getIdToken]);
 

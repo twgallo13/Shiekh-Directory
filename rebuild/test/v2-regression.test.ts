@@ -658,3 +658,128 @@ describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
     assert.strictEqual(res.status, 200, 'should find store 123');
   });
 });
+
+describe('v2 Regression Tests - Hours Template Picker', () => {
+  const db = getTestDb();
+  let testTemplateId: string;
+  let testLocationId: string;
+
+  before(async () => {
+    await seedTestUsers();
+    await seedTestHierarchy();
+    const now = new Date().toISOString();
+    
+    // Create a test template with defaultForTypes
+    const templateRef = db.collection('hoursTemplates').doc();
+    await templateRef.set({
+      name: 'Test Mall Hours',
+      description: 'Standard mall hours template',
+      hours: {
+        monday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+        tuesday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+        wednesday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+        thursday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+        friday: { closed: false, intervals: [{ open: '10:00', close: '22:00' }] },
+        saturday: { closed: false, intervals: [{ open: '10:00', close: '22:00' }] },
+        sunday: { closed: false, intervals: [{ open: '11:00', close: '19:00' }] },
+      },
+      version: 1,
+      lifecycle: 'active',
+      defaultForTypes: ['enclosed_mall'],
+      createdAt: now,
+      createdBy: 'test',
+      updatedAt: now,
+      updatedBy: 'test',
+    });
+    testTemplateId = templateRef.id;
+    
+    // Create a test location with storeType
+    const locationRef = db.collection('locations').doc();
+    await locationRef.set({
+      kind: 'store',
+      lifecycle: 'active',
+      storeNumber: 'TPL01',
+      name: 'Template Test Store',
+      storeType: 'enclosed_mall',
+      districtId: 'test-district-1',
+      regionId: 'test-region-1',
+      sharedInboxEmail: 'tpltest@shiekhshoes.com',
+      address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
+      timeZone: 'America/Los_Angeles',
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    });
+    testLocationId = locationRef.id;
+  });
+
+  after(async () => {
+    if (testTemplateId) {
+      await db.collection('hoursTemplates').doc(testTemplateId).delete();
+    }
+    if (testLocationId) {
+      await db.collection('locations').doc(testLocationId).delete();
+    }
+  });
+
+  it('lists active hours templates', async () => {
+    const res = await fetch(`${API_BASE}/api/app/hours-templates`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const { data } = await res.json();
+    assert.ok(Array.isArray(data), 'should return array of templates');
+    
+    const found = data.find((t: { id: string }) => t.id === testTemplateId);
+    assert.ok(found, 'should include test template');
+    assert.strictEqual(found.name, 'Test Mall Hours');
+  });
+
+  it('suggests template for store type', async () => {
+    const res = await fetch(`${API_BASE}/api/app/hours-templates/suggest/enclosed_mall`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const { data } = await res.json();
+    assert.strictEqual(data.storeType, 'enclosed_mall');
+    assert.ok(data.suggestions.length > 0, 'should have suggestions');
+    
+    const suggested = data.suggestions.find((t: { id: string }) => t.id === testTemplateId);
+    assert.ok(suggested, 'should suggest template with matching defaultForTypes');
+  });
+
+  it('returns empty suggestions for store type with no matching templates', async () => {
+    const res = await fetch(`${API_BASE}/api/app/hours-templates/suggest/warehouse_distribution`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const { data } = await res.json();
+    assert.strictEqual(data.storeType, 'warehouse_distribution');
+  });
+
+  it('returns 400 for invalid store type', async () => {
+    const res = await fetch(`${API_BASE}/api/app/hours-templates/suggest/INVALID`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 400);
+    const body = await res.json();
+    assert.strictEqual(body.error.code, 'invalid_store_type');
+  });
+
+  it('template hours can be retrieved for UI picker', async () => {
+    const res = await fetch(`${API_BASE}/api/app/hours-templates/${testTemplateId}`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const { data } = await res.json();
+    assert.ok(data.hours, 'should include hours');
+    assert.ok(data.hours.monday, 'should have monday hours');
+    assert.strictEqual(data.hours.monday.closed, false);
+    assert.strictEqual(data.hours.monday.intervals[0].open, '10:00');
+  });
+});

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout } from './components/AppLayout';
+import { ErrorBoundary, RouteErrorBoundary } from './components/ErrorBoundary';
 import { DirectoryView } from './components/DirectoryView';
 import { LocationDetailView } from './components/LocationDetailView';
 import { PersonDetailView } from './components/PersonDetailView';
@@ -124,7 +125,9 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <DirectoryView />
+            <RouteErrorBoundary>
+              <DirectoryView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -132,7 +135,9 @@ function AppRoutes() {
         path="/location/:id"
         element={
           <StoreLocationRoute>
-            <LocationDetailView />
+            <RouteErrorBoundary>
+              <LocationDetailView />
+            </RouteErrorBoundary>
           </StoreLocationRoute>
         }
       />
@@ -140,7 +145,9 @@ function AppRoutes() {
         path="/person/:id"
         element={
           <ProtectedRoute>
-            <PersonDetailView />
+            <RouteErrorBoundary>
+              <PersonDetailView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -148,7 +155,9 @@ function AppRoutes() {
         path="/corrections"
         element={
           <ProtectedRoute>
-            <CorrectionsQueuePage />
+            <RouteErrorBoundary>
+              <CorrectionsQueuePage />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -247,8 +256,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

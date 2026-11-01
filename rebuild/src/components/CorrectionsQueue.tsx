@@ -169,14 +169,14 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
                         correction.status === 'approved' ? 'bg-green-100 text-green-800' :
                         'bg-red-100 text-red-800'
                       }`}>
-                        {correction.type}
+                        {correction.type || 'correction'}
                       </span>
                       {correction.category && (
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                           {correction.category}
                         </span>
                       )}
-                      <span className="font-medium">#{correction.storeNumber} {correction.locationName}</span>
+                      <span className="font-medium">#{correction.storeNumber || '?'} {correction.locationName || 'Unknown'}</span>
                     </div>
                     {correction.proposedNote && (
                       <p className="text-sm text-gray-600 mt-1 italic">
@@ -184,10 +184,10 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
                       </p>
                     )}
                     <p className="text-sm text-gray-500 mt-1">
-                      Submitted by {correction.submittedByEmail}
+                      Submitted by {correction.submittedByEmail || 'Unknown'}
                     </p>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {new Date(correction.submittedAt).toLocaleDateString()}
+                      {correction.submittedAt ? new Date(correction.submittedAt).toLocaleDateString() : 'Unknown date'}
                     </p>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -222,14 +222,14 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
 
               <div className="space-y-3">
                 <h3 className="font-medium text-gray-900">Proposed Changes</h3>
-                {Object.entries(selectedCorrection.proposedChanges).map(([field, newValue]) => (
+                {Object.entries(selectedCorrection.proposedChanges ?? {}).map(([field, newValue]) => (
                   <div key={field} className="border border-gray-200 rounded-lg overflow-hidden">
                     <div className="bg-gray-50 px-3 py-2 font-medium text-sm">{field}</div>
                     <div className="grid grid-cols-2 divide-x divide-gray-200">
                       <div className="p-3">
                         <p className="text-xs text-gray-500 mb-1">Current</p>
                         <pre className="text-sm text-red-700 whitespace-pre-wrap">
-                          {formatValue(selectedCorrection.currentValues[field])}
+                          {formatValue(selectedCorrection.currentValues?.[field])}
                         </pre>
                       </div>
                       <div className="p-3">

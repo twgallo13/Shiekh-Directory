@@ -99,7 +99,9 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
   const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [suggestedTemplateId, setSuggestedTemplateId] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [templateApplied, setTemplateApplied] = useState(false);
+  const [appliedTemplateId, setAppliedTemplateId] = useState<string | null>(null);
 
   // Fetch templates when editing hours
   const fetchTemplates = useCallback(async () => {
@@ -124,7 +126,9 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
       if (suggestRes?.ok) {
         const { data } = await suggestRes.json();
         if (data.suggestions?.length > 0) {
-          setSuggestedTemplateId(data.suggestions[0].id);
+          const suggestedId = data.suggestions[0].id;
+          setSuggestedTemplateId(suggestedId);
+          setSelectedTemplateId(suggestedId);
         }
       }
     } catch (err) {
@@ -139,12 +143,21 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
     fetchTemplates();
   }, [fetchTemplates]);
 
-  const handleApplyTemplate = (templateId: string) => {
-    const template = templates.find(t => t.id === templateId);
+  const handleApplyTemplate = () => {
+    if (!selectedTemplateId) return;
+    const template = templates.find(t => t.id === selectedTemplateId);
     if (!template) return;
     
     setHours(normalizeHours(template.hours));
     setTemplateApplied(true);
+    setAppliedTemplateId(selectedTemplateId);
+  };
+
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    if (templateId && templateId !== appliedTemplateId) {
+      setTemplateApplied(false);
+    }
   };
 
   // Calculate expiry preview for same-day closures
@@ -406,11 +419,11 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                 ) : templates.length === 0 ? (
                   <p className="text-sm text-gray-500">No templates available</p>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <select
-                      onChange={(e) => e.target.value && handleApplyTemplate(e.target.value)}
+                      value={selectedTemplateId}
+                      onChange={(e) => handleTemplateChange(e.target.value)}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                      defaultValue=""
                     >
                       <option value="">Select a template...</option>
                       {templates.map(t => (
@@ -420,6 +433,14 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      onClick={handleApplyTemplate}
+                      disabled={!selectedTemplateId || selectedTemplateId === appliedTemplateId}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      Apply
+                    </button>
                   </div>
                 )}
                 {templateApplied && (
@@ -430,39 +451,41 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                 )}
               </div>
 
-              {/* Hours rows */}
+              {/* Hours rows - mobile responsive */}
               <div className="space-y-3">
               {DAYS.map(day => {
                 const dayHours = hours[day] ?? { closed: true, intervals: [] };
                 const firstInterval = dayHours.intervals?.[0] ?? { open: '10:00', close: '21:00' };
                 return (
-                <div key={day} className="flex items-center gap-3">
-                  <span className="w-24 text-sm font-medium">{DAY_LABELS[day]}</span>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={dayHours.closed ?? false}
-                      onChange={(e) => updateHours(day, 'closed', e.target.checked)}
-                      className="rounded"
-                    />
-                    <span className="text-sm">Closed</span>
-                  </label>
+                <div key={day} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-gray-100 last:border-b-0">
+                  <div className="flex items-center justify-between sm:justify-start gap-2 sm:w-auto">
+                    <span className="text-sm font-medium min-w-[80px]">{DAY_LABELS[day]}</span>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={dayHours.closed ?? false}
+                        onChange={(e) => updateHours(day, 'closed', e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Closed</span>
+                    </label>
+                  </div>
                   {!dayHours.closed && (
-                    <>
+                    <div className="flex items-center gap-2 pl-0 sm:pl-0">
                       <input
                         type="time"
                         value={firstInterval.open}
                         onChange={(e) => updateHours(day, 'open', e.target.value)}
-                        className="px-2 py-1 border border-gray-300 rounded text-sm"
+                        className="flex-1 sm:flex-none px-2 py-1.5 border border-gray-300 rounded text-sm min-w-0"
                       />
-                      <span>to</span>
+                      <span className="text-sm text-gray-500">to</span>
                       <input
                         type="time"
                         value={firstInterval.close}
                         onChange={(e) => updateHours(day, 'close', e.target.value)}
-                        className="px-2 py-1 border border-gray-300 rounded text-sm"
+                        className="flex-1 sm:flex-none px-2 py-1.5 border border-gray-300 rounded text-sm min-w-0"
                       />
-                    </>
+                    </div>
                   )}
                 </div>
                 );

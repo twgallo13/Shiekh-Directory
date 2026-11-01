@@ -782,4 +782,41 @@ describe('v2 Regression Tests - Hours Template Picker', () => {
     assert.strictEqual(data.hours.monday.closed, false);
     assert.strictEqual(data.hours.monday.intervals[0].open, '10:00');
   });
+
+  it('suggestion returns template ID for pre-selection without auto-applying', async () => {
+    const suggestRes = await fetch(`${API_BASE}/api/app/hours-templates/suggest/enclosed_mall`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(suggestRes.status, 200);
+    const { data: suggestData } = await suggestRes.json();
+    assert.ok(suggestData.suggestions.length > 0, 'should have suggestions');
+    
+    const suggestedId = suggestData.suggestions[0].id;
+    assert.ok(suggestedId, 'suggestion should include template ID for pre-selection');
+    
+    const templateRes = await fetch(`${API_BASE}/api/app/hours-templates/${suggestedId}`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(templateRes.status, 200);
+    const { data: templateData } = await templateRes.json();
+    assert.ok(templateData.hours, 'can fetch template hours separately for Apply action');
+    assert.ok(templateData.name, 'can fetch template name for dropdown display');
+  });
+
+  it('templates list includes all fields needed for dropdown with Apply button', async () => {
+    const res = await fetch(`${API_BASE}/api/app/hours-templates`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const { data } = await res.json();
+    
+    const template = data.find((t: { id: string }) => t.id === testTemplateId);
+    assert.ok(template, 'should find test template');
+    assert.ok(template.id, 'template has id for selection');
+    assert.ok(template.name, 'template has name for display');
+    assert.ok(template.hours, 'template includes hours for Apply action');
+  });
 });

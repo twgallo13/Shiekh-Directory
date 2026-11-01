@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Printer, Download, ArrowLeft, AlertTriangle, Filter, Clock, FileSpreadsheet } from 'lucide-react';
+import { Printer, Download, ArrowLeft, AlertTriangle, Filter, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 interface ExportLocation {
   id: string;
@@ -52,6 +53,8 @@ function canAccessExports(role: string | undefined): boolean {
 }
 
 export function PrintableDirectoryView() {
+  useDocumentTitle('Print / Export');
+  
   const [loading, setLoading] = useState(true);
   const [preparing, setPreparing] = useState(false);
   const [exportToken, setExportToken] = useState<string | null>(null);
@@ -276,20 +279,6 @@ export function PrintableDirectoryView() {
                 <span className="hidden sm:inline">Print</span>
               </button>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Coming Soon Features - Hidden in print */}
-      <div className="print:hidden max-w-[1200px] mx-auto px-4 pt-4">
-        <div className="bg-gray-50 border border-gray-200 border-dashed rounded-lg p-3">
-          <div className="flex items-center gap-3">
-            <Clock className="w-4 h-4 text-gray-400 flex-shrink-0" />
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-medium text-gray-600">Google/Apple Contacts Export</span>
-              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">Planned</span>
-            </div>
-            <span className="text-xs text-gray-500 hidden sm:inline">Export directory as vCard file for phone contacts.</span>
           </div>
         </div>
       </div>

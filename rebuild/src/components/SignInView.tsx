@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const isEmulator = import.meta.env.DEV || import.meta.env.VITE_USE_EMULATOR === 'true';
+
+const TITLE = 'Sign In · Shiekh Directory';
 
 export function SignInView() {
   const [email, setEmail] = useState('');
@@ -82,8 +84,13 @@ export function SignInView() {
     }
   };
   
+  useEffect(() => {
+    document.title = TITLE;
+    return () => { document.title = 'Shiekh Directory'; };
+  }, []);
+  
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
           <img 
@@ -91,6 +98,7 @@ export function SignInView() {
             alt="Shiekh" 
             className="h-12 mx-auto mb-4"
           />
+          <h1 className="sr-only">Sign In to Shiekh Directory</h1>
           <p className="text-gray-600">Sign in to access the store directory</p>
         </div>
         
@@ -257,6 +265,6 @@ export function SignInView() {
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

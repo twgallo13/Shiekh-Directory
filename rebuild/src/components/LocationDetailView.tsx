@@ -14,6 +14,7 @@ import { StoreVerificationPanel } from './StoreVerificationPanel';
 import { CapacityBadge, VacantBadge } from './CapacityBadge';
 import { ReportProblemDialog } from './ReportProblemDialog';
 import { apiGet, apiPost } from '../lib/api';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -36,6 +37,8 @@ export function LocationDetailView() {
   
   const { authUser } = useAuth();
   const navigate = useNavigate();
+  
+  useDocumentTitle(location ? `Store #${location.storeNumber}` : 'Loading...');
   
   const editPermissions = authUser && location
     ? canEditLocation(authUser, location.id)
@@ -162,7 +165,7 @@ export function LocationDetailView() {
         </div>
       </div>
       
-      <main className="max-w-7xl mx-auto px-4 py-4 lg:py-6 space-y-4 lg:space-y-6">
+      <div className="max-w-7xl mx-auto px-4 py-4 lg:py-6 space-y-4 lg:space-y-6">
         {/* Store Verification for Store accounts */}
         {authUser?.role === 'Store' && (
           <StoreVerificationPanel
@@ -749,7 +752,7 @@ export function LocationDetailView() {
           locationId={location.id}
           locationName={`${location.storeNumber} ${location.name}`}
         />
-      </main>
+      </div>
       
       {/* Edit Panel */}
       {editingField && location && (

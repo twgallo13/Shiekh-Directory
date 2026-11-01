@@ -72,6 +72,10 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* H6: Skip to content link */}
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
       <OfflineBanner />
       <header className="bg-blue-700 text-white sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4">
@@ -403,7 +407,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       </header>
 
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         {children}
       </main>
     </div>

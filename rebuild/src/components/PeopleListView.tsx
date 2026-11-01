@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, User, UserPlus, Mail, X, Building } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { PersonListItem } from '../types';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 interface CreatePersonForm {
   fullName: string;
@@ -12,6 +13,8 @@ interface CreatePersonForm {
 }
 
 export function PeopleListView() {
+  useDocumentTitle('People');
+  
   const [people, setPeople] = useState<PersonListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');

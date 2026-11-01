@@ -2,12 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { ArrowLeft, Check, X, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { Correction } from '../types';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 interface CorrectionsQueueProps {
   onBack: () => void;
 }
 
 export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
+  useDocumentTitle('Approvals');
+  
   const { getIdToken } = useAuth();
   const [corrections, setCorrections] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);

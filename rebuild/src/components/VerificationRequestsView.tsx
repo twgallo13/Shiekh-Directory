@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 export function VerificationRequestsView() {
+  useDocumentTitle('Verification');
+  
   const navigate = useNavigate();
   const { getIdToken, authUser } = useAuth();
   const [requests, setRequests] = useState<VerificationRequest[]>([]);

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Check, AlertTriangle, Store, ChevronDown, ChevronUp, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 interface Holiday {
   id: string;
@@ -53,6 +54,8 @@ const US_STATES = [
 ];
 
 export function BulkHolidayManager() {
+  useDocumentTitle('Holidays');
+  
   const navigate = useNavigate();
   const { getIdToken, authUser } = useAuth();
 
@@ -225,7 +228,7 @@ export function BulkHolidayManager() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
         {/* Year and Holiday Selection */}
         <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
           <div className="flex items-center gap-2 text-gray-700">
@@ -489,7 +492,7 @@ export function BulkHolidayManager() {
             </div>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

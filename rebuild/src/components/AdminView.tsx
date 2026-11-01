@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { ComingSoonPlaceholder, ComingSoonSection } from './ComingSoonPlaceholder';
 import { HoursTemplatesView } from './HoursTemplatesView';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates' | 'backups';
 
@@ -59,6 +59,8 @@ const SCOPES = [
 ];
 
 export function AdminView() {
+  useDocumentTitle('Admin');
+  
   const [activeTab, setActiveTab] = useState<TabId>('users');
   const { getIdToken, authUser } = useAuth();
   const navigate = useNavigate();
@@ -896,17 +898,13 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
         </div>
       )}
 
-      {/* Planned API features */}
-      <div className="space-y-3 mt-6 pt-6 border-t border-gray-200">
-        <ComingSoonPlaceholder
-          title="Edit Client Permissions"
-          description="Modify scopes and access settings for existing API clients."
-        />
+      {/* API Documentation */}
+      <div className="mt-6 pt-6 border-t border-gray-200">
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-medium text-gray-900">API Documentation</h3>
-              <p className="text-sm text-gray-500 mt-0.5">Interactive documentation for the external API endpoints.</p>
+              <p className="text-sm text-gray-600 mt-0.5">Interactive documentation for the external API endpoints.</p>
             </div>
             <a
               href="/api-docs"
@@ -1877,18 +1875,6 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
         </div>
       </div>
 
-      {/* Planned Features */}
-      <div className="space-y-4">
-        <ComingSoonPlaceholder
-          title="Notification Rules"
-          description="Configure when and how notifications are sent for different events."
-        />
-        <ComingSoonPlaceholder
-          title="Sent Mail Log"
-          description="View history of all sent emails with delivery status and timestamps."
-        />
-      </div>
-
       {/* Invite Modal */}
       {showInviteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -2280,27 +2266,20 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
 function AuditLogTab() {
   return (
     <div className="space-y-6">
-      <ComingSoonSection
-        title="All-Store Audit Log"
-        description="View a unified timeline of all changes across all stores, including hours edits, closures, assignments, and verification responses."
-      />
-      
-      <div className="space-y-6">
-        <div className="border border-gray-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Data Quality / Stale Stores</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Identify stores with verification older than 90 days or never verified. Leaders see only stores in their district.
-          </p>
-          <a
-            href="/stale-stores"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
-          >
-            View Stale Stores
-          </a>
-        </div>
-
-        <DrillStatusCard />
+      <div className="border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Data Quality / Stale Stores</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Identify stores with verification older than 90 days or never verified. Leaders see only stores in their district.
+        </p>
+        <a
+          href="/stale-stores"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
+        >
+          View Stale Stores
+        </a>
       </div>
+
+      <DrillStatusCard />
     </div>
   );
 }

@@ -2,8 +2,11 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ClosuresBoard } from './ClosuresBoard';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 export function ClosuresBoardPage() {
+  useDocumentTitle('Closures');
+  
   const navigate = useNavigate();
   const { authUser } = useAuth();
 

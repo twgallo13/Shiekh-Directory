@@ -8,6 +8,38 @@
   body {
     @apply bg-gray-50 text-gray-900 antialiased;
   }
+
+  /* H1: Global focus-visible outline for accessibility */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-blue-600;
+    outline-style: solid;
+  }
+
+  /* Remove default focus outline since we use focus-visible */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* H6: Skip to content link */
+  .skip-link {
+    @apply absolute left-0 top-0 z-[100] bg-blue-600 text-white px-4 py-2 font-medium;
+    transform: translateY(-100%);
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+}
+
+/* M2: Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer components {

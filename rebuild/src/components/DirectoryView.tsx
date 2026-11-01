@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import type { LocationListItem, SearchResult, Region, District, LocationKind } from '../types';
 import { STORE_TYPES } from '../types';
 import { StatusBadge } from './StatusBadge';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const KIND_ICONS: Record<LocationKind, typeof Store> = {
   store: Store,
@@ -14,6 +15,8 @@ const KIND_ICONS: Record<LocationKind, typeof Store> = {
 };
 
 export function DirectoryView() {
+  useDocumentTitle('Directory');
+  
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
   const [locations, setLocations] = useState<LocationListItem[]>([]);
@@ -191,6 +194,7 @@ export function DirectoryView() {
                     setSelectedRegion(e.target.value);
                     setSelectedDistrict('');
                   }}
+                  aria-label="Filter by region"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
                 >
                   <option value="">All Regions</option>
@@ -202,6 +206,7 @@ export function DirectoryView() {
                 <select
                   value={selectedDistrict}
                   onChange={(e) => setSelectedDistrict(e.target.value)}
+                  aria-label="Filter by district"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
                 >
                   <option value="">All Districts</option>
@@ -213,6 +218,7 @@ export function DirectoryView() {
                 <select
                   value={selectedKind}
                   onChange={(e) => setSelectedKind(e.target.value)}
+                  aria-label="Filter by location type"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
                 >
                   <option value="store">Stores</option>
@@ -223,6 +229,7 @@ export function DirectoryView() {
                 <select
                   value={selectedStoreType}
                   onChange={(e) => setSelectedStoreType(e.target.value)}
+                  aria-label="Filter by store type"
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
                 >
                   <option value="">All Types</option>
@@ -311,7 +318,7 @@ export function DirectoryView() {
                       <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Manager</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
-                      <th className="px-4 py-3"></th>
+                      <th className="px-4 py-3"><span className="sr-only">Open</span></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">

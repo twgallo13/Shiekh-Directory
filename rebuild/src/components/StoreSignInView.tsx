@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Mail, Loader2, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+const TITLE = 'Store Sign-In · Shiekh Directory';
+
 export function StoreSignInView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -21,11 +23,15 @@ export function StoreSignInView() {
   const token = searchParams.get('token');
 
   useEffect(() => {
+    document.title = TITLE;
     const meta = document.createElement('meta');
     meta.name = 'referrer';
     meta.content = 'no-referrer';
     document.head.appendChild(meta);
-    return () => { document.head.removeChild(meta); };
+    return () => { 
+      document.title = 'Shiekh Directory';
+      document.head.removeChild(meta); 
+    };
   }, []);
 
   const verifyToken = useCallback(async (tokenValue: string) => {
@@ -103,32 +109,33 @@ export function StoreSignInView() {
 
   if (token && verifying) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="max-w-md w-full text-center">
           <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+          <h1 className="sr-only">Verifying Sign-In</h1>
           <p className="text-gray-600">Verifying your sign-in link...</p>
         </div>
-      </div>
+      </main>
     );
   }
 
   if (storeInfo) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
         <div className="max-w-md w-full text-center">
           <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Signed In</h2>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Signed In</h1>
           <p className="text-gray-600 mb-4">
             Welcome, Store {storeInfo.storeNumber} - {storeInfo.storeName}
           </p>
           <p className="text-sm text-gray-500">Redirecting to your store page...</p>
         </div>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
           <img 
@@ -198,7 +205,7 @@ export function StoreSignInView() {
           <div className="mt-6 pt-6 border-t border-gray-200">
             <p className="text-sm text-gray-600 text-center">
               Company staff should use{' '}
-              <Link to="/signin" className="text-blue-600 hover:underline">
+              <Link to="/signin" className="text-blue-600 underline hover:text-blue-800">
                 Google Sign-In
               </Link>
             </p>
@@ -208,13 +215,13 @@ export function StoreSignInView() {
         <div className="mt-4 text-center">
           <Link 
             to="/signin" 
-            className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+            className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900 min-h-[44px]"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Staff Sign-In
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

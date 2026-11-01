@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { Correction, CorrectionCategory } from '../types';
 import { apiGet, apiPost } from '../lib/api';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const CATEGORY_LABELS: Record<CorrectionCategory, string> = {
   address: 'Address',
@@ -20,6 +21,8 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }>
 };
 
 export function MyRequestsView() {
+  useDocumentTitle('My Requests');
+  
   const [requests, setRequests] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,21 +34,19 @@ export function MyRequestsView() {
     try {
       setLoading(true);
       setError(null);
-      const statuses = ['pending', 'approved', 'rejected', 'cancelled'];
-      const allRequests: Correction[] = [];
-
-      for (const status of statuses) {
-        const response = await apiGet(`/api/app/corrections?status=${status}&myRequests=true`);
-        if (response.ok) {
-          const { data } = await response.json();
-          allRequests.push(...(data || []));
-        } else if (response.status === 401) {
-          throw new Error('Please sign in to view your requests');
-        }
+      
+      const response = await apiGet('/api/app/corrections?myRequests=true');
+      if (response.ok) {
+        const { data } = await response.json();
+        const allRequests = (data || []).sort((a: Correction, b: Correction) => 
+          new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+        );
+        setRequests(allRequests);
+      } else if (response.status === 401) {
+        throw new Error('Please sign in to view your requests');
+      } else {
+        throw new Error('Failed to load requests');
       }
-
-      allRequests.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
-      setRequests(allRequests);
     } catch (err) {
       console.error('Failed to load requests:', err);
       setError((err as Error).message);

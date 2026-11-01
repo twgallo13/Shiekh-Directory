@@ -21,17 +21,25 @@ export function createCorrectionsRouter(db: Firestore): Router {
         });
       }
 
-      const status = req.query.status as string || 'pending';
+      const status = req.query.status as string;
       const category = req.query.category as string;
       const myRequests = req.query.myRequests === 'true';
       
-      let query = db.collection('corrections')
-        .where('status', '==', status)
-        .orderBy('submittedAt', 'desc');
-
-      // If user can't approve corrections or specifically wants their own requests
-      if (!canApproveCorrections(authUser) || myRequests) {
-        query = query.where('submittedBy', '==', authUser.uid);
+      let query;
+      
+      if (myRequests) {
+        query = db.collection('corrections')
+          .where('submittedBy', '==', authUser.uid)
+          .orderBy('submittedAt', 'desc');
+      } else {
+        const statusFilter = status || 'pending';
+        query = db.collection('corrections')
+          .where('status', '==', statusFilter)
+          .orderBy('submittedAt', 'desc');
+        
+        if (!canApproveCorrections(authUser)) {
+          query = query.where('submittedBy', '==', authUser.uid);
+        }
       }
 
       const snapshot = await query.limit(100).get();

@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, ChevronDown, Plus, Edit2, Trash2, MapPin, Buil
 import { useAuth } from '../context/AuthContext';
 import type { PersonListItem, PositionStatus } from '../types';
 import { VacantBadge } from './CapacityBadge';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 interface HierarchyRegion {
   id: string;
@@ -60,6 +61,8 @@ interface AssignFormState {
 }
 
 export function HierarchyView() {
+  useDocumentTitle('Hierarchy');
+  
   const [data, setData] = useState<HierarchyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedRegions, setExpandedRegions] = useState<Set<string>>(new Set());

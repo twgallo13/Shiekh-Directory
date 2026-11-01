@@ -19,6 +19,7 @@ import { StoreSignInView } from './components/StoreSignInView';
 import { VerifyActionView } from './components/VerifyActionView';
 import { DMVerifyView } from './components/DMVerifyView';
 import { MyRequestsView } from './components/MyRequestsView';
+import { ApiDocsView } from './components/ApiDocsView';
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -228,6 +229,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute storeAllowed>
             <MyRequestsView />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/api-docs"
+        element={
+          <ProtectedRoute withLayout={false}>
+            <ApiDocsView />
           </ProtectedRoute>
         }
       />

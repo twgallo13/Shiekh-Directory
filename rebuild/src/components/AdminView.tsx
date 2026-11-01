@@ -902,10 +902,21 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           title="Edit Client Permissions"
           description="Modify scopes and access settings for existing API clients."
         />
-        <ComingSoonPlaceholder
-          title="API Documentation"
-          description="Interactive documentation for the external API endpoints."
-        />
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-medium text-gray-900">API Documentation</h3>
+              <p className="text-sm text-gray-500 mt-0.5">Interactive documentation for the external API endpoints.</p>
+            </div>
+            <a
+              href="/api-docs"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              View Docs
+              <ArrowRight className="w-4 h-4" />
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );

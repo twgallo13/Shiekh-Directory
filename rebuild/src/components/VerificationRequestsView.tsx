@@ -4,6 +4,7 @@ import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCir
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { Dialog } from './Dialog';
 
 export function VerificationRequestsView() {
   useDocumentTitle('Verification');
@@ -264,175 +265,19 @@ export function VerificationRequestsView() {
       </div>
 
       {selectedRequest && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                #{selectedRequest.storeNumber} Verification
-              </h2>
-              <button onClick={() => setSelectedId(null)} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Status</span>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                    selectedRequest.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                    selectedRequest.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                    selectedRequest.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {selectedRequest.status}
-                  </span>
-                </div>
-                <p className="text-sm mt-2">
-                  <span className="text-gray-500">Sent to:</span>{' '}
-                  <span className="font-medium">{selectedRequest.sentTo}</span>
-                </p>
-                <p className="text-xs text-gray-600 mt-1">
-                  {new Date(selectedRequest.sentAt).toLocaleString()}
-                </p>
-              </div>
-
-              {selectedRequest.respondedAt && (
-                <div className="bg-blue-50 rounded-lg p-3">
-                  <p className="text-sm font-medium text-blue-800">Store Response</p>
-                  <p className="text-xs text-blue-600 mt-1">
-                    Responded {new Date(selectedRequest.respondedAt).toLocaleString()}
-                  </p>
-                  {selectedRequest.hoursConfirmed && (
-                    <p className="text-sm text-green-700 mt-2 flex items-center gap-1">
-                      <CheckCircle className="w-4 h-4" />
-                      Hours confirmed as accurate
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {selectedRequest.proposedChanges && Object.keys(selectedRequest.proposedChanges).length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="font-medium text-gray-900">Proposed Changes</h3>
-                  {Object.entries(selectedRequest.proposedChanges).map(([field, newValue]) => (
-                    <div key={field} className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-3 py-2 font-medium text-sm capitalize">{field}</div>
-                      <div className="p-3">
-                        <pre className="text-sm text-green-700 whitespace-pre-wrap">
-                          {typeof newValue === 'object' ? JSON.stringify(newValue, null, 2) : String(newValue)}
-                        </pre>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {selectedRequest.reviewedAt && (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-sm text-gray-500">Reviewed</p>
-                  <p className="text-xs text-gray-600">
-                    {new Date(selectedRequest.reviewedAt).toLocaleString()}
-                  </p>
-                  {selectedRequest.reviewNotes && (
-                    <p className="text-sm text-gray-600 mt-2">{selectedRequest.reviewNotes}</p>
-                  )}
-                </div>
-              )}
-
-              {selectedRequest.cancelledAt && (
-                <div className="bg-red-50 rounded-lg p-3">
-                  <p className="text-sm font-medium text-red-800 flex items-center gap-1">
-                    <Ban className="w-4 h-4" />
-                    Cancelled
-                  </p>
-                  <p className="text-xs text-red-600 mt-1">
-                    {new Date(selectedRequest.cancelledAt).toLocaleString()}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {selectedRequest.status === 'pending' && selectedRequest.respondedAt && isAdminOrSteward && (
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 space-y-2">
-                {selectedRequest.proposedChanges && Object.keys(selectedRequest.proposedChanges).length > 0 ? (
-                  <>
-                    <button
-                      onClick={() => handleApprove(selectedRequest.id, true)}
-                      disabled={processing || cancelling === selectedRequest.id}
-                      className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      <Check className="w-4 h-4" />
-                      Approve & Apply Changes
-                    </button>
-                    <button
-                      onClick={() => handleApprove(selectedRequest.id, false)}
-                      disabled={processing || cancelling === selectedRequest.id}
-                      className="w-full min-h-[44px] py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      Mark Verified (No Changes)
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => handleApprove(selectedRequest.id, false)}
-                    disabled={processing || cancelling === selectedRequest.id}
-                    className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    <Check className="w-4 h-4" />
-                    Mark as Verified
-                  </button>
-                )}
-                <button
-                  onClick={() => handleCancel(selectedRequest.id)}
-                  disabled={processing || cancelling === selectedRequest.id}
-                  className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <Ban className="w-4 h-4" />
-                  {cancelling === selectedRequest.id ? 'Cancelling...' : 'Cancel Request'}
-                </button>
-              </div>
-            )}
-
-            {selectedRequest.status === 'pending' && !selectedRequest.respondedAt && isAdminOrSteward && (
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 space-y-2">
-                <p className="text-sm text-gray-500 text-center mb-2">
-                  Awaiting store response
-                </p>
-                <button
-                  onClick={() => handleCancel(selectedRequest.id)}
-                  disabled={cancelling === selectedRequest.id}
-                  className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <Ban className="w-4 h-4" />
-                  {cancelling === selectedRequest.id ? 'Cancelling...' : 'Cancel Request'}
-                </button>
-              </div>
-            )}
-            
-            {selectedRequest.status === 'pending' && selectedRequest.respondedAt && isLeader && (
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3">
-                <p className="text-sm text-gray-500 text-center">
-                  Awaiting Steward/Admin review
-                </p>
-              </div>
-            )}
-
-            {selectedRequest.status === 'cancelled' && isAdminOrSteward && (
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3">
-                <button
-                  onClick={() => handleReissue(selectedRequest.locationId)}
-                  disabled={processing}
-                  className="w-full min-h-[44px] py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  {processing ? 'Sending...' : 'Reissue Verification Request'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <VerificationDetailDialog
+          request={selectedRequest}
+          isAdminOrSteward={isAdminOrSteward}
+          isLeader={isLeader}
+          processing={processing}
+          cancelling={cancelling}
+          onClose={() => setSelectedId(null)}
+          onApprove={handleApprove}
+          onCancel={handleCancel}
+          onReissue={handleReissue}
+        />
       )}
+
 
       {showNewRequest && (
         <NewVerificationRequestModal
@@ -1079,5 +924,204 @@ function BulkVerificationSection({
         </div>
       )}
     </div>
+  );
+}
+
+interface VerificationDetailDialogProps {
+  request: VerificationRequest;
+  isAdminOrSteward: boolean;
+  isLeader: boolean;
+  processing: boolean;
+  cancelling: string | null;
+  onClose: () => void;
+  onApprove: (id: string, applyChanges: boolean) => void;
+  onCancel: (id: string) => void;
+  onReissue: (locationId: string) => void;
+}
+
+function VerificationDetailDialog({
+  request,
+  isAdminOrSteward,
+  isLeader,
+  processing,
+  cancelling,
+  onClose,
+  onApprove,
+  onCancel,
+  onReissue,
+}: VerificationDetailDialogProps) {
+  const getFooter = () => {
+    if (request.status === 'pending' && request.respondedAt && isAdminOrSteward) {
+      const hasProposedChanges = request.proposedChanges && Object.keys(request.proposedChanges).length > 0;
+      return (
+        <div className="space-y-2">
+          {hasProposedChanges ? (
+            <>
+              <button
+                onClick={() => onApprove(request.id, true)}
+                disabled={processing || cancelling === request.id}
+                className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" aria-hidden="true" />
+                Approve & Apply Changes
+              </button>
+              <button
+                onClick={() => onApprove(request.id, false)}
+                disabled={processing || cancelling === request.id}
+                className="w-full min-h-[44px] py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                Mark Verified (No Changes)
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => onApprove(request.id, false)}
+              disabled={processing || cancelling === request.id}
+              className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <Check className="w-4 h-4" aria-hidden="true" />
+              Mark as Verified
+            </button>
+          )}
+          <button
+            onClick={() => onCancel(request.id)}
+            disabled={processing || cancelling === request.id}
+            className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <Ban className="w-4 h-4" aria-hidden="true" />
+            {cancelling === request.id ? 'Cancelling...' : 'Cancel Request'}
+          </button>
+        </div>
+      );
+    }
+    
+    if (request.status === 'pending' && !request.respondedAt && isAdminOrSteward) {
+      return (
+        <div className="space-y-2">
+          <p className="text-sm text-gray-500 text-center mb-2">
+            Awaiting store response
+          </p>
+          <button
+            onClick={() => onCancel(request.id)}
+            disabled={cancelling === request.id}
+            className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <Ban className="w-4 h-4" aria-hidden="true" />
+            {cancelling === request.id ? 'Cancelling...' : 'Cancel Request'}
+          </button>
+        </div>
+      );
+    }
+    
+    if (request.status === 'pending' && request.respondedAt && isLeader) {
+      return (
+        <p className="text-sm text-gray-500 text-center">
+          Awaiting Steward/Admin review
+        </p>
+      );
+    }
+    
+    if (request.status === 'cancelled' && isAdminOrSteward) {
+      return (
+        <button
+          onClick={() => onReissue(request.locationId)}
+          disabled={processing}
+          className="w-full min-h-[44px] py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          <RotateCcw className="w-4 h-4" aria-hidden="true" />
+          {processing ? 'Sending...' : 'Reissue Verification Request'}
+        </button>
+      );
+    }
+    
+    return undefined;
+  };
+  
+  return (
+    <Dialog
+      isOpen={true}
+      onClose={onClose}
+      title={`#${request.storeNumber} Verification`}
+      footer={getFooter()}
+      size="lg"
+    >
+      <div className="space-y-4">
+        <div className="bg-gray-50 rounded-lg p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500">Status</span>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+              request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+              request.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+              request.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+              'bg-gray-100 text-gray-700'
+            }`}>
+              {request.status}
+            </span>
+          </div>
+          <p className="text-sm mt-2">
+            <span className="text-gray-500">Sent to:</span>{' '}
+            <span className="font-medium">{request.sentTo}</span>
+          </p>
+          <p className="text-xs text-gray-600 mt-1">
+            {new Date(request.sentAt).toLocaleString()}
+          </p>
+        </div>
+
+        {request.respondedAt && (
+          <div className="bg-blue-50 rounded-lg p-3">
+            <p className="text-sm font-medium text-blue-800">Store Response</p>
+            <p className="text-xs text-blue-600 mt-1">
+              Responded {new Date(request.respondedAt).toLocaleString()}
+            </p>
+            {request.hoursConfirmed && (
+              <p className="text-sm text-green-700 mt-2 flex items-center gap-1">
+                <CheckCircle className="w-4 h-4" aria-hidden="true" />
+                Hours confirmed as accurate
+              </p>
+            )}
+          </div>
+        )}
+
+        {request.proposedChanges && Object.keys(request.proposedChanges).length > 0 && (
+          <div className="space-y-3">
+            <h3 className="font-medium text-gray-900">Proposed Changes</h3>
+            {Object.entries(request.proposedChanges).map(([field, newValue]) => (
+              <div key={field} className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-3 py-2 font-medium text-sm capitalize">{field}</div>
+                <div className="p-3">
+                  <pre className="text-sm text-green-700 whitespace-pre-wrap">
+                    {typeof newValue === 'object' ? JSON.stringify(newValue, null, 2) : String(newValue)}
+                  </pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {request.reviewedAt && (
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-sm text-gray-500">Reviewed</p>
+            <p className="text-xs text-gray-600">
+              {new Date(request.reviewedAt).toLocaleString()}
+            </p>
+            {request.reviewNotes && (
+              <p className="text-sm text-gray-600 mt-2">{request.reviewNotes}</p>
+            )}
+          </div>
+        )}
+
+        {request.cancelledAt && (
+          <div className="bg-red-50 rounded-lg p-3">
+            <p className="text-sm font-medium text-red-800 flex items-center gap-1">
+              <Ban className="w-4 h-4" aria-hidden="true" />
+              Cancelled
+            </p>
+            <p className="text-xs text-red-600 mt-1">
+              {new Date(request.cancelledAt).toLocaleString()}
+            </p>
+          </div>
+        )}
+      </div>
+    </Dialog>
   );
 }

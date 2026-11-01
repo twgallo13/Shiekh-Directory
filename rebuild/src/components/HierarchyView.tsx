@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, ChevronDown, Plus, Edit2, Trash2, MapPin, Building, Users, X, Move, UserPlus } from 'lucide-react';
+import { ArrowLeft, ChevronRight, ChevronDown, Plus, Edit2, Trash2, MapPin, Building, Users, Move, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { PersonListItem, PositionStatus } from '../types';
 import { VacantBadge } from './CapacityBadge';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { Dialog, FormField } from './Dialog';
 
 interface HierarchyRegion {
   id: string;
@@ -509,198 +510,248 @@ export function HierarchyView() {
         )}
       </div>
 
-      {modalType && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">
-                {modalType === 'region' && (editId ? 'Edit Region' : 'Add Region')}
-                {modalType === 'district' && (editId ? 'Edit District' : 'Add District')}
-                {modalType === 'location' && 'Add Location'}
-                {modalType === 'move-district' && 'Move District'}
-                {modalType === 'move-location' && 'Move Location'}
-                {modalType === 'assign-rm' && 'Assign Regional Manager'}
-                {modalType === 'assign-dm' && 'Assign District Manager'}
-              </h2>
-              <button onClick={() => setModalType(null)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {(modalType === 'region' || modalType === 'district') && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Code *</label>
-                    <input
-                      type="text"
-                      value={form.code}
-                      onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="e.g., WEST or LA-CENTRAL"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                    <input
-                      type="text"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="e.g., West Region or Los Angeles Central"
-                    />
-                  </div>
-                </>
-              )}
-
-              {modalType === 'location' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Store Number *</label>
-                    <input
-                      type="text"
-                      value={form.storeNumber}
-                      onChange={(e) => setForm({ ...form, storeNumber: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="e.g., 042"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                    <input
-                      type="text"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="e.g., Downtown LA"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Street Address *</label>
-                    <input
-                      type="text"
-                      value={form.address.street}
-                      onChange={(e) => setForm({ ...form, address: { ...form.address, street: e.target.value } })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
-                      <input
-                        type="text"
-                        value={form.address.city}
-                        onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
-                      <input
-                        type="text"
-                        value={form.address.state}
-                        onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value.toUpperCase() } })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        maxLength={2}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">ZIP *</label>
-                      <input
-                        type="text"
-                        value={form.address.zip}
-                        onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {modalType === 'move-district' && data && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Move to Region</label>
-                  <select
-                    value={form.regionId}
-                    onChange={(e) => setForm({ ...form, regionId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    {data.regions.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {modalType === 'move-location' && data && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Move to District</label>
-                  <select
-                    value={form.districtId}
-                    onChange={(e) => setForm({ ...form, districtId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  >
-                    {data.districts.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {(modalType === 'assign-rm' || modalType === 'assign-dm') && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Person *</label>
-                    <select
-                      value={assignForm.personId}
-                      onChange={(e) => setAssignForm({ ...assignForm, personId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                      <option value="">Select a person...</option>
-                      {people.map(p => (
-                        <option key={p.id} value={p.id}>{p.fullName}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Slot</label>
-                    <select
-                      value={assignForm.slot}
-                      onChange={(e) => setAssignForm({ ...assignForm, slot: e.target.value as 'primary' | 'coverage' })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                      <option value="primary">Primary</option>
-                      <option value="coverage">Coverage</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date (optional)</label>
-                    <input
-                      type="date"
-                      value={assignForm.startDate}
-                      onChange={(e) => setAssignForm({ ...assignForm, startDate: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setModalType(null)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                Cancel
-              </button>
-              <button
-                onClick={modalType === 'assign-rm' || modalType === 'assign-dm' ? handleAssign : handleSave}
-                disabled={saving || ((modalType === 'assign-rm' || modalType === 'assign-dm') && !assignForm.personId)}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : (modalType === 'assign-rm' || modalType === 'assign-dm') ? 'Assign' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <HierarchyDialog
+        modalType={modalType}
+        editId={editId}
+        form={form}
+        setForm={setForm}
+        assignForm={assignForm}
+        setAssignForm={setAssignForm}
+        data={data}
+        people={people}
+        saving={saving}
+        onClose={() => setModalType(null)}
+        onSave={handleSave}
+        onAssign={handleAssign}
+      />
     </div>
+  );
+}
+
+interface HierarchyDialogProps {
+  modalType: 'region' | 'district' | 'location' | 'move-district' | 'move-location' | 'assign-rm' | 'assign-dm' | null;
+  editId: string | null;
+  form: {
+    code: string;
+    name: string;
+    regionId: string;
+    districtId: string;
+    storeNumber: string;
+    address: { street: string; city: string; state: string; zip: string };
+  };
+  setForm: (form: HierarchyDialogProps['form']) => void;
+  assignForm: { personId: string; slot: 'primary' | 'coverage'; startDate: string };
+  setAssignForm: (form: HierarchyDialogProps['assignForm']) => void;
+  data: { regions: HierarchyRegion[]; districts: HierarchyDistrict[] } | null;
+  people: PersonListItem[];
+  saving: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  onAssign: () => void;
+}
+
+function HierarchyDialog({ modalType, editId, form, setForm, assignForm, setAssignForm, data, people, saving, onClose, onSave, onAssign }: HierarchyDialogProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  
+  if (!modalType) return null;
+  
+  const getTitle = () => {
+    switch (modalType) {
+      case 'region': return editId ? 'Edit Region' : 'Add Region';
+      case 'district': return editId ? 'Edit District' : 'Add District';
+      case 'location': return 'Add Location';
+      case 'move-district': return 'Move District';
+      case 'move-location': return 'Move Location';
+      case 'assign-rm': return 'Assign Regional Manager';
+      case 'assign-dm': return 'Assign District Manager';
+      default: return '';
+    }
+  };
+  
+  const isAssignment = modalType === 'assign-rm' || modalType === 'assign-dm';
+  
+  const dialogFooter = (
+    <div className="flex gap-3">
+      <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 min-h-[44px]">
+        Cancel
+      </button>
+      <button
+        onClick={isAssignment ? onAssign : onSave}
+        disabled={saving || (isAssignment && !assignForm.personId)}
+        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+      >
+        {saving ? 'Saving...' : isAssignment ? 'Assign' : 'Save'}
+      </button>
+    </div>
+  );
+  
+  return (
+    <Dialog
+      isOpen={true}
+      onClose={onClose}
+      title={getTitle()}
+      footer={dialogFooter}
+      size="md"
+      triggerRef={triggerRef}
+    >
+      <div className="space-y-4">
+        {(modalType === 'region' || modalType === 'district') && (
+          <>
+            <FormField id="hier-code" label="Code" required>
+              <input
+                id="hier-code"
+                type="text"
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                placeholder="e.g., WEST or LA-CENTRAL"
+              />
+            </FormField>
+            <FormField id="hier-name" label="Name" required>
+              <input
+                id="hier-name"
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                placeholder="e.g., West Region or Los Angeles Central"
+              />
+            </FormField>
+          </>
+        )}
+
+        {modalType === 'location' && (
+          <>
+            <FormField id="hier-store-number" label="Store Number" required>
+              <input
+                id="hier-store-number"
+                type="text"
+                value={form.storeNumber}
+                onChange={(e) => setForm({ ...form, storeNumber: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                placeholder="e.g., 042"
+              />
+            </FormField>
+            <FormField id="hier-loc-name" label="Name" required>
+              <input
+                id="hier-loc-name"
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                placeholder="e.g., Downtown LA"
+              />
+            </FormField>
+            <FormField id="hier-street" label="Street Address" required>
+              <input
+                id="hier-street"
+                type="text"
+                value={form.address.street}
+                onChange={(e) => setForm({ ...form, address: { ...form.address, street: e.target.value } })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+              />
+            </FormField>
+            <div className="grid grid-cols-3 gap-2">
+              <FormField id="hier-city" label="City" required>
+                <input
+                  id="hier-city"
+                  type="text"
+                  value={form.address.city}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                />
+              </FormField>
+              <FormField id="hier-state" label="State" required>
+                <input
+                  id="hier-state"
+                  type="text"
+                  value={form.address.state}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value.toUpperCase() } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                  maxLength={2}
+                />
+              </FormField>
+              <FormField id="hier-zip" label="ZIP" required>
+                <input
+                  id="hier-zip"
+                  type="text"
+                  value={form.address.zip}
+                  onChange={(e) => setForm({ ...form, address: { ...form.address, zip: e.target.value } })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                />
+              </FormField>
+            </div>
+          </>
+        )}
+
+        {modalType === 'move-district' && data && (
+          <FormField id="hier-move-region" label="Move to Region" required>
+            <select
+              id="hier-move-region"
+              value={form.regionId}
+              onChange={(e) => setForm({ ...form, regionId: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+            >
+              {data.regions.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          </FormField>
+        )}
+
+        {modalType === 'move-location' && data && (
+          <FormField id="hier-move-district" label="Move to District" required>
+            <select
+              id="hier-move-district"
+              value={form.districtId}
+              onChange={(e) => setForm({ ...form, districtId: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+            >
+              {data.districts.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </FormField>
+        )}
+
+        {isAssignment && (
+          <>
+            <FormField id="hier-assign-person" label="Person" required>
+              <select
+                id="hier-assign-person"
+                value={assignForm.personId}
+                onChange={(e) => setAssignForm({ ...assignForm, personId: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+              >
+                <option value="">Select a person...</option>
+                {people.map(p => (
+                  <option key={p.id} value={p.id}>{p.fullName}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField id="hier-assign-slot" label="Slot">
+              <select
+                id="hier-assign-slot"
+                value={assignForm.slot}
+                onChange={(e) => setAssignForm({ ...assignForm, slot: e.target.value as 'primary' | 'coverage' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+              >
+                <option value="primary">Primary</option>
+                <option value="coverage">Coverage</option>
+              </select>
+            </FormField>
+            <FormField id="hier-assign-start" label="Start Date (optional)">
+              <input
+                id="hier-assign-start"
+                type="date"
+                value={assignForm.startDate}
+                onChange={(e) => setAssignForm({ ...assignForm, startDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+              />
+            </FormField>
+          </>
+        )}
+      </div>
+    </Dialog>
   );
 }

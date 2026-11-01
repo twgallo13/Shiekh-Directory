@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import type { VerificationRequest, LocationListItem } from '../types';
-import { ComingSoonPlaceholder } from './ComingSoonPlaceholder';
+import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 
 export function VerificationRequestsView() {
   const navigate = useNavigate();
@@ -190,13 +189,9 @@ export function VerificationRequestsView() {
           ))}
         </div>
 
-        {/* Bulk verification placeholder - Admin/Steward only */}
+        {/* Bulk verification by district/region - Admin/Steward only */}
         {isAdminOrSteward && (
-          <ComingSoonPlaceholder
-            title="Bulk Verification by District/Region"
-            description="Send verification requests to all stores in a district or region at once."
-            className="mb-4"
-          />
+          <BulkVerificationSection getIdToken={getIdToken} onCampaignSent={loadRequests} />
         )}
 
         {error && (
@@ -588,6 +583,336 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface CampaignResults {
+  total: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  skippedReasons: {
+    noEmail: number;
+    recentlyVerified: number;
+    pendingRequest: number;
+  };
+}
+
+function BulkVerificationSection({ 
+  getIdToken, 
+  onCampaignSent 
+}: { 
+  getIdToken: () => Promise<string>; 
+  onCampaignSent: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [scope, setScope] = useState<'district' | 'region' | 'all'>('district');
+  const [scopeId, setScopeId] = useState('');
+  const [skipRecentlyVerified, setSkipRecentlyVerified] = useState(true);
+  const [daysSinceVerification, setDaysSinceVerification] = useState(90);
+  const [sending, setSending] = useState(false);
+  const [results, setResults] = useState<CampaignResults | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (expanded && regions.length === 0) {
+      loadHierarchy();
+    }
+  }, [expanded]);
+
+  const loadHierarchy = async () => {
+    try {
+      setLoading(true);
+      const token = await getIdToken();
+      const [regionsRes, districtsRes] = await Promise.all([
+        fetch('/api/app/regions', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/app/districts', { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      
+      if (regionsRes.ok) {
+        const { data } = await regionsRes.json();
+        setRegions(data || []);
+      }
+      if (districtsRes.ok) {
+        const { data } = await districtsRes.json();
+        setDistricts(data || []);
+      }
+    } catch (err) {
+      console.error('Failed to load hierarchy:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if ((scope === 'district' || scope === 'region') && !scopeId) {
+      setError(`Please select a ${scope}`);
+      return;
+    }
+
+    const scopeName = scope === 'all' 
+      ? 'all stores' 
+      : scope === 'district' 
+        ? districts.find(d => d.id === scopeId)?.name 
+        : regions.find(r => r.id === scopeId)?.name;
+
+    if (!confirm(`Send verification requests to ${scopeName}?\n\nThis will send emails to all stores${skipRecentlyVerified ? ` not verified in the last ${daysSinceVerification} days` : ''}.`)) {
+      return;
+    }
+
+    setSending(true);
+    setError(null);
+    setResults(null);
+
+    try {
+      const token = await getIdToken();
+      const res = await fetch('/api/app/verification/campaigns', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          scope,
+          scopeId: scope !== 'all' ? scopeId : undefined,
+          skipRecentlyVerified,
+          daysSinceVerification,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error?.message || 'Failed to send campaign');
+        return;
+      }
+
+      setResults(data.results);
+      onCampaignSent();
+    } catch (err) {
+      setError('Failed to send campaign');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!expanded) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Send className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
+              <p className="text-sm text-gray-500">Send verification requests to all stores in a district or region</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-400" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
+        <button onClick={() => setExpanded(false)} className="text-gray-400 hover:text-gray-600">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        </div>
+      ) : results ? (
+        <div className="space-y-4">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <h4 className="font-medium text-green-800 mb-2">Campaign Complete</h4>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-2xl font-bold text-green-600">{results.sent}</div>
+                <div className="text-sm text-green-700">Sent</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-600">{results.skipped}</div>
+                <div className="text-sm text-gray-500">Skipped</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-red-600">{results.failed}</div>
+                <div className="text-sm text-red-500">Failed</div>
+              </div>
+            </div>
+            {results.skipped > 0 && (
+              <div className="mt-3 pt-3 border-t border-green-200 text-sm text-green-700">
+                <p className="font-medium mb-1">Skipped reasons:</p>
+                <ul className="space-y-0.5">
+                  {results.skippedReasons.noEmail > 0 && (
+                    <li>No email: {results.skippedReasons.noEmail}</li>
+                  )}
+                  {results.skippedReasons.recentlyVerified > 0 && (
+                    <li>Recently verified: {results.skippedReasons.recentlyVerified}</li>
+                  )}
+                  {results.skippedReasons.pendingRequest > 0 && (
+                    <li>Pending request: {results.skippedReasons.pendingRequest}</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => { setResults(null); setExpanded(false); }}
+            className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            Done
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {error && (
+            <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Scope</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setScope('district'); setScopeId(''); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  scope === 'district' 
+                    ? 'bg-blue-50 border-blue-300 text-blue-700' 
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <MapPin className="w-4 h-4" />
+                District
+              </button>
+              <button
+                onClick={() => { setScope('region'); setScopeId(''); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  scope === 'region' 
+                    ? 'bg-blue-50 border-blue-300 text-blue-700' 
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <Building2 className="w-4 h-4" />
+                Region
+              </button>
+              <button
+                onClick={() => { setScope('all'); setScopeId(''); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  scope === 'all' 
+                    ? 'bg-blue-50 border-blue-300 text-blue-700' 
+                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                All Stores
+              </button>
+            </div>
+          </div>
+
+          {scope === 'district' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Select District</label>
+              <select
+                value={scopeId}
+                onChange={(e) => setScopeId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Choose a district...</option>
+                {districts
+                  .filter(d => d.lifecycle === 'active')
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {scope === 'region' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Select Region</label>
+              <select
+                value={scopeId}
+                onChange={(e) => setScopeId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Choose a region...</option>
+                {regions
+                  .filter(r => r.lifecycle === 'active')
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          <div className="border-t border-gray-200 pt-4">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={skipRecentlyVerified}
+                onChange={(e) => setSkipRecentlyVerified(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">
+                Skip stores verified in the last
+                <input
+                  type="number"
+                  value={daysSinceVerification}
+                  onChange={(e) => setDaysSinceVerification(parseInt(e.target.value) || 90)}
+                  min={1}
+                  max={365}
+                  className="mx-2 w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center"
+                  disabled={!skipRecentlyVerified}
+                />
+                days
+              </span>
+            </label>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setExpanded(false)}
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={sending || ((scope === 'district' || scope === 'region') && !scopeId)}
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Send Campaign
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

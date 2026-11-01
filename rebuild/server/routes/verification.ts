@@ -857,6 +857,278 @@ export function createVerificationRouter(db: Firestore): Router {
     }
   });
 
+  router.post('/campaigns', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      const { scope, scopeId, skipRecentlyVerified, daysSinceVerification = 90 } = req.body;
+
+      if (!scope || !['district', 'region', 'all'].includes(scope)) {
+        return res.status(400).json({
+          error: { code: 'invalid_request', message: 'scope must be district, region, or all', requestId: res.locals.requestId },
+        });
+      }
+
+      if ((scope === 'district' || scope === 'region') && !scopeId) {
+        return res.status(400).json({
+          error: { code: 'invalid_request', message: 'scopeId is required for district or region scope', requestId: res.locals.requestId },
+        });
+      }
+
+      let locationsQuery = db.collection('locations')
+        .where('lifecycle', '==', 'active')
+        .where('kind', '==', 'store');
+
+      if (scope === 'district') {
+        locationsQuery = locationsQuery.where('districtId', '==', scopeId);
+      } else if (scope === 'region') {
+        locationsQuery = locationsQuery.where('regionId', '==', scopeId);
+      }
+
+      const locationsSnap = await locationsQuery.get();
+      const locations = locationsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
+
+      const now = new Date();
+      const cutoffDate = skipRecentlyVerified 
+        ? new Date(now.getTime() - daysSinceVerification * 24 * 60 * 60 * 1000).toISOString()
+        : null;
+
+      const results = {
+        total: locations.length,
+        sent: 0,
+        skipped: 0,
+        failed: 0,
+        skippedReasons: {
+          noEmail: 0,
+          recentlyVerified: 0,
+          pendingRequest: 0,
+        },
+        failedStores: [] as { storeNumber: string; reason: string }[],
+      };
+
+      const campaignId = `camp_${randomBytes(8).toString('hex')}`;
+      const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const appUrl = getAppUrl(req);
+      const mailService = createMailService(db);
+
+      for (const location of locations) {
+        if (!location.sharedInboxEmail) {
+          results.skipped++;
+          results.skippedReasons.noEmail++;
+          continue;
+        }
+
+        if (cutoffDate && location.lastVerifiedAt && location.lastVerifiedAt > cutoffDate) {
+          results.skipped++;
+          results.skippedReasons.recentlyVerified++;
+          continue;
+        }
+
+        const pendingRequest = await db.collection('verificationRequests')
+          .where('locationId', '==', location.id)
+          .where('status', '==', 'pending')
+          .limit(1)
+          .get();
+
+        if (!pendingRequest.empty) {
+          results.skipped++;
+          results.skippedReasons.pendingRequest++;
+          continue;
+        }
+
+        try {
+          const requestRef = db.collection('verificationRequests').doc();
+          const verificationRequest: Omit<VerificationRequest, 'id'> = {
+            locationId: location.id,
+            storeNumber: location.storeNumber,
+            locationName: location.name,
+            status: 'pending',
+            sentAt: now.toISOString(),
+            sentBy: authUser.uid,
+            sentTo: location.sharedInboxEmail,
+            expiresAt: expiresAt.toISOString(),
+            hoursAtSend: location.standardHours,
+            hoursConfirmed: false,
+            campaignId,
+            createdAt: now.toISOString(),
+            updatedAt: now.toISOString(),
+            updatedBy: authUser.uid,
+            version: 1,
+          };
+
+          await requestRef.set(verificationRequest);
+
+          const confirmToken = generateToken();
+          const updateToken = generateToken();
+          const confirmTokenId = `tok_${randomBytes(8).toString('hex')}`;
+          const updateTokenId = `tok_${randomBytes(8).toString('hex')}`;
+
+          const baseTokenData = {
+            locationId: location.id,
+            storeNumber: location.storeNumber,
+            storeEmail: location.sharedInboxEmail,
+            verificationRequestId: requestRef.id,
+            expiresAt: expiresAt.toISOString(),
+            createdAt: now.toISOString(),
+            createdBy: authUser.uid,
+            campaignId,
+          };
+
+          await db.collection('storeAuthTokens').doc(hashToken(confirmToken)).set({
+            ...baseTokenData,
+            action: 'confirm',
+            tokenId: confirmTokenId,
+          });
+
+          await db.collection('storeAuthTokens').doc(hashToken(updateToken)).set({
+            ...baseTokenData,
+            action: 'update',
+            tokenId: updateTokenId,
+          });
+
+          await db.collection('testTokens').doc(confirmTokenId).set({
+            token: confirmToken,
+            action: 'confirm',
+            verificationRequestId: requestRef.id,
+            locationId: location.id,
+            storeNumber: location.storeNumber,
+            expiresAt: expiresAt.toISOString(),
+            createdAt: now.toISOString(),
+            createdBy: authUser.uid,
+            campaignId,
+          });
+
+          await db.collection('testTokens').doc(updateTokenId).set({
+            token: updateToken,
+            action: 'update',
+            verificationRequestId: requestRef.id,
+            locationId: location.id,
+            storeNumber: location.storeNumber,
+            expiresAt: expiresAt.toISOString(),
+            createdAt: now.toISOString(),
+            createdBy: authUser.uid,
+            campaignId,
+          });
+
+          const confirmUrl = `${appUrl}/verify-action?token=${confirmToken}&action=confirm`;
+          const updateUrl = `${appUrl}/verify-action?token=${updateToken}&action=update`;
+          const verificationUrl = `${appUrl}/verify/${requestRef.id}`;
+
+          const emailData = {
+            storeName: location.name,
+            storeNumber: location.storeNumber,
+            storeEmail: location.sharedInboxEmail,
+            storeType: getStoreTypeLabel(location.storeType),
+            verificationUrl,
+            expiresAt: expiresAt.toISOString(),
+            confirmUrl,
+            updateUrl,
+            hours: location.standardHours,
+            wayfindingDirections: location.wayfindingDirections,
+          };
+
+          const email = createVerificationRequestEmail(emailData);
+          const mailResult = await mailService.send(email);
+
+          if (mailResult.success && !mailResult.blocked) {
+            await requestRef.update({
+              emailSent: true,
+              emailMessageId: mailResult.messageId,
+            });
+            results.sent++;
+          } else {
+            await requestRef.update({
+              emailSent: false,
+              emailError: mailResult.blocked ? mailResult.reason : mailResult.error,
+            });
+            results.sent++; // Still count as sent (request created)
+          }
+
+        } catch (error) {
+          console.error(`[Campaign] Failed to send to ${location.storeNumber}:`, error);
+          results.failed++;
+          results.failedStores.push({ 
+            storeNumber: location.storeNumber, 
+            reason: error instanceof Error ? error.message : 'Unknown error' 
+          });
+        }
+      }
+
+      await db.collection('verificationCampaigns').doc(campaignId).set({
+        campaignId,
+        scope,
+        scopeId: scopeId || null,
+        skipRecentlyVerified: !!skipRecentlyVerified,
+        daysSinceVerification,
+        createdAt: now.toISOString(),
+        createdBy: authUser.uid,
+        createdByEmail: authUser.email,
+        results,
+        expiresAt: expiresAt.toISOString(),
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'bulk-send',
+        entityType: 'verification-campaign',
+        entityId: campaignId,
+        entityName: `Verification campaign for ${scope}${scopeId ? ` ${scopeId}` : ''}`,
+        changes: [
+          { field: 'scope', newValue: scope },
+          { field: 'scopeId', newValue: scopeId || 'all' },
+          { field: 'sent', newValue: results.sent },
+          { field: 'skipped', newValue: results.skipped },
+          { field: 'failed', newValue: results.failed },
+        ],
+      });
+
+      res.json({
+        campaignId,
+        results,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error) {
+      console.error('Campaign error:', error);
+      res.status(500).json({
+        error: { code: 'internal_error', message: 'Failed to create campaign', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.get('/campaigns', async (_req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      const campaignsSnap = await db.collection('verificationCampaigns')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
+
+      const campaigns = campaignsSnap.docs.map(doc => doc.data());
+
+      res.json({ campaigns });
+    } catch (error) {
+      console.error('List campaigns error:', error);
+      res.status(500).json({
+        error: { code: 'internal_error', message: 'Failed to list campaigns', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   return router;
 }
 

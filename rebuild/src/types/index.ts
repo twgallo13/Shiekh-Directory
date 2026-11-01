@@ -502,7 +502,10 @@ export type AuditAction =
   | 'one-click-update'
   | 'logout'
   | 'revoke-session'
-  | 'revoke-all-sessions';
+  | 'revoke-all-sessions'
+  | 'bulk-send'
+  | 'invite-user'
+  | 'revoke-invitation';
 
 export interface AuditLogEntry {
   id: string;
@@ -511,7 +514,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store
@@ -554,6 +557,10 @@ export interface VerificationRequest extends RecordMetadata {
   emailError?: string;
   lastReminderAt?: string;
   reminderCount?: number;
+  // Campaign tracking
+  campaignId?: string;
+  // Legacy field for hours at send time
+  hoursAtSend?: Record<string, unknown>;
 }
 
 // === DM Verification (District Manager verification cycle) ===

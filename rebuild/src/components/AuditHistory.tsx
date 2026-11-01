@@ -29,6 +29,9 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'logout': 'Logged out',
   'revoke-session': 'Session revoked',
   'revoke-all-sessions': 'All sessions revoked',
+  'bulk-send': 'Bulk sent',
+  'invite-user': 'User invited',
+  'revoke-invitation': 'Invitation revoked',
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {

@@ -4,8 +4,9 @@ import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye
 import { useAuth } from '../context/AuthContext';
 import { HoursTemplatesView } from './HoursTemplatesView';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { Dialog, FormField } from './Dialog';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates' | 'backups';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
 
 interface User {
   id: string;
@@ -114,6 +115,9 @@ export function AdminView() {
             <TabButton id="backups" active={activeTab === 'backups'} onClick={setActiveTab} icon={Database}>
               Backups
             </TabButton>
+            <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle}>
+              Data Quality
+            </TabButton>
           </div>
         </div>
       </div>
@@ -124,9 +128,10 @@ export function AdminView() {
         {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
         {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
         {activeTab === 'communications' && <CommunicationsTab getIdToken={getIdToken} />}
-        {activeTab === 'audit-log' && <AuditLogTab />}
+        {activeTab === 'audit-log' && <AuditLogTab getIdToken={getIdToken} />}
         {activeTab === 'hours-templates' && <HoursTemplatesTab />}
         {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
+        {activeTab === 'data-quality' && <DataQualityTab />}
       </div>
     </div>
   );
@@ -142,10 +147,10 @@ function TabButton({ id, active, onClick, icon: Icon, children }: {
   return (
     <button
       onClick={() => onClick(id)}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors min-h-[44px] ${
         active
-          ? 'text-blue-600 border-blue-600 bg-blue-50/50'
-          : 'text-gray-600 border-transparent hover:text-gray-900 hover:bg-gray-50'
+          ? 'text-blue-700 border-blue-600 bg-blue-50'
+          : 'text-gray-700 border-transparent hover:text-gray-900 hover:bg-gray-100'
       }`}
     >
       <Icon className="w-4 h-4" />
@@ -440,146 +445,142 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900">{user ? 'Edit User' : 'Add User'}</h2>
-          <button onClick={onClose} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        
-        {showDeleteConfirm ? (
-          <div className="p-4 space-y-4">
-            <div className="flex items-center gap-3 text-red-600">
-              <AlertTriangle className="w-6 h-6" />
-              <span className="font-medium">Delete User?</span>
-            </div>
-            <p className="text-sm text-gray-600">
-              This will permanently delete <strong>{user?.email}</strong> and remove their Firebase Auth account. This action cannot be undone.
-            </p>
-            {error && (
-              <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
-            )}
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={deleting}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50"
-              >
-                {deleting ? 'Deleting...' : 'Delete User'}
-              </button>
-            </div>
+  if (showDeleteConfirm) {
+    const deleteFooter = (
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={() => setShowDeleteConfirm(false)}
+          disabled={deleting}
+          className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50 min-h-[44px]"
+        >
+          {deleting ? 'Deleting...' : 'Delete User'}
+        </button>
+      </div>
+    );
+
+    return (
+      <Dialog isOpen={true} onClose={() => setShowDeleteConfirm(false)} title="Delete User" footer={deleteFooter}>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 text-red-600">
+            <AlertTriangle className="w-6 h-6" />
+            <span className="font-medium">Delete User?</span>
           </div>
-        ) : (
-          <>
-            <div className="p-4 space-y-4">
-              {error && (
-                <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={!!user}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                />
-              </div>
-              <div>
-                <label htmlFor="user-role" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                <select
-                  id="user-role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
-                >
-                  {ROLES.map(r => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-              {role === 'Store' && (
-                <div>
-                  <label htmlFor="user-store" className="block text-sm font-medium text-gray-700 mb-1">Store</label>
-                  <select
-                    id="user-store"
-                    value={storeLocationId}
-                    onChange={(e) => setStoreLocationId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
-                  >
-                    <option value="">Select a store...</option>
-                    {stores.filter(s => s.kind === 'store').map(s => (
-                      <option key={s.id} value={s.id}>#{s.storeNumber} - {s.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {user && (
-                <div>
-                  <label htmlFor="user-status" className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
-                    id="user-status"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
-                  >
-                    <option value="active">Active</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
-              <div>
-                {user && (
-                  <button
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </div>
-          </>
+          <p className="text-sm text-gray-600">
+            This will permanently delete <strong>{user?.email}</strong> and remove their Firebase Auth account. This action cannot be undone.
+          </p>
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
+          )}
+        </div>
+      </Dialog>
+    );
+  }
+
+  const footer = (
+    <div className="flex items-center justify-between w-full">
+      <div>
+        {user && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm min-h-[44px]"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete
+          </button>
         )}
       </div>
+      <div className="flex gap-3">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm min-h-[44px]"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 min-h-[44px]"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
     </div>
+  );
+
+  return (
+    <Dialog isOpen={true} onClose={onClose} title={user ? 'Edit User' : 'Add User'} footer={footer}>
+      <div className="space-y-4">
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
+        )}
+        <FormField id="user-email" label="Email">
+          <input
+            id="user-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={!!user}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 min-h-[44px]"
+          />
+        </FormField>
+        <FormField id="user-displayname" label="Display Name">
+          <input
+            id="user-displayname"
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+          />
+        </FormField>
+        <FormField id="user-role" label="Role">
+          <select
+            id="user-role"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+          >
+            {ROLES.map(r => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        </FormField>
+        {role === 'Store' && (
+          <FormField id="user-store" label="Store">
+            <select
+              id="user-store"
+              value={storeLocationId}
+              onChange={(e) => setStoreLocationId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+            >
+              <option value="">Select a store...</option>
+              {stores.filter(s => s.kind === 'store').map(s => (
+                <option key={s.id} value={s.id}>#{s.storeNumber} - {s.name}</option>
+              ))}
+            </select>
+          </FormField>
+        )}
+        {user && (
+          <FormField id="user-status" label="Status">
+            <select
+              id="user-status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+            >
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </FormField>
+        )}
+      </div>
+    </Dialog>
   );
 }
 
@@ -852,54 +853,48 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       )}
 
       {editingRateLimit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">Edit Rate Limit</h2>
-              <button onClick={() => setEditingRateLimit(null)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
+        <Dialog 
+          isOpen={true} 
+          onClose={() => setEditingRateLimit(null)} 
+          title="Edit Rate Limit"
+          size="sm"
+          footer={
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setEditingRateLimit(null)}
+                className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateRateLimit}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 min-h-[44px]"
+              >
+                Save
               </button>
             </div>
-            <div className="p-4 space-y-4">
-              <p className="text-sm text-gray-600">
-                Configure rate limit for <strong>{editingRateLimit.client.name}</strong>
-              </p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Requests per minute
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={editingRateLimit.value}
-                  onChange={(e) => setEditingRateLimit({ 
-                    ...editingRateLimit, 
-                    value: parseInt(e.target.value) || 0 
-                  })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Set to 0 for unlimited. Default is 60 requests/min.
-                </p>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setEditingRateLimit(null)}
-                  className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUpdateRateLimit}
-                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
+          }
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Configure rate limit for <strong>{editingRateLimit.client.name}</strong>
+            </p>
+            <FormField id="rate-limit-value" label="Requests per minute" hint="Set to 0 for unlimited. Default is 60 requests/min.">
+              <input
+                id="rate-limit-value"
+                type="number"
+                min={0}
+                max={10000}
+                value={editingRateLimit.value}
+                onChange={(e) => setEditingRateLimit({ 
+                  ...editingRateLimit, 
+                  value: parseInt(e.target.value) || 0 
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+              />
+            </FormField>
           </div>
-        </div>
+        </Dialog>
       )}
 
       {/* API Documentation */}
@@ -1010,63 +1005,58 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900">Create API Client</h2>
-          <button onClick={onClose} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="p-4 space-y-4">
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., POS Integration"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Scopes</label>
-            <div className="space-y-2">
-              {SCOPES.map(scope => (
-                <label key={scope.id} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={scopes.includes(scope.id)}
-                    onChange={() => toggleScope(scope.id)}
-                    className="rounded border-gray-300 text-blue-600"
-                  />
-                  <span className="text-sm text-gray-700">{scope.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="flex justify-end gap-3 px-4 py-3 border-t border-gray-200">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50"
-          >
-            {saving ? 'Creating...' : 'Create'}
-          </button>
-        </div>
-      </div>
+  const footer = (
+    <div className="flex justify-end gap-3">
+      <button
+        onClick={onClose}
+        className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm min-h-[44px]"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 min-h-[44px]"
+      >
+        {saving ? 'Creating...' : 'Create'}
+      </button>
     </div>
+  );
+
+  return (
+    <Dialog isOpen={true} onClose={onClose} title="Create API Client" footer={footer}>
+      <div className="space-y-4">
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
+        )}
+        <FormField id="api-client-name" label="Name">
+          <input
+            id="api-client-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., POS Integration"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+          />
+        </FormField>
+        <fieldset>
+          <legend className="block text-sm font-medium text-gray-700 mb-2">Scopes</legend>
+          <div className="space-y-2">
+            {SCOPES.map(scope => (
+              <label key={scope.id} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
+                <input
+                  type="checkbox"
+                  checked={scopes.includes(scope.id)}
+                  onChange={() => toggleScope(scope.id)}
+                  className="rounded border-gray-300 text-blue-600 min-w-[20px] min-h-[20px]"
+                />
+                <span className="text-sm text-gray-700">{scope.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1239,93 +1229,88 @@ function CustomFieldModal({ getIdToken, onClose, onSaved }: {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900">Add Custom Field</h2>
-          <button onClick={onClose} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="p-4 space-y-4">
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Mall Name"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="field-type" className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-            <select
-              id="field-type"
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
-            >
-              <option value="text">Text</option>
-              <option value="number">Number</option>
-              <option value="boolean">Yes/No</option>
-              <option value="date">Date</option>
-              <option value="select">Select (Dropdown)</option>
-            </select>
-          </div>
-          {type === 'select' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Options (comma-separated)</label>
-              <input
-                type="text"
-                value={options}
-                onChange={(e) => setOptions(e.target.value)}
-                placeholder="Option 1, Option 2, Option 3"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              />
-            </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={required}
-              onChange={(e) => setRequired(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600"
-            />
-            <span className="text-sm text-gray-700">Required field</span>
-          </label>
-        </div>
-        <div className="flex justify-end gap-3 px-4 py-3 border-t border-gray-200">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50"
-          >
-            {saving ? 'Creating...' : 'Create'}
-          </button>
-        </div>
-      </div>
+  const footer = (
+    <div className="flex justify-end gap-3">
+      <button
+        onClick={onClose}
+        className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm min-h-[44px]"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm disabled:opacity-50 min-h-[44px]"
+      >
+        {saving ? 'Creating...' : 'Create'}
+      </button>
     </div>
+  );
+
+  return (
+    <Dialog isOpen={true} onClose={onClose} title="Add Custom Field" footer={footer}>
+      <div className="space-y-4">
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
+        )}
+        <FormField id="field-name" label="Name">
+          <input
+            id="field-name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., Mall Name"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+          />
+        </FormField>
+        <FormField id="field-type" label="Type">
+          <select
+            id="field-type"
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+          >
+            <option value="text">Text</option>
+            <option value="number">Number</option>
+            <option value="boolean">Yes/No</option>
+            <option value="date">Date</option>
+            <option value="select">Select (Dropdown)</option>
+          </select>
+        </FormField>
+        {type === 'select' && (
+          <FormField id="field-options" label="Options (comma-separated)">
+            <input
+              id="field-options"
+              type="text"
+              value={options}
+              onChange={(e) => setOptions(e.target.value)}
+              placeholder="Option 1, Option 2, Option 3"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+            />
+          </FormField>
+        )}
+        <FormField id="field-description" label="Description">
+          <input
+            id="field-description"
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional description"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+          />
+        </FormField>
+        <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
+          <input
+            id="field-required"
+            type="checkbox"
+            checked={required}
+            onChange={(e) => setRequired(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 min-w-[20px] min-h-[20px]"
+          />
+          <span className="text-sm text-gray-700">Required field</span>
+        </label>
+      </div>
+    </Dialog>
   );
 }
 
@@ -1884,75 +1869,69 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
 
       {/* Invite Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">Invite User</h2>
-              <button onClick={() => setShowInviteModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
+        <Dialog
+          isOpen={true}
+          onClose={() => setShowInviteModal(false)}
+          title="Invite User"
+          footer={
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={() => setShowInviteModal(false)}
+                className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendInvitation}
+                disabled={sending || !inviteEmail.trim()}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+              >
+                {sending ? 'Sending...' : 'Send Invitation'}
               </button>
             </div>
-            <div className="p-4 space-y-4">
-              {sendError && (
-                <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm">
-                  {sendError}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                <input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="user@shiekhshoes.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-                <p className="text-xs text-gray-500 mt-1">Must be a company email address</p>
+          }
+        >
+          <div className="space-y-4">
+            {sendError && (
+              <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm">
+                {sendError}
               </div>
-              <div>
-                <label htmlFor="invite-role" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                <select
-                  id="invite-role"
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-h-[44px]"
-                >
-                  <option value="Viewer">Viewer - View only access</option>
-                  <option value="Leader">Leader - Manage assigned district</option>
-                  <option value="Steward">Steward - Manage verifications</option>
-                  <option value="Admin">Admin - Full access</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Personal Message <span className="text-gray-600 font-normal">(optional)</span>
-                </label>
-                <textarea
-                  value={inviteMessage}
-                  onChange={(e) => setInviteMessage(e.target.value)}
-                  placeholder="Add a personal note to the invitation email..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none"
-                />
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowInviteModal(false)}
-                  className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSendInvitation}
-                  disabled={sending || !inviteEmail.trim()}
-                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {sending ? 'Sending...' : 'Send Invitation'}
-                </button>
-              </div>
-            </div>
+            )}
+            <FormField id="invite-email" label="Email Address" hint="Must be a company email address">
+              <input
+                id="invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="user@shiekhshoes.com"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-h-[44px]"
+              />
+            </FormField>
+            <FormField id="invite-role" label="Role">
+              <select
+                id="invite-role"
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-h-[44px]"
+              >
+                <option value="Viewer">Viewer - View only access</option>
+                <option value="Leader">Leader - Manage assigned district</option>
+                <option value="Steward">Steward - Manage verifications</option>
+                <option value="Admin">Admin - Full access</option>
+              </select>
+            </FormField>
+            <FormField id="invite-message" label="Personal Message (optional)">
+              <textarea
+                id="invite-message"
+                value={inviteMessage}
+                onChange={(e) => setInviteMessage(e.target.value)}
+                placeholder="Add a personal note to the invitation email..."
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+              />
+            </FormField>
           </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );
@@ -2222,77 +2201,269 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       </div>
 
       {confirmDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">Delete Snapshot</h2>
-              <button onClick={() => setConfirmDelete(null)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
+        <Dialog
+          isOpen={true}
+          onClose={() => setConfirmDelete(null)}
+          title="Delete Snapshot"
+          footer={
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deletingSnapshot === confirmDelete.id}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteSnapshot(confirmDelete.id)}
+                disabled={deletingSnapshot === confirmDelete.id}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50 min-h-[44px]"
+              >
+                {deletingSnapshot === confirmDelete.id ? 'Deleting...' : 'Delete Snapshot'}
               </button>
             </div>
-            <div className="p-4 space-y-4">
-              <div className="flex items-center gap-3 text-red-600">
-                <AlertTriangle className="w-6 h-6" />
-                <span className="font-medium">Permanently delete this snapshot?</span>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="font-medium text-gray-900">{confirmDelete.id}</p>
-                <p className="text-sm text-gray-600 mt-1">
-                  {confirmDelete.documentCount ?? '?'} documents • {confirmDelete.collections?.length || '?'} collections
-                </p>
-                <p className="text-sm text-gray-500">
-                  Created {new Date(confirmDelete.createdAt).toLocaleString()}
-                </p>
-              </div>
-              <p className="text-sm text-gray-600">
-                This action cannot be undone. The snapshot and all its data chunks will be permanently deleted.
-              </p>
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  onClick={() => setConfirmDelete(null)}
-                  disabled={deletingSnapshot === confirmDelete.id}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => deleteSnapshot(confirmDelete.id)}
-                  disabled={deletingSnapshot === confirmDelete.id}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm disabled:opacity-50"
-                >
-                  {deletingSnapshot === confirmDelete.id ? 'Deleting...' : 'Delete Snapshot'}
-                </button>
-              </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <AlertTriangle className="w-6 h-6" />
+              <span className="font-medium">Permanently delete this snapshot?</span>
             </div>
+            <div className="bg-gray-50 rounded-lg p-3">
+              <p className="font-medium text-gray-900">{confirmDelete.id}</p>
+              <p className="text-sm text-gray-600 mt-1">
+                {confirmDelete.documentCount ?? '?'} documents • {confirmDelete.collections?.length || '?'} collections
+              </p>
+              <p className="text-sm text-gray-500">
+                Created {new Date(confirmDelete.createdAt).toLocaleString()}
+              </p>
+            </div>
+            <p className="text-sm text-gray-600">
+              This action cannot be undone. The snapshot and all its data chunks will be permanently deleted.
+            </p>
           </div>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+interface AuditEntry {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userEmail: string;
+  userRole: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  entityName: string;
+  changes: { field: string; oldValue?: string | number | boolean | null; newValue?: string | number | boolean | null }[];
+}
+
+const ENTITY_TYPES = [
+  { value: '', label: 'All Types' },
+  { value: 'location', label: 'Location' },
+  { value: 'person', label: 'Person' },
+  { value: 'assignment', label: 'Assignment' },
+  { value: 'closure', label: 'Closure' },
+  { value: 'correction', label: 'Correction' },
+  { value: 'verification', label: 'Verification' },
+  { value: 'hours-template', label: 'Hours Template' },
+  { value: 'notice', label: 'Notice' },
+  { value: 'user', label: 'User' },
+  { value: 'store-auth', label: 'Store Auth' },
+  { value: 'invitation', label: 'Invitation' },
+  { value: 'api-client', label: 'API Client' },
+];
+
+function AuditLogTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [entityTypeFilter, setEntityTypeFilter] = useState('');
+  const [limit, setLimit] = useState(50);
+  const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
+
+  const fetchAuditLog = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const params = new URLSearchParams();
+      if (entityTypeFilter) params.set('entityType', entityTypeFilter);
+      params.set('limit', String(limit));
+      
+      const response = await fetch(`/api/app/audit?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error?.message || 'Failed to load audit log');
+      }
+      
+      const data = await response.json();
+      setEntries(data.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load audit log');
+    } finally {
+      setLoading(false);
+    }
+  }, [getIdToken, entityTypeFilter, limit]);
+
+  useEffect(() => {
+    fetchAuditLog();
+  }, [fetchAuditLog]);
+
+  const formatTimestamp = (ts: string) => {
+    return new Date(ts).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatAction = (action: string) => {
+    return action.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  };
+
+  const formatValue = (value: string | number | boolean | null | undefined) => {
+    if (value === null || value === undefined) return <span className="text-gray-400 italic">null</span>;
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (typeof value === 'string' && value.length > 60) return value.slice(0, 60) + '...';
+    return String(value);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Audit Log</h2>
+          <p className="text-sm text-gray-600">Track who made changes, when, and what changed.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <FormField id="audit-entity-type" label="Filter by type">
+            <select
+              id="audit-entity-type"
+              value={entityTypeFilter}
+              onChange={(e) => setEntityTypeFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+            >
+              {ENTITY_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </FormField>
+          <FormField id="audit-limit" label="Show">
+            <select
+              id="audit-limit"
+              value={limit}
+              onChange={(e) => setLimit(parseInt(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+            </select>
+          </FormField>
+          <button
+            onClick={fetchAuditLog}
+            disabled={loading}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 text-sm min-h-[44px] mt-6"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-600 mx-auto mb-2" />
+          <p className="text-gray-500">Loading audit log...</p>
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+          <History className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+          <p className="text-gray-500">No audit entries found</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-200">
+          {entries.map(entry => (
+            <div key={entry.id} className="p-4">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-gray-900">{formatAction(entry.action)}</span>
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                      entry.entityType === 'location' ? 'bg-blue-100 text-blue-700' :
+                      entry.entityType === 'person' ? 'bg-green-100 text-green-700' :
+                      entry.entityType === 'verification' ? 'bg-purple-100 text-purple-700' :
+                      entry.entityType === 'closure' ? 'bg-red-100 text-red-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {entry.entityType}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-sm text-gray-600">
+                    <span className="font-medium">{entry.entityName}</span>
+                    {entry.entityId && <span className="text-gray-400 ml-1 text-xs">({entry.entityId.slice(0, 8)}...)</span>}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    by <span className="font-medium">{entry.userEmail}</span>
+                    <span className="mx-1">•</span>
+                    <span className={`px-1.5 py-0.5 rounded ${
+                      entry.userRole === 'Admin' ? 'bg-purple-50 text-purple-600' :
+                      entry.userRole === 'Steward' ? 'bg-blue-50 text-blue-600' :
+                      entry.userRole === 'Leader' ? 'bg-green-50 text-green-600' :
+                      'bg-gray-50 text-gray-600'
+                    }`}>{entry.userRole}</span>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-500 whitespace-nowrap">
+                  {formatTimestamp(entry.timestamp)}
+                </div>
+              </div>
+
+              {entry.changes && entry.changes.length > 0 && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setExpandedEntry(expandedEntry === entry.id ? null : entry.id)}
+                    className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 min-h-[44px]"
+                  >
+                    {expandedEntry === entry.id ? 'Hide' : 'Show'} {entry.changes.length} change{entry.changes.length !== 1 ? 's' : ''}
+                  </button>
+                  {expandedEntry === entry.id && (
+                    <div className="mt-2 bg-gray-50 rounded-lg p-3 space-y-2">
+                      {entry.changes.map((change, idx) => (
+                        <div key={idx} className="text-xs grid grid-cols-[100px_1fr_1fr] gap-2">
+                          <span className="font-medium text-gray-700">{change.field}</span>
+                          <div className="text-red-600 line-through">{formatValue(change.oldValue)}</div>
+                          <div className="text-green-600">{formatValue(change.newValue)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-function AuditLogTab() {
-  return (
-    <div className="space-y-6">
-      <div className="border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Data Quality / Stale Stores</h3>
-        <p className="text-sm text-gray-600 mb-4">
-          Identify stores with verification older than 90 days or never verified. Leaders see only stores in their district.
-        </p>
-        <a
-          href="/stale-stores"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
-        >
-          View Stale Stores
-        </a>
-      </div>
-
-      <DrillStatusCard />
-    </div>
-  );
-}
-
-function DrillStatusCard() {
+function DataQualityTab() {
   const { user } = useAuth();
   const [lastDrill, setLastDrill] = useState<{
     drillId: string;
@@ -2301,7 +2472,7 @@ function DrillStatusCard() {
     totalExpected: number;
     totalRestored: number;
   } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingDrill, setLoadingDrill] = useState(true);
 
   useEffect(() => {
     async function fetchLastDrill() {
@@ -2318,48 +2489,62 @@ function DrillStatusCard() {
       } catch {
         // Ignore errors - drill status is optional
       } finally {
-        setLoading(false);
+        setLoadingDrill(false);
       }
     }
     fetchLastDrill();
   }, [user]);
 
   return (
-    <div className="border border-gray-200 rounded-lg p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Restore Drill Status</h3>
-      <p className="text-sm text-gray-600 mb-4">
-        Periodic restore drills validate backup integrity without affecting production data.
-        See <a href="https://github.com/shiekh-directory/docs/restore-drill.md" className="text-blue-600 underline">restore-drill.md</a> for the runbook.
-      </p>
-      {loading ? (
-        <p className="text-sm text-gray-500">Loading drill status...</p>
-      ) : lastDrill ? (
-        <div className="bg-gray-50 rounded-md p-4 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Last Drill:</span>
-            <span className="text-sm text-gray-900">{lastDrill.drillId}</span>
+    <div className="space-y-6">
+      <div className="border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Stale Stores</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Identify stores with verification older than 90 days or never verified. Leaders see only stores in their district.
+        </p>
+        <a
+          href="/stale-stores"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 min-h-[44px]"
+        >
+          View Stale Stores
+        </a>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Restore Drill Status</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Periodic restore drills validate backup integrity without affecting production data.
+        </p>
+        {loadingDrill ? (
+          <p className="text-sm text-gray-500">Loading drill status...</p>
+        ) : lastDrill ? (
+          <div className="bg-gray-50 rounded-md p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Last Drill:</span>
+              <span className="text-sm text-gray-900">{lastDrill.drillId}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Completed:</span>
+              <span className="text-sm text-gray-900">{new Date(lastDrill.completedAt).toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Status:</span>
+              <span className={`text-sm font-semibold ${lastDrill.status === 'success' ? 'text-green-600' : lastDrill.status === 'partial' ? 'text-amber-600' : 'text-red-600'}`}>
+                {lastDrill.status.toUpperCase()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Documents Validated:</span>
+              <span className="text-sm text-gray-900">{lastDrill.totalRestored} / {lastDrill.totalExpected}</span>
+            </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Completed:</span>
-            <span className="text-sm text-gray-900">{new Date(lastDrill.completedAt).toLocaleString()}</span>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+            <p className="text-sm text-amber-800">No restore drills have been run yet.</p>
+            <p className="text-xs text-amber-600 mt-1">Run: npx ts-node scripts/restore-drill.ts --project shiekh-directory-v2 --snapshot &lt;id&gt;</p>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Status:</span>
-            <span className={`text-sm font-semibold ${lastDrill.status === 'success' ? 'text-green-600' : lastDrill.status === 'partial' ? 'text-amber-600' : 'text-red-600'}`}>
-              {lastDrill.status.toUpperCase()}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Documents Validated:</span>
-            <span className="text-sm text-gray-900">{lastDrill.totalRestored} / {lastDrill.totalExpected}</span>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
-          <p className="text-sm text-amber-800">No restore drills have been run yet.</p>
-          <p className="text-xs text-amber-600 mt-1">Run: npx ts-node scripts/restore-drill.ts --project shiekh-directory-v2 --snapshot &lt;id&gt;</p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

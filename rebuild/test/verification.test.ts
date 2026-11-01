@@ -1,4 +1,4 @@
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import type { VerificationRequest, VerificationStatus, Location } from '../src/types';
 import { 
@@ -649,11 +649,13 @@ async function fetchApiAs(role: string, path: string, options: RequestInit = {})
 }
 
 describe('Verification Route - Leader Scope', () => {
+  const testRunId = `scope_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let hierarchyIds: { regionId: string; region2Id: string; districtId: string; district2Id: string };
   let leaderLocationIds: string[];
   let otherDistrictLocationIds: string[];
   let requestInLeaderScope: string;
   let requestOutsideScope: string;
+  const cleanupIds: { collection: string; id: string }[] = [];
 
   before(async () => {
     await seedTestUsers();
@@ -663,15 +665,17 @@ describe('Verification Route - Leader Scope', () => {
       hierarchyIds.districtId, 
       hierarchyIds.regionId, 
       2, 
-      'LDR'
+      `LDR_${testRunId.slice(-4)}`
     );
+    cleanupIds.push(...leaderLocationIds.map(id => ({ collection: 'locations', id })));
     
     otherDistrictLocationIds = await seedTestLocationsForDistrict(
       hierarchyIds.district2Id, 
       hierarchyIds.region2Id, 
       2, 
-      'OTH'
+      `OTH_${testRunId.slice(-4)}`
     );
+    cleanupIds.push(...otherDistrictLocationIds.map(id => ({ collection: 'locations', id })));
     
     await seedTestLeader(hierarchyIds.districtId);
     
@@ -679,11 +683,11 @@ describe('Verification Route - Leader Scope', () => {
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const leaderRequestRef = db.collection('verificationRequests').doc();
+    const leaderRequestRef = db.collection('verificationRequests').doc(`test_${testRunId}_leader`);
     await leaderRequestRef.set({
       locationId: leaderLocationIds[0],
-      locationName: 'Test Store LDR001',
-      storeNumber: 'LDR001',
+      locationName: `Test Store LDR_${testRunId.slice(-4)}001`,
+      storeNumber: `LDR_${testRunId.slice(-4)}001`,
       sentTo: 'ldr001@shiekh.test',
       sentBy: 'steward',
       sentAt: now,
@@ -696,12 +700,13 @@ describe('Verification Route - Leader Scope', () => {
       version: 1,
     });
     requestInLeaderScope = leaderRequestRef.id;
+    cleanupIds.push({ collection: 'verificationRequests', id: requestInLeaderScope });
 
-    const otherRequestRef = db.collection('verificationRequests').doc();
+    const otherRequestRef = db.collection('verificationRequests').doc(`test_${testRunId}_other`);
     await otherRequestRef.set({
       locationId: otherDistrictLocationIds[0],
-      locationName: 'Test Store OTH001',
-      storeNumber: 'OTH001',
+      locationName: `Test Store OTH_${testRunId.slice(-4)}001`,
+      storeNumber: `OTH_${testRunId.slice(-4)}001`,
       sentTo: 'oth001@shiekh.test',
       sentBy: 'steward',
       sentAt: now,
@@ -714,6 +719,22 @@ describe('Verification Route - Leader Scope', () => {
       version: 1,
     });
     requestOutsideScope = otherRequestRef.id;
+    cleanupIds.push({ collection: 'verificationRequests', id: requestOutsideScope });
+    
+    // Wait for Firestore emulator to sync writes
+    await new Promise(resolve => setTimeout(resolve, 200));
+  });
+
+  after(async () => {
+    // Clean up all test data created by this test suite
+    const db = getTestDb();
+    for (const { collection, id } of cleanupIds) {
+      try {
+        await db.collection(collection).doc(id).delete();
+      } catch {
+        // Ignore deletion errors
+      }
+    }
   });
 
   it('Leader sees verification requests only for their district stores', async () => {
@@ -724,13 +745,26 @@ describe('Verification Route - Leader Scope', () => {
     assert.ok(Array.isArray(body.data), 'should return data array');
     
     const requestIds = body.data.map((r: { id: string }) => r.id);
+    
+    // Check that our test request for leader's district is included
     assert.ok(
       requestIds.includes(requestInLeaderScope),
-      'should include request for store in leader\'s district'
+      `should include request for store in leader's district (expected ${requestInLeaderScope} in [${requestIds.join(', ')}])`
     );
+    
+    // Check that request for other district is NOT included
     assert.ok(
       !requestIds.includes(requestOutsideScope),
-      'should NOT include request for store outside leader\'s district'
+      `should NOT include request for store outside leader's district (unexpected ${requestOutsideScope} in [${requestIds.join(', ')}])`
+    );
+    
+    // Verify all returned requests are for locations in the leader's scope
+    const testRequests = body.data.filter((r: { id: string }) => 
+      r.id === requestInLeaderScope || r.id === requestOutsideScope
+    );
+    assert.ok(
+      testRequests.every((r: { locationId: string }) => leaderLocationIds.includes(r.locationId)),
+      'All test requests should be from leader\'s district locations'
     );
   });
 

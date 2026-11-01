@@ -22,11 +22,12 @@
 
   /* H6: Skip to content link */
   .skip-link {
-    @apply absolute left-0 top-0 z-[100] bg-blue-600 text-white px-4 py-2 font-medium;
+    @apply absolute left-0 top-0 z-[100] bg-blue-600 text-white px-4 py-2 font-medium rounded-br-lg;
     transform: translateY(-100%);
   }
   .skip-link:focus {
     transform: translateY(0);
+    @apply outline-none ring-4 ring-white ring-offset-2 ring-offset-blue-600;
   }
 }
 

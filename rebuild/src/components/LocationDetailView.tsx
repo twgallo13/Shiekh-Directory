@@ -27,6 +27,7 @@ export function LocationDetailView() {
   const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | 'directions' | 'storeType' | null>(null);
   const [showAssignments, setShowAssignments] = useState(false);
   const [showReportProblem, setShowReportProblem] = useState(false);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
   const [confirmReopen, setConfirmReopen] = useState(false);
   const [undoToast, setUndoToast] = useState<{ message: string; action: 'reopen' | 'renew'; closureId: string } | null>(null);
   const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -316,7 +317,7 @@ export function LocationDetailView() {
           {editPermissions.closure && !location.activeClosure && (
             <button
               onClick={() => setEditingField('closure')}
-              className="w-full text-sm text-gray-600 border border-dashed border-gray-300 rounded-lg py-2 mb-4 hover:bg-gray-50 hover:border-gray-400"
+              className="w-full text-sm text-gray-700 border border-dashed border-gray-400 rounded-lg py-3 mb-4 hover:bg-gray-100 hover:border-gray-500 min-h-[44px] font-medium"
             >
               + Add Temporary Closure
             </button>
@@ -771,8 +772,13 @@ export function LocationDetailView() {
           location={location}
           field={editingField}
           onSave={() => {
+            const savedField = editingField;
             setEditingField(null);
             fetchLocation();
+            if (savedField === 'directions') {
+              setSuccessToast('Directions saved');
+              setTimeout(() => setSuccessToast(null), 3000);
+            }
           }}
           onCancel={() => setEditingField(null)}
         />
@@ -808,6 +814,14 @@ export function LocationDetailView() {
       {copiedText && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg text-sm">
           {copiedText} copied
+        </div>
+      )}
+      
+      {/* Success Toast */}
+      {successToast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm flex items-center gap-2 z-50">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          {successToast}
         </div>
       )}
       

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { AlertTriangle, Calendar, RefreshCw, Store, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 interface StaleStoreItem {
   id: string;
@@ -22,6 +23,7 @@ interface StaleStoresResponse {
 }
 
 export function StaleStoresView() {
+  useDocumentTitle('Stale Stores');
   const { user } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<StaleStoresResponse | null>(null);
@@ -90,7 +92,7 @@ export function StaleStoresView() {
         <button
           onClick={fetchStaleStores}
           disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 min-h-[44px]"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
@@ -148,7 +150,7 @@ export function StaleStoresView() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => navigate(`/location/${store.id}`)}
-                        className="font-medium text-gray-900 hover:text-blue-600 hover:underline truncate"
+                        className="font-medium text-gray-900 hover:text-blue-600 hover:underline truncate min-h-[44px] flex items-center"
                       >
                         #{store.storeNumber} - {store.name}
                       </button>
@@ -171,16 +173,16 @@ export function StaleStoresView() {
                   <div className="flex items-center gap-2 sm:flex-shrink-0">
                     <button
                       onClick={() => handleReissueVerification(store.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 min-h-[44px]"
                     >
-                      <RefreshCw className="h-3.5 w-3.5" />
+                      <RefreshCw className="h-4 w-4" />
                       Reissue Verification
                     </button>
                     <button
                       onClick={() => navigate(`/location/${store.id}`)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 min-h-[44px]"
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
+                      <ExternalLink className="h-4 w-4" />
                       View
                     </button>
                   </div>

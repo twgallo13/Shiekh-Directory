@@ -418,7 +418,68 @@ describe('v2 Regression Tests - Hours Normalization', () => {
 });
 
 describe('v2 Regression Tests - Campaign Archive Filter', () => {
-  it('campaign list hides archived by default', async () => {
+  const db = getTestDb();
+  let archivedCampaignId: string;
+  let testLocationId: string;
+
+  before(async () => {
+    await seedTestHierarchy();
+    await seedTestUsers();
+    const now = new Date().toISOString();
+    
+    const locationRef = db.collection('locations').doc();
+    await locationRef.set({
+      kind: 'store',
+      lifecycle: 'active',
+      storeNumber: '99',
+      name: 'Archive Filter Test Store',
+      districtId: 'test-district-1',
+      regionId: 'test-region-1',
+      sharedInboxEmail: 'archivetest@shiekhshoes.com',
+      address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
+      timeZone: 'America/Los_Angeles',
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    });
+    testLocationId = locationRef.id;
+    
+    const createRes = await fetch(`${API_BASE}/api/app/verification/campaigns`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': 'Bearer test-token-admin',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        scope: 'district',
+        scopeId: 'test-district-1',
+        dryRun: false,
+      }),
+    });
+    
+    assert.strictEqual(createRes.status, 200, 'should create campaign');
+    const createBody = await createRes.json();
+    archivedCampaignId = createBody.campaignId;
+    assert.ok(archivedCampaignId, 'should have campaign ID');
+    
+    const archiveRes = await fetch(`${API_BASE}/api/app/verification/campaigns/${archivedCampaignId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(archiveRes.status, 200, 'should archive campaign via DELETE');
+  });
+
+  after(async () => {
+    if (archivedCampaignId) {
+      await db.collection('verificationCampaigns').doc(archivedCampaignId).delete();
+    }
+    if (testLocationId) {
+      await db.collection('locations').doc(testLocationId).delete();
+    }
+  });
+
+  it('campaign list hides archived by default (DELETE sets archived:true)', async () => {
     const res = await fetch(`${API_BASE}/api/app/verification/campaigns`, {
       headers: { 'Authorization': 'Bearer test-token-steward' },
     });
@@ -426,13 +487,11 @@ describe('v2 Regression Tests - Campaign Archive Filter', () => {
     assert.strictEqual(res.status, 200);
     const body = await res.json();
     
-    if (body.campaigns && body.campaigns.length > 0) {
-      const hasArchived = body.campaigns.some((c: { status: string }) => c.status === 'archived');
-      assert.strictEqual(hasArchived, false, 'should not include archived campaigns by default');
-    }
+    const foundArchived = body.campaigns.find((c: { id: string }) => c.id === archivedCampaignId);
+    assert.strictEqual(foundArchived, undefined, 'archived campaign should not appear in default list');
   });
 
-  it('campaign list can include archived with query param', async () => {
+  it('campaign list shows archived with includeArchived=true', async () => {
     const res = await fetch(`${API_BASE}/api/app/verification/campaigns?includeArchived=true`, {
       headers: { 'Authorization': 'Bearer test-token-steward' },
     });
@@ -440,6 +499,92 @@ describe('v2 Regression Tests - Campaign Archive Filter', () => {
     assert.strictEqual(res.status, 200);
     const body = await res.json();
     assert.ok(Array.isArray(body.campaigns), 'should return campaigns array');
+    
+    const foundArchived = body.campaigns.find((c: { id: string }) => c.id === archivedCampaignId);
+    assert.ok(foundArchived, 'archived campaign should appear when includeArchived=true');
+    assert.strictEqual(foundArchived.archived, true, 'campaign should have archived:true flag');
+  });
+});
+
+describe('v2 Regression Tests - PersonDetailView Scope Error Handling', () => {
+  const db = getTestDb();
+  let testPersonId: string;
+
+  before(async () => {
+    await seedTestUsers();
+    await seedTestHierarchy();
+    const now = new Date().toISOString();
+    
+    const personRef = db.collection('people').doc();
+    await personRef.set({
+      fullName: 'Scope Error Test Person',
+      workEmail: 'scopetest@shiekhshoes.com',
+      workPhone: '+15551234567',
+      mobilePhone: '',
+      status: 'active',
+      assignments: [],
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    });
+    testPersonId = personRef.id;
+  });
+
+  after(async () => {
+    if (testPersonId) {
+      await db.collection('people').doc(testPersonId).delete();
+    }
+  });
+
+  it('person endpoint returns data independently of scopes endpoints', async () => {
+    const personRes = await fetch(`${API_BASE}/api/app/people/${testPersonId}`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(personRes.status, 200, 'person endpoint should return 200');
+    const personBody = await personRes.json();
+    assert.ok(personBody.data, 'should return person data');
+    assert.strictEqual(personBody.data.fullName, 'Scope Error Test Person');
+  });
+
+  it('scopes endpoints (regions, districts, locations) are separate from person endpoint', async () => {
+    const [personRes, regionsRes, districtsRes, locationsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/app/people/${testPersonId}`, {
+        headers: { 'Authorization': 'Bearer test-token-admin' },
+      }),
+      fetch(`${API_BASE}/api/app/regions`, {
+        headers: { 'Authorization': 'Bearer test-token-admin' },
+      }),
+      fetch(`${API_BASE}/api/app/districts`, {
+        headers: { 'Authorization': 'Bearer test-token-admin' },
+      }),
+      fetch(`${API_BASE}/api/app/locations?kind=store`, {
+        headers: { 'Authorization': 'Bearer test-token-admin' },
+      }),
+    ]);
+    
+    assert.strictEqual(personRes.status, 200, 'person should load');
+    assert.strictEqual(regionsRes.status, 200, 'regions should load');
+    assert.strictEqual(districtsRes.status, 200, 'districts should load');
+    assert.strictEqual(locationsRes.status, 200, 'locations should load');
+    
+    const personBody = await personRes.json();
+    assert.ok(personBody.data.fullName, 'person data should be complete');
+    assert.ok(personBody.data.workEmail, 'person email should be present');
+  });
+
+  it('invalid person ID returns 404 but does not affect scopes endpoints', async () => {
+    const [personRes, regionsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/app/people/nonexistent-person-id`, {
+        headers: { 'Authorization': 'Bearer test-token-admin' },
+      }),
+      fetch(`${API_BASE}/api/app/regions`, {
+        headers: { 'Authorization': 'Bearer test-token-admin' },
+      }),
+    ]);
+    
+    assert.strictEqual(personRes.status, 404, 'invalid person should return 404');
+    assert.strictEqual(regionsRes.status, 200, 'scopes should still load independently');
   });
 });
 

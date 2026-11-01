@@ -17,6 +17,7 @@ import { createDMVerificationRequestEmail } from '../services/mailTemplates';
 
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
 const DEFAULT_DM_OFFSET_DAYS = 14;
+const BACKUP_STEWARD_EMAIL = 'andres@shiekhshoes.org';
 
 function getAppUrl(req: Request): string {
   if (process.env.APP_URL) {
@@ -130,9 +131,15 @@ async function getStewardEmails(db: Firestore): Promise<string[]> {
     .where('status', '==', 'active')
     .get();
 
-  return usersSnap.docs
+  const emails = usersSnap.docs
     .map(doc => doc.data().email)
     .filter((email): email is string => !!email);
+  
+  if (emails.length === 0 && BACKUP_STEWARD_EMAIL) {
+    return [BACKUP_STEWARD_EMAIL];
+  }
+  
+  return emails;
 }
 
 async function findRecipientForDistrict(

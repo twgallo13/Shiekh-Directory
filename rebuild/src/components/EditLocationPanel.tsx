@@ -42,6 +42,30 @@ const CLOSURE_TYPES: { type: ClosureType; label: string; description: string }[]
   { type: 'unknown_end', label: 'Unknown end', description: 'Review date required' },
 ];
 
+const DEFAULT_DAY_HOURS = { closed: true, intervals: [] as { open: string; close: string }[] };
+
+function normalizeHours(hours: StandardHours | undefined | null): StandardHours {
+  const defaultHours: StandardHours = {
+    monday: DEFAULT_DAY_HOURS,
+    tuesday: DEFAULT_DAY_HOURS,
+    wednesday: DEFAULT_DAY_HOURS,
+    thursday: DEFAULT_DAY_HOURS,
+    friday: DEFAULT_DAY_HOURS,
+    saturday: DEFAULT_DAY_HOURS,
+    sunday: DEFAULT_DAY_HOURS,
+  };
+  if (!hours) return defaultHours;
+  return {
+    monday: hours.monday || DEFAULT_DAY_HOURS,
+    tuesday: hours.tuesday || DEFAULT_DAY_HOURS,
+    wednesday: hours.wednesday || DEFAULT_DAY_HOURS,
+    thursday: hours.thursday || DEFAULT_DAY_HOURS,
+    friday: hours.friday || DEFAULT_DAY_HOURS,
+    saturday: hours.saturday || DEFAULT_DAY_HOURS,
+    sunday: hours.sunday || DEFAULT_DAY_HOURS,
+  };
+}
+
 export function EditLocationPanel({ location, field, onSave, onCancel }: EditLocationPanelProps) {
   const { authUser } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -51,15 +75,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
   const [phone, setPhone] = useState(location.mainPhone);
   const [email, setEmail] = useState(location.sharedInboxEmail || '');
   const [address, setAddress] = useState<Address>(location.address);
-  const [hours, setHours] = useState<StandardHours>(location.standardHours || {
-    monday: { closed: true, intervals: [] },
-    tuesday: { closed: true, intervals: [] },
-    wednesday: { closed: true, intervals: [] },
-    thursday: { closed: true, intervals: [] },
-    friday: { closed: true, intervals: [] },
-    saturday: { closed: true, intervals: [] },
-    sunday: { closed: true, intervals: [] },
-  });
+  const [hours, setHours] = useState<StandardHours>(() => normalizeHours(location.standardHours));
 
   // Directions form state
   const [wayfindingDirections, setWayfindingDirections] = useState(location.wayfindingDirections || '');
@@ -324,37 +340,41 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
 
           {field === 'hours' && (
             <div className="space-y-3">
-              {DAYS.map(day => (
+              {DAYS.map(day => {
+                const dayHours = hours[day] ?? { closed: true, intervals: [] };
+                const firstInterval = dayHours.intervals?.[0] ?? { open: '10:00', close: '21:00' };
+                return (
                 <div key={day} className="flex items-center gap-3">
                   <span className="w-24 text-sm font-medium">{DAY_LABELS[day]}</span>
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      checked={hours[day].closed}
+                      checked={dayHours.closed ?? false}
                       onChange={(e) => updateHours(day, 'closed', e.target.checked)}
                       className="rounded"
                     />
                     <span className="text-sm">Closed</span>
                   </label>
-                  {!hours[day].closed && (
+                  {!dayHours.closed && (
                     <>
                       <input
                         type="time"
-                        value={hours[day].intervals[0]?.open || '10:00'}
+                        value={firstInterval.open}
                         onChange={(e) => updateHours(day, 'open', e.target.value)}
                         className="px-2 py-1 border border-gray-300 rounded text-sm"
                       />
                       <span>to</span>
                       <input
                         type="time"
-                        value={hours[day].intervals[0]?.close || '21:00'}
+                        value={firstInterval.close}
                         onChange={(e) => updateHours(day, 'close', e.target.value)}
                         className="px-2 py-1 border border-gray-300 rounded text-sm"
                       />
                     </>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

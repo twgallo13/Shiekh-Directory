@@ -13,12 +13,30 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
   sunday: 'Sun',
 };
 
+const DEFAULT_DAY_HOURS = { closed: false, intervals: [{ open: '09:00', close: '21:00' }] };
+
 const createEmptyHours = (): StandardHours => {
   const hours: Partial<StandardHours> = {};
   for (const day of DAYS) {
-    hours[day] = { closed: false, intervals: [{ open: '09:00', close: '21:00' }] };
+    hours[day] = { ...DEFAULT_DAY_HOURS, intervals: [...DEFAULT_DAY_HOURS.intervals] };
   }
   return hours as StandardHours;
+};
+
+const normalizeHours = (hours: Partial<StandardHours> | undefined | null): StandardHours => {
+  const result: Partial<StandardHours> = {};
+  for (const day of DAYS) {
+    const existing = hours?.[day];
+    if (existing) {
+      result[day] = {
+        closed: existing.closed ?? false,
+        intervals: existing.intervals ?? [{ open: '09:00', close: '21:00' }],
+      };
+    } else {
+      result[day] = { closed: true, intervals: [] };
+    }
+  }
+  return result as StandardHours;
 };
 
 interface BulkApplyPreview {
@@ -97,6 +115,7 @@ export function HoursTemplatesView() {
       }
     } catch (err) {
       console.error('Failed to load filter data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load filter data');
     }
   }, [getIdToken]);
 
@@ -124,7 +143,7 @@ export function HoursTemplatesView() {
     setEditData({
       name: template.name,
       description: template.description || '',
-      hours: JSON.parse(JSON.stringify(template.hours)),
+      hours: normalizeHours(template.hours),
     });
     setActionError(null);
   };
@@ -571,7 +590,8 @@ export function HoursTemplatesView() {
               Weekly Hours
             </label>
             {DAYS.map(day => {
-              const dayHours = editData.hours[day];
+              const dayHours = editData.hours[day] ?? { closed: true, intervals: [] };
+              const firstInterval = dayHours.intervals?.[0] ?? { open: '09:00', close: '21:00' };
               return (
                 <div
                   key={day}
@@ -588,7 +608,7 @@ export function HoursTemplatesView() {
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer' }}>
                     <input
                       type="checkbox"
-                      checked={dayHours.closed}
+                      checked={dayHours.closed ?? false}
                       onChange={(e) => {
                         const newHours = { ...editData.hours };
                         newHours[day] = { ...dayHours, closed: e.target.checked };
@@ -598,16 +618,16 @@ export function HoursTemplatesView() {
                     />
                     Closed
                   </label>
-                  {!dayHours.closed && dayHours.intervals[0] && (
+                  {!dayHours.closed && (
                     <>
                       <input
                         type="time"
-                        value={dayHours.intervals[0].open}
+                        value={firstInterval.open}
                         onChange={(e) => {
                           const newHours = { ...editData.hours };
                           newHours[day] = {
                             ...dayHours,
-                            intervals: [{ ...dayHours.intervals[0], open: e.target.value }],
+                            intervals: [{ ...firstInterval, open: e.target.value }],
                           };
                           setEditData({ ...editData, hours: newHours });
                         }}
@@ -620,12 +640,12 @@ export function HoursTemplatesView() {
                       <span>to</span>
                       <input
                         type="time"
-                        value={dayHours.intervals[0].close}
+                        value={firstInterval.close}
                         onChange={(e) => {
                           const newHours = { ...editData.hours };
                           newHours[day] = {
                             ...dayHours,
-                            intervals: [{ ...dayHours.intervals[0], close: e.target.value }],
+                            intervals: [{ ...firstInterval, close: e.target.value }],
                           };
                           setEditData({ ...editData, hours: newHours });
                         }}

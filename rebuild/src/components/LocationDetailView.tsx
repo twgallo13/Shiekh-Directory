@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, Users, Navigation } from 'lucide-react';
+import { Breadcrumbs } from './Breadcrumbs';
 import { useAuth } from '../context/AuthContext';
 import type { LocationDetail, AssignmentCapacity } from '../types';
 import { getStoreTypeLabel } from '../types';
@@ -136,21 +137,25 @@ export function LocationDetailView() {
       {/* Page Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-4">
+          {/* Breadcrumbs - desktop only */}
+          <div className="hidden lg:block mb-3">
+            <Breadcrumbs
+              items={[
+                { label: 'Directory', href: '/' },
+                { label: location.districtName || 'District', href: `/?district=${location.districtId || ''}` },
+                { label: `#${location.storeNumber} ${location.name}` },
+              ]}
+            />
+          </div>
           <div className="flex items-center gap-3">
             <button 
               onClick={() => navigate(-1)} 
               className="p-2 hover:bg-gray-100 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center lg:hidden"
+              aria-label="Go back"
             >
               <ArrowLeft className="w-5 h-5 text-gray-600" />
             </button>
-            <button 
-              onClick={() => navigate('/')} 
-              className="hidden lg:flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Directory
-            </button>
-            <div className="flex-1 min-w-0 lg:text-center lg:flex-none">
+            <div className="flex-1 min-w-0 lg:flex-none">
               <h1 className="text-xl font-semibold text-gray-900 truncate">
                 #{location.storeNumber} {location.name}
               </h1>
@@ -158,7 +163,7 @@ export function LocationDetailView() {
                 {location.districtName} • {location.regionName}
               </p>
             </div>
-            <div className="hidden lg:block">
+            <div className="hidden lg:block ml-auto">
               <StatusBadge status={location.statusNow.state} large />
             </div>
           </div>

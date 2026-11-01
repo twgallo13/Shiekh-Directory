@@ -219,8 +219,8 @@ export function BulkHolidayManager() {
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => navigate('/')}
-            className="p-2 hover:bg-blue-600 rounded-lg -ml-2"
-            aria-label="Back"
+            className="p-2 hover:bg-blue-600 rounded-lg -ml-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Back to directory"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -299,7 +299,9 @@ export function BulkHolidayManager() {
         <div className="bg-white rounded-lg border border-gray-200 p-4">
           <button
             onClick={() => setStatesExpanded(!statesExpanded)}
-            className="w-full flex items-center justify-between"
+            className="w-full flex items-center justify-between min-h-[44px]"
+            aria-expanded={statesExpanded}
+            aria-label={statesExpanded ? 'Collapse state filter' : 'Expand state filter'}
           >
             <div className="flex items-center gap-2 text-gray-700">
               <Store className="w-5 h-5" />
@@ -400,7 +402,9 @@ export function BulkHolidayManager() {
 
               <button
                 onClick={() => setPreviewExpanded(!previewExpanded)}
-                className="w-full flex items-center justify-between py-2 text-gray-600 hover:text-gray-900"
+                className="w-full flex items-center justify-between py-2 text-gray-600 hover:text-gray-900 min-h-[44px]"
+                aria-expanded={previewExpanded}
+                aria-label={previewExpanded ? 'Collapse store list' : 'Expand store list'}
               >
                 <span className="text-sm">
                   {preview.targetStores.length} stores in {selectedStates.length > 0 ? selectedStates.join(', ') : 'all states'}

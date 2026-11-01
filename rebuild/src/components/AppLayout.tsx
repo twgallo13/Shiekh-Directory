@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { canApproveCorrections } from '../lib/permissions';
 import { OfflineBanner } from './OfflineBanner';
+import { HeaderSearch } from './HeaderSearch';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -154,6 +155,13 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </NavLink>
               )}
 
+              {/* Global Search for staff */}
+              {isLeaderOrAbove && (
+                <div className="ml-2 w-64">
+                  <HeaderSearch />
+                </div>
+              )}
+
               {/* More dropdown */}
               <div className="relative">
                 <button
@@ -232,7 +240,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
                 <button
                   onClick={() => signOut()}
-                  className="p-2 hover:bg-blue-600/50 rounded-md transition-colors"
+                  className="p-2 hover:bg-blue-600/50 rounded-md transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  aria-label="Sign out"
                   title="Sign Out"
                 >
                   <LogOut className="w-5 h-5" />

@@ -10,6 +10,7 @@ export function SettingsView() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+      <h1 className="sr-only">Settings</h1>
       {/* Current User Info */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-3">

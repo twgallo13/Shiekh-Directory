@@ -157,7 +157,7 @@ export function VerificationRequestsView() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <button onClick={() => navigate('/')} className="p-2 hover:bg-gray-100 rounded-lg lg:hidden">
+              <button onClick={() => navigate('/')} aria-label="Back to directory" className="p-2 hover:bg-gray-100 rounded-lg lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center">
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
               </button>
               <div>
@@ -270,7 +270,7 @@ export function VerificationRequestsView() {
               <h2 className="text-lg font-semibold">
                 #{selectedRequest.storeNumber} Verification
               </h2>
-              <button onClick={() => setSelectedId(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => setSelectedId(null)} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -525,7 +525,7 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
       <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Send Verification Request</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -806,7 +806,7 @@ function BulkVerificationSection({
     <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
-        <button onClick={() => setExpanded(false)} className="text-gray-600 hover:text-gray-600">
+        <button onClick={() => setExpanded(false)} aria-label="Close campaign panel" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
           <X className="w-5 h-5" />
         </button>
       </div>

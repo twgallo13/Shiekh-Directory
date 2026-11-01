@@ -315,7 +315,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
           <h2 className="text-lg font-semibold">
             {field === 'hours' ? 'Edit Hours' : field === 'contact' ? 'Edit Contact Info' : field === 'directions' ? 'Edit Directions' : field === 'storeType' ? 'Edit Store Type' : 'Add Temporary Closure'}
           </h2>
-          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onCancel} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
             <X className="w-5 h-5" />
           </button>
         </div>

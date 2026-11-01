@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, User, Mail, Phone, Briefcase, MapPin, Building, AlertTriangle, Edit2, Plus, X, Trash2 } from 'lucide-react';
+import { Breadcrumbs } from './Breadcrumbs';
 import { useAuth } from '../context/AuthContext';
 import type { PersonDetail, PersonAssignment, Region, District, LocationListItem } from '../types';
 import { canViewMobilePhones } from '../lib/permissions';
@@ -392,23 +393,35 @@ export function PersonDetailView() {
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
       <header className="bg-blue-700 text-white sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} aria-label="Go back" className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-semibold truncate">{person.fullName}</h1>
+        <div className="max-w-3xl mx-auto px-4 py-3">
+          {/* Breadcrumbs - visible on desktop */}
+          <div className="hidden lg:block mb-2">
+            <Breadcrumbs
+              items={[
+                { label: 'People', href: '/people' },
+                { label: person.fullName },
+              ]}
+              className="text-blue-200 [&_a]:text-blue-200 [&_a:hover]:text-white [&_span[aria-current]]:text-white"
+            />
           </div>
-          {canManage && (
-            <button
-              onClick={() => setShowEditModal(true)}
-              aria-label="Edit person"
-              className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
-              title="Edit person"
-            >
-              <Edit2 className="w-5 h-5" />
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate(-1)} aria-label="Go back" className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center lg:hidden">
+              <ArrowLeft className="w-5 h-5" />
             </button>
-          )}
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg font-semibold truncate">{person.fullName}</h1>
+            </div>
+            {canManage && (
+              <button
+                onClick={() => setShowEditModal(true)}
+                aria-label="Edit person"
+                className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+                title="Edit person"
+              >
+                <Edit2 className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </div>
       </header>
       

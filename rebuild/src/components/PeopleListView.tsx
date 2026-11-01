@@ -101,7 +101,7 @@ export function PeopleListView() {
       <header className="bg-white border-b border-gray-200 sticky top-14 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <button onClick={() => navigate('/')} className="text-gray-600 hover:text-gray-900 lg:hidden">
+            <button onClick={() => navigate('/')} aria-label="Back to directory" className="text-gray-600 hover:text-gray-900 lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center -ml-2">
               <ArrowLeft className="w-6 h-6" />
             </button>
             <h1 className="text-xl font-bold text-gray-900">People</h1>
@@ -222,7 +222,7 @@ export function PeopleListView() {
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Add Person</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-600 hover:text-gray-600">
+              <button onClick={() => setShowCreateModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>

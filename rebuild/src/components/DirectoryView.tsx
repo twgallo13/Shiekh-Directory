@@ -173,6 +173,7 @@ export function DirectoryView() {
   
   return (
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
+      <h1 className="sr-only">Store Directory</h1>
       {/* Search and Filters */}
       <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3">

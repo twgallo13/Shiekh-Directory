@@ -167,7 +167,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
           <h2 className="text-lg font-semibold">
             {mode === 'list' ? 'Manage Assignments' : mode === 'add' ? 'Add Assignment' : 'End Assignment'}
           </h2>
-          <button onClick={onCancel} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onCancel} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
             <X className="w-5 h-5" />
           </button>
         </div>

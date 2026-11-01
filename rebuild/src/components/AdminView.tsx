@@ -941,14 +941,16 @@ function TokenDisplay({ token }: { token: string }) {
       </code>
       <button
         onClick={() => setVisible(!visible)}
-        className="p-2 text-gray-500 hover:text-gray-700"
+        className="p-2 text-gray-500 hover:text-gray-700 min-h-[44px] min-w-[44px] flex items-center justify-center"
+        aria-label={visible ? 'Hide token' : 'Show token'}
         title={visible ? 'Hide' : 'Show'}
       >
         {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
       </button>
       <button
         onClick={handleCopy}
-        className="p-2 text-green-600 hover:text-green-700"
+        className="p-2 text-green-600 hover:text-green-700 min-h-[44px] min-w-[44px] flex items-center justify-center"
+        aria-label={copied ? 'Copied' : 'Copy token'}
         title="Copy"
       >
         {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}

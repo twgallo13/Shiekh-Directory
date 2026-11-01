@@ -151,7 +151,9 @@ export function AuditHistory({ locationId }: AuditHistoryProps) {
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50"
+        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-50 min-h-[44px]"
+        aria-expanded={isExpanded}
+        aria-label={isExpanded ? 'Collapse change history' : 'Expand change history'}
       >
         <h3 className="font-semibold text-gray-900 flex items-center gap-2">
           <History className="w-4 h-4" />

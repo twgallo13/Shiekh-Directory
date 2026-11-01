@@ -128,6 +128,7 @@ export function MyRequestsView() {
 
   return (
     <div>
+      <h1 className="sr-only">My Requests</h1>
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 

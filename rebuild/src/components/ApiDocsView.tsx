@@ -383,7 +383,8 @@ function CodeBlock({ code, language = 'json' }: { code: string; language?: strin
       </pre>
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 p-2 bg-gray-700 rounded hover:bg-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute top-2 right-2 p-2 bg-gray-700 rounded hover:bg-gray-600 opacity-0 group-hover:opacity-100 transition-opacity min-h-[44px] min-w-[44px] flex items-center justify-center"
+        aria-label={copied ? 'Copied' : 'Copy to clipboard'}
         title="Copy to clipboard"
       >
         {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-gray-300" />}
@@ -399,7 +400,8 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-3 bg-white hover:bg-gray-50 flex items-center gap-3 text-left"
+        className="w-full px-4 py-3 bg-white hover:bg-gray-50 flex items-center gap-3 text-left min-h-[44px]"
+        aria-expanded={expanded}
       >
         {expanded ? (
           <ChevronDown className="w-4 h-4 text-gray-600 flex-shrink-0" />
@@ -496,7 +498,8 @@ function ApiVersionSection({ version }: { version: ApiVersion }) {
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-4 flex items-center justify-between text-left hover:bg-gray-50"
+        className="w-full px-4 py-4 flex items-center justify-between text-left hover:bg-gray-50 min-h-[44px]"
+        aria-expanded={expanded}
       >
         <div>
           <h3 className="text-lg font-semibold text-gray-900">{version.title}</h3>
@@ -534,6 +537,7 @@ export function ApiDocsView() {
           <button 
             onClick={() => navigate('/admin')} 
             className="p-1 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Back to admin"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>

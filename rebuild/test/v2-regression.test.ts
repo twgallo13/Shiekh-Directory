@@ -231,6 +231,81 @@ describe('v2 Regression Tests - Lifecycle and Kind Fields', () => {
   });
 });
 
+describe('v2 Regression Tests - Missing Fields Tolerance', () => {
+  const db = getTestDb();
+  let testLocationId: string;
+  let correctionId: string;
+
+  before(async () => {
+    await seedTestUsers();
+    await seedTestHierarchy();
+    const now = new Date().toISOString();
+    
+    const locationRef = db.collection('locations').doc();
+    await locationRef.set({
+      kind: 'store',
+      lifecycle: 'active',
+      storeNumber: 'MF01',
+      name: 'Missing Fields Store',
+      districtId: 'test-district-1',
+      regionId: 'test-region-1',
+      address: { street: '999 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
+      timeZone: 'America/Los_Angeles',
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    });
+    testLocationId = locationRef.id;
+    
+    const correctionRef = db.collection('corrections').doc();
+    await correctionRef.set({
+      locationId: testLocationId,
+      storeNumber: 'MF01',
+      locationName: 'Missing Fields Store',
+      type: 'correction',
+      status: 'pending',
+      submittedAt: now,
+      submittedBy: 'test-uid',
+      submittedByEmail: 'test@test.com',
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    });
+    correctionId = correctionRef.id;
+  });
+
+  after(async () => {
+    if (testLocationId) await db.collection('locations').doc(testLocationId).delete();
+    if (correctionId) await db.collection('corrections').doc(correctionId).delete();
+  });
+
+  it('lists corrections with missing proposedChanges and currentValues', async () => {
+    const res = await fetch(`${API_BASE}/api/app/corrections?status=pending`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    
+    const correction = body.data.find((c: { id: string }) => c.id === correctionId);
+    assert.ok(correction, 'should find correction with missing fields');
+    assert.strictEqual(correction.storeNumber, 'MF01');
+  });
+
+  it('location detail works with missing optional fields', async () => {
+    const res = await fetch(`${API_BASE}/api/app/locations/${testLocationId}`, {
+      headers: { 'Authorization': 'Bearer test-token-admin' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    
+    assert.ok(body.data, 'should return location');
+    assert.strictEqual(body.data.wayfindingDirections, undefined, 'wayfindingDirections can be undefined');
+    assert.strictEqual(body.data.sharedInboxEmail, undefined, 'sharedInboxEmail can be undefined');
+  });
+});
+
 describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
   const db = getTestDb();
   const testStores: { id: string; storeNumber: string }[] = [];

@@ -867,7 +867,7 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      const { scope, scopeId, skipRecentlyVerified, daysSinceVerification = 90 } = req.body;
+      const { scope, scopeId, skipRecentlyVerified, daysSinceVerification = 90, dryRun = false } = req.body;
 
       if (!scope || !['district', 'region', 'all'].includes(scope)) {
         return res.status(400).json({
@@ -902,6 +902,7 @@ export function createVerificationRouter(db: Firestore): Router {
       const results = {
         total: locations.length,
         sent: 0,
+        logOnly: 0,
         skipped: 0,
         failed: 0,
         skippedReasons: {
@@ -910,6 +911,7 @@ export function createVerificationRouter(db: Firestore): Router {
           pendingRequest: 0,
         },
         failedStores: [] as { storeNumber: string; reason: string }[],
+        targetStores: [] as { storeNumber: string; name: string; email: string }[],
       };
 
       const campaignId = `camp_${randomBytes(8).toString('hex')}`;
@@ -939,6 +941,16 @@ export function createVerificationRouter(db: Firestore): Router {
         if (!pendingRequest.empty) {
           results.skipped++;
           results.skippedReasons.pendingRequest++;
+          continue;
+        }
+
+        results.targetStores.push({
+          storeNumber: location.storeNumber,
+          name: location.name,
+          email: location.sharedInboxEmail,
+        });
+
+        if (dryRun) {
           continue;
         }
 
@@ -1042,12 +1054,23 @@ export function createVerificationRouter(db: Firestore): Router {
               emailMessageId: mailResult.messageId,
             });
             results.sent++;
+          } else if (mailResult.blocked) {
+            await requestRef.update({
+              emailSent: false,
+              emailBlocked: true,
+              emailError: mailResult.reason,
+            });
+            results.logOnly++;
           } else {
             await requestRef.update({
               emailSent: false,
-              emailError: mailResult.blocked ? mailResult.reason : mailResult.error,
+              emailError: mailResult.error,
             });
-            results.sent++; // Still count as sent (request created)
+            results.failed++;
+            results.failedStores.push({
+              storeNumber: location.storeNumber,
+              reason: mailResult.error || 'Email send failed',
+            });
           }
 
         } catch (error) {
@@ -1060,6 +1083,20 @@ export function createVerificationRouter(db: Firestore): Router {
         }
       }
 
+      if (dryRun) {
+        res.json({
+          dryRun: true,
+          results: {
+            total: results.total,
+            wouldSend: results.targetStores.length,
+            skipped: results.skipped,
+            skippedReasons: results.skippedReasons,
+            targetStores: results.targetStores,
+          },
+        });
+        return;
+      }
+
       await db.collection('verificationCampaigns').doc(campaignId).set({
         campaignId,
         scope,
@@ -1069,7 +1106,15 @@ export function createVerificationRouter(db: Firestore): Router {
         createdAt: now.toISOString(),
         createdBy: authUser.uid,
         createdByEmail: authUser.email,
-        results,
+        results: {
+          total: results.total,
+          sent: results.sent,
+          logOnly: results.logOnly,
+          skipped: results.skipped,
+          failed: results.failed,
+          skippedReasons: results.skippedReasons,
+          failedStores: results.failedStores,
+        },
         expiresAt: expiresAt.toISOString(),
       });
 
@@ -1085,6 +1130,7 @@ export function createVerificationRouter(db: Firestore): Router {
           { field: 'scope', newValue: scope },
           { field: 'scopeId', newValue: scopeId || 'all' },
           { field: 'sent', newValue: results.sent },
+          { field: 'logOnly', newValue: results.logOnly },
           { field: 'skipped', newValue: results.skipped },
           { field: 'failed', newValue: results.failed },
         ],
@@ -1092,7 +1138,15 @@ export function createVerificationRouter(db: Firestore): Router {
 
       res.json({
         campaignId,
-        results,
+        results: {
+          total: results.total,
+          sent: results.sent,
+          logOnly: results.logOnly,
+          skipped: results.skipped,
+          failed: results.failed,
+          skippedReasons: results.skippedReasons,
+          failedStores: results.failedStores,
+        },
         expiresAt: expiresAt.toISOString(),
       });
     } catch (error) {

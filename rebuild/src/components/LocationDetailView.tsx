@@ -441,7 +441,7 @@ export function LocationDetailView() {
           
           {/* Week Schedule */}
           <div className="space-y-2">
-            {location.weekSchedule.slice(1).map(day => (
+            {(location.weekSchedule ?? []).slice(1).map(day => (
               <div key={day.date} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
                 <div className="flex-1">
                   <span className="text-gray-700">{day.dayName}</span>
@@ -461,7 +461,7 @@ export function LocationDetailView() {
           {/* Upcoming Exceptions */}
           {(() => {
             const today = location.statusNow.localDate;
-            const upcomingExceptions = location.hoursExceptions
+            const upcomingExceptions = (location.hoursExceptions ?? [])
               .filter(ex => ex.endDate >= today)
               .sort((a, b) => a.startDate.localeCompare(b.startDate))
               .slice(0, 3);
@@ -638,8 +638,8 @@ export function LocationDetailView() {
                 <p className="text-sm text-gray-500">Assistant Store Managers</p>
                 {location.leadership.asmStatus === 'vacant' && <VacantBadge />}
               </div>
-              {location.leadership.asm.length > 0 ? (
-                location.leadership.asm.map(asm => (
+              {(location.leadership.asm ?? []).length > 0 ? (
+                (location.leadership.asm ?? []).map(asm => (
                   <div key={asm.id} className="flex items-center gap-2 min-h-[44px]">
                     <Link
                       to={`/person/${asm.id}`}
@@ -664,8 +664,8 @@ export function LocationDetailView() {
                 <p className="text-sm text-gray-500">Key Holders</p>
                 {location.leadership.khStatus === 'vacant' && <VacantBadge />}
               </div>
-              {location.leadership.kh.length > 0 ? (
-                location.leadership.kh.map(kh => (
+              {(location.leadership.kh ?? []).length > 0 ? (
+                (location.leadership.kh ?? []).map(kh => (
                   <div key={kh.id} className="flex items-center gap-2">
                     <Link
                       to={`/person/${kh.id}`}

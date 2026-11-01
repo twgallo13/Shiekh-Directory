@@ -590,6 +590,7 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
 interface CampaignResults {
   total: number;
   sent: number;
+  logOnly: number;
   skipped: number;
   failed: number;
   skippedReasons: {
@@ -597,6 +598,18 @@ interface CampaignResults {
     recentlyVerified: number;
     pendingRequest: number;
   };
+}
+
+interface DryRunResults {
+  total: number;
+  wouldSend: number;
+  skipped: number;
+  skippedReasons: {
+    noEmail: number;
+    recentlyVerified: number;
+    pendingRequest: number;
+  };
+  targetStores: { storeNumber: string; name: string; email: string }[];
 }
 
 function BulkVerificationSection({ 
@@ -613,6 +626,7 @@ function BulkVerificationSection({
   const [daysSinceVerification, setDaysSinceVerification] = useState(90);
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState<CampaignResults | null>(null);
+  const [dryRunResults, setDryRunResults] = useState<DryRunResults | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
@@ -648,6 +662,48 @@ function BulkVerificationSection({
     }
   };
 
+  const handlePreview = async () => {
+    if ((scope === 'district' || scope === 'region') && !scopeId) {
+      setError(`Please select a ${scope}`);
+      return;
+    }
+
+    setSending(true);
+    setError(null);
+    setDryRunResults(null);
+
+    try {
+      const token = await getIdToken();
+      const res = await fetch('/api/app/verification/campaigns', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          scope,
+          scopeId: scope !== 'all' ? scopeId : undefined,
+          skipRecentlyVerified,
+          daysSinceVerification,
+          dryRun: true,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error?.message || 'Failed to preview campaign');
+        return;
+      }
+
+      setDryRunResults(data.results);
+    } catch (err) {
+      setError('Failed to preview campaign');
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleSend = async () => {
     if ((scope === 'district' || scope === 'region') && !scopeId) {
       setError(`Please select a ${scope}`);
@@ -660,13 +716,15 @@ function BulkVerificationSection({
         ? districts.find(d => d.id === scopeId)?.name 
         : regions.find(r => r.id === scopeId)?.name;
 
-    if (!confirm(`Send verification requests to ${scopeName}?\n\nThis will send emails to all stores${skipRecentlyVerified ? ` not verified in the last ${daysSinceVerification} days` : ''}.`)) {
+    const storeCount = dryRunResults?.wouldSend ?? '?';
+    if (!confirm(`Send verification requests to ${scopeName}?\n\nThis will send emails to ${storeCount} stores${skipRecentlyVerified ? ` not verified in the last ${daysSinceVerification} days` : ''}.`)) {
       return;
     }
 
     setSending(true);
     setError(null);
     setResults(null);
+    setDryRunResults(null);
 
     try {
       const token = await getIdToken();
@@ -735,24 +793,112 @@ function BulkVerificationSection({
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
         </div>
+      ) : dryRunResults ? (
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-medium text-blue-800 mb-2">Campaign Preview</h4>
+            <div className="grid grid-cols-2 gap-4 text-center mb-3">
+              <div>
+                <div className="text-2xl font-bold text-blue-600">{dryRunResults.wouldSend}</div>
+                <div className="text-sm text-blue-700">Would Send</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-600">{dryRunResults.skipped}</div>
+                <div className="text-sm text-gray-500">Skipped</div>
+              </div>
+            </div>
+            {dryRunResults.skipped > 0 && (
+              <div className="text-sm text-blue-700 mb-3">
+                <p className="font-medium mb-1">Skipped reasons:</p>
+                <ul className="space-y-0.5">
+                  {dryRunResults.skippedReasons.noEmail > 0 && (
+                    <li>No email: {dryRunResults.skippedReasons.noEmail}</li>
+                  )}
+                  {dryRunResults.skippedReasons.recentlyVerified > 0 && (
+                    <li>Recently verified: {dryRunResults.skippedReasons.recentlyVerified}</li>
+                  )}
+                  {dryRunResults.skippedReasons.pendingRequest > 0 && (
+                    <li>Pending request: {dryRunResults.skippedReasons.pendingRequest}</li>
+                  )}
+                </ul>
+              </div>
+            )}
+            {dryRunResults.targetStores.length > 0 && (
+              <div className="max-h-40 overflow-y-auto border border-blue-200 rounded bg-white">
+                <table className="w-full text-xs">
+                  <thead className="bg-blue-100 sticky top-0">
+                    <tr>
+                      <th className="text-left px-2 py-1 font-medium">Store</th>
+                      <th className="text-left px-2 py-1 font-medium">Email</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dryRunResults.targetStores.map(store => (
+                      <tr key={store.storeNumber} className="border-t border-blue-100">
+                        <td className="px-2 py-1">#{store.storeNumber} {store.name}</td>
+                        <td className="px-2 py-1 text-gray-500">{store.email}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setDryRunResults(null)}
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={sending || dryRunResults.wouldSend === 0}
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Send to {dryRunResults.wouldSend} Stores
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       ) : results ? (
         <div className="space-y-4">
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <h4 className="font-medium text-green-800 mb-2">Campaign Complete</h4>
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-4 gap-2 text-center">
               <div>
                 <div className="text-2xl font-bold text-green-600">{results.sent}</div>
-                <div className="text-sm text-green-700">Sent</div>
+                <div className="text-xs text-green-700">Sent</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-yellow-600">{results.logOnly}</div>
+                <div className="text-xs text-yellow-700">Log Only</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-gray-600">{results.skipped}</div>
-                <div className="text-sm text-gray-500">Skipped</div>
+                <div className="text-xs text-gray-500">Skipped</div>
               </div>
               <div>
                 <div className="text-2xl font-bold text-red-600">{results.failed}</div>
-                <div className="text-sm text-red-500">Failed</div>
+                <div className="text-xs text-red-500">Failed</div>
               </div>
             </div>
+            {results.logOnly > 0 && (
+              <div className="mt-3 pt-3 border-t border-green-200 text-sm text-yellow-700 bg-yellow-50 -mx-4 px-4 py-2">
+                <p className="font-medium">
+                  {results.logOnly} emails logged only (MAIL_CUTOVER_ENABLED is not set)
+                </p>
+              </div>
+            )}
             {results.skipped > 0 && (
               <div className="mt-3 pt-3 border-t border-green-200 text-sm text-green-700">
                 <p className="font-medium mb-1">Skipped reasons:</p>
@@ -894,20 +1040,17 @@ function BulkVerificationSection({
               Cancel
             </button>
             <button
-              onClick={handleSend}
+              onClick={handlePreview}
               disabled={sending || ((scope === 'district' || scope === 'region') && !scopeId)}
               className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {sending ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Sending...
+                  Loading...
                 </>
               ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  Send Campaign
-                </>
+                'Preview Campaign'
               )}
             </button>
           </div>

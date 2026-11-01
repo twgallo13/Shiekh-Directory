@@ -381,8 +381,8 @@ export function PersonDetailView() {
     );
   }
   
-  const activeAssignments = person.assignments.filter(a => a.isActive);
-  const pastAssignments = person.assignments.filter(a => !a.isActive);
+  const activeAssignments = (person.assignments ?? []).filter(a => a.isActive);
+  const pastAssignments = (person.assignments ?? []).filter(a => !a.isActive);
   
   return (
     <div className="min-h-screen bg-gray-50 pb-8">

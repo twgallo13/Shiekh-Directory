@@ -174,7 +174,7 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
                   <span className="text-gray-900">
                     {!location.standardHours?.[day] || location.standardHours[day].closed 
                       ? 'Closed' 
-                      : location.standardHours[day].intervals.map(i => `${i.open}-${i.close}`).join(', ')}
+                      : (location.standardHours[day].intervals ?? []).map(i => `${i.open}-${i.close}`).join(', ') || 'Not set'}
                   </span>
                 </div>
               ))}

@@ -207,9 +207,9 @@ export function AuditHistory({ locationId }: AuditHistoryProps) {
                     </div>
                   </button>
 
-                  {expandedEntries.has(entry.id) && entry.changes.length > 0 && (
+                  {expandedEntries.has(entry.id) && (entry.changes ?? []).length > 0 && (
                     <div className="mt-2 pl-2 border-l-2 border-gray-200 space-y-1">
-                      {entry.changes.map((change, idx) => (
+                      {(entry.changes ?? []).map((change, idx) => (
                         <div key={idx} className="text-xs">
                           <span className="font-medium text-gray-700">
                             {formatFieldName(change.field)}:

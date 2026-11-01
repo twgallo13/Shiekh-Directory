@@ -121,7 +121,7 @@ export function AdminView() {
         {activeTab === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
         {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
         {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
-        {activeTab === 'communications' && <CommunicationsTab />}
+        {activeTab === 'communications' && <CommunicationsTab getIdToken={getIdToken} />}
         {activeTab === 'audit-log' && <AuditLogTab />}
         {activeTab === 'hours-templates' && <HoursTemplatesTab />}
         {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
@@ -1626,9 +1626,197 @@ function ImportTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   );
 }
 
-function CommunicationsTab() {
+interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  invitedBy: string;
+  invitedByEmail: string;
+  createdAt: string;
+  expiresAt: string;
+  status: 'pending' | 'accepted' | 'expired' | 'revoked';
+}
+
+function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [loadingInvitations, setLoadingInvitations] = useState(true);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('Viewer');
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const loadInvitations = useCallback(async () => {
+    try {
+      setLoadingInvitations(true);
+      const token = await getIdToken();
+      const res = await fetch('/api/app/invitations', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setInvitations(data.invitations || []);
+    } catch (error) {
+      console.error('Load invitations error:', error);
+    } finally {
+      setLoadingInvitations(false);
+    }
+  }, [getIdToken]);
+
+  useEffect(() => { loadInvitations(); }, [loadInvitations]);
+
+  const handleSendInvitation = async () => {
+    if (!inviteEmail.trim()) return;
+    
+    setSending(true);
+    setSendError(null);
+    
+    try {
+      const token = await getIdToken();
+      const res = await fetch('/api/app/invitations', {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          role: inviteRole,
+          personalMessage: inviteMessage.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setSendError(data.error?.message || 'Failed to send invitation');
+        return;
+      }
+
+      setShowInviteModal(false);
+      setInviteEmail('');
+      setInviteRole('Viewer');
+      setInviteMessage('');
+      loadInvitations();
+    } catch (error) {
+      setSendError('Failed to send invitation');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleResend = async (id: string) => {
+    try {
+      const token = await getIdToken();
+      await fetch(`/api/app/invitations/${id}/resend`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      loadInvitations();
+    } catch (error) {
+      console.error('Resend error:', error);
+    }
+  };
+
+  const handleRevoke = async (id: string) => {
+    if (!confirm('Revoke this invitation?')) return;
+    
+    try {
+      const token = await getIdToken();
+      await fetch(`/api/app/invitations/${id}/revoke`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      loadInvitations();
+    } catch (error) {
+      console.error('Revoke error:', error);
+    }
+  };
+
+  const pendingInvitations = invitations.filter(i => i.status === 'pending');
+
   return (
     <div className="space-y-6">
+      {/* User Invitations */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Mail className="w-5 h-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-gray-900">User Invitations</h2>
+          </div>
+          <button
+            onClick={() => setShowInviteModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Invite User
+          </button>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          Send invitation emails to new users. They can sign in with their company Google account.
+        </p>
+
+        {loadingInvitations ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          </div>
+        ) : pendingInvitations.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 text-sm">
+            No pending invitations
+          </div>
+        ) : (
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Role</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Expires</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pendingInvitations.map(inv => (
+                  <tr key={inv.id}>
+                    <td className="px-4 py-3 font-medium text-gray-900">{inv.email}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        inv.role === 'Admin' ? 'bg-red-100 text-red-700' :
+                        inv.role === 'Steward' ? 'bg-purple-100 text-purple-700' :
+                        inv.role === 'Leader' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {inv.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">
+                      {new Date(inv.expiresAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleResend(inv.id)}
+                          className="text-blue-600 hover:text-blue-800 text-xs"
+                        >
+                          Resend
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <button
+                          onClick={() => handleRevoke(inv.id)}
+                          className="text-red-600 hover:text-red-800 text-xs"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Email Templates - Read-only preview */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
@@ -1699,11 +1887,79 @@ function CommunicationsTab() {
           title="Sent Mail Log"
           description="View history of all sent emails with delivery status and timestamps."
         />
-        <ComingSoonPlaceholder
-          title="User Invitations"
-          description="Send invitation emails to new users to set up their accounts."
-        />
       </div>
+
+      {/* Invite Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+              <h2 className="font-semibold text-gray-900">Invite User</h2>
+              <button onClick={() => setShowInviteModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {sendError && (
+                <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm">
+                  {sendError}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="user@shiekhshoes.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">Must be a company email address</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                >
+                  <option value="Viewer">Viewer - View only access</option>
+                  <option value="Leader">Leader - Manage assigned district</option>
+                  <option value="Steward">Steward - Manage verifications</option>
+                  <option value="Admin">Admin - Full access</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Personal Message <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={inviteMessage}
+                  onChange={(e) => setInviteMessage(e.target.value)}
+                  placeholder="Add a personal note to the invitation email..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowInviteModal(false)}
+                  className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendInvitation}
+                  disabled={sending || !inviteEmail.trim()}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {sending ? 'Sending...' : 'Send Invitation'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

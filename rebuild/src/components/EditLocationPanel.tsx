@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
-import { X, Save, AlertTriangle } from 'lucide-react';
-import type { LocationDetail, StandardHours, Address, DayOfWeek, ClosureType, ClosureReasonCode, StoreTypeCode } from '../types';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { X, Save, AlertTriangle, FileText } from 'lucide-react';
+import type { LocationDetail, StandardHours, Address, DayOfWeek, ClosureType, ClosureReasonCode, StoreTypeCode, HoursTemplate } from '../types';
 import { STORE_TYPES } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { apiPatch, apiPost } from '../lib/api';
+import { apiPatch, apiPost, apiGet } from '../lib/api';
 
 interface EditLocationPanelProps {
   location: LocationDetail;
@@ -93,6 +93,59 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
   const [closureOwnerId] = useState('');
   const [closureOwnerName, setClosureOwnerName] = useState('');
   const [closureNextReviewDate, setClosureNextReviewDate] = useState('');
+
+  // Hours template state
+  const [templates, setTemplates] = useState<HoursTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [suggestedTemplateId, setSuggestedTemplateId] = useState<string | null>(null);
+  const [templateApplied, setTemplateApplied] = useState(false);
+
+  // Fetch templates when editing hours
+  const fetchTemplates = useCallback(async () => {
+    if (field !== 'hours') return;
+    
+    setLoadingTemplates(true);
+    setTemplateError(null);
+    
+    try {
+      const [templatesRes, suggestRes] = await Promise.all([
+        apiGet('/api/app/hours-templates'),
+        location.storeType ? apiGet(`/api/app/hours-templates/suggest/${location.storeType}`) : Promise.resolve(null),
+      ]);
+      
+      if (templatesRes.ok) {
+        const { data } = await templatesRes.json();
+        setTemplates(data || []);
+      } else {
+        setTemplateError('Failed to load templates');
+      }
+      
+      if (suggestRes?.ok) {
+        const { data } = await suggestRes.json();
+        if (data.suggestions?.length > 0) {
+          setSuggestedTemplateId(data.suggestions[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load templates:', err);
+      setTemplateError('Failed to load templates');
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, [field, location.storeType]);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  const handleApplyTemplate = (templateId: string) => {
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return;
+    
+    setHours(normalizeHours(template.hours));
+    setTemplateApplied(true);
+  };
 
   // Calculate expiry preview for same-day closures
   const expiryPreview = useMemo(() => {
@@ -339,7 +392,46 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
           )}
 
           {field === 'hours' && (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* Template picker */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FileText className="w-4 h-4 inline-block mr-1" />
+                  Apply Template
+                </label>
+                {loadingTemplates ? (
+                  <p className="text-sm text-gray-500">Loading templates...</p>
+                ) : templateError ? (
+                  <p className="text-sm text-red-600">{templateError}</p>
+                ) : templates.length === 0 ? (
+                  <p className="text-sm text-gray-500">No templates available</p>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <select
+                      onChange={(e) => e.target.value && handleApplyTemplate(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      defaultValue=""
+                    >
+                      <option value="">Select a template...</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                          {t.id === suggestedTemplateId ? ' (Suggested)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {templateApplied && (
+                  <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
+                    <AlertTriangle className="w-4 h-4" />
+                    Template applied, review and save
+                  </p>
+                )}
+              </div>
+
+              {/* Hours rows */}
+              <div className="space-y-3">
               {DAYS.map(day => {
                 const dayHours = hours[day] ?? { closed: true, intervals: [] };
                 const firstInterval = dayHours.intervals?.[0] ?? { open: '10:00', close: '21:00' };
@@ -375,6 +467,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                 </div>
                 );
               })}
+              </div>
             </div>
           )}
 

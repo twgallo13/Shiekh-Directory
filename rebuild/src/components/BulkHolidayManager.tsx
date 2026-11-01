@@ -205,7 +205,7 @@ export function BulkHolidayManager() {
             onClick={() => navigate('/')}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
-            Return to Directory
+            Back to Directory
           </button>
         </div>
       </div>

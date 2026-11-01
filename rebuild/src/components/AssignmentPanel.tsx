@@ -272,7 +272,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
                 onClick={() => setMode('list')}
                 className="text-sm text-blue-600 hover:underline"
               >
-                ← Back to list
+                Back to list
               </button>
               
               <FormField id="assign-role" label="Role" required>

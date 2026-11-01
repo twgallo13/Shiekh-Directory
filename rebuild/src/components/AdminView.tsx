@@ -90,10 +90,11 @@ export function AdminView() {
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-bold text-gray-900">Admin</h1>
           </div>
-          <div className="flex gap-1 mt-3 -mb-px overflow-x-auto scrollbar-hide">
-            <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users}>
-              Users
-            </TabButton>
+          <div className="relative mt-3 -mb-px">
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide" role="tablist" aria-label="Admin sections">
+              <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users}>
+                Users
+              </TabButton>
             <TabButton id="api-clients" active={activeTab === 'api-clients'} onClick={setActiveTab} icon={Key}>
               API Clients
             </TabButton>
@@ -118,6 +119,9 @@ export function AdminView() {
             <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle}>
               Data Quality
             </TabButton>
+            </div>
+            {/* Scroll hint - gradient fade on right */}
+            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white pointer-events-none sm:hidden" aria-hidden="true" />
           </div>
         </div>
       </div>

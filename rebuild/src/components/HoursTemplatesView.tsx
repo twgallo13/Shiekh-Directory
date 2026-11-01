@@ -352,7 +352,7 @@ export function HoursTemplatesView() {
               minWidth: '44px',
             }}
           >
-            ← Back
+            Back
           </button>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
             Bulk Apply: {selectedTemplate.name}
@@ -534,7 +534,7 @@ export function HoursTemplatesView() {
               minWidth: '44px',
             }}
           >
-            ← Back
+            Back
           </button>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
             {isCreating ? 'Create Template' : 'Edit Template'}

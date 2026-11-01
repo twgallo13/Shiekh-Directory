@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Printer, Download, ArrowLeft, AlertTriangle, Filter, Clock } from 'lucide-react';
+import { Printer, Download, ArrowLeft, AlertTriangle, Filter, Clock, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface ExportLocation {
@@ -153,7 +153,7 @@ export function PrintableDirectoryView() {
     districtFilter === 'all' || d.id === districtFilter
   ) || [];
 
-  const totalStores = filteredDistricts.reduce((sum, d) => sum + d.stores.length, 0);
+  const totalStores = filteredDistricts.reduce((sum, d) => sum + (d.stores?.length ?? 0), 0);
   const currentDate = new Date().toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -209,6 +209,25 @@ export function PrintableDirectoryView() {
     );
   }
 
+  if (!exportData || exportData.locationCount === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <FileSpreadsheet className="w-12 h-12 text-gray-300 mx-auto" />
+          <p className="mt-4 text-gray-900 font-medium">No locations to export</p>
+          <p className="mt-2 text-gray-600 text-sm">There are no active stores in the directory.</p>
+          <button
+            onClick={() => navigate('/')}
+            className="mt-4 flex items-center gap-2 mx-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Directory
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 print:bg-white overflow-x-hidden">
       {/* Controls - Hidden in print */}
@@ -233,7 +252,7 @@ export function PrintableDirectoryView() {
                 <option value="all">All ({exportData?.locationCount || 0})</option>
                 {exportData?.districts.map(d => (
                   <option key={d.id} value={d.id}>
-                    {d.name} ({d.stores.length})
+                    {d.name} ({d.stores?.length ?? 0})
                   </option>
                 ))}
               </select>
@@ -314,7 +333,7 @@ export function PrintableDirectoryView() {
                 {/* District Header */}
                 <div className="flex items-center justify-between border-y border-gray-300 bg-gray-100 px-1 py-0.5 print:py-px text-[9px] print:text-[8px] font-bold text-gray-900">
                   <span className="uppercase tracking-wide text-red-700">
-                    {district.name} ({district.stores.length})
+                    {district.name} ({district.stores?.length ?? 0})
                   </span>
                   <span className="text-gray-700 text-[8px] print:text-[7px] font-medium">
                     DM: {district.districtManager ? (
@@ -339,7 +358,7 @@ export function PrintableDirectoryView() {
                     </tr>
                   </thead>
                   <tbody className="font-normal">
-                    {district.stores.map((store, idx) => (
+                    {(district.stores ?? []).map((store, idx) => (
                       <tr
                         key={store.id}
                         className={`print:break-inside-avoid ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}

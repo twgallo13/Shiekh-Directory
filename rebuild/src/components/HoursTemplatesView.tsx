@@ -273,12 +273,16 @@ export function HoursTemplatesView() {
   const renderHoursSummary = (hours: StandardHours) => {
     const summaries: string[] = [];
     for (const day of DAYS) {
-      const dayHours = hours[day];
-      if (dayHours.closed) {
+      const dayHours = hours?.[day];
+      if (!dayHours) {
+        summaries.push(`${DAY_LABELS[day]}: Not set`);
+      } else if (dayHours.closed) {
         summaries.push(`${DAY_LABELS[day]}: Closed`);
-      } else if (dayHours.intervals.length > 0) {
+      } else if (dayHours.intervals && dayHours.intervals.length > 0) {
         const interval = dayHours.intervals[0];
         summaries.push(`${DAY_LABELS[day]}: ${formatTime12h(interval.open)}-${formatTime12h(interval.close)}`);
+      } else {
+        summaries.push(`${DAY_LABELS[day]}: Not set`);
       }
     }
     return summaries.join(' · ');

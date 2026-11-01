@@ -241,9 +241,10 @@ export function PrintableDirectoryView() {
               onClick={() => navigate('/')}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 min-h-[44px]"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-5 h-5" aria-hidden="true" />
               <span className="hidden sm:inline">Back to Directory</span>
             </button>
+            <h1 className="sr-only">Print and Export Directory</h1>
 
             <div className="flex items-center gap-2 text-sm text-gray-600 flex-1 min-w-0">
               <Filter className="w-4 h-4 flex-shrink-0" />
@@ -286,12 +287,12 @@ export function PrintableDirectoryView() {
 
       {/* Printable Content */}
       <div 
-        className="max-w-[1200px] mx-auto p-4 print:p-0 print:max-w-none overflow-x-auto"
+        className="max-w-[1200px] mx-auto p-4 print:p-0 print:max-w-none sm:overflow-x-auto"
         tabIndex={0}
         role="region"
-        aria-label="Printable directory content (scroll horizontally on small screens)"
+        aria-label="Printable directory content"
       >
-        <div className="bg-white rounded-lg border border-gray-200 p-6 print:border-none print:rounded-none print:shadow-none min-w-[585px]">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 print:border-none print:rounded-none print:shadow-none sm:min-w-[585px]">
           {/* Header */}
           <div className="mb-2 print:mb-1 flex items-center justify-between border-b-2 border-gray-900 pb-1">
             <div className="flex items-center gap-2">
@@ -339,8 +340,39 @@ export function PrintableDirectoryView() {
                   </span>
                 </div>
 
-                {/* Stores Table */}
-                <table className="w-full text-left text-[9px] print:text-[8px] border-collapse">
+                {/* Mobile Card View (below 640px) */}
+                <div className="sm:hidden space-y-2 py-2">
+                  {(district.stores ?? []).map((store) => (
+                    <div 
+                      key={store.id}
+                      className="bg-gray-50 rounded-lg p-3 border border-gray-200"
+                    >
+                      <div className="flex items-baseline justify-between gap-2 mb-1">
+                        <span className="font-mono font-bold text-gray-900">#{store.storeNumber}</span>
+                        <span className="text-xs font-medium text-gray-900 truncate">{store.name}</span>
+                      </div>
+                      <div className="text-xs text-gray-600 mb-1">
+                        {store.address}{store.suite ? (/^(Suite|Ste|Floor|Unit)\b/i.test(store.suite) ? `, ${store.suite}` : ` #${store.suite}`) : ''}
+                      </div>
+                      <div className="text-xs text-gray-700 mb-1">
+                        {store.city}, {store.state}
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono">{store.phoneFormatted}</span>
+                        <span className="text-gray-600">
+                          SM: {store.storeManagerStatus === 'vacant' ? (
+                            <span className="text-red-600 font-semibold">VACANT</span>
+                          ) : (
+                            store.storeManager
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop Stores Table (640px and above) */}
+                <table className="hidden sm:table w-full text-left text-[9px] print:text-[8px] border-collapse">
                   <thead>
                     <tr className="border-b border-gray-200 text-gray-500 uppercase text-[7px] print:text-[6px] tracking-wide font-semibold">
                       <th className="py-px px-0.5 w-8 print:w-6">#</th>

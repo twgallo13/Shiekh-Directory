@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { CheckCircle, AlertTriangle, Clock, Phone, Mail, X, Edit2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../lib/api';
 import type { VerificationRequest, LocationDetail } from '../types';
 
 interface StoreVerificationPanelProps {
@@ -9,7 +10,7 @@ interface StoreVerificationPanelProps {
 }
 
 export function StoreVerificationPanel({ location, onVerified }: StoreVerificationPanelProps) {
-  const { getIdToken, authUser } = useAuth();
+  const { authUser } = useAuth();
   const [pendingRequest, setPendingRequest] = useState<VerificationRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [showResponseForm, setShowResponseForm] = useState(false);
@@ -17,10 +18,7 @@ export function StoreVerificationPanel({ location, onVerified }: StoreVerificati
   const fetchPendingRequest = useCallback(async () => {
     try {
       setLoading(true);
-      const token = await getIdToken();
-      const response = await fetch('/api/app/verification/pending/for-store', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await apiFetch('/api/app/verification/pending/for-store');
       if (response.ok) {
         const { data } = await response.json();
         setPendingRequest(data);
@@ -30,7 +28,7 @@ export function StoreVerificationPanel({ location, onVerified }: StoreVerificati
     } finally {
       setLoading(false);
     }
-  }, [getIdToken]);
+  }, []);
 
   useEffect(() => {
     if (authUser?.role === 'Store') {
@@ -93,7 +91,6 @@ interface VerificationResponseFormProps {
 }
 
 function VerificationResponseForm({ request, location, onClose, onSubmitted }: VerificationResponseFormProps) {
-  const { getIdToken } = useAuth();
   const [hoursCorrect, setHoursCorrect] = useState<boolean | null>(null);
   const [proposedPhone, setProposedPhone] = useState('');
   const [proposedEmail, setProposedEmail] = useState('');
@@ -120,13 +117,9 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
     }
 
     try {
-      const token = await getIdToken();
-      const response = await fetch(`/api/app/verification/${request.id}/respond`, {
+      const response = await apiFetch(`/api/app/verification/${request.id}/respond`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           hoursConfirmed: hoursCorrect,
           proposedChanges: Object.keys(proposedChanges).length > 0 ? proposedChanges : null,

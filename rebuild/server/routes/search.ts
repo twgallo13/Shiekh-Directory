@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
-import type { SearchResult, Location, Person } from '../../src/types';
+import type { SearchResult, Location, Person, Closure, HoursException } from '../../src/types';
 import { resolveOperatingStatus } from '../../src/lib/operatingState';
 import { formatPhoneNumber, normalizePhoneForSearch } from '../utils/phone';
 
@@ -46,10 +46,10 @@ export function createSearchRouter(db: Firestore): Router {
           const closuresSnap = await db.collection(`locations/${doc.id}/closures`)
             .where('status', '==', 'active')
             .get();
-          const closures = closuresSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+          const closures = closuresSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Closure[];
           
           const exceptionsSnap = await db.collection(`locations/${doc.id}/hoursExceptions`).get();
-          const exceptions = exceptionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+          const exceptions = exceptionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as HoursException[];
           
           const statusNow = resolveOperatingStatus(location, closures, exceptions);
           

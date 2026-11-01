@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, Users, Navigation } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, MapPin, Clock, Copy, ExternalLink, AlertTriangle, User, Pencil, Users, Navigation, X, RotateCcw } from 'lucide-react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { useAuth } from '../context/AuthContext';
 import type { LocationDetail, AssignmentCapacity } from '../types';
@@ -14,6 +14,7 @@ import { AssignmentPanel } from './AssignmentPanel';
 import { StoreVerificationPanel } from './StoreVerificationPanel';
 import { CapacityBadge, VacantBadge } from './CapacityBadge';
 import { ReportProblemDialog } from './ReportProblemDialog';
+import { Dialog } from './Dialog';
 import { apiGet, apiPost } from '../lib/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
@@ -26,6 +27,9 @@ export function LocationDetailView() {
   const [editingField, setEditingField] = useState<'hours' | 'contact' | 'closure' | 'directions' | 'storeType' | null>(null);
   const [showAssignments, setShowAssignments] = useState(false);
   const [showReportProblem, setShowReportProblem] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
+  const [undoToast, setUndoToast] = useState<{ message: string; action: 'reopen' | 'renew'; closureId: string } | null>(null);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [assignments, setAssignments] = useState<{
     id: string;
     personId: string;
@@ -233,11 +237,16 @@ export function LocationDetailView() {
                   {(!location.activeClosure.type || location.activeClosure.type === 'same_day') && (
                     <button
                       onClick={async () => {
-                        const resp = await apiPost(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/renew`);
+                        const closureId = location.activeClosure!.id;
+                        const resp = await apiPost(`/api/app/edit/locations/${location.id}/closures/${closureId}/renew`);
                         if (!resp.ok) {
                           const err = await resp.json().catch(() => ({}));
                           alert(err.error?.message || 'Failed to renew closure');
+                          return;
                         }
+                        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+                        setUndoToast({ message: 'Closure renewed', action: 'renew', closureId });
+                        undoTimeoutRef.current = setTimeout(() => setUndoToast(null), 8000);
                         fetchLocation();
                       }}
                       className="text-sm bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 min-h-[44px]"
@@ -252,10 +261,7 @@ export function LocationDetailView() {
                     Needs longer closure
                   </button>
                   <button
-                    onClick={async () => {
-                      await apiPost(`/api/app/edit/locations/${location.id}/closures/${location.activeClosure!.id}/end`);
-                      fetchLocation();
-                    }}
+                    onClick={() => setConfirmReopen(true)}
                     className="text-sm bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 min-h-[44px]"
                   >
                     Reopen Store
@@ -802,6 +808,77 @@ export function LocationDetailView() {
       {copiedText && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg text-sm">
           {copiedText} copied
+        </div>
+      )}
+      
+      {/* Reopen Confirmation Dialog */}
+      <Dialog
+        isOpen={confirmReopen}
+        onClose={() => setConfirmReopen(false)}
+        title="Confirm Reopen Store"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => setConfirmReopen(false)}
+              className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (!location?.activeClosure) return;
+                const closureId = location.activeClosure.id;
+                setConfirmReopen(false);
+                await apiPost(`/api/app/edit/locations/${location.id}/closures/${closureId}/end`);
+                if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+                setUndoToast({ message: 'Store reopened', action: 'reopen', closureId });
+                undoTimeoutRef.current = setTimeout(() => setUndoToast(null), 8000);
+                fetchLocation();
+              }}
+              className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 min-h-[44px]"
+            >
+              Yes, Reopen Store
+            </button>
+          </div>
+        }
+        size="sm"
+      >
+        <p className="text-gray-600">
+          Are you sure you want to end the closure and reopen the store? This will immediately mark the store as open.
+        </p>
+      </Dialog>
+      
+      {/* Undo Toast */}
+      {undoToast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-4 z-50">
+          <span className="text-sm">{undoToast.message}</span>
+          <button
+            onClick={async () => {
+              if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+              setUndoToast(null);
+              if (undoToast.action === 'reopen' && location) {
+                await apiPost(`/api/app/edit/locations/${location.id}/closures`, {
+                  type: 'same_day',
+                  reason: 'Closure restored after undo',
+                });
+                fetchLocation();
+              }
+            }}
+            className="flex items-center gap-1 px-3 py-1 bg-white/20 rounded text-sm hover:bg-white/30 min-h-[36px]"
+          >
+            <RotateCcw className="w-4 h-4" aria-hidden="true" />
+            Undo
+          </button>
+          <button
+            onClick={() => {
+              if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+              setUndoToast(null);
+            }}
+            aria-label="Dismiss"
+            className="p-1 hover:bg-white/20 rounded min-h-[36px] min-w-[36px] flex items-center justify-center"
+          >
+            <X className="w-4 h-4" aria-hidden="true" />
+          </button>
         </div>
       )}
     </div>

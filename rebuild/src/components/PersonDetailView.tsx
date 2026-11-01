@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, User, Mail, Phone, Briefcase, MapPin, Building, AlertTriangle, Edit2, Plus, X, Trash2 } from 'lucide-react';
+import { ArrowLeft, User, Mail, Phone, Briefcase, MapPin, Building, AlertTriangle, Edit2, Plus, Trash2 } from 'lucide-react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { useAuth } from '../context/AuthContext';
 import type { PersonDetail, PersonAssignment, Region, District, LocationListItem } from '../types';
 import { canViewMobilePhones } from '../lib/permissions';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { Dialog, FormField } from './Dialog';
 
 const ROLE_LABELS: Record<string, string> = {
   SM: 'Store Manager',
@@ -565,193 +566,244 @@ export function PersonDetailView() {
       </main>
 
       {/* Edit Person Modal */}
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Edit Person</h2>
-              <button onClick={() => setShowEditModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-                <input
-                  type="text"
-                  value={editForm.fullName}
-                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Work Email</label>
-                <input
-                  type="email"
-                  value={editForm.workEmail}
-                  onChange={(e) => setEditForm({ ...editForm, workEmail: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Work Phone</label>
-                <input
-                  type="tel"
-                  value={editForm.workPhone}
-                  onChange={(e) => setEditForm({ ...editForm, workPhone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Phone</label>
-                <input
-                  type="tel"
-                  value={editForm.mobilePhone}
-                  onChange={(e) => setEditForm({ ...editForm, mobilePhone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                disabled={saving || !editForm.fullName.trim()}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EditPersonDialog
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        editForm={editForm}
+        setEditForm={setEditForm}
+        saving={saving}
+        onSave={handleSaveEdit}
+      />
 
       {/* Add Assignment Modal */}
-      {showAssignModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Add Assignment</h2>
-              <button onClick={() => setShowAssignModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="assign-scope-type" className="block text-sm font-medium text-gray-700 mb-1">Scope Type</label>
-                <select
-                  id="assign-scope-type"
-                  value={assignForm.scopeType}
-                  onChange={(e) => {
-                    const scopeType = e.target.value as 'location' | 'district' | 'region';
-                    const role = scopeType === 'region' ? 'RM' : scopeType === 'district' ? 'DM' : 'SM';
-                    setAssignForm({ ...assignForm, scopeType, scopeId: '', role });
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="location">Store</option>
-                  <option value="district">District</option>
-                  <option value="region">Region</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {assignForm.scopeType === 'location' ? 'Store' : assignForm.scopeType === 'district' ? 'District' : 'Region'}
-                </label>
-                <select
-                  value={assignForm.scopeId}
-                  onChange={(e) => setAssignForm({ ...assignForm, scopeId: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select...</option>
-                  {assignForm.scopeType === 'location' && locations.map(loc => (
-                    <option key={loc.id} value={loc.id}>#{loc.storeNumber} {loc.name}</option>
-                  ))}
-                  {assignForm.scopeType === 'district' && districts.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                  {assignForm.scopeType === 'region' && regions.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                <select
-                  value={assignForm.role}
-                  onChange={(e) => setAssignForm({ ...assignForm, role: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  {roleOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Slot</label>
-                <select
-                  value={assignForm.slot}
-                  onChange={(e) => setAssignForm({ ...assignForm, slot: e.target.value as 'primary' | 'coverage' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="primary">Primary</option>
-                  <option value="coverage">Coverage</option>
-                </select>
-              </div>
-
-              {assignForm.slot === 'coverage' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Label (optional)</label>
-                  <input
-                    type="text"
-                    value={assignForm.label}
-                    onChange={(e) => setAssignForm({ ...assignForm, label: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., Backup, Temporary"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date (optional)</label>
-                <input
-                  type="date"
-                  value={assignForm.startDate}
-                  onChange={(e) => setAssignForm({ ...assignForm, startDate: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddAssignment}
-                disabled={saving || !assignForm.scopeId}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {saving ? 'Adding...' : 'Add Assignment'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddAssignmentDialog
+        isOpen={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        assignForm={assignForm}
+        setAssignForm={setAssignForm}
+        saving={saving}
+        onSave={handleAddAssignment}
+        locations={locations}
+        districts={districts}
+        regions={regions}
+        roleOptions={roleOptions}
+      />
     </div>
+  );
+}
+
+interface EditPersonDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  editForm: EditPersonForm;
+  setEditForm: (form: EditPersonForm) => void;
+  saving: boolean;
+  onSave: () => void;
+}
+
+function EditPersonDialog({ isOpen, onClose, editForm, setEditForm, saving, onSave }: EditPersonDialogProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  
+  const dialogFooter = (
+    <div className="flex gap-3">
+      <button
+        onClick={onClose}
+        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 min-h-[44px]"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={onSave}
+        disabled={saving || !editForm.fullName.trim()}
+        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+      >
+        {saving ? 'Saving...' : 'Save'}
+      </button>
+    </div>
+  );
+  
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit Person"
+      footer={dialogFooter}
+      size="md"
+      triggerRef={triggerRef}
+    >
+      <div className="space-y-4">
+        <FormField id="edit-person-name" label="Full Name" required>
+          <input
+            id="edit-person-name"
+            type="text"
+            value={editForm.fullName}
+            onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          />
+        </FormField>
+        <FormField id="edit-person-email" label="Work Email">
+          <input
+            id="edit-person-email"
+            type="email"
+            value={editForm.workEmail}
+            onChange={(e) => setEditForm({ ...editForm, workEmail: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          />
+        </FormField>
+        <FormField id="edit-person-work-phone" label="Work Phone">
+          <input
+            id="edit-person-work-phone"
+            type="tel"
+            value={editForm.workPhone}
+            onChange={(e) => setEditForm({ ...editForm, workPhone: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          />
+        </FormField>
+        <FormField id="edit-person-mobile" label="Mobile Phone">
+          <input
+            id="edit-person-mobile"
+            type="tel"
+            value={editForm.mobilePhone}
+            onChange={(e) => setEditForm({ ...editForm, mobilePhone: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          />
+        </FormField>
+      </div>
+    </Dialog>
+  );
+}
+
+interface AddAssignmentDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  assignForm: NewAssignmentForm;
+  setAssignForm: (form: NewAssignmentForm) => void;
+  saving: boolean;
+  onSave: () => void;
+  locations: LocationListItem[];
+  districts: District[];
+  regions: Region[];
+  roleOptions: { value: string; label: string }[];
+}
+
+function AddAssignmentDialog({ isOpen, onClose, assignForm, setAssignForm, saving, onSave, locations, districts, regions, roleOptions }: AddAssignmentDialogProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  
+  const dialogFooter = (
+    <div className="flex gap-3">
+      <button
+        onClick={onClose}
+        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 min-h-[44px]"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={onSave}
+        disabled={saving || !assignForm.scopeId}
+        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+      >
+        {saving ? 'Adding...' : 'Add Assignment'}
+      </button>
+    </div>
+  );
+  
+  const scopeLabel = assignForm.scopeType === 'location' ? 'Store' : assignForm.scopeType === 'district' ? 'District' : 'Region';
+  
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Add Assignment"
+      footer={dialogFooter}
+      size="md"
+      triggerRef={triggerRef}
+    >
+      <div className="space-y-4">
+        <FormField id="assign-scope-type" label="Scope Type" required>
+          <select
+            id="assign-scope-type"
+            value={assignForm.scopeType}
+            onChange={(e) => {
+              const scopeType = e.target.value as 'location' | 'district' | 'region';
+              const role = scopeType === 'region' ? 'RM' : scopeType === 'district' ? 'DM' : 'SM';
+              setAssignForm({ ...assignForm, scopeType, scopeId: '', role });
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          >
+            <option value="location">Store</option>
+            <option value="district">District</option>
+            <option value="region">Region</option>
+          </select>
+        </FormField>
+
+        <FormField id="assign-scope-id" label={scopeLabel} required>
+          <select
+            id="assign-scope-id"
+            value={assignForm.scopeId}
+            onChange={(e) => setAssignForm({ ...assignForm, scopeId: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          >
+            <option value="">Select...</option>
+            {assignForm.scopeType === 'location' && locations.map(loc => (
+              <option key={loc.id} value={loc.id}>#{loc.storeNumber} {loc.name}</option>
+            ))}
+            {assignForm.scopeType === 'district' && districts.map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+            {assignForm.scopeType === 'region' && regions.map(r => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormField id="assign-role" label="Role" required>
+          <select
+            id="assign-role"
+            value={assignForm.role}
+            onChange={(e) => setAssignForm({ ...assignForm, role: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          >
+            {roleOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </FormField>
+
+        <FormField id="assign-slot" label="Slot" required>
+          <select
+            id="assign-slot"
+            value={assignForm.slot}
+            onChange={(e) => setAssignForm({ ...assignForm, slot: e.target.value as 'primary' | 'coverage' })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          >
+            <option value="primary">Primary</option>
+            <option value="coverage">Coverage</option>
+          </select>
+        </FormField>
+
+        {assignForm.slot === 'coverage' && (
+          <FormField id="assign-label" label="Label (optional)">
+            <input
+              id="assign-label"
+              type="text"
+              value={assignForm.label}
+              onChange={(e) => setAssignForm({ ...assignForm, label: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+              placeholder="e.g., Backup, Temporary"
+            />
+          </FormField>
+        )}
+
+        <FormField id="assign-start-date" label="Start Date (optional)">
+          <input
+            id="assign-start-date"
+            type="date"
+            value={assignForm.startDate}
+            onChange={(e) => setAssignForm({ ...assignForm, startDate: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+          />
+        </FormField>
+      </div>
+    </Dialog>
   );
 }

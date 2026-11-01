@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, Check, X, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { Correction } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { Dialog } from './Dialog';
 
 interface CorrectionsQueueProps {
   onBack: () => void;
@@ -111,12 +112,6 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
 
   const selectedCorrection = corrections.find(c => c.id === selectedId);
 
-  const formatValue = (value: unknown): string => {
-    if (value === null || value === undefined) return '(empty)';
-    if (typeof value === 'object') return JSON.stringify(value, null, 2);
-    return String(value);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-blue-700 text-white sticky top-0 z-20">
@@ -207,87 +202,111 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
       </div>
 
       {/* Detail Modal */}
-      {selectedCorrection && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                #{selectedCorrection.storeNumber} - {selectedCorrection.type} Correction
-              </h2>
-              <button onClick={() => setSelectedId(null)} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <CorrectionDetailDialog
+        correction={selectedCorrection}
+        onClose={() => setSelectedId(null)}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        processing={processing}
+      />
+    </div>
+  );
+}
 
-            <div className="p-4 space-y-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <p className="text-sm text-gray-500">Submitted by</p>
-                <p className="font-medium">{selectedCorrection.submittedByEmail}</p>
-                <p className="text-xs text-gray-600">
-                  {new Date(selectedCorrection.submittedAt).toLocaleString()}
-                </p>
-              </div>
+interface CorrectionDetailDialogProps {
+  correction: Correction | undefined;
+  onClose: () => void;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  processing: boolean;
+}
 
-              <div className="space-y-3">
-                <h3 className="font-medium text-gray-900">Proposed Changes</h3>
-                {Object.entries(selectedCorrection.proposedChanges ?? {}).map(([field, newValue]) => (
-                  <div key={field} className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="bg-gray-50 px-3 py-2 font-medium text-sm">{field}</div>
-                    <div className="grid grid-cols-2 divide-x divide-gray-200">
-                      <div className="p-3">
-                        <p className="text-xs text-gray-500 mb-1">Current</p>
-                        <pre className="text-sm text-red-700 whitespace-pre-wrap">
-                          {formatValue(selectedCorrection.currentValues?.[field])}
-                        </pre>
-                      </div>
-                      <div className="p-3">
-                        <p className="text-xs text-gray-500 mb-1">Proposed</p>
-                        <pre className="text-sm text-green-700 whitespace-pre-wrap">
-                          {formatValue(newValue)}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+function CorrectionDetailDialog({ correction, onClose, onApprove, onReject, processing }: CorrectionDetailDialogProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  
+  const formatValue = (value: unknown): string => {
+    if (value === undefined || value === null) return '(none)';
+    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    return String(value);
+  };
+  
+  if (!correction) return null;
+  
+  const dialogFooter = correction.status === 'pending' ? (
+    <div className="flex gap-3">
+      <button
+        onClick={() => onReject(correction.id)}
+        disabled={processing}
+        className="flex-1 py-2.5 border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+      >
+        <X className="w-4 h-4" aria-hidden="true" />
+        Reject
+      </button>
+      <button
+        onClick={() => onApprove(correction.id)}
+        disabled={processing}
+        className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+      >
+        <Check className="w-4 h-4" aria-hidden="true" />
+        Approve
+      </button>
+    </div>
+  ) : undefined;
+  
+  return (
+    <Dialog
+      isOpen={true}
+      onClose={onClose}
+      title={`#${correction.storeNumber} - ${correction.type} Correction`}
+      footer={dialogFooter}
+      size="lg"
+      triggerRef={triggerRef}
+    >
+      <div className="space-y-4">
+        <div className="bg-gray-50 rounded-lg p-3">
+          <p className="text-sm text-gray-500">Submitted by</p>
+          <p className="font-medium">{correction.submittedByEmail}</p>
+          <p className="text-xs text-gray-600">
+            {new Date(correction.submittedAt).toLocaleString()}
+          </p>
+        </div>
 
-              {selectedCorrection.status !== 'pending' && selectedCorrection.reviewedByEmail && (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-sm text-gray-500">Reviewed by</p>
-                  <p className="font-medium">{selectedCorrection.reviewedByEmail}</p>
-                  <p className="text-xs text-gray-600">
-                    {selectedCorrection.reviewedAt && new Date(selectedCorrection.reviewedAt).toLocaleString()}
-                  </p>
-                  {selectedCorrection.reviewNotes && (
-                    <p className="text-sm text-gray-600 mt-2">{selectedCorrection.reviewNotes}</p>
-                  )}
+        <div className="space-y-3">
+          <h3 className="font-medium text-gray-900">Proposed Changes</h3>
+          {Object.entries(correction.proposedChanges ?? {}).map(([field, newValue]) => (
+            <div key={field} className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-gray-50 px-3 py-2 font-medium text-sm">{field}</div>
+              <div className="grid grid-cols-2 divide-x divide-gray-200">
+                <div className="p-3">
+                  <p className="text-xs text-gray-500 mb-1">Current</p>
+                  <pre className="text-sm text-red-700 whitespace-pre-wrap">
+                    {formatValue(correction.currentValues?.[field])}
+                  </pre>
                 </div>
-              )}
-            </div>
-
-            {selectedCorrection.status === 'pending' && (
-              <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-3">
-                <button
-                  onClick={() => handleReject(selectedCorrection.id)}
-                  disabled={processing}
-                  className="flex-1 py-2.5 border border-red-300 text-red-700 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Reject
-                </button>
-                <button
-                  onClick={() => handleApprove(selectedCorrection.id)}
-                  disabled={processing}
-                  className="flex-1 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  Approve
-                </button>
+                <div className="p-3">
+                  <p className="text-xs text-gray-500 mb-1">Proposed</p>
+                  <pre className="text-sm text-green-700 whitespace-pre-wrap">
+                    {formatValue(newValue)}
+                  </pre>
+                </div>
               </div>
+            </div>
+          ))}
+        </div>
+
+        {correction.status !== 'pending' && correction.reviewedByEmail && (
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-sm text-gray-500">Reviewed by</p>
+            <p className="font-medium">{correction.reviewedByEmail}</p>
+            <p className="text-xs text-gray-600">
+              {correction.reviewedAt && new Date(correction.reviewedAt).toLocaleString()}
+            </p>
+            {correction.reviewNotes && (
+              <p className="text-sm text-gray-600 mt-2">{correction.reviewNotes}</p>
             )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </Dialog>
   );
 }

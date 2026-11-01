@@ -158,6 +158,82 @@ export function createLocationsRouter(db: Firestore): Router {
     }
   });
 
+  router.get('/search', async (req: Request, res: Response) => {
+    try {
+      const { q } = req.query;
+      
+      if (!q || typeof q !== 'string' || q.trim().length < 2) {
+        return res.json({ data: [] });
+      }
+      
+      const searchQuery = q.trim().toLowerCase();
+      const searchDigits = searchQuery.replace(/\D/g, '');
+      const searchWithoutHash = searchQuery.replace(/^#/, '');
+      
+      const locationsSnap = await db.collection('locations')
+        .where('lifecycle', '==', 'active')
+        .get();
+      
+      const results: Array<{
+        id: string;
+        storeNumber: string;
+        title: string;
+        city?: string;
+        state?: string;
+        statusNow?: { state: string };
+      }> = [];
+      
+      for (const doc of locationsSnap.docs) {
+        const data = doc.data() as Location;
+        
+        const storeNumber = data.storeNumber?.toLowerCase() || '';
+        const name = data.name?.toLowerCase() || '';
+        const city = data.address?.city?.toLowerCase() || '';
+        const mall = data.mallOrCenterName?.toLowerCase() || '';
+        const phone = (data.mainPhone || '').replace(/\D/g, '');
+        
+        const matches =
+          storeNumber === searchWithoutHash ||
+          storeNumber.includes(searchWithoutHash) ||
+          name.includes(searchQuery) ||
+          city.includes(searchQuery) ||
+          mall.includes(searchQuery) ||
+          (searchDigits.length >= 3 && phone.includes(searchDigits));
+        
+        if (matches) {
+          results.push({
+            id: doc.id,
+            storeNumber: data.storeNumber,
+            title: data.name,
+            city: data.address?.city,
+            state: data.address?.state,
+          });
+        }
+        
+        if (results.length >= 10) break;
+      }
+      
+      results.sort((a, b) => {
+        const aExact = a.storeNumber?.toLowerCase() === searchWithoutHash;
+        const bExact = b.storeNumber?.toLowerCase() === searchWithoutHash;
+        if (aExact && !bExact) return -1;
+        if (bExact && !aExact) return 1;
+        return (a.storeNumber || '').localeCompare(b.storeNumber || '');
+      });
+      
+      return res.json({ data: results });
+    } catch (err) {
+      console.error('Search error:', err);
+      return res.status(500).json({
+        error: {
+          code: 'internal_error',
+          message: 'Search failed',
+          requestId: res.locals.requestId,
+        },
+      });
+    }
+  });
+
   router.get('/:id', async (req: Request, res: Response) => {
     try {
       const { id } = req.params;

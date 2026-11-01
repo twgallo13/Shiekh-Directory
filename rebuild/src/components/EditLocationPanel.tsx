@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { X, Save, AlertTriangle, FileText } from 'lucide-react';
+import { Save, AlertTriangle } from 'lucide-react';
 import type { LocationDetail, StandardHours, Address, DayOfWeek, ClosureType, ClosureReasonCode, StoreTypeCode, HoursTemplate } from '../types';
 import { STORE_TYPES } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { apiPatch, apiPost, apiGet } from '../lib/api';
+import { Dialog, FormField } from './Dialog';
 
 interface EditLocationPanelProps {
   location: LocationDetail;
@@ -308,19 +309,31 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
     }));
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">
-            {field === 'hours' ? 'Edit Hours' : field === 'contact' ? 'Edit Contact Info' : field === 'directions' ? 'Edit Directions' : field === 'storeType' ? 'Edit Store Type' : 'Add Temporary Closure'}
-          </h2>
-          <button onClick={onCancel} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+  const dialogTitle = field === 'hours' ? 'Edit Hours' : field === 'contact' ? 'Edit Contact Info' : field === 'directions' ? 'Edit Directions' : field === 'storeType' ? 'Edit Store Type' : 'Add Temporary Closure';
 
-        <div className="p-4 space-y-4">
+  const footer = (
+    <div className="flex gap-3">
+      <button
+        onClick={onCancel}
+        className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
+        disabled={saving}
+      >
+        Cancel
+      </button>
+      <button
+        onClick={field === 'closure' ? handleAddClosure : handleSave}
+        disabled={saving}
+        className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+      >
+        <Save className="w-4 h-4" />
+        {saving ? 'Saving...' : field === 'closure' ? 'Add Closure' : 'Save Changes'}
+      </button>
+    </div>
+  );
+
+  return (
+    <Dialog isOpen={true} onClose={onCancel} title={dialogTitle} footer={footer}>
+      <div className="space-y-4">
           {error && (
             <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
               <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -336,66 +349,66 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
 
           {field === 'contact' && (
             <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <FormField id="edit-phone" label="Phone">
                 <input
+                  id="edit-phone"
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                   placeholder="(xxx) xxx-xxxx"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Store Email</label>
+              </FormField>
+              <FormField id="edit-email" label="Store Email">
                 <input
+                  id="edit-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                   placeholder="store@shiekh.com"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+              </FormField>
+              <FormField id="edit-street" label="Street Address">
                 <input
+                  id="edit-street"
                   type="text"
                   value={address.street}
                   onChange={(e) => setAddress({ ...address, street: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                 />
-              </div>
+              </FormField>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                <FormField id="edit-city" label="City">
                   <input
+                    id="edit-city"
                     type="text"
                     value={address.city}
                     onChange={(e) => setAddress({ ...address, city: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                </FormField>
+                <FormField id="edit-state" label="State">
                   <input
+                    id="edit-state"
                     type="text"
                     value={address.state}
                     onChange={(e) => setAddress({ ...address, state: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                     maxLength={2}
                   />
-                </div>
+                </FormField>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ZIP Code</label>
+              <FormField id="edit-zip" label="ZIP Code">
                 <input
+                  id="edit-zip"
                   type="text"
                   value={address.zip}
                   onChange={(e) => setAddress({ ...address, zip: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                   maxLength={10}
                 />
-              </div>
+              </FormField>
               {authUser && (authUser.role === 'Store' || authUser.role === 'Leader') && (
                 <p className="text-sm text-yellow-700 bg-yellow-50 px-3 py-2 rounded-lg">
                   Changes to contact information require Steward approval before going live.
@@ -408,46 +421,44 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
             <div className="space-y-4">
               {/* Template picker */}
               <div className="bg-gray-50 rounded-lg p-3">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <FileText className="w-4 h-4 inline-block mr-1" />
-                  Apply Template
-                </label>
-                {loadingTemplates ? (
-                  <p className="text-sm text-gray-500">Loading templates...</p>
-                ) : templateError ? (
-                  <p className="text-sm text-red-600">{templateError}</p>
-                ) : templates.length === 0 ? (
-                  <p className="text-sm text-gray-500">No templates available</p>
-                ) : (
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <select
-                      value={selectedTemplateId}
-                      onChange={(e) => handleTemplateChange(e.target.value)}
-                      aria-label="Select hours template"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-h-[44px]"
-                    >
-                      <option value="">Select a template...</option>
-                      {templates.map(t => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                          {t.id === suggestedTemplateId ? ' (Suggested)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={handleApplyTemplate}
-                      disabled={!selectedTemplateId || selectedTemplateId === appliedTemplateId}
-                      className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap ${
-                        selectedTemplateId === appliedTemplateId && appliedTemplateId
-                          ? 'bg-green-600 text-white'
-                          : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
-                      }`}
-                    >
-                      {selectedTemplateId === appliedTemplateId && appliedTemplateId ? 'Applied ✓' : 'Apply'}
-                    </button>
-                  </div>
-                )}
+                <FormField id="hours-template" label="Apply Template" hint="Select a template to auto-fill hours">
+                  {loadingTemplates ? (
+                    <p className="text-sm text-gray-500">Loading templates...</p>
+                  ) : templateError ? (
+                    <p className="text-sm text-red-600">{templateError}</p>
+                  ) : templates.length === 0 ? (
+                    <p className="text-sm text-gray-500">No templates available</p>
+                  ) : (
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <select
+                        id="hours-template"
+                        value={selectedTemplateId}
+                        onChange={(e) => handleTemplateChange(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                      >
+                        <option value="">Select a template...</option>
+                        {templates.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                            {t.id === suggestedTemplateId ? ' (Suggested)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleApplyTemplate}
+                        disabled={!selectedTemplateId || selectedTemplateId === appliedTemplateId}
+                        className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap min-h-[44px] ${
+                          selectedTemplateId === appliedTemplateId && appliedTemplateId
+                            ? 'bg-green-600 text-white'
+                            : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                        }`}
+                      >
+                        {selectedTemplateId === appliedTemplateId && appliedTemplateId ? 'Applied ✓' : 'Apply'}
+                      </button>
+                    </div>
+                  )}
+                </FormField>
                 {templateApplied && (
                   <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
                     <AlertTriangle className="w-4 h-4" />
@@ -457,53 +468,63 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
               </div>
 
               {/* Hours rows - mobile responsive */}
-              <div className="space-y-3">
-              {DAYS.map(day => {
-                const dayHours = hours[day] ?? { closed: true, intervals: [] };
-                const firstInterval = dayHours.intervals?.[0] ?? { open: '10:00', close: '21:00' };
-                return (
-                <div key={day} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-gray-100 last:border-b-0">
-                  <div className="flex items-center justify-between sm:justify-start gap-2 sm:w-auto">
-                    <span className="text-sm font-medium min-w-[80px]">{DAY_LABELS[day]}</span>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={dayHours.closed ?? false}
-                        onChange={(e) => updateHours(day, 'closed', e.target.checked)}
-                        className="rounded"
-                      />
-                      <span className="text-sm">Closed</span>
-                    </label>
-                  </div>
-                  {!dayHours.closed && (
-                    <div className="flex items-center gap-2 pl-0 sm:pl-0">
-                      <input
-                        type="time"
-                        value={firstInterval.open}
-                        onChange={(e) => updateHours(day, 'open', e.target.value)}
-                        className="flex-1 sm:flex-none px-2 py-1.5 border border-gray-300 rounded text-sm min-w-0"
-                      />
-                      <span className="text-sm text-gray-500">to</span>
-                      <input
-                        type="time"
-                        value={firstInterval.close}
-                        onChange={(e) => updateHours(day, 'close', e.target.value)}
-                        className="flex-1 sm:flex-none px-2 py-1.5 border border-gray-300 rounded text-sm min-w-0"
-                      />
-                    </div>
-                  )}
+              <fieldset>
+                <legend className="sr-only">Store hours by day</legend>
+                <div className="space-y-3">
+                  {DAYS.map(day => {
+                    const dayHours = hours[day] ?? { closed: true, intervals: [] };
+                    const firstInterval = dayHours.intervals?.[0] ?? { open: '10:00', close: '21:00' };
+                    const dayId = `hours-${day}`;
+                    return (
+                      <div key={day} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-gray-100 last:border-b-0">
+                        <div className="flex items-center justify-between sm:justify-start gap-2 sm:w-auto">
+                          <span id={`${dayId}-label`} className="text-sm font-medium min-w-[80px]">{DAY_LABELS[day]}</span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              id={`${dayId}-closed`}
+                              type="checkbox"
+                              checked={dayHours.closed ?? false}
+                              onChange={(e) => updateHours(day, 'closed', e.target.checked)}
+                              className="rounded min-w-[20px] min-h-[20px]"
+                              aria-labelledby={`${dayId}-label`}
+                            />
+                            <label htmlFor={`${dayId}-closed`} className="text-sm">Closed</label>
+                          </div>
+                        </div>
+                        {!dayHours.closed && (
+                          <div className="flex items-center gap-2 pl-0 sm:pl-0">
+                            <label htmlFor={`${dayId}-open`} className="sr-only">{DAY_LABELS[day]} opening time</label>
+                            <input
+                              id={`${dayId}-open`}
+                              type="time"
+                              value={firstInterval.open}
+                              onChange={(e) => updateHours(day, 'open', e.target.value)}
+                              className="flex-1 sm:flex-none px-2 py-1.5 border border-gray-300 rounded text-sm min-w-0 min-h-[44px]"
+                            />
+                            <span className="text-sm text-gray-500" aria-hidden="true">to</span>
+                            <label htmlFor={`${dayId}-close`} className="sr-only">{DAY_LABELS[day]} closing time</label>
+                            <input
+                              id={`${dayId}-close`}
+                              type="time"
+                              value={firstInterval.close}
+                              onChange={(e) => updateHours(day, 'close', e.target.value)}
+                              className="flex-1 sm:flex-none px-2 py-1.5 border border-gray-300 rounded text-sm min-w-0 min-h-[44px]"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                );
-              })}
-              </div>
+              </fieldset>
             </div>
           )}
 
           {field === 'directions' && (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">How to Find Us</label>
+              <FormField id="edit-directions" label="How to Find Us" hint={`${wayfindingDirections.length}/1000 characters`}>
                 <textarea
+                  id="edit-directions"
                   value={wayfindingDirections}
                   onChange={(e) => setWayfindingDirections(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -511,10 +532,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                   maxLength={1000}
                   placeholder="Describe how customers can find your store (e.g., 'Enter through main mall entrance, turn left past food court, store is on the right near Macy's')"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  {wayfindingDirections.length}/1000 characters
-                </p>
-              </div>
+              </FormField>
               <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
                 These directions help customers find your store and are included in verification emails.
               </p>
@@ -528,19 +546,19 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
 
           {field === 'storeType' && (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Store Type *</label>
+              <FormField id="edit-store-type" label="Store Type" required>
                 <select
+                  id="edit-store-type"
                   value={storeType}
                   onChange={(e) => setStoreType(e.target.value as StoreTypeCode | '')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                 >
                   <option value="">Select store type...</option>
                   {STORE_TYPES.map(t => (
                     <option key={t.code} value={t.code}>{t.label}</option>
                   ))}
                 </select>
-              </div>
+              </FormField>
               <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
                 This determines the default hours template suggested for this store.
               </p>
@@ -550,80 +568,80 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
           {field === 'closure' && (
             <>
               {/* Reason Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+              <FormField id="closure-reason" label="Reason" required>
                 <select
+                  id="closure-reason"
                   value={closureReasonCode}
                   onChange={(e) => setClosureReasonCode(e.target.value as ClosureReasonCode)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                 >
                   <option value="">Select a reason...</option>
                   {CLOSURE_REASONS.map(r => (
                     <option key={r.code} value={r.code}>{r.label}</option>
                   ))}
                 </select>
-              </div>
+              </FormField>
 
               {/* Custom reason text (optional override) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason text (optional)</label>
+              <FormField id="closure-reason-text" label="Reason text (optional)">
                 <input
+                  id="closure-reason-text"
                   type="text"
                   value={closureReasonText}
                   onChange={(e) => setClosureReasonText(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                   placeholder="Override default reason text if needed"
                 />
-              </div>
+              </FormField>
 
               {/* Note required for 'other' */}
               {closureReasonCode === 'other' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Details *</label>
+                <FormField id="closure-details" label="Details" required>
                   <textarea
+                    id="closure-details"
                     value={closureReasonNote}
                     onChange={(e) => setClosureReasonNote(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     rows={2}
                     placeholder="Please explain the closure reason..."
                   />
-                </div>
+                </FormField>
               )}
 
               {/* Internal note (optional for all) */}
               {closureReasonCode && closureReasonCode !== 'other' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Internal note (optional)</label>
+                <FormField id="closure-internal-note" label="Internal note (optional)">
                   <textarea
+                    id="closure-internal-note"
                     value={closureReasonNote}
                     onChange={(e) => setClosureReasonNote(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     rows={2}
                     placeholder="Additional details for staff..."
                   />
-                </div>
+                </FormField>
               )}
 
               {/* Public explanation */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Public explanation (optional)</label>
+              <FormField id="closure-public" label="Public explanation (optional)">
                 <input
+                  id="closure-public"
                   type="text"
                   value={closurePublicExplanation}
                   onChange={(e) => setClosurePublicExplanation(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                   placeholder="Safe explanation for customers"
                 />
-              </div>
+              </FormField>
 
               {/* Closure Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Duration *</label>
-                <div className="space-y-2">
+              <fieldset>
+                <legend className="block text-sm font-medium text-gray-700 mb-2">Duration <span className="text-red-500" aria-hidden="true">*</span></legend>
+                <div className="space-y-2" role="radiogroup" aria-label="Closure duration">
                   {CLOSURE_TYPES.map(t => (
                     <label
                       key={t.type}
-                      className={`flex items-start p-3 rounded-lg border-2 cursor-pointer ${
+                      className={`flex items-start p-3 rounded-lg border-2 cursor-pointer min-h-[44px] ${
                         closureType === t.type ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
                       }`}
                     >
@@ -633,7 +651,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                         value={t.type}
                         checked={closureType === t.type}
                         onChange={(e) => setClosureType(e.target.value as ClosureType)}
-                        className="mt-0.5 mr-3"
+                        className="mt-0.5 mr-3 min-w-[16px] min-h-[16px]"
                       />
                       <div>
                         <div className="font-medium text-sm">{t.label}</div>
@@ -642,7 +660,7 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
                     </label>
                   ))}
                 </div>
-              </div>
+              </fieldset>
 
               {/* Expiry Preview for same-day */}
               {closureType === 'same_day' && expiryPreview && (
@@ -665,70 +683,53 @@ export function EditLocationPanel({ location, field, onSave, onCancel }: EditLoc
 
               {/* End date for multi-day */}
               {closureType === 'multi_day' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">End date *</label>
+                <FormField id="closure-end-date" label="End date" required>
                   <input
+                    id="closure-end-date"
                     type="datetime-local"
                     value={closureEndsAt}
                     onChange={(e) => setClosureEndsAt(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                   />
-                </div>
+                </FormField>
               )}
 
               {/* Owner and review date for multi-day and unknown-end */}
               {(closureType === 'multi_day' || closureType === 'unknown_end') && (
                 <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Owner name {closureType === 'unknown_end' ? '*' : '(optional)'}
-                    </label>
+                  <FormField 
+                    id="closure-owner" 
+                    label={`Owner name ${closureType === 'unknown_end' ? '' : '(optional)'}`}
+                    required={closureType === 'unknown_end'}
+                  >
                     <input
+                      id="closure-owner"
                       type="text"
                       value={closureOwnerName}
                       onChange={(e) => setClosureOwnerName(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                       placeholder="Who is responsible for this closure?"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Next review date {closureType === 'unknown_end' ? '*' : '(optional)'}
-                    </label>
+                  </FormField>
+                  <FormField 
+                    id="closure-review-date" 
+                    label={`Next review date ${closureType === 'unknown_end' ? '' : '(optional)'}`}
+                    required={closureType === 'unknown_end'}
+                    hint="When should we check on this closure?"
+                  >
                     <input
+                      id="closure-review-date"
                       type="date"
                       value={closureNextReviewDate}
                       onChange={(e) => setClosureNextReviewDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      When should we check on this closure?
-                    </p>
-                  </div>
+                  </FormField>
                 </>
               )}
             </>
           )}
         </div>
-
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
-            disabled={saving}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={field === 'closure' ? handleAddClosure : handleSave}
-            disabled={saving}
-            className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : field === 'closure' ? 'Add Closure' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

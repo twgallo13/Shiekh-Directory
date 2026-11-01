@@ -68,6 +68,14 @@
       "collectionGroup": "corrections",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "submittedBy", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "corrections",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "submittedBy", "order": "ASCENDING" },
         { "fieldPath": "submittedAt", "order": "DESCENDING" }

@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, User, UserPlus, Mail, X, Building } from 'lucide-react';
+import { ArrowLeft, Search, User, UserPlus, Mail, Building } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { PersonListItem } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { Dialog, FormField } from './Dialog';
 
 interface CreatePersonForm {
   fullName: string;
@@ -217,77 +218,99 @@ export function PeopleListView() {
         )}
       </div>
 
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Add Person</h2>
-              <button onClick={() => setShowCreateModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-                <input
-                  type="text"
-                  value={createForm.fullName}
-                  onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="John Smith"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Work Email</label>
-                <input
-                  type="email"
-                  value={createForm.workEmail}
-                  onChange={(e) => setCreateForm({ ...createForm, workEmail: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="jsmith@shiekh.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Work Phone</label>
-                <input
-                  type="tel"
-                  value={createForm.workPhone}
-                  onChange={(e) => setCreateForm({ ...createForm, workPhone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="(555) 123-4567"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Phone</label>
-                <input
-                  type="tel"
-                  value={createForm.mobilePhone}
-                  onChange={(e) => setCreateForm({ ...createForm, mobilePhone: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="(555) 987-6543"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={creating || !createForm.fullName.trim()}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {creating ? 'Creating...' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreatePersonDialog
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        createForm={createForm}
+        setCreateForm={setCreateForm}
+        creating={creating}
+        onSubmit={handleCreate}
+      />
     </div>
+  );
+}
+
+interface CreatePersonDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  createForm: CreatePersonForm;
+  setCreateForm: (form: CreatePersonForm) => void;
+  creating: boolean;
+  onSubmit: () => void;
+}
+
+function CreatePersonDialog({ isOpen, onClose, createForm, setCreateForm, creating, onSubmit }: CreatePersonDialogProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  
+  const dialogFooter = (
+    <div className="flex gap-3">
+      <button
+        onClick={onClose}
+        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 min-h-[44px]"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={onSubmit}
+        disabled={creating || !createForm.fullName.trim()}
+        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+      >
+        {creating ? 'Creating...' : 'Create'}
+      </button>
+    </div>
+  );
+  
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Add Person"
+      footer={dialogFooter}
+      size="md"
+      triggerRef={triggerRef}
+    >
+      <div className="space-y-4">
+        <FormField id="create-person-name" label="Full Name" required>
+          <input
+            id="create-person-name"
+            type="text"
+            value={createForm.fullName}
+            onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+            placeholder="John Smith"
+          />
+        </FormField>
+        <FormField id="create-person-email" label="Work Email">
+          <input
+            id="create-person-email"
+            type="email"
+            value={createForm.workEmail}
+            onChange={(e) => setCreateForm({ ...createForm, workEmail: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+            placeholder="jsmith@shiekh.com"
+          />
+        </FormField>
+        <FormField id="create-person-work-phone" label="Work Phone">
+          <input
+            id="create-person-work-phone"
+            type="tel"
+            value={createForm.workPhone}
+            onChange={(e) => setCreateForm({ ...createForm, workPhone: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+            placeholder="(555) 123-4567"
+          />
+        </FormField>
+        <FormField id="create-person-mobile" label="Mobile Phone">
+          <input
+            id="create-person-mobile"
+            type="tel"
+            value={createForm.mobilePhone}
+            onChange={(e) => setCreateForm({ ...createForm, mobilePhone: e.target.value })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+            placeholder="(555) 987-6543"
+          />
+        </FormField>
+      </div>
+    </Dialog>
   );
 }

@@ -22,9 +22,40 @@ import { resolvePositionHolders } from '../utils/positionHolder';
 export function createLocationsRouter(db: Firestore): Router {
   const router = Router();
 
+  const VALID_STORE_TYPES = new Set([
+    'enclosed_mall', 'strip_center', 'street_standalone',
+    'corporate_office', 'warehouse_distribution', 'other_location',
+  ]);
+
+  const VALID_KINDS = new Set(['store', 'warehouse', 'office', 'facility', 'all']);
+
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const { districtId, regionId, kind, storeType } = req.query;
+      const { districtId, regionId, kind, storeType, limit } = req.query;
+      
+      // Validate storeType if provided
+      if (storeType && typeof storeType === 'string' && !VALID_STORE_TYPES.has(storeType)) {
+        return res.status(400).json({
+          error: { code: 'invalid_store_type', message: `Invalid storeType. Valid values: ${[...VALID_STORE_TYPES].join(', ')}`, requestId: res.locals.requestId },
+        });
+      }
+
+      // Validate kind if provided
+      if (kind && typeof kind === 'string' && !VALID_KINDS.has(kind)) {
+        return res.status(400).json({
+          error: { code: 'invalid_kind', message: `Invalid kind. Valid values: ${[...VALID_KINDS].join(', ')}`, requestId: res.locals.requestId },
+        });
+      }
+
+      // Validate limit if provided
+      if (limit !== undefined) {
+        const limitNum = Number(limit);
+        if (isNaN(limitNum) || limitNum < 1 || !Number.isInteger(limitNum)) {
+          return res.status(400).json({
+            error: { code: 'invalid_limit', message: 'limit must be a positive integer', requestId: res.locals.requestId },
+          });
+        }
+      }
       
       let query = db.collection('locations')
         .where('lifecycle', '==', 'active');

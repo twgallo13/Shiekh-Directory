@@ -27,6 +27,12 @@ export function createEditRouter(db: Firestore): Router {
         });
       }
 
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+        return res.status(400).json({
+          error: { code: 'invalid_changes', message: 'changes must be a non-null object', requestId: res.locals.requestId },
+        });
+      }
+
       const locationRef = db.collection('locations').doc(id);
       const locationDoc = await locationRef.get();
 

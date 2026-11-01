@@ -194,6 +194,132 @@ describe('API Client Endpoints', async () => {
     });
   });
 
+  describe('POST /api/app/api-clients/:id/pause', () => {
+    it('requires admin role', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const res = await fetch(`${API_BASE}/api/app/api-clients/test-id/pause`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer test-token-viewer',
+        },
+      });
+      assert.strictEqual(res.status, 403, 'should return 403 for non-admin');
+    });
+
+    it('pauses an active client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Pause Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      assert.strictEqual(createRes.status, 201);
+      const { client } = await createRes.json();
+
+      const pauseRes = await fetchApi(`/api/app/api-clients/${client.id}/pause`, {
+        method: 'POST',
+      });
+      assert.strictEqual(pauseRes.status, 200);
+      const body = await pauseRes.json();
+      assert.strictEqual(body.client.paused, true, 'client should be paused');
+      assert.ok(body.client.pausedAt, 'should have pausedAt timestamp');
+    });
+
+    it('cannot pause an already paused client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Pause Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      const { client } = await createRes.json();
+
+      await fetchApi(`/api/app/api-clients/${client.id}/pause`, { method: 'POST' });
+      
+      const secondPauseRes = await fetchApi(`/api/app/api-clients/${client.id}/pause`, {
+        method: 'POST',
+      });
+      assert.strictEqual(secondPauseRes.status, 409, 'should return 409 for already paused');
+    });
+
+    it('cannot pause a revoked client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Pause Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      const { client } = await createRes.json();
+
+      await fetchApi(`/api/app/api-clients/${client.id}/revoke`, { method: 'POST' });
+      
+      const pauseRes = await fetchApi(`/api/app/api-clients/${client.id}/pause`, {
+        method: 'POST',
+      });
+      assert.strictEqual(pauseRes.status, 409, 'should return 409 for revoked client');
+    });
+  });
+
+  describe('POST /api/app/api-clients/:id/resume', () => {
+    it('requires admin role', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const res = await fetch(`${API_BASE}/api/app/api-clients/test-id/resume`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer test-token-viewer',
+        },
+      });
+      assert.strictEqual(res.status, 403, 'should return 403 for non-admin');
+    });
+
+    it('resumes a paused client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Resume Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      assert.strictEqual(createRes.status, 201);
+      const { client } = await createRes.json();
+
+      await fetchApi(`/api/app/api-clients/${client.id}/pause`, { method: 'POST' });
+
+      const resumeRes = await fetchApi(`/api/app/api-clients/${client.id}/resume`, {
+        method: 'POST',
+      });
+      assert.strictEqual(resumeRes.status, 200);
+      const body = await resumeRes.json();
+      assert.strictEqual(body.client.paused, false, 'client should not be paused');
+      assert.ok(body.client.resumedAt, 'should have resumedAt timestamp');
+    });
+
+    it('cannot resume a non-paused client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Resume Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      const { client } = await createRes.json();
+      
+      const resumeRes = await fetchApi(`/api/app/api-clients/${client.id}/resume`, {
+        method: 'POST',
+      });
+      assert.strictEqual(resumeRes.status, 409, 'should return 409 for non-paused client');
+    });
+
+    it('cannot resume a revoked client', async (t) => {
+      if (!serverAvailable) { t.skip('Server not available'); return; }
+      const createRes = await fetchApi('/api/app/api-clients', {
+        method: 'POST',
+        body: JSON.stringify({ name: `Resume Test ${Date.now()}`, scopes: ['locations:read'] }),
+      });
+      const { client } = await createRes.json();
+
+      await fetchApi(`/api/app/api-clients/${client.id}/revoke`, { method: 'POST' });
+      
+      const resumeRes = await fetchApi(`/api/app/api-clients/${client.id}/resume`, {
+        method: 'POST',
+      });
+      assert.strictEqual(resumeRes.status, 409, 'should return 409 for revoked client');
+    });
+  });
+
   describe('DELETE /api/app/api-clients/:id', () => {
     it('cannot delete active client', async (t) => {
       if (!serverAvailable) { t.skip('Server not available'); return; }

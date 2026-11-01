@@ -22,6 +22,11 @@ interface ApiClient {
   name: string;
   scopes: string[];
   active: boolean;
+  paused?: boolean;
+  pausedAt?: string;
+  pausedBy?: string;
+  resumedAt?: string;
+  resumedBy?: string;
   version: number;
   createdAt: string;
   lastUsedAt?: string;
@@ -633,6 +638,40 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
     }
   };
 
+  const handlePause = async (clientId: string) => {
+    if (!confirm('Pause this API client? It can be resumed later without regenerating the token.')) return;
+    
+    try {
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/api-clients/${clientId}/pause`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (res.ok) {
+        loadClients();
+      }
+    } catch (error) {
+      console.error('Pause error:', error);
+    }
+  };
+
+  const handleResume = async (clientId: string) => {
+    try {
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/api-clients/${clientId}/resume`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (res.ok) {
+        loadClients();
+      }
+    } catch (error) {
+      console.error('Resume error:', error);
+    }
+  };
+
   const handleCreated = (clientId: string, token: string) => {
     setNewToken({ clientId, token });
     setShowAddModal(false);
@@ -729,23 +768,20 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      client.active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      !client.active 
+                        ? 'bg-red-100 text-red-700'
+                        : client.paused 
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-green-100 text-green-700'
                     }`}>
-                      {client.active ? 'Active' : 'Revoked'}
+                      {!client.active ? 'Revoked' : client.paused ? 'Paused' : 'Active'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-xs">
                     {client.lastUsedAt ? new Date(client.lastUsedAt).toLocaleDateString() : 'Never'}
                   </td>
                   <td className="px-4 py-3">
-                    {client.active ? (
-                      <button
-                        onClick={() => handleRevoke(client.id)}
-                        className="text-red-600 hover:text-red-800 text-sm"
-                      >
-                        Revoke
-                      </button>
-                    ) : (
+                    {!client.active ? (
                       <button
                         onClick={() => handleDelete(client.id)}
                         className="flex items-center gap-1 text-gray-500 hover:text-red-600 text-sm"
@@ -753,6 +789,38 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                         <Trash2 className="w-3.5 h-3.5" />
                         Delete
                       </button>
+                    ) : client.paused ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleResume(client.id)}
+                          className="text-green-600 hover:text-green-800 text-sm"
+                        >
+                          Resume
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <button
+                          onClick={() => handleRevoke(client.id)}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handlePause(client.id)}
+                          className="text-yellow-600 hover:text-yellow-800 text-sm"
+                        >
+                          Pause
+                        </button>
+                        <span className="text-gray-300">|</span>
+                        <button
+                          onClick={() => handleRevoke(client.id)}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                        >
+                          Revoke
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -833,10 +901,6 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
         <ComingSoonPlaceholder
           title="Edit Client Permissions"
           description="Modify scopes and access settings for existing API clients."
-        />
-        <ComingSoonPlaceholder
-          title="Pause / Resume Clients"
-          description="Temporarily disable an API client without revoking its token."
         />
         <ComingSoonPlaceholder
           title="API Documentation"

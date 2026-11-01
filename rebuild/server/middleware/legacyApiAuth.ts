@@ -28,6 +28,12 @@ export interface ApiClientDocument {
   lastUsedAt?: string;
   // Rate limiting: requests per minute (default: 60, 0 = unlimited)
   rateLimit?: number;
+  // Pause: temporarily disable without revoking (token preserved)
+  paused?: boolean;
+  pausedAt?: string;
+  pausedBy?: string;
+  resumedAt?: string;
+  resumedBy?: string;
 }
 
 const DEFAULT_RATE_LIMIT = 60; // requests per minute
@@ -162,6 +168,10 @@ export function createLegacyApiAuthMiddleware(db: Firestore): Router {
 
       if (!client.active) {
         return sendLegacyError(res, 401, 'invalid_token', 'A valid Bearer token is required.');
+      }
+
+      if (client.paused) {
+        return sendLegacyError(res, 403, 'client_paused', 'This API client is temporarily paused. Contact an administrator to resume it.');
       }
 
       const now = new Date();

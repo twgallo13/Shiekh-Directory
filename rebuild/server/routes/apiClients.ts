@@ -44,6 +44,11 @@ export function createApiClientsRouter(db: Firestore): Router {
           name: data.name,
           scopes: data.scopes,
           active: data.active,
+          paused: data.paused || false,
+          pausedAt: data.pausedAt,
+          pausedBy: data.pausedBy,
+          resumedAt: data.resumedAt,
+          resumedBy: data.resumedBy,
           version: data.version,
           createdAt: data.createdAt,
           lastUsedAt: data.lastUsedAt,
@@ -206,6 +211,176 @@ export function createApiClientsRouter(db: Firestore): Router {
         error: {
           code: 'internal_error',
           message: 'Failed to update rate limit',
+          requestId: res.locals.requestId || 'unknown',
+        },
+      });
+    }
+  });
+
+  router.post('/:id/pause', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const docRef = db.collection('apiClients').doc(id);
+      const doc = await docRef.get();
+
+      if (!doc.exists) {
+        return res.status(404).json({
+          error: {
+            code: 'not_found',
+            message: 'API client not found',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      const data = doc.data() as Omit<ApiClientDocument, 'id'>;
+      if (!data.active) {
+        return res.status(409).json({
+          error: {
+            code: 'conflict',
+            message: 'Cannot pause a revoked API client',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      if (data.paused) {
+        return res.status(409).json({
+          error: {
+            code: 'conflict',
+            message: 'API client is already paused',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      const now = new Date().toISOString();
+      const authUser = res.locals.authUser as AuthUser;
+      
+      await docRef.update({
+        paused: true,
+        pausedAt: now,
+        pausedBy: authUser.uid,
+      });
+
+      await db.collection('audit').add({
+        timestamp: now,
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'api-client',
+        entityId: id,
+        entityName: data.name,
+        changes: [{ field: 'paused', oldValue: false, newValue: true }],
+      });
+
+      res.json({
+        client: {
+          id,
+          name: data.name,
+          scopes: data.scopes,
+          active: data.active,
+          paused: true,
+          pausedAt: now,
+          pausedBy: authUser.email,
+          version: data.version,
+          createdAt: data.createdAt,
+          lastUsedAt: data.lastUsedAt,
+          rateLimit: data.rateLimit,
+        },
+      });
+    } catch (error) {
+      console.error('Error pausing API client:', error);
+      res.status(500).json({
+        error: {
+          code: 'internal_error',
+          message: 'Failed to pause API client',
+          requestId: res.locals.requestId || 'unknown',
+        },
+      });
+    }
+  });
+
+  router.post('/:id/resume', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const docRef = db.collection('apiClients').doc(id);
+      const doc = await docRef.get();
+
+      if (!doc.exists) {
+        return res.status(404).json({
+          error: {
+            code: 'not_found',
+            message: 'API client not found',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      const data = doc.data() as Omit<ApiClientDocument, 'id'>;
+      if (!data.active) {
+        return res.status(409).json({
+          error: {
+            code: 'conflict',
+            message: 'Cannot resume a revoked API client',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      if (!data.paused) {
+        return res.status(409).json({
+          error: {
+            code: 'conflict',
+            message: 'API client is not paused',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+
+      const now = new Date().toISOString();
+      const authUser = res.locals.authUser as AuthUser;
+      
+      await docRef.update({
+        paused: false,
+        resumedAt: now,
+        resumedBy: authUser.uid,
+      });
+
+      await db.collection('audit').add({
+        timestamp: now,
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'api-client',
+        entityId: id,
+        entityName: data.name,
+        changes: [{ field: 'paused', oldValue: true, newValue: false }],
+      });
+
+      res.json({
+        client: {
+          id,
+          name: data.name,
+          scopes: data.scopes,
+          active: data.active,
+          paused: false,
+          resumedAt: now,
+          resumedBy: authUser.email,
+          version: data.version,
+          createdAt: data.createdAt,
+          lastUsedAt: data.lastUsedAt,
+          rateLimit: data.rateLimit,
+        },
+      });
+    } catch (error) {
+      console.error('Error resuming API client:', error);
+      res.status(500).json({
+        error: {
+          code: 'internal_error',
+          message: 'Failed to resume API client',
           requestId: res.locals.requestId || 'unknown',
         },
       });

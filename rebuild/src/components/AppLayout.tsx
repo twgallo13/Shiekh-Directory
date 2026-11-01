@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canApproveCorrections } from '../lib/permissions';
+import { OfflineBanner } from './OfflineBanner';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -71,6 +72,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      <OfflineBanner />
       <header className="bg-blue-700 text-white sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-14">

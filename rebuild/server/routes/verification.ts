@@ -366,7 +366,7 @@ export function createVerificationRouter(db: Firestore): Router {
   });
 
   // GET /campaigns must be declared BEFORE /:id to avoid being matched as an id
-  router.get('/campaigns', async (_req: Request, res: Response) => {
+  router.get('/campaigns', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
       
@@ -376,14 +376,20 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
+      const includeArchived = req.query.includeArchived === 'true';
+
       const campaignsSnap = await db.collection('verificationCampaigns')
         .orderBy('createdAt', 'desc')
-        .limit(50)
+        .limit(100)
         .get();
 
-      const campaigns = campaignsSnap.docs.map(doc => doc.data());
+      let campaigns = campaignsSnap.docs.map(doc => doc.data());
+      
+      if (!includeArchived) {
+        campaigns = campaigns.filter(c => c.status !== 'archived');
+      }
 
-      res.json({ campaigns });
+      res.json({ campaigns: campaigns.slice(0, 50) });
     } catch (error) {
       console.error('List campaigns error:', error);
       res.status(500).json({

@@ -84,7 +84,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             {/* Logo */}
             <button
               onClick={() => handleNavigation('/')}
-              className="flex items-center hover:opacity-90 transition-opacity"
+              className="flex items-center hover:opacity-90 transition-opacity min-h-[44px] min-w-[44px]"
               aria-label="Go to directory"
             >
               <img

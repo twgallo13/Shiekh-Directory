@@ -389,9 +389,9 @@ export function LocationDetailView() {
               href={location.mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-blue-600 text-sm hover:underline"
+              className="inline-flex items-center gap-1 text-blue-600 text-sm hover:underline min-h-[44px] py-2"
             >
-              Open in Maps <ExternalLink className="w-3.5 h-3.5" />
+              Open in Maps <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
             </a>
           </div>
         </div>

@@ -115,6 +115,7 @@ export function PersonDetailView() {
   const [person, setPerson] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [scopeError, setScopeError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [editForm, setEditForm] = useState<EditPersonForm>({ fullName: '', workEmail: '', workPhone: '', mobilePhone: '', version: 1 });
@@ -189,7 +190,7 @@ export function PersonDetailView() {
       }
     } catch (err) {
       console.error('Failed to load scopes:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load scopes');
+      setScopeError(err instanceof Error ? err.message : 'Failed to load scopes');
     }
   }, [getIdToken]);
   
@@ -412,6 +413,19 @@ export function PersonDetailView() {
           <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
             <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {scopeError && (
+          <div className="bg-yellow-50 text-yellow-700 px-4 py-3 rounded-lg flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <span>Could not load assignment options: {scopeError}</span>
+            <button 
+              onClick={() => { setScopeError(null); fetchScopes(); }}
+              className="ml-auto text-yellow-800 font-medium hover:underline"
+            >
+              Retry
+            </button>
           </div>
         )}
 

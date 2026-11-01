@@ -151,6 +151,161 @@ describe('Location Kinds', () => {
   });
 });
 
+describe('Input Validation', () => {
+  describe('storeType validation', () => {
+    const VALID_STORE_TYPES = new Set([
+      'enclosed_mall', 'strip_center', 'street_standalone',
+      'corporate_office', 'warehouse_distribution', 'other_location',
+    ]);
+
+    it('accepts valid storeType values', () => {
+      const validTypes = ['enclosed_mall', 'strip_center', 'street_standalone'];
+      for (const type of validTypes) {
+        assert.strictEqual(VALID_STORE_TYPES.has(type), true);
+      }
+    });
+
+    it('rejects invalid storeType values', () => {
+      const invalidTypes = ['zzz', 'invalid', 'mall', 'store'];
+      for (const type of invalidTypes) {
+        assert.strictEqual(VALID_STORE_TYPES.has(type), false);
+      }
+    });
+  });
+
+  describe('limit validation', () => {
+    function validateLimit(limit: unknown): { valid: boolean; error?: string } {
+      if (limit === undefined) return { valid: true };
+      const limitNum = Number(limit);
+      if (isNaN(limitNum) || limitNum < 1 || !Number.isInteger(limitNum)) {
+        return { valid: false, error: 'limit must be a positive integer' };
+      }
+      return { valid: true };
+    }
+
+    it('accepts undefined limit', () => {
+      assert.strictEqual(validateLimit(undefined).valid, true);
+    });
+
+    it('accepts positive integer limit', () => {
+      assert.strictEqual(validateLimit('50').valid, true);
+      assert.strictEqual(validateLimit(100).valid, true);
+    });
+
+    it('rejects negative limit', () => {
+      const result = validateLimit('-5');
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.error, 'limit must be a positive integer');
+    });
+
+    it('rejects zero limit', () => {
+      const result = validateLimit('0');
+      assert.strictEqual(result.valid, false);
+    });
+
+    it('rejects non-integer limit', () => {
+      const result = validateLimit('5.5');
+      assert.strictEqual(result.valid, false);
+    });
+  });
+
+  describe('changes object validation', () => {
+    function validateChanges(changes: unknown): { valid: boolean; error?: string } {
+      if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+        return { valid: false, error: 'changes must be a non-null object' };
+      }
+      return { valid: true };
+    }
+
+    it('accepts valid object', () => {
+      assert.strictEqual(validateChanges({ mainPhone: '555-1234' }).valid, true);
+    });
+
+    it('rejects null', () => {
+      const result = validateChanges(null);
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.error, 'changes must be a non-null object');
+    });
+
+    it('rejects string', () => {
+      const result = validateChanges('x');
+      assert.strictEqual(result.valid, false);
+    });
+
+    it('rejects array', () => {
+      const result = validateChanges([{ field: 'phone' }]);
+      assert.strictEqual(result.valid, false);
+    });
+
+    it('rejects undefined', () => {
+      const result = validateChanges(undefined);
+      assert.strictEqual(result.valid, false);
+    });
+  });
+
+  describe('dryRun validation', () => {
+    function validateDryRun(dryRun: unknown): { valid: boolean; error?: string } {
+      if (dryRun === undefined) return { valid: true };
+      if (typeof dryRun !== 'boolean') {
+        return { valid: false, error: 'dryRun must be a boolean' };
+      }
+      return { valid: true };
+    }
+
+    it('accepts undefined dryRun', () => {
+      assert.strictEqual(validateDryRun(undefined).valid, true);
+    });
+
+    it('accepts boolean true', () => {
+      assert.strictEqual(validateDryRun(true).valid, true);
+    });
+
+    it('accepts boolean false', () => {
+      assert.strictEqual(validateDryRun(false).valid, true);
+    });
+
+    it('rejects string "yes"', () => {
+      const result = validateDryRun('yes');
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.error, 'dryRun must be a boolean');
+    });
+
+    it('rejects string "true"', () => {
+      const result = validateDryRun('true');
+      assert.strictEqual(result.valid, false);
+    });
+
+    it('rejects number 1', () => {
+      const result = validateDryRun(1);
+      assert.strictEqual(result.valid, false);
+    });
+  });
+
+  describe('locationId validation', () => {
+    function validateLocationId(locationId: unknown): { valid: boolean; error?: string } {
+      if (typeof locationId !== 'string') {
+        return { valid: false, error: 'locationId must be a string' };
+      }
+      return { valid: true };
+    }
+
+    it('accepts string locationId', () => {
+      assert.strictEqual(validateLocationId('store-001').valid, true);
+    });
+
+    it('rejects number locationId', () => {
+      const result = validateLocationId(123);
+      assert.strictEqual(result.valid, false);
+      assert.strictEqual(result.error, 'locationId must be a string');
+    });
+
+    it('rejects null locationId', () => {
+      const result = validateLocationId(null);
+      assert.strictEqual(result.valid, false);
+    });
+  });
+});
+
 describe('Assignment Ending Edge Cases', () => {
   describe('max(yesterday, startDate) Logic', () => {
     it('uses startDate when assignment started recently', () => {

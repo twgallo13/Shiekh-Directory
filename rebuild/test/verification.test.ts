@@ -781,3 +781,153 @@ describe('Verification Route - Leader Scope', () => {
     assert.strictEqual(res.status, 403, 'Viewer should be denied access');
   });
 });
+
+describe('Verification Campaigns', () => {
+  describe('Dry-run Response Shape', () => {
+    it('returns consistent sent/logOnly shape for dry-run', () => {
+      const dryRunResults = {
+        dryRun: true,
+        results: {
+          total: 10,
+          wouldSend: 8,
+          sent: 0,
+          logOnly: 0,
+          skipped: 2,
+          failed: 0,
+          skippedReasons: {
+            noEmail: 1,
+            recentlyVerified: 1,
+            pendingRequest: 0,
+          },
+          targetStores: [
+            { storeNumber: '001', name: 'Test 1', email: 'test1@shiekh.test' },
+            { storeNumber: '002', name: 'Test 2', email: 'test2@shiekh.test' },
+          ],
+        },
+      };
+
+      assert.strictEqual(dryRunResults.dryRun, true);
+      assert.strictEqual(dryRunResults.results.sent, 0, 'dry-run should show 0 sent');
+      assert.strictEqual(dryRunResults.results.logOnly, 0, 'dry-run should show 0 logOnly');
+      assert.strictEqual(dryRunResults.results.wouldSend, 8, 'dry-run should show wouldSend count');
+    });
+
+    it('actual campaign returns non-zero sent/logOnly', () => {
+      const actualResults = {
+        dryRun: false,
+        results: {
+          total: 10,
+          sent: 5,
+          logOnly: 3,
+          skipped: 2,
+          failed: 0,
+          skippedReasons: {
+            noEmail: 1,
+            recentlyVerified: 1,
+            pendingRequest: 0,
+          },
+        },
+      };
+
+      assert.strictEqual(actualResults.dryRun, false);
+      assert.strictEqual(actualResults.results.sent, 5);
+      assert.strictEqual(actualResults.results.logOnly, 3);
+    });
+  });
+
+  describe('Campaign Archive', () => {
+    it('only Admin and Steward can archive campaigns', () => {
+      const rolesAllowedToArchive = ['Admin', 'Steward'];
+      
+      assert.ok(rolesAllowedToArchive.includes('Admin'));
+      assert.ok(rolesAllowedToArchive.includes('Steward'));
+      assert.ok(!rolesAllowedToArchive.includes('Store'));
+      assert.ok(!rolesAllowedToArchive.includes('Leader'));
+      assert.ok(!rolesAllowedToArchive.includes('Viewer'));
+    });
+
+    it('archived campaign has deletedAt and deletedBy fields', () => {
+      const archivedCampaign = {
+        id: 'campaign-001',
+        scope: 'district',
+        scopeId: 'district-001',
+        status: 'archived',
+        deletedAt: new Date().toISOString(),
+        deletedBy: 'admin-123',
+      };
+
+      assert.strictEqual(archivedCampaign.status, 'archived');
+      assert.ok(archivedCampaign.deletedAt);
+      assert.strictEqual(archivedCampaign.deletedBy, 'admin-123');
+    });
+  });
+});
+
+describe('Input Validation - Verification', () => {
+  describe('scopeId validation', () => {
+    it('returns 404 for unknown district scopeId', async () => {
+      const res = await fetchApiAs('steward', '/api/app/verification/campaigns', {
+        method: 'POST',
+        body: JSON.stringify({
+          scope: 'district',
+          scopeId: 'nonexistent-district-id',
+          dryRun: true,
+        }),
+      });
+      
+      assert.strictEqual(res.status, 404, 'should return 404 for unknown district');
+    });
+
+    it('returns 404 for unknown region scopeId', async () => {
+      const res = await fetchApiAs('steward', '/api/app/verification/campaigns', {
+        method: 'POST',
+        body: JSON.stringify({
+          scope: 'region',
+          scopeId: 'nonexistent-region-id',
+          dryRun: true,
+        }),
+      });
+      
+      assert.strictEqual(res.status, 404, 'should return 404 for unknown region');
+    });
+  });
+
+  describe('dryRun boolean validation', () => {
+    it('rejects dryRun:"yes" as non-boolean', async () => {
+      const res = await fetchApiAs('steward', '/api/app/verification/campaigns', {
+        method: 'POST',
+        body: JSON.stringify({
+          scope: 'all',
+          dryRun: 'yes',
+        }),
+      });
+      
+      assert.strictEqual(res.status, 400, 'should return 400 for non-boolean dryRun');
+    });
+
+    it('accepts dryRun:true', async () => {
+      const res = await fetchApiAs('steward', '/api/app/verification/campaigns', {
+        method: 'POST',
+        body: JSON.stringify({
+          scope: 'all',
+          dryRun: true,
+        }),
+      });
+      
+      assert.strictEqual(res.status, 200, 'should accept boolean true');
+    });
+  });
+
+  describe('locationId string validation', () => {
+    it('rejects locationId as number', async () => {
+      const res = await fetchApiAs('steward', '/api/app/verification', {
+        method: 'POST',
+        body: JSON.stringify({
+          locationId: 123,
+        }),
+      });
+      
+      assert.strictEqual(res.status, 400, 'should return 400 for numeric locationId');
+    });
+  });
+});

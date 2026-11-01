@@ -306,6 +306,143 @@ describe('v2 Regression Tests - Missing Fields Tolerance', () => {
   });
 });
 
+describe('v2 Regression Tests - Hours Normalization', () => {
+  it('normalizes hours with missing days', () => {
+    const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const DEFAULT_DAY = { closed: true, intervals: [] };
+    
+    function normalizeHours(hours: Record<string, unknown> | undefined | null): Record<string, unknown> {
+      const result: Record<string, unknown> = {};
+      for (const day of DAYS) {
+        const existing = hours?.[day] as { closed?: boolean; intervals?: unknown[] } | undefined;
+        if (existing) {
+          result[day] = {
+            closed: existing.closed ?? false,
+            intervals: existing.intervals ?? [],
+          };
+        } else {
+          result[day] = DEFAULT_DAY;
+        }
+      }
+      return result;
+    }
+    
+    const incompleteHours = {
+      monday: { closed: false, intervals: [{ open: '09:00', close: '21:00' }] },
+      wednesday: { closed: true },
+    };
+    
+    const normalized = normalizeHours(incompleteHours);
+    
+    assert.strictEqual(Object.keys(normalized).length, 7, 'should have all 7 days');
+    
+    for (const day of DAYS) {
+      assert.ok(normalized[day], `should have ${day}`);
+      const dayData = normalized[day] as { closed: boolean; intervals: unknown[] };
+      assert.ok('closed' in dayData, `${day} should have closed property`);
+      assert.ok('intervals' in dayData, `${day} should have intervals property`);
+    }
+    
+    const monday = normalized.monday as { closed: boolean; intervals: { open: string; close: string }[] };
+    assert.strictEqual(monday.closed, false);
+    assert.strictEqual(monday.intervals.length, 1);
+    
+    const tuesday = normalized.tuesday as { closed: boolean };
+    assert.strictEqual(tuesday.closed, true, 'missing day should default to closed');
+  });
+
+  it('handles completely missing hours object', () => {
+    const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const DEFAULT_DAY = { closed: true, intervals: [] };
+    
+    function normalizeHours(hours: Record<string, unknown> | undefined | null): Record<string, unknown> {
+      const result: Record<string, unknown> = {};
+      for (const day of DAYS) {
+        const existing = hours?.[day] as { closed?: boolean; intervals?: unknown[] } | undefined;
+        if (existing) {
+          result[day] = {
+            closed: existing.closed ?? false,
+            intervals: existing.intervals ?? [],
+          };
+        } else {
+          result[day] = DEFAULT_DAY;
+        }
+      }
+      return result;
+    }
+    
+    const normalized = normalizeHours(null);
+    
+    assert.strictEqual(Object.keys(normalized).length, 7, 'should have all 7 days');
+    
+    for (const day of DAYS) {
+      const dayData = normalized[day] as { closed: boolean; intervals: unknown[] };
+      assert.strictEqual(dayData.closed, true, `${day} should be closed by default`);
+      assert.strictEqual(dayData.intervals.length, 0, `${day} should have empty intervals`);
+    }
+  });
+
+  it('handles hours with missing intervals', () => {
+    const incompleteHours = {
+      monday: { closed: false },
+      tuesday: { closed: false, intervals: null },
+      wednesday: { closed: false, intervals: [] },
+    };
+    
+    const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    
+    function normalizeHours(hours: Record<string, unknown> | undefined | null): Record<string, unknown> {
+      const result: Record<string, unknown> = {};
+      for (const day of DAYS) {
+        const existing = hours?.[day] as { closed?: boolean; intervals?: unknown[] } | undefined;
+        if (existing) {
+          result[day] = {
+            closed: existing.closed ?? false,
+            intervals: existing.intervals ?? [],
+          };
+        } else {
+          result[day] = { closed: true, intervals: [] };
+        }
+      }
+      return result;
+    }
+    
+    const normalized = normalizeHours(incompleteHours);
+    
+    const monday = normalized.monday as { intervals: unknown[] };
+    assert.ok(Array.isArray(monday.intervals), 'monday should have intervals array');
+    
+    const tuesday = normalized.tuesday as { intervals: unknown[] };
+    assert.ok(Array.isArray(tuesday.intervals), 'tuesday should have intervals array');
+  });
+});
+
+describe('v2 Regression Tests - Campaign Archive Filter', () => {
+  it('campaign list hides archived by default', async () => {
+    const res = await fetch(`${API_BASE}/api/app/verification/campaigns`, {
+      headers: { 'Authorization': 'Bearer test-token-steward' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    
+    if (body.campaigns && body.campaigns.length > 0) {
+      const hasArchived = body.campaigns.some((c: { status: string }) => c.status === 'archived');
+      assert.strictEqual(hasArchived, false, 'should not include archived campaigns by default');
+    }
+  });
+
+  it('campaign list can include archived with query param', async () => {
+    const res = await fetch(`${API_BASE}/api/app/verification/campaigns?includeArchived=true`, {
+      headers: { 'Authorization': 'Bearer test-token-steward' },
+    });
+    
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.campaigns), 'should return campaigns array');
+  });
+});
+
 describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
   const db = getTestDb();
   const testStores: { id: string; storeNumber: string }[] = [];

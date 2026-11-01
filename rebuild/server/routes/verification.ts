@@ -465,6 +465,9 @@ export function createVerificationRouter(db: Firestore): Router {
         version: (request.version || 0) + 1,
       });
 
+      const isSelfApproval = authUser.email === request.sentTo || 
+        (authUser.role === 'Store' && authUser.storeLocationId === request.locationId);
+
       if (!hasProposedChanges && hoursConfirmed) {
         await db.collection('locations').doc(request.locationId).update({
           lastVerifiedAt: now.toISOString(),
@@ -480,11 +483,14 @@ export function createVerificationRouter(db: Firestore): Router {
           action: 'respond',
           entityType: 'verification',
           entityId: id,
-          entityName: `${request.storeNumber} verified`,
+          entityName: `${request.storeNumber} verified${isSelfApproval ? ' (self-approval)' : ''}`,
           locationId: request.locationId,
           changes: [
             { field: 'hoursConfirmed', newValue: true },
             { field: 'lastVerifiedAt', newValue: now.toISOString() },
+            { field: 'selfApproval', newValue: isSelfApproval },
+            { field: 'approver', newValue: authUser.email },
+            { field: 'requester', newValue: request.sentTo },
           ],
         });
       } else if (hasProposedChanges) {
@@ -495,10 +501,13 @@ export function createVerificationRouter(db: Firestore): Router {
           action: 'respond',
           entityType: 'verification',
           entityId: id,
-          entityName: `${request.storeNumber} verification response`,
+          entityName: `${request.storeNumber} verification response${isSelfApproval ? ' (self)' : ''}`,
           locationId: request.locationId,
           changes: [
             { field: 'proposedChanges', newValue: 'submitted' },
+            { field: 'selfApproval', newValue: isSelfApproval },
+            { field: 'approver', newValue: authUser.email },
+            { field: 'requester', newValue: request.sentTo },
           ],
         });
       }

@@ -140,11 +140,13 @@ export function MyRequestsView() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
+          aria-label="Filter by status"
           style={{
             padding: '0.5rem',
             borderRadius: '0.375rem',
             border: '1px solid #d1d5db',
             fontSize: '0.875rem',
+            minHeight: '44px',
           }}
         >
           <option value="all">All ({requests.length})</option>

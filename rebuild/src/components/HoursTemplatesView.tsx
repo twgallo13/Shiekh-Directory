@@ -379,10 +379,11 @@ export function HoursTemplatesView() {
           marginBottom: '1.5rem',
         }}>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
+            <label htmlFor="bulk-district" style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
               District
             </label>
             <select
+              id="bulk-district"
               value={bulkFilters.districtId || ''}
               onChange={(e) => setBulkFilters({ ...bulkFilters, districtId: e.target.value || undefined })}
               style={{
@@ -390,6 +391,7 @@ export function HoursTemplatesView() {
                 padding: '0.5rem',
                 borderRadius: '0.375rem',
                 border: '1px solid #d1d5db',
+                minHeight: '44px',
               }}
             >
               <option value="">All Districts</option>
@@ -399,10 +401,11 @@ export function HoursTemplatesView() {
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
+            <label htmlFor="bulk-region" style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
               Region
             </label>
             <select
+              id="bulk-region"
               value={bulkFilters.regionId || ''}
               onChange={(e) => setBulkFilters({ ...bulkFilters, regionId: e.target.value || undefined })}
               style={{
@@ -410,6 +413,7 @@ export function HoursTemplatesView() {
                 padding: '0.5rem',
                 borderRadius: '0.375rem',
                 border: '1px solid #d1d5db',
+                minHeight: '44px',
               }}
             >
               <option value="">All Regions</option>
@@ -419,10 +423,11 @@ export function HoursTemplatesView() {
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
+            <label htmlFor="bulk-type" style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.875rem', fontWeight: 500 }}>
               Type
             </label>
             <select
+              id="bulk-type"
               value={bulkFilters.kind || ''}
               onChange={(e) => setBulkFilters({ ...bulkFilters, kind: (e.target.value || undefined) as LocationKind })}
               style={{
@@ -430,6 +435,7 @@ export function HoursTemplatesView() {
                 padding: '0.5rem',
                 borderRadius: '0.375rem',
                 border: '1px solid #d1d5db',
+                minHeight: '44px',
               }}
             >
               <option value="">All Types</option>

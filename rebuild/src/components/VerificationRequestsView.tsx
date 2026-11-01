@@ -245,7 +245,7 @@ export function VerificationRequestsView() {
                     <p className="text-sm text-gray-500 mt-1">
                       Sent to {request.sentTo}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-gray-600 mt-0.5">
                       Sent {new Date(request.sentAt).toLocaleDateString()}
                       {request.respondedAt && ` • Responded ${new Date(request.respondedAt).toLocaleDateString()}`}
                     </p>
@@ -255,7 +255,7 @@ export function VerificationRequestsView() {
                       </p>
                     )}
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                  <ChevronRight className="w-5 h-5 text-gray-600" />
                 </div>
               </div>
             ))}
@@ -292,7 +292,7 @@ export function VerificationRequestsView() {
                   <span className="text-gray-500">Sent to:</span>{' '}
                   <span className="font-medium">{selectedRequest.sentTo}</span>
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   {new Date(selectedRequest.sentAt).toLocaleString()}
                 </p>
               </div>
@@ -331,7 +331,7 @@ export function VerificationRequestsView() {
               {selectedRequest.reviewedAt && (
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-sm text-gray-500">Reviewed</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-600">
                     {new Date(selectedRequest.reviewedAt).toLocaleString()}
                   </p>
                   {selectedRequest.reviewNotes && (
@@ -796,7 +796,7 @@ function BulkVerificationSection({
               <p className="text-sm text-gray-500">Send verification requests to all stores in a district or region</p>
             </div>
           </div>
-          <ChevronRight className="w-5 h-5 text-gray-400" />
+          <ChevronRight className="w-5 h-5 text-gray-600" />
         </button>
       </div>
     );
@@ -806,14 +806,14 @@ function BulkVerificationSection({
     <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
-        <button onClick={() => setExpanded(false)} className="text-gray-400 hover:text-gray-600">
+        <button onClick={() => setExpanded(false)} className="text-gray-600 hover:text-gray-600">
           <X className="w-5 h-5" />
         </button>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
         </div>
       ) : dryRunResults ? (
         <div className="space-y-4">

@@ -31,6 +31,8 @@ export function DirectoryView() {
   const [searching, setSearching] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
   
   const { getIdToken } = useAuth();
   const navigate = useNavigate();
@@ -162,6 +164,13 @@ export function DirectoryView() {
   
   const showSearchResults = searchQuery.trim().length > 0;
   
+  const totalPages = Math.ceil(locations.length / PAGE_SIZE);
+  const paginatedLocations = locations.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  
+  useEffect(() => {
+    setPage(1);
+  }, [selectedRegion, selectedDistrict, selectedKind, selectedStoreType]);
+  
   return (
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
       {/* Search and Filters */}
@@ -170,7 +179,7 @@ export function DirectoryView() {
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             {/* Search Input */}
             <div className="relative flex-1 lg:max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
               <input
                 type="text"
                 value={searchQuery}
@@ -322,7 +331,7 @@ export function DirectoryView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {locations.map(location => {
+                    {paginatedLocations.map(location => {
                       const KindIcon = KIND_ICONS[location.kind] || Store;
                       return (
                         <tr
@@ -333,7 +342,7 @@ export function DirectoryView() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
                               {selectedKind === 'all' && (
-                                <KindIcon className="w-4 h-4 text-gray-400" />
+                                <KindIcon className="w-4 h-4 text-gray-600" />
                               )}
                               <div>
                                 <div className="font-medium text-gray-900">#{location.storeNumber}</div>
@@ -343,21 +352,21 @@ export function DirectoryView() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1 text-sm text-gray-600">
-                              <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                              <MapPin className="w-3.5 h-3.5 text-gray-600" />
                               {location.city}, {location.state}
                             </div>
                             {location.districtName && (
-                              <div className="text-xs text-gray-400">{location.districtName}</div>
+                              <div className="text-xs text-gray-600">{location.districtName}</div>
                             )}
                           </td>
                           <td className="px-4 py-3">
                             {location.smName ? (
                               <div className="flex items-center gap-1 text-sm text-gray-600">
-                                <User className="w-3.5 h-3.5 text-gray-400" />
+                                <User className="w-3.5 h-3.5 text-gray-600" />
                                 {location.smName}
                               </div>
                             ) : (
-                              <span className="text-sm text-gray-400">—</span>
+                              <span className="text-sm text-gray-600">—</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
@@ -383,7 +392,7 @@ export function DirectoryView() {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <ChevronRight className="w-5 h-5 text-gray-400" />
+                            <ChevronRight className="w-5 h-5 text-gray-600" />
                           </td>
                         </tr>
                       );
@@ -395,7 +404,7 @@ export function DirectoryView() {
             
             {/* Mobile Card View */}
             <div className="lg:hidden space-y-3">
-              {locations.map(location => {
+              {paginatedLocations.map(location => {
                 const KindIcon = KIND_ICONS[location.kind] || Store;
                 return (
                   <div
@@ -407,7 +416,7 @@ export function DirectoryView() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           {selectedKind === 'all' && (
-                            <KindIcon className="w-4 h-4 text-gray-400" />
+                            <KindIcon className="w-4 h-4 text-gray-600" />
                           )}
                           <h3 className="font-medium text-gray-900">
                             #{location.storeNumber} {location.name}
@@ -440,7 +449,7 @@ export function DirectoryView() {
                         >
                           <Copy className="w-5 h-5" />
                         </button>
-                        <ChevronRight className="w-5 h-5 text-gray-400" />
+                        <ChevronRight className="w-5 h-5 text-gray-600" />
                       </div>
                     </div>
                   </div>
@@ -449,6 +458,29 @@ export function DirectoryView() {
             </div>
             </>
             )}
+          </div>
+        )}
+        
+        {/* Pagination Controls */}
+        {!showSearchResults && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-6">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 min-h-[44px]"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-600 px-4">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 min-h-[44px]"
+            >
+              Next
+            </button>
           </div>
         )}
       </div>

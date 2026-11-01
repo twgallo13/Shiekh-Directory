@@ -216,7 +216,7 @@ export function DMVerifyView() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
-          <XCircle className="w-16 h-16 text-gray-400 mx-auto" />
+          <XCircle className="w-16 h-16 text-gray-600 mx-auto" />
           <h1 className="text-xl font-bold text-gray-900 mt-4">Request Cancelled</h1>
           <p className="text-gray-600 mt-2">
             This verification request has been cancelled. Please contact operations if you need assistance.
@@ -360,7 +360,7 @@ function StoreCard({ store, confirmed, onConfirm }: StoreCardProps) {
               {new Date(store.lastVerifiedAt).toLocaleDateString()}
             </div>
           )}
-          <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+          <ChevronRight className={`w-5 h-5 text-gray-600 transition-transform ${expanded ? 'rotate-90' : ''}`} />
         </div>
       </div>
 
@@ -417,7 +417,7 @@ function RoleSection({ title, holders }: RoleSectionProps) {
         <div className="space-y-1">
           {holders.map((holder, idx) => (
             <div key={`${holder.personId}-${idx}`} className="flex items-center gap-2">
-              <User className="w-4 h-4 text-gray-400" />
+              <User className="w-4 h-4 text-gray-600" />
               <span className="text-sm text-gray-900">{holder.personName}</span>
               {holder.capacity !== 'primary' && (
                 <CapacityBadge capacity={holder.capacity as 'training' | 'acting'} />

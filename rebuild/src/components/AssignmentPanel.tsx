@@ -243,11 +243,12 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
               </button>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <label htmlFor="assign-role" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                 <select
+                  id="assign-role"
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value as AssignmentRole)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
                 >
                   {STORE_ROLES.map(role => (
                     <option key={role} value={role}>{ROLE_LABELS[role]}</option>
@@ -256,11 +257,12 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Slot</label>
+                <label htmlFor="assign-slot" className="block text-sm font-medium text-gray-700 mb-1">Slot</label>
                 <select
+                  id="assign-slot"
                   value={selectedSlot}
                   onChange={(e) => setSelectedSlot(e.target.value as AssignmentSlot)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
                 >
                   <option value="primary">Primary</option>
                   <option value="additional">Additional / Temporary</option>
@@ -268,11 +270,12 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                <label htmlFor="assign-capacity" className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
                 <select
+                  id="assign-capacity"
                   value={selectedCapacity}
                   onChange={(e) => setSelectedCapacity(e.target.value as AssignmentCapacity)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
                 >
                   <option value="primary">Full Capacity (Primary)</option>
                   <option value="training">In Training</option>
@@ -299,7 +302,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Person</label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" />
                   <input
                     type="text"
                     value={searchQuery}

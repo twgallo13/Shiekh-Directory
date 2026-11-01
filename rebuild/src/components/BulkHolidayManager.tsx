@@ -238,15 +238,16 @@ export function BulkHolidayManager() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Year</label>
+              <label htmlFor="holiday-year" className="block text-sm text-gray-600 mb-1">Year</label>
               <select
+                id="holiday-year"
                 value={year}
                 onChange={(e) => {
                   setYear(parseInt(e.target.value));
                   setPreview(null);
                   setResult(null);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
               >
                 {[year - 1, year, year + 1].map(y => (
                   <option key={y} value={y}>{y}</option>
@@ -255,8 +256,9 @@ export function BulkHolidayManager() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Holiday</label>
+              <label htmlFor="holiday-select" className="block text-sm text-gray-600 mb-1">Holiday</label>
               <select
+                id="holiday-select"
                 value={selectedHoliday}
                 onChange={(e) => {
                   setSelectedHoliday(e.target.value);
@@ -264,7 +266,7 @@ export function BulkHolidayManager() {
                   setResult(null);
                 }}
                 disabled={loading}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
               >
                 <option value="">Select a holiday...</option>
                 {holidays.map(holiday => (
@@ -418,7 +420,7 @@ export function BulkHolidayManager() {
                       <div>
                         <span className="font-medium">#{store.storeNumber}</span>
                         <span className="text-gray-600 ml-2">{store.name}</span>
-                        <span className="text-gray-400 ml-2 text-sm">{store.state}</span>
+                        <span className="text-gray-600 ml-2 text-sm">{store.state}</span>
                       </div>
                       {store.alreadyHasException && (
                         <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded">

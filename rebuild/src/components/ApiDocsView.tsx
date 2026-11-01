@@ -402,9 +402,9 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
         className="w-full px-4 py-3 bg-white hover:bg-gray-50 flex items-center gap-3 text-left"
       >
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <ChevronDown className="w-4 h-4 text-gray-600 flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          <ChevronRight className="w-4 h-4 text-gray-600 flex-shrink-0" />
         )}
         <span className={`px-2 py-0.5 rounded text-xs font-bold ${
           endpoint.method === 'GET' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
@@ -449,7 +449,7 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
                           {param.required ? (
                             <span className="text-red-600 font-medium">Yes</span>
                           ) : (
-                            <span className="text-gray-400">No</span>
+                            <span className="text-gray-600">No</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-gray-600">
@@ -504,7 +504,7 @@ function ApiVersionSection({ version }: { version: ApiVersion }) {
         </div>
         <div className="flex items-center gap-3">
           <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm font-mono">{version.version}</span>
-          {expanded ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
+          {expanded ? <ChevronDown className="w-5 h-5 text-gray-600" /> : <ChevronRight className="w-5 h-5 text-gray-600" />}
         </div>
       </button>
 

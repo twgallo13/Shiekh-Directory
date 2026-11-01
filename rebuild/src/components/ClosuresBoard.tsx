@@ -211,12 +211,14 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
             <select
               value={selectedDistrict}
               onChange={(e) => setSelectedDistrict(e.target.value)}
+              aria-label="Filter by district"
               style={{
                 padding: '0.5rem',
                 borderRadius: '0.375rem',
                 border: '1px solid #d1d5db',
                 fontSize: '0.875rem',
                 minWidth: '150px',
+                minHeight: '44px',
               }}
             >
               <option value="">All Districts</option>
@@ -228,11 +230,13 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'active' | 'ended' | 'all')}
+            aria-label="Filter by status"
             style={{
               padding: '0.5rem',
               borderRadius: '0.375rem',
               border: '1px solid #d1d5db',
               fontSize: '0.875rem',
+              minHeight: '44px',
             }}
           >
             <option value="active">Active ({activeCount})</option>

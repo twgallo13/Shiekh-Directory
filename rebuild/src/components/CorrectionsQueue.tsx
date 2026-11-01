@@ -121,7 +121,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-blue-700 text-white sticky top-0 z-20">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={onBack} className="p-1 hover:bg-blue-600 rounded-lg">
+          <button onClick={onBack} aria-label="Back to directory" className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <h1 className="text-lg font-semibold">Approval Queue</h1>
@@ -135,7 +135,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
             <button
               key={status}
               onClick={() => setFilter(status)}
-              className={`px-4 py-2 rounded-full text-sm font-medium ${
+              className={`px-4 py-2 rounded-full text-sm font-medium min-h-[44px] ${
                 filter === status
                   ? 'bg-blue-600 text-white'
                   : 'bg-white text-gray-700 border border-gray-300'
@@ -194,11 +194,11 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
                     <p className="text-sm text-gray-500 mt-1">
                       Submitted by {correction.submittedByEmail || 'Unknown'}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-gray-600 mt-0.5">
                       {correction.submittedAt ? new Date(correction.submittedAt).toLocaleDateString() : 'Unknown date'}
                     </p>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                  <ChevronRight className="w-5 h-5 text-gray-600" />
                 </div>
               </div>
             ))}
@@ -214,7 +214,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
               <h2 className="text-lg font-semibold">
                 #{selectedCorrection.storeNumber} - {selectedCorrection.type} Correction
               </h2>
-              <button onClick={() => setSelectedId(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => setSelectedId(null)} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -223,7 +223,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-sm text-gray-500">Submitted by</p>
                 <p className="font-medium">{selectedCorrection.submittedByEmail}</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-600">
                   {new Date(selectedCorrection.submittedAt).toLocaleString()}
                 </p>
               </div>
@@ -255,7 +255,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-sm text-gray-500">Reviewed by</p>
                   <p className="font-medium">{selectedCorrection.reviewedByEmail}</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-600">
                     {selectedCorrection.reviewedAt && new Date(selectedCorrection.reviewedAt).toLocaleString()}
                   </p>
                   {selectedCorrection.reviewNotes && (

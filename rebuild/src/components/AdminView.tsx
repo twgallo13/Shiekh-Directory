@@ -217,7 +217,8 @@ function UsersTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            aria-label="Filter by role"
+            className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
           >
             <option value="">All Roles</option>
             {ROLES.map(role => (
@@ -236,7 +237,7 @@ function UsersTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
         </div>
       ) : (
         <>
@@ -444,7 +445,7 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <h2 className="font-semibold text-gray-900">{user ? 'Edit User' : 'Add User'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -504,11 +505,12 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <label htmlFor="user-role" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                 <select
+                  id="user-role"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
                 >
                   {ROLES.map(r => (
                     <option key={r} value={r}>{r}</option>
@@ -517,11 +519,12 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
               </div>
               {role === 'Store' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Store</label>
+                  <label htmlFor="user-store" className="block text-sm font-medium text-gray-700 mb-1">Store</label>
                   <select
+                    id="user-store"
                     value={storeLocationId}
                     onChange={(e) => setStoreLocationId(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
                   >
                     <option value="">Select a store...</option>
                     {stores.filter(s => s.kind === 'store').map(s => (
@@ -532,11 +535,12 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
               )}
               {user && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <label htmlFor="user-status" className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                   <select
+                    id="user-status"
                     value={status}
                     onChange={(e) => setStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
                   >
                     <option value="active">Active</option>
                     <option value="disabled">Disabled</option>
@@ -727,7 +731,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                 Copy this token now. It will not be shown again.
               </p>
             </div>
-            <button onClick={() => setNewToken(null)} className="text-green-600 hover:text-green-800">
+            <button onClick={() => setNewToken(null)} aria-label="Dismiss" className="text-green-600 hover:text-green-800 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -737,7 +741,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -852,7 +856,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <h2 className="font-semibold text-gray-900">Edit Rate Limit</h2>
-              <button onClick={() => setEditingRateLimit(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setEditingRateLimit(null)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1009,7 +1013,7 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <h2 className="font-semibold text-gray-900">Create API Client</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -1122,7 +1126,7 @@ function CustomFieldsTab({ getIdToken }: { getIdToken: () => Promise<string> }) 
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -1145,7 +1149,7 @@ function CustomFieldsTab({ getIdToken }: { getIdToken: () => Promise<string> }) 
                     {field.required ? (
                       <Check className="w-4 h-4 text-green-600" />
                     ) : (
-                      <span className="text-gray-400">-</span>
+                      <span className="text-gray-600">-</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-xs">
@@ -1238,7 +1242,7 @@ function CustomFieldModal({ getIdToken, onClose, onSaved }: {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <h2 className="font-semibold text-gray-900">Add Custom Field</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -1257,11 +1261,12 @@ function CustomFieldModal({ getIdToken, onClose, onSaved }: {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <label htmlFor="field-type" className="block text-sm font-medium text-gray-700 mb-1">Type</label>
             <select
+              id="field-type"
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
             >
               <option value="text">Text</option>
               <option value="number">Number</option>
@@ -1460,7 +1465,7 @@ function ImportTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
               className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
             >
-              <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+              <Upload className="w-10 h-10 text-gray-600 mx-auto mb-3" />
               <p className="text-gray-600 mb-1">Click to select a CSV file</p>
               <p className="text-xs text-gray-500">or drag and drop</p>
               <input
@@ -1756,7 +1761,7 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
 
         {loadingInvitations ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
           </div>
         ) : pendingInvitations.length === 0 ? (
           <div className="text-center py-8 text-gray-500 text-sm">
@@ -1881,7 +1886,7 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <h2 className="font-semibold text-gray-900">Invite User</h2>
-              <button onClick={() => setShowInviteModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowInviteModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1903,11 +1908,12 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
                 <p className="text-xs text-gray-500 mt-1">Must be a company email address</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                <label htmlFor="invite-role" className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                 <select
+                  id="invite-role"
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-h-[44px]"
                 >
                   <option value="Viewer">Viewer - View only access</option>
                   <option value="Leader">Leader - Manage assigned district</option>
@@ -1917,7 +1923,7 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Personal Message <span className="text-gray-400 font-normal">(optional)</span>
+                  Personal Message <span className="text-gray-600 font-normal">(optional)</span>
                 </label>
                 <textarea
                   value={inviteMessage}
@@ -2103,7 +2109,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
       </div>
     );
   }
@@ -2218,7 +2224,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
               <h2 className="font-semibold text-gray-900">Delete Snapshot</h2>
-              <button onClick={() => setConfirmDelete(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setConfirmDelete(null)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2229,7 +2235,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
               </div>
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="font-medium text-gray-900">{confirmDelete.id}</p>
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-gray-600 mt-1">
                   {confirmDelete.documentCount ?? '?'} documents • {confirmDelete.collections?.length || '?'} collections
                 </p>
                 <p className="text-sm text-gray-500">

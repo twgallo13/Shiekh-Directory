@@ -1,26 +1,39 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout } from './components/AppLayout';
 import { ErrorBoundary, RouteErrorBoundary } from './components/ErrorBoundary';
-import { DirectoryView } from './components/DirectoryView';
-import { LocationDetailView } from './components/LocationDetailView';
-import { PersonDetailView } from './components/PersonDetailView';
-import { SignInView } from './components/SignInView';
-import { CorrectionsQueue } from './components/CorrectionsQueue';
-import { BulkHolidayManager } from './components/BulkHolidayManager';
-import { VerificationRequestsView } from './components/VerificationRequestsView';
-import { PrintableDirectoryView } from './components/PrintableDirectoryView';
-import { AdminView } from './components/AdminView';
-import { PeopleListView } from './components/PeopleListView';
-import { HierarchyView } from './components/HierarchyView';
-import { SettingsView } from './components/SettingsView';
-import { ClosuresBoardPage } from './components/ClosuresBoardPage';
-import { StaleStoresView } from './components/StaleStoresView';
-import { StoreSignInView } from './components/StoreSignInView';
-import { VerifyActionView } from './components/VerifyActionView';
-import { DMVerifyView } from './components/DMVerifyView';
-import { MyRequestsView } from './components/MyRequestsView';
-import { ApiDocsView } from './components/ApiDocsView';
+
+const DirectoryView = lazy(() => import('./components/DirectoryView').then(m => ({ default: m.DirectoryView })));
+const LocationDetailView = lazy(() => import('./components/LocationDetailView').then(m => ({ default: m.LocationDetailView })));
+const PersonDetailView = lazy(() => import('./components/PersonDetailView').then(m => ({ default: m.PersonDetailView })));
+const SignInView = lazy(() => import('./components/SignInView').then(m => ({ default: m.SignInView })));
+const CorrectionsQueue = lazy(() => import('./components/CorrectionsQueue').then(m => ({ default: m.CorrectionsQueue })));
+const BulkHolidayManager = lazy(() => import('./components/BulkHolidayManager').then(m => ({ default: m.BulkHolidayManager })));
+const VerificationRequestsView = lazy(() => import('./components/VerificationRequestsView').then(m => ({ default: m.VerificationRequestsView })));
+const PrintableDirectoryView = lazy(() => import('./components/PrintableDirectoryView').then(m => ({ default: m.PrintableDirectoryView })));
+const AdminView = lazy(() => import('./components/AdminView').then(m => ({ default: m.AdminView })));
+const PeopleListView = lazy(() => import('./components/PeopleListView').then(m => ({ default: m.PeopleListView })));
+const HierarchyView = lazy(() => import('./components/HierarchyView').then(m => ({ default: m.HierarchyView })));
+const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+const ClosuresBoardPage = lazy(() => import('./components/ClosuresBoardPage').then(m => ({ default: m.ClosuresBoardPage })));
+const StaleStoresView = lazy(() => import('./components/StaleStoresView').then(m => ({ default: m.StaleStoresView })));
+const StoreSignInView = lazy(() => import('./components/StoreSignInView').then(m => ({ default: m.StoreSignInView })));
+const VerifyActionView = lazy(() => import('./components/VerifyActionView').then(m => ({ default: m.VerifyActionView })));
+const DMVerifyView = lazy(() => import('./components/DMVerifyView').then(m => ({ default: m.DMVerifyView })));
+const MyRequestsView = lazy(() => import('./components/MyRequestsView').then(m => ({ default: m.MyRequestsView })));
+const ApiDocsView = lazy(() => import('./components/ApiDocsView').then(m => ({ default: m.ApiDocsView })));
+
+function PageSkeleton() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading...</p>
+      </div>
+    </div>
+  );
+}
 
 function CorrectionsQueuePage() {
   const navigate = useNavigate();
@@ -116,10 +129,11 @@ function OptionalAuthLayout({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/signin" element={<SignInView />} />
-      <Route path="/store-signin" element={<StoreSignInView />} />
-      <Route path="/verify-action" element={<VerifyActionView />} />
+    <Suspense fallback={<PageSkeleton />}>
+      <Routes>
+        <Route path="/signin" element={<SignInView />} />
+        <Route path="/store-signin" element={<StoreSignInView />} />
+        <Route path="/verify-action" element={<VerifyActionView />} />
       <Route path="/dm-verify/:id" element={<OptionalAuthLayout><DMVerifyView /></OptionalAuthLayout>} />
       <Route
         path="/"
@@ -267,8 +281,9 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 

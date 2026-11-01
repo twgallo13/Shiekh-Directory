@@ -250,6 +250,7 @@ export function PrintableDirectoryView() {
               <select
                 value={districtFilter}
                 onChange={(e) => setDistrictFilter(e.target.value)}
+                aria-label="Filter by district"
                 className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-0 flex-1 sm:flex-initial sm:w-auto min-h-[44px]"
               >
                 <option value="all">All ({exportData?.locationCount || 0})</option>
@@ -284,7 +285,12 @@ export function PrintableDirectoryView() {
       </div>
 
       {/* Printable Content */}
-      <div className="max-w-[1200px] mx-auto p-4 print:p-0 print:max-w-none overflow-x-auto">
+      <div 
+        className="max-w-[1200px] mx-auto p-4 print:p-0 print:max-w-none overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Printable directory content (scroll horizontally on small screens)"
+      >
         <div className="bg-white rounded-lg border border-gray-200 p-6 print:border-none print:rounded-none print:shadow-none min-w-[585px]">
           {/* Header */}
           <div className="mb-2 print:mb-1 flex items-center justify-between border-b-2 border-gray-900 pb-1">

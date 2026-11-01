@@ -118,7 +118,7 @@ export function StaleStoresView() {
                   id="district-filter"
                   value={filterDistrict}
                   onChange={(e) => setFilterDistrict(e.target.value)}
-                  className="text-sm border border-gray-300 rounded px-2 py-1"
+                  className="text-sm border border-gray-300 rounded px-2 py-1 min-h-[44px]"
                 >
                   <option value="">All districts</option>
                   {districts.map(d => (
@@ -158,7 +158,7 @@ export function StaleStoresView() {
                       {store.regionName && <span>{store.regionName}</span>}
                     </div>
                     <div className="mt-1 text-sm flex items-center gap-2">
-                      <Calendar className="h-3.5 w-3.5 text-gray-400" />
+                      <Calendar className="h-3.5 w-3.5 text-gray-600" />
                       {store.daysSinceVerification === null ? (
                         <span className="text-red-600 font-medium">Never verified</span>
                       ) : (
@@ -193,7 +193,7 @@ export function StaleStoresView() {
 
       {loading && (
         <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-gray-500">
-          <RefreshCw className="h-8 w-8 mx-auto mb-3 animate-spin text-gray-400" />
+          <RefreshCw className="h-8 w-8 mx-auto mb-3 animate-spin text-gray-600" />
           Loading stale stores...
         </div>
       )}

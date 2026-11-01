@@ -405,7 +405,7 @@ export function LocationDetailView() {
           {location.wayfindingDirections ? (
             <p className="text-gray-700">{location.wayfindingDirections}</p>
           ) : (
-            <p className="text-gray-400 italic">
+            <p className="text-gray-600 italic">
               {editPermissions.directions ? 'No directions added yet. Click edit to add directions.' : 'No directions available.'}
             </p>
           )}
@@ -534,7 +534,7 @@ export function LocationDetailView() {
                   <p className="text-yellow-800 font-medium text-sm">Primary unassigned; coverage present</p>
                 </div>
               ) : (
-                <p className="font-medium text-gray-400 italic">Not assigned</p>
+                <p className="font-medium text-gray-600 italic">Not assigned</p>
               )}
               
               {/* Additional/Temporary SM coverage */}
@@ -576,7 +576,7 @@ export function LocationDetailView() {
                   <CapacityBadge capacity={(location.leadership.dm.capacity || 'primary') as AssignmentCapacity} />
                 </div>
               ) : (
-                <p className="font-medium text-gray-400 italic">Not assigned</p>
+                <p className="font-medium text-gray-600 italic">Not assigned</p>
               )}
               
               {/* DM Others (Training/Acting) */}
@@ -614,7 +614,7 @@ export function LocationDetailView() {
                   <CapacityBadge capacity={(location.leadership.rm.capacity || 'primary') as AssignmentCapacity} />
                 </div>
               ) : (
-                <p className="font-medium text-gray-400 italic">Not assigned</p>
+                <p className="font-medium text-gray-600 italic">Not assigned</p>
               )}
               
               {/* RM Others (Training/Acting) */}
@@ -657,7 +657,7 @@ export function LocationDetailView() {
                   </div>
                 ))
               ) : (
-                <p className="font-medium text-gray-400 italic">None assigned</p>
+                <p className="font-medium text-gray-600 italic">None assigned</p>
               )}
             </div>
             
@@ -680,7 +680,7 @@ export function LocationDetailView() {
                   </div>
                 ))
               ) : (
-                <p className="font-medium text-gray-400 italic">None assigned</p>
+                <p className="font-medium text-gray-600 italic">None assigned</p>
               )}
             </div>
           </div>
@@ -708,7 +708,7 @@ export function LocationDetailView() {
             <div className="flex justify-between">
               <dt className="text-gray-500">Store Type</dt>
               <dd className="font-medium text-gray-900">
-                {location.storeType ? getStoreTypeLabel(location.storeType) : <span className="text-gray-400 italic">Not set</span>}
+                {location.storeType ? getStoreTypeLabel(location.storeType) : <span className="text-gray-600 italic">Not set</span>}
               </dd>
             </div>
             <div className="flex justify-between">

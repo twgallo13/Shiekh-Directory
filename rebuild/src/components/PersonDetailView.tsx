@@ -4,6 +4,7 @@ import { ArrowLeft, User, Mail, Phone, Briefcase, MapPin, Building, AlertTriangl
 import { useAuth } from '../context/AuthContext';
 import type { PersonDetail, PersonAssignment, Region, District, LocationListItem } from '../types';
 import { canViewMobilePhones } from '../lib/permissions';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const ROLE_LABELS: Record<string, string> = {
   SM: 'Store Manager',
@@ -75,7 +76,7 @@ function AssignmentCard({
         {assignment.isActive && canManage && (
           <button
             onClick={(e) => { e.stopPropagation(); onEnd(assignment.id); }}
-            className="p-1 text-gray-400 hover:text-red-600"
+            className="p-1 text-gray-600 hover:text-red-600"
             title="End assignment"
           >
             <Trash2 className="w-4 h-4" />
@@ -127,6 +128,8 @@ export function PersonDetailView() {
   
   const { getIdToken, authUser } = useAuth();
   const navigate = useNavigate();
+  
+  useDocumentTitle(person ? person.fullName : 'Loading...');
   const canViewMobile = authUser ? canViewMobilePhones(authUser) : false;
   const canManage = authUser?.role === 'Steward' || authUser?.role === 'Admin';
   
@@ -345,7 +348,7 @@ export function PersonDetailView() {
       <div className="min-h-screen bg-gray-50">
         <header className="bg-blue-700 text-white sticky top-0 z-20">
           <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-1 hover:bg-blue-600 rounded-lg">
+            <button onClick={() => navigate(-1)} aria-label="Go back" className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h1 className="text-lg font-semibold">Loading...</h1>
@@ -363,7 +366,7 @@ export function PersonDetailView() {
       <div className="min-h-screen bg-gray-50">
         <header className="bg-blue-700 text-white sticky top-0 z-20">
           <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="p-1 hover:bg-blue-600 rounded-lg">
+            <button onClick={() => navigate(-1)} aria-label="Go back" className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h1 className="text-lg font-semibold">Error</h1>
@@ -390,7 +393,7 @@ export function PersonDetailView() {
     <div className="min-h-screen bg-gray-50 pb-8">
       <header className="bg-blue-700 text-white sticky top-0 z-20">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="p-1 hover:bg-blue-600 rounded-lg">
+          <button onClick={() => navigate(-1)} aria-label="Go back" className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0">
@@ -399,7 +402,8 @@ export function PersonDetailView() {
           {canManage && (
             <button
               onClick={() => setShowEditModal(true)}
-              className="p-1.5 hover:bg-blue-600 rounded-lg"
+              aria-label="Edit person"
+              className="p-2 hover:bg-blue-600 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center"
               title="Edit person"
             >
               <Edit2 className="w-5 h-5" />
@@ -466,7 +470,7 @@ export function PersonDetailView() {
           <div className="space-y-3">
             {person.workEmail && (
               <div className="flex items-center gap-3">
-                <Mail className="w-5 h-5 text-gray-400" />
+                <Mail className="w-5 h-5 text-gray-600" />
                 <a href={`mailto:${person.workEmail}`} className="text-blue-600 hover:underline">
                   {person.workEmail}
                 </a>
@@ -474,7 +478,7 @@ export function PersonDetailView() {
             )}
             {person.workPhone && (
               <div className="flex items-center gap-3">
-                <Phone className="w-5 h-5 text-gray-400" />
+                <Phone className="w-5 h-5 text-gray-600" />
                 <a href={`tel:${person.workPhone}`} className="text-blue-600 hover:underline">
                   {formatPhoneNumber(person.workPhone)}
                 </a>
@@ -483,7 +487,7 @@ export function PersonDetailView() {
             )}
             {canViewMobile && person.mobilePhone && (
               <div className="flex items-center gap-3">
-                <Phone className="w-5 h-5 text-gray-400" />
+                <Phone className="w-5 h-5 text-gray-600" />
                 <a href={`tel:${person.mobilePhone}`} className="text-blue-600 hover:underline">
                   {formatPhoneNumber(person.mobilePhone)}
                 </a>
@@ -553,7 +557,7 @@ export function PersonDetailView() {
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Edit Person</h2>
-              <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowEditModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -622,15 +626,16 @@ export function PersonDetailView() {
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Add Assignment</h2>
-              <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowAssignModal(false)} aria-label="Close" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Scope Type</label>
+                <label htmlFor="assign-scope-type" className="block text-sm font-medium text-gray-700 mb-1">Scope Type</label>
                 <select
+                  id="assign-scope-type"
                   value={assignForm.scopeType}
                   onChange={(e) => {
                     const scopeType = e.target.value as 'location' | 'district' | 'region';

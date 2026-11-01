@@ -19,6 +19,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
   const loadCorrections = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = await getIdToken();
       const response = await fetch(`/api/app/corrections?status=${filter}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -27,9 +28,13 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
       if (response.ok) {
         const { data } = await response.json();
         setCorrections(data);
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error?.message || 'Failed to load corrections');
       }
     } catch (err) {
       console.error('Failed to load corrections:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load corrections');
     } finally {
       setLoading(false);
     }

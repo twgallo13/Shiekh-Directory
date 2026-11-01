@@ -23,6 +23,7 @@ export function VerificationRequestsView() {
   const loadRequests = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = await getIdToken();
       const response = await fetch(`/api/app/verification?status=${filter}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -31,9 +32,13 @@ export function VerificationRequestsView() {
       if (response.ok) {
         const { data } = await response.json();
         setRequests(data);
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error?.message || 'Failed to load requests');
       }
     } catch (err) {
       console.error('Failed to load verification requests:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load verification requests');
     } finally {
       setLoading(false);
     }
@@ -451,6 +456,7 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
   useEffect(() => {
     const loadLocations = async () => {
       try {
+        setError(null);
         const token = await getIdToken();
         const response = await fetch('/api/app/locations?kind=store', {
           headers: { Authorization: `Bearer ${token}` },
@@ -461,9 +467,13 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
             loc.sharedInboxEmail
           );
           setLocations(storesWithEmail);
+        } else {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error?.message || 'Failed to load stores');
         }
       } catch (err) {
         console.error('Failed to load locations:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load stores');
       } finally {
         setLoading(false);
       }
@@ -641,6 +651,7 @@ function BulkVerificationSection({
   const loadHierarchy = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = await getIdToken();
       const [regionsRes, districtsRes] = await Promise.all([
         fetch('/api/app/regions', { headers: { Authorization: `Bearer ${token}` } }),
@@ -650,13 +661,18 @@ function BulkVerificationSection({
       if (regionsRes.ok) {
         const { data } = await regionsRes.json();
         setRegions(data || []);
+      } else {
+        throw new Error('Failed to load regions');
       }
       if (districtsRes.ok) {
         const { data } = await districtsRes.json();
         setDistricts(data || []);
+      } else {
+        throw new Error('Failed to load districts');
       }
     } catch (err) {
       console.error('Failed to load hierarchy:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load hierarchy data');
     } finally {
       setLoading(false);
     }

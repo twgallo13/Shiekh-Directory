@@ -165,7 +165,9 @@ function AppRoutes() {
         path="/holidays"
         element={
           <ProtectedRoute>
-            <BulkHolidayManager />
+            <RouteErrorBoundary>
+              <BulkHolidayManager />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -173,7 +175,9 @@ function AppRoutes() {
         path="/verification"
         element={
           <ProtectedRoute>
-            <VerificationRequestsView />
+            <RouteErrorBoundary>
+              <VerificationRequestsView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -181,7 +185,9 @@ function AppRoutes() {
         path="/print"
         element={
           <ProtectedRoute>
-            <PrintableDirectoryView />
+            <RouteErrorBoundary>
+              <PrintableDirectoryView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -189,7 +195,9 @@ function AppRoutes() {
         path="/admin"
         element={
           <ProtectedRoute>
-            <AdminView />
+            <RouteErrorBoundary>
+              <AdminView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -197,7 +205,9 @@ function AppRoutes() {
         path="/people"
         element={
           <ProtectedRoute>
-            <PeopleListView />
+            <RouteErrorBoundary>
+              <PeopleListView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -205,7 +215,9 @@ function AppRoutes() {
         path="/hierarchy"
         element={
           <ProtectedRoute>
-            <HierarchyView />
+            <RouteErrorBoundary>
+              <HierarchyView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -221,7 +233,9 @@ function AppRoutes() {
         path="/closures"
         element={
           <ProtectedRoute>
-            <ClosuresBoardPage />
+            <RouteErrorBoundary>
+              <ClosuresBoardPage />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -229,7 +243,9 @@ function AppRoutes() {
         path="/stale-stores"
         element={
           <ProtectedRoute>
-            <StaleStoresView />
+            <RouteErrorBoundary>
+              <StaleStoresView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />
@@ -237,7 +253,9 @@ function AppRoutes() {
         path="/my-requests"
         element={
           <ProtectedRoute storeAllowed>
-            <MyRequestsView />
+            <RouteErrorBoundary>
+              <MyRequestsView />
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />

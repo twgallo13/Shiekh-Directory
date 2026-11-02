@@ -190,7 +190,7 @@ export function AssignmentPanel({ locationId, locationName, existingAssignments,
           onClick={onCancel}
           className="w-full py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
         >
-          Done
+          Cancel
         </button>
       )}
     </>

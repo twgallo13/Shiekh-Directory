@@ -203,9 +203,9 @@ export function StoreSignInView() {
           </form>
 
           <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-sm text-gray-600 text-center">
+            <p className="text-sm text-gray-700 text-center">
               Company staff should use{' '}
-              <Link to="/signin" className="text-blue-600 underline hover:text-blue-800">
+              <Link to="/signin" className="inline-flex items-center text-blue-600 underline hover:text-blue-800 min-h-[44px]">
                 Google Sign-In
               </Link>
             </p>

@@ -309,7 +309,7 @@ export function HoursTemplatesView() {
 
   if (loading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+      <div style={{ padding: '2rem', textAlign: 'center', color: '#374151' }}>
         Loading templates...
       </div>
     );
@@ -502,7 +502,7 @@ export function HoursTemplatesView() {
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     backgroundColor: loc.hasChanges ? 'white' : '#f9fafb',
-                    color: loc.hasChanges ? 'inherit' : '#9ca3af',
+                    color: loc.hasChanges ? 'inherit' : '#6b7280',
                   }}
                 >
                   <span>{loc.storeNumber} · {loc.name}</span>
@@ -747,7 +747,7 @@ export function HoursTemplatesView() {
         <div style={{
           padding: '3rem',
           textAlign: 'center',
-          color: '#6b7280',
+          color: '#374151',
           backgroundColor: '#f9fafb',
           borderRadius: '0.5rem',
         }}>
@@ -778,20 +778,20 @@ export function HoursTemplatesView() {
                     <span style={{ 
                       marginLeft: '0.5rem', 
                       fontSize: '0.75rem', 
-                      color: '#6b7280',
+                      color: '#4b5563',
                       fontWeight: 400,
                     }}>
                       v{template.version}
                     </span>
                   </div>
                   {template.description && (
-                    <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>
+                    <div style={{ fontSize: '0.875rem', color: '#4b5563', marginTop: '0.25rem' }}>
                       {template.description}
                     </div>
                   )}
                   <div style={{ 
                     fontSize: '0.75rem', 
-                    color: '#9ca3af', 
+                    color: '#4b5563', 
                     marginTop: '0.5rem',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',

@@ -174,19 +174,19 @@ export function DirectoryView() {
   return (
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
       <h1 className="sr-only">Store Directory</h1>
-      {/* Search and Filters */}
-      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
+      {/* Search and Filters - fixed height to prevent CLS */}
+      <div className="bg-white border-b border-gray-200 sticky top-14 z-10 min-h-[72px] lg:min-h-[64px]">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-            {/* Search Input */}
-            <div className="relative flex-1 lg:max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-600" />
+            {/* Search Input - fixed height */}
+            <div className="relative flex-1 lg:max-w-md h-[44px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-700" aria-hidden="true" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by store #, name, city, or phone..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+                className="w-full h-full pl-10 pr-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
               />
               {searching && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -195,60 +195,58 @@ export function DirectoryView() {
               )}
             </div>
             
-            {/* Filters - inline on desktop */}
-            {!showSearchResults && (
-              <div className="flex flex-wrap gap-2 lg:gap-3">
-                <select
-                  value={selectedRegion}
-                  onChange={(e) => {
-                    setSelectedRegion(e.target.value);
-                    setSelectedDistrict('');
-                  }}
-                  aria-label="Filter by region"
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
-                >
-                  <option value="">All Regions</option>
-                  {regions.map(region => (
-                    <option key={region.id} value={region.id}>{region.name}</option>
-                  ))}
-                </select>
-                
-                <select
-                  value={selectedDistrict}
-                  onChange={(e) => setSelectedDistrict(e.target.value)}
-                  aria-label="Filter by district"
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
-                >
-                  <option value="">All Districts</option>
-                  {filteredDistricts.map(district => (
-                    <option key={district.id} value={district.id}>{district.name}</option>
-                  ))}
-                </select>
-                
-                <select
-                  value={selectedKind}
-                  onChange={(e) => setSelectedKind(e.target.value)}
-                  aria-label="Filter by location type"
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
-                >
-                  <option value="store">Stores</option>
-                  <option value="facility">Facilities</option>
-                  <option value="all">All Locations</option>
-                </select>
-                
-                <select
-                  value={selectedStoreType}
-                  onChange={(e) => setSelectedStoreType(e.target.value)}
-                  aria-label="Filter by store type"
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white min-h-[44px] lg:min-h-[40px]"
-                >
-                  <option value="">All Types</option>
-                  {STORE_TYPES.map(t => (
-                    <option key={t.code} value={t.code}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Filters - always render but hide visually when searching to prevent CLS */}
+            <div className={`flex flex-wrap gap-2 lg:gap-3 ${showSearchResults ? 'invisible h-0 overflow-hidden lg:h-auto lg:visible' : ''}`}>
+              <select
+                value={selectedRegion}
+                onChange={(e) => {
+                  setSelectedRegion(e.target.value);
+                  setSelectedDistrict('');
+                }}
+                aria-label="Filter by region"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+              >
+                <option value="">All Regions</option>
+                {regions.map(region => (
+                  <option key={region.id} value={region.id}>{region.name}</option>
+                ))}
+              </select>
+              
+              <select
+                value={selectedDistrict}
+                onChange={(e) => setSelectedDistrict(e.target.value)}
+                aria-label="Filter by district"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+              >
+                <option value="">All Districts</option>
+                {filteredDistricts.map(district => (
+                  <option key={district.id} value={district.id}>{district.name}</option>
+                ))}
+              </select>
+              
+              <select
+                value={selectedKind}
+                onChange={(e) => setSelectedKind(e.target.value)}
+                aria-label="Filter by location type"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+              >
+                <option value="store">Stores</option>
+                <option value="facility">Facilities</option>
+                <option value="all">All Locations</option>
+              </select>
+              
+              <select
+                value={selectedStoreType}
+                onChange={(e) => setSelectedStoreType(e.target.value)}
+                aria-label="Filter by store type"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+              >
+                <option value="">All Types</option>
+                {STORE_TYPES.map(t => (
+                  <option key={t.code} value={t.code}>{t.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -429,9 +427,9 @@ export function DirectoryView() {
                           {selectedKind === 'all' && (
                             <KindIcon className="w-4 h-4 text-gray-600" />
                           )}
-                          <h3 className="font-medium text-gray-900">
+                          <h2 className="font-medium text-gray-900 text-base">
                             #{location.storeNumber} {location.name}
-                          </h3>
+                          </h2>
                           <StatusBadge status={location.statusNow.state} />
                         </div>
                         <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
@@ -523,7 +521,7 @@ function SearchResultCard({ result, onCall, onCopy, onClick }: SearchResultCardP
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-medium text-gray-900 truncate">{result.title}</h3>
+            <h2 className="font-medium text-gray-900 text-base truncate">{result.title}</h2>
             {result.statusNow && (
               <StatusBadge status={result.statusNow.state} />
             )}

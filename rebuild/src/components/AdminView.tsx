@@ -1770,16 +1770,16 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
             Invite User
           </button>
         </div>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-700 mb-4">
           Send invitation emails to new users. They can sign in with their company Google account.
         </p>
 
         {loadingInvitations ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-gray-700" />
           </div>
         ) : pendingInvitations.length === 0 ? (
-          <div className="text-center py-8 text-gray-500 text-sm">
+          <div className="text-center py-8 text-gray-700 text-sm">
             No pending invitations
           </div>
         ) : (
@@ -1841,34 +1841,34 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
           <Mail className="w-5 h-5 text-blue-600" />
           <h2 className="text-lg font-semibold text-gray-900">Email Templates</h2>
         </div>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-700 mb-4">
           Preview of built-in email templates used for store verification.
         </p>
         <div className="space-y-3">
           <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-medium text-gray-800">Verification Request</h3>
-              <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">Built-in</span>
+              <span className="text-xs text-gray-700 bg-white px-2 py-1 rounded border">Built-in</span>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-700">
               Sent to store shared inbox when hours verification is requested.
             </p>
           </div>
           <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-medium text-gray-800">Verification Reminder</h3>
-              <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">Built-in</span>
+              <span className="text-xs text-gray-700 bg-white px-2 py-1 rounded border">Built-in</span>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-700">
               Sent 3 days after initial request if store has not responded.
             </p>
           </div>
           <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-medium text-gray-800">Verification Confirmation</h3>
-              <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border">Built-in</span>
+              <span className="text-xs text-gray-700 bg-white px-2 py-1 rounded border">Built-in</span>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-700">
               Sent to store after steward approves their verification response.
             </p>
           </div>
@@ -1878,7 +1878,7 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
       {/* Email Sending Settings - Current Mode */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Settings className="w-5 h-5 text-gray-600" />
+          <Settings className="w-5 h-5 text-gray-700" />
           <h2 className="text-lg font-semibold text-gray-900">Email Sending Settings</h2>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -2118,7 +2118,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
+        <Loader2 className="w-6 h-6 animate-spin text-gray-700" />
       </div>
     );
   }
@@ -2135,7 +2135,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Snapshots</h2>
-            <p className="text-sm text-gray-600">On-demand snapshots for restore drills</p>
+            <p className="text-sm text-gray-700">On-demand snapshots for restore drills</p>
           </div>
           <button
             onClick={createSnapshot}
@@ -2148,7 +2148,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
         </div>
 
         {snapshots.length === 0 ? (
-          <p className="text-gray-500 text-sm">No snapshots yet. Create one to test restore drills.</p>
+          <p className="text-gray-700 text-sm">No snapshots yet. Create one to test restore drills.</p>
         ) : (
           <div className="space-y-2">
             {snapshots.map((snapshot) => (
@@ -2158,7 +2158,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
               >
                 <div>
                   <p className="font-medium text-gray-900">{snapshot.id}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-700">
                     {new Date(snapshot.createdAt).toLocaleString()} • {snapshot.documentCount ?? '?'} docs • {snapshot.collections?.length || '?'} collections
                   </p>
                 </div>
@@ -2192,7 +2192,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Drill Reports</h2>
         {drillReports.length === 0 ? (
-          <p className="text-gray-500 text-sm">No drills have been run yet.</p>
+          <p className="text-gray-700 text-sm">No drills have been run yet.</p>
         ) : (
           <div className="space-y-2">
             {drillReports.map((report) => (
@@ -2202,12 +2202,12 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
               >
                 <div>
                   <p className="font-medium text-gray-900">{report.drillId}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-700">
                     Snapshot: {report.snapshotId} • {new Date(report.completedAt).toLocaleString()}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-gray-700">
                     {report.totalRestored}/{report.totalExpected} docs
                   </span>
                   <span

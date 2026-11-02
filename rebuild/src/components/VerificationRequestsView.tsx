@@ -367,14 +367,23 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
   };
 
   const footer = (
-    <button
-      onClick={handleSend}
-      disabled={!selectedLocationId || sending}
-      className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
-    >
-      <Send className="w-4 h-4" aria-hidden="true" />
-      {sending ? 'Sending...' : 'Send Verification Request'}
-    </button>
+    <div className="flex gap-3">
+      <button
+        onClick={onClose}
+        disabled={sending}
+        className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={handleSend}
+        disabled={!selectedLocationId || sending}
+        className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
+      >
+        <Send className="w-4 h-4" aria-hidden="true" />
+        {sending ? 'Sending...' : 'Send Request'}
+      </button>
+    </div>
   );
 
   return (
@@ -646,7 +655,7 @@ function BulkVerificationSection({
       return (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-medium text-blue-800 mb-2">Campaign Preview</h4>
+            <h3 className="font-medium text-blue-800 mb-2">Campaign Preview</h3>
             <div className="grid grid-cols-2 gap-4 text-center mb-3">
               <div>
                 <div className="text-2xl font-bold text-blue-600">{dryRunResults.wouldSend}</div>
@@ -727,7 +736,7 @@ function BulkVerificationSection({
       return (
         <div className="space-y-4">
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <h4 className="font-medium text-green-800 mb-2">Campaign Complete</h4>
+            <h3 className="font-medium text-green-800 mb-2">Campaign Complete</h3>
             <div className="grid grid-cols-4 gap-2 text-center">
               <div>
                 <div className="text-2xl font-bold text-green-600">{results.sent}</div>
@@ -939,7 +948,7 @@ function BulkVerificationSection({
               <Send className="w-5 h-5 text-blue-600" aria-hidden="true" />
             </div>
             <div>
-              <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
+              <h2 className="font-medium text-gray-900 text-base">Bulk Verification Campaign</h2>
               <p className="text-sm text-gray-500">Send verification requests to all stores in a district or region</p>
             </div>
           </div>
@@ -1111,7 +1120,7 @@ function VerificationDetailDialog({
 
         {request.proposedChanges && Object.keys(request.proposedChanges).length > 0 && (
           <div className="space-y-3">
-            <h3 className="font-medium text-gray-900">Proposed Changes</h3>
+            <h2 className="font-medium text-gray-900 text-base">Proposed Changes</h2>
             {Object.entries(request.proposedChanges).map(([field, newValue]) => (
               <div key={field} className="border border-gray-200 rounded-lg overflow-hidden">
                 <div className="bg-gray-50 px-3 py-2 font-medium text-sm capitalize">{field}</div>

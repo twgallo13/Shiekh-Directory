@@ -3,7 +3,8 @@ import assert from 'node:assert';
 import type { Firestore } from 'firebase-admin/firestore';
 import { seedTestUsers, getTestDb, seedTestHierarchy, seedTestLeader } from './testHelpers';
 
-const API_BASE = process.env.API_BASE || 'http://localhost:3001';
+const PORT = process.env.PORT || '3001';
+const API_BASE = process.env.API_BASE || `http://localhost:${PORT}`;
 
 async function fetchApi(path: string, method: string, token: string, body?: unknown): Promise<Response> {
   const headers: Record<string, string> = {

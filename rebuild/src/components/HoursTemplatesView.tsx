@@ -323,7 +323,7 @@ export function HoursTemplatesView() {
           onClick={loadTemplates}
           style={{
             padding: '0.5rem 1rem',
-            backgroundColor: '#3b82f6',
+            backgroundColor: '#1d4ed8',
             color: 'white',
             border: 'none',
             borderRadius: '0.25rem',
@@ -453,9 +453,9 @@ export function HoursTemplatesView() {
             style={{
               padding: '0.5rem 1rem',
               borderRadius: '0.375rem',
-              border: '1px solid #3b82f6',
+              border: '1px solid #1d4ed8',
               backgroundColor: 'white',
-              color: '#3b82f6',
+              color: '#1d4ed8',
               cursor: 'pointer',
               minHeight: '44px',
             }}
@@ -470,7 +470,7 @@ export function HoursTemplatesView() {
                 padding: '0.5rem 1rem',
                 borderRadius: '0.375rem',
                 border: 'none',
-                backgroundColor: applying ? '#9ca3af' : '#059669',
+                backgroundColor: applying ? '#9ca3af' : '#047857',
                 color: 'white',
                 cursor: applying ? 'not-allowed' : 'pointer',
                 minHeight: '44px',
@@ -689,7 +689,7 @@ export function HoursTemplatesView() {
                 padding: '0.5rem 1rem',
                 borderRadius: '0.375rem',
                 border: 'none',
-                backgroundColor: saving ? '#9ca3af' : '#3b82f6',
+                backgroundColor: saving ? '#9ca3af' : '#1d4ed8',
                 color: 'white',
                 cursor: saving ? 'not-allowed' : 'pointer',
                 minHeight: '44px',
@@ -720,7 +720,7 @@ export function HoursTemplatesView() {
             padding: '0.5rem 1rem',
             borderRadius: '0.375rem',
             border: 'none',
-            backgroundColor: '#3b82f6',
+            backgroundColor: '#1d4ed8',
             color: 'white',
             cursor: 'pointer',
             minHeight: '44px',
@@ -806,7 +806,7 @@ export function HoursTemplatesView() {
                     style={{
                       padding: '0.375rem 0.75rem',
                       fontSize: '0.75rem',
-                      backgroundColor: '#059669',
+                      backgroundColor: '#047857',
                       color: 'white',
                       border: 'none',
                       borderRadius: '0.25rem',
@@ -822,7 +822,7 @@ export function HoursTemplatesView() {
                     style={{
                       padding: '0.375rem 0.75rem',
                       fontSize: '0.75rem',
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: '#1d4ed8',
                       color: 'white',
                       border: 'none',
                       borderRadius: '0.25rem',

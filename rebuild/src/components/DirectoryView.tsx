@@ -251,18 +251,25 @@ export function DirectoryView() {
         </div>
       </div>
       
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 py-4 lg:py-6 min-h-[60vh]">
+      {/* Content - fixed height skeleton to prevent CLS */}
+      <div className="max-w-7xl mx-auto px-4 py-4 lg:py-6">
         {loading ? (
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="bg-white rounded-lg border border-gray-200 p-4 animate-pulse">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-gray-200 rounded-lg flex-shrink-0" />
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="h-5 bg-gray-200 rounded w-3/4" />
-                    <div className="h-4 bg-gray-200 rounded w-1/2" />
-                    <div className="h-4 bg-gray-200 rounded w-2/3" />
+            {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+              <div key={i} className="bg-white rounded-lg border border-gray-200 p-4 animate-pulse h-[104px]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <div className="h-5 bg-gray-200 rounded w-32" />
+                      <div className="h-5 bg-gray-200 rounded w-16" />
+                    </div>
+                    <div className="h-4 bg-gray-200 rounded w-24 mt-1.5" />
+                    <div className="h-4 bg-gray-200 rounded w-20 mt-1.5" />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-11 h-11 bg-gray-200 rounded-lg" />
+                    <div className="w-11 h-11 bg-gray-200 rounded-lg" />
+                    <div className="w-5 h-5 bg-gray-200 rounded" />
                   </div>
                 </div>
               </div>

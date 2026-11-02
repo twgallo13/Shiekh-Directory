@@ -1889,7 +1889,7 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
           <p className="text-sm text-amber-700">
             <strong>Log-only</strong> — emails are not sent until cut-over is enabled.
           </p>
-          <p className="text-xs text-amber-600 mt-2">
+          <p className="text-xs text-amber-800 mt-2">
             Set <code className="bg-amber-100 px-1 py-0.5 rounded">MAIL_CUTOVER_ENABLED=true</code> to enable sending.
           </p>
         </div>
@@ -2166,7 +2166,7 @@ function BackupsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                   <button
                     onClick={() => runDrill(snapshot.id)}
                     disabled={runningDrill === snapshot.id}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-700 text-white rounded hover:bg-green-800 disabled:opacity-50"
                   >
                     {runningDrill === snapshot.id ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

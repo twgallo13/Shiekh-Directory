@@ -367,10 +367,10 @@ export function LocationDetailView() {
         {/* Address */}
         <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               <MapPin className="w-4 h-4" />
               Location
-            </h3>
+            </h2>
             {editPermissions.contactInfo && (
               <button
                 onClick={() => setEditingField('contact')}

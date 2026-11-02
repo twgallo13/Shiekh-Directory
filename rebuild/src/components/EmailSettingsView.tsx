@@ -336,26 +336,100 @@ export function EmailSettingsView() {
   };
   
   const baseUrl = settings?.appBaseUrl || window.location.origin;
+  const sampleExpiresDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const sampleVerifiedDate = new Date();
   const SAMPLE_VALUES: Record<string, string> = {
     storeName: 'Mall of America Store',
     storeNumber: '042',
     storeEmail: 'store042@shiekhshoes.com',
     storeType: 'Retail',
+    storeTypeHtml: `
+          <dt>Type</dt>
+          <dd>Retail</dd>`,
+    storeTypeText: '\nType: Retail',
     verificationUrl: `${baseUrl}/verify/abc123`,
     confirmUrl: `${baseUrl}/confirm/abc123`,
     updateUrl: `${baseUrl}/update/abc123`,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
-    verifiedAt: new Date().toLocaleDateString(),
+    expiresAt: sampleExpiresDate.toISOString(),
+    expiresFormatted: sampleExpiresDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+    verifiedAt: sampleVerifiedDate.toISOString(),
+    verifiedFormatted: sampleVerifiedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }),
     daysRemaining: '3',
+    daysRemainingLabel: '3 days remaining',
+    originalSentAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+    originalSentFormatted: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+    urgencyClass: 'warning',
+    urgencyText: 'Reminder: 3 days remaining to respond',
     signInUrl: `${baseUrl}/store-signin?token=abc123`,
     inviteUrl: `${baseUrl}/invite/abc123`,
     districtName: 'Southern California',
     recipientName: 'John Smith',
     recipientType: 'DM',
+    recipientLabel: 'District Manager',
+    contextNote: 'your district',
     storeCount: '12',
     inviterName: 'Sarah Admin',
     role: 'Steward',
     personalMessage: 'Welcome to the team!',
+    hoursHtml: `
+    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+      <thead>
+        <tr style="background-color: #F3F4F6;">
+          <th style="padding: 8px 12px; text-align: left; border-bottom: 2px solid #D1D5DB;">Day</th>
+          <th style="padding: 8px 12px; text-align: left; border-bottom: 2px solid #D1D5DB;">Hours</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Monday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
+        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Tuesday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
+        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Wednesday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
+        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Thursday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
+        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Friday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:30 PM</td></tr>
+        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Saturday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:30 PM</td></tr>
+        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Sunday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">11:00 AM - 7:00 PM</td></tr>
+      </tbody>
+    </table>`,
+    hoursText: `  Monday       10:00 AM - 9:00 PM
+  Tuesday      10:00 AM - 9:00 PM
+  Wednesday    10:00 AM - 9:00 PM
+  Thursday     10:00 AM - 9:00 PM
+  Friday       10:00 AM - 9:30 PM
+  Saturday     10:00 AM - 9:30 PM
+  Sunday       11:00 AM - 7:00 PM`,
+    wayfindingHtml: `
+      <div style="background-color: #F0F9FF; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <h4 style="margin: 0 0 8px 0; color: #0369A1; font-size: 14px;">How to Find Us</h4>
+        <p style="margin: 0; color: #374151; font-size: 14px;">Located on Level 2, near the food court entrance. Look for the red Shiekh sign.</p>
+      </div>`,
+    wayfindingText: `
+HOW TO FIND US:
+Located on Level 2, near the food court entrance. Look for the red Shiekh sign.
+`,
+    oneClickButtonsHtml: `
+      <div style="text-align: center; margin: 30px 0;">
+        <p style="font-weight: 600; margin-bottom: 16px;">Is everything above correct?</p>
+        <a href="${baseUrl}/confirm/abc123" class="button" style="display: inline-block; background-color: #059669; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin-right: 12px;">Yes, Correct</a>
+        <a href="${baseUrl}/update/abc123" class="button" style="display: inline-block; background-color: #2563EB; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">No, Update</a>
+      </div>
+      <p style="text-align: center; font-size: 13px; color: #6B7280; margin-bottom: 20px;">
+        Click <strong>Yes, Correct</strong> to confirm everything in one click.<br>
+        Click <strong>No, Update</strong> to sign in and make changes.
+      </p>
+      <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;">
+      <p style="text-align: center; font-size: 13px; color: #6B7280;">Or review all details:</p>`,
+    oneClickButtonsText: `
+Is everything above correct?
+
+YES, CORRECT: ${baseUrl}/confirm/abc123
+(Click to confirm everything in one click)
+
+NO, UPDATE: ${baseUrl}/update/abc123
+(Click to sign in and make changes)
+
+---
+
+Or review all details:
+`,
   };
 
   const renderWithSampleValues = (text: string): string => {

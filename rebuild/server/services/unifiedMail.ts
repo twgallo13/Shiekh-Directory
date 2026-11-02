@@ -8,11 +8,11 @@ import {
   type EmailSettings,
 } from '../routes/emailSettings';
 import {
-  createVerificationRequestEmail,
-  createVerificationReminderEmail,
-  createVerificationConfirmationEmail,
-  createDMVerificationRequestEmail,
   DEFAULT_TEMPLATES,
+  renderTemplate,
+  formatHoursForEmail,
+  formatWayfindingForEmail,
+  formatOneClickButtonsForEmail,
   type VerificationEmailData,
   type ReminderEmailData,
   type DMVerificationEmailData,
@@ -143,14 +143,6 @@ function isSendDay(settings: EmailSettings): boolean {
   return settings.schedule.sendDays.includes(dayName);
 }
 
-function renderTemplate(template: string, data: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(data)) {
-    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-    result = result.replace(regex, value || '');
-  }
-  return result;
-}
 
 export class UnifiedMailService {
   private db: Firestore;
@@ -363,31 +355,47 @@ export class UnifiedMailService {
     sentBy?: string,
     sentByEmail?: string
   ): Promise<MailResult> {
-    const settings = await this.getSettings();
-    const typeSettings = settings.typeSettings.verification_request;
-    
-    if (typeSettings?.template) {
-      const templateData: Record<string, string> = {
-        storeName: data.storeName,
-        storeNumber: data.storeNumber,
-        storeEmail: data.storeEmail,
-        storeType: data.storeType || '',
-        verificationUrl: data.verificationUrl,
-        expiresAt: data.expiresAt,
-        confirmUrl: data.confirmUrl || '',
-        updateUrl: data.updateUrl || '',
-      };
-      return this.send({
-        typeId: 'verification_request',
-        to: data.storeEmail,
-        data: templateData,
-        sentBy,
-        sentByEmail,
-      });
-    }
+    const expiresDate = new Date(data.expiresAt);
+    const expiresFormatted = expiresDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
 
-    const email = createVerificationRequestEmail(data);
-    return this.sendRawEmail('verification_request', email, sentBy, sentByEmail);
+    const hoursFormatted = formatHoursForEmail(data.hours);
+    const wayfindingFormatted = formatWayfindingForEmail(data.wayfindingDirections);
+    const oneClickFormatted = formatOneClickButtonsForEmail(data.confirmUrl, data.updateUrl);
+
+    const templateData: Record<string, string> = {
+      storeName: data.storeName,
+      storeNumber: data.storeNumber,
+      storeEmail: data.storeEmail,
+      storeType: data.storeType || '',
+      storeTypeHtml: data.storeType ? `
+          <dt>Type</dt>
+          <dd>${data.storeType}</dd>` : '',
+      storeTypeText: data.storeType ? `\nType: ${data.storeType}` : '',
+      verificationUrl: data.verificationUrl,
+      expiresAt: data.expiresAt,
+      expiresFormatted,
+      confirmUrl: data.confirmUrl || '',
+      updateUrl: data.updateUrl || '',
+      hoursHtml: hoursFormatted.html,
+      hoursText: hoursFormatted.text,
+      wayfindingHtml: wayfindingFormatted.html,
+      wayfindingText: wayfindingFormatted.text,
+      oneClickButtonsHtml: oneClickFormatted.html,
+      oneClickButtonsText: oneClickFormatted.text,
+    };
+
+    return this.send({
+      typeId: 'verification_request',
+      to: data.storeEmail,
+      data: templateData,
+      sentBy,
+      sentByEmail,
+    });
   }
 
   async sendVerificationReminder(
@@ -395,30 +403,50 @@ export class UnifiedMailService {
     sentBy?: string,
     sentByEmail?: string
   ): Promise<MailResult> {
-    const settings = await this.getSettings();
-    const typeSettings = settings.typeSettings.verification_reminder;
-    
-    if (typeSettings?.template) {
-      const templateData: Record<string, string> = {
-        storeName: data.storeName,
-        storeNumber: data.storeNumber,
-        storeEmail: data.storeEmail,
-        verificationUrl: data.verificationUrl,
-        expiresAt: data.expiresAt,
-        daysRemaining: String(data.daysRemaining),
-        originalSentAt: data.originalSentAt,
-      };
-      return this.send({
-        typeId: 'verification_reminder',
-        to: data.storeEmail,
-        data: templateData,
-        sentBy,
-        sentByEmail,
-      });
-    }
+    const expiresDate = new Date(data.expiresAt);
+    const expiresFormatted = expiresDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
 
-    const email = createVerificationReminderEmail(data);
-    return this.sendRawEmail('verification_reminder', email, sentBy, sentByEmail);
+    const originalSentFormatted = new Date(data.originalSentAt).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    const urgencyClass = data.daysRemaining <= 1 ? 'warning urgent' : 'warning';
+    const urgencyText = data.daysRemaining <= 1 
+      ? 'URGENT: This request expires tomorrow!' 
+      : `Reminder: ${data.daysRemaining} days remaining to respond`;
+    const daysRemainingLabel = data.daysRemaining === 1 
+      ? '1 day remaining' 
+      : `${data.daysRemaining} days remaining`;
+
+    const templateData: Record<string, string> = {
+      storeName: data.storeName,
+      storeNumber: data.storeNumber,
+      storeEmail: data.storeEmail,
+      verificationUrl: data.verificationUrl,
+      expiresAt: data.expiresAt,
+      expiresFormatted,
+      daysRemaining: String(data.daysRemaining),
+      daysRemainingLabel,
+      originalSentAt: data.originalSentAt,
+      originalSentFormatted,
+      urgencyClass,
+      urgencyText,
+    };
+
+    return this.send({
+      typeId: 'verification_reminder',
+      to: data.storeEmail,
+      data: templateData,
+      sentBy,
+      sentByEmail,
+    });
   }
 
   async sendVerificationConfirmation(
@@ -426,26 +454,29 @@ export class UnifiedMailService {
     sentBy?: string,
     sentByEmail?: string
   ): Promise<MailResult> {
-    const settings = await this.getSettings();
-    const typeSettings = settings.typeSettings.verification_confirmation;
-    
-    if (typeSettings?.template) {
-      return this.send({
-        typeId: 'verification_confirmation',
-        to: data.storeEmail,
-        data: {
-          storeName: data.storeName,
-          storeNumber: data.storeNumber,
-          storeEmail: data.storeEmail,
-          verifiedAt: data.verifiedAt,
-        },
-        sentBy,
-        sentByEmail,
-      });
-    }
+    const verifiedFormatted = new Date(data.verifiedAt).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
 
-    const email = createVerificationConfirmationEmail(data);
-    return this.sendRawEmail('verification_confirmation', email, sentBy, sentByEmail);
+    const templateData: Record<string, string> = {
+      storeName: data.storeName,
+      storeNumber: data.storeNumber,
+      storeEmail: data.storeEmail,
+      verifiedAt: data.verifiedAt,
+      verifiedFormatted,
+    };
+
+    return this.send({
+      typeId: 'verification_confirmation',
+      to: data.storeEmail,
+      data: templateData,
+      sentBy,
+      sentByEmail,
+    });
   }
 
   async sendDMVerificationRequest(
@@ -453,33 +484,45 @@ export class UnifiedMailService {
     sentBy?: string,
     sentByEmail?: string
   ): Promise<MailResult> {
-    const settings = await this.getSettings();
-    const typeSettings = settings.typeSettings.dm_verification_request;
-    
-    if (typeSettings?.template) {
-      return this.send({
-        typeId: 'dm_verification_request',
-        to: data.to,
-        data: {
-          recipientName: data.recipientName,
-          recipientType: data.recipientType,
-          districtName: data.districtName,
-          storeCount: String(data.storeCount),
-          verificationUrl: data.verificationUrl,
-          expiresAt: data.expiresAt,
-        },
-        sentBy,
-        sentByEmail,
-      });
-    }
+    const expiresDate = new Date(data.expiresAt);
+    const expiresFormatted = expiresDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
 
-    const emailContent = createDMVerificationRequestEmail(data);
-    return this.sendRawEmail('dm_verification_request', { 
-      to: data.to, 
-      subject: emailContent.subject, 
-      html: emailContent.html, 
-      text: emailContent.text 
-    }, sentBy, sentByEmail);
+    const recipientTypeLabels: Record<'dm' | 'rm' | 'steward', string> = {
+      dm: 'District Manager',
+      rm: 'Regional Manager',
+      steward: 'Steward',
+    };
+    const recipientLabel = recipientTypeLabels[data.recipientType];
+    const contextNote = data.recipientType === 'dm' 
+      ? 'your district' 
+      : data.recipientType === 'rm'
+        ? 'a district in your region (the District Manager position is currently vacant)'
+        : 'a district (both District Manager and Regional Manager positions are currently vacant)';
+
+    const templateData: Record<string, string> = {
+      recipientName: data.recipientName,
+      recipientType: data.recipientType,
+      recipientLabel,
+      contextNote,
+      districtName: data.districtName,
+      storeCount: String(data.storeCount),
+      verificationUrl: data.verificationUrl,
+      expiresAt: data.expiresAt,
+      expiresFormatted,
+    };
+
+    return this.send({
+      typeId: 'dm_verification_request',
+      to: data.to,
+      data: templateData,
+      sentBy,
+      sentByEmail,
+    });
   }
 
   async sendInvitation(
@@ -488,16 +531,19 @@ export class UnifiedMailService {
     sentBy?: string,
     sentByEmail?: string
   ): Promise<MailResult> {
+    const templateData: Record<string, string> = {
+      inviterName: data.inviterName,
+      role: data.role,
+      inviteUrl: data.signInUrl,
+      signInUrl: data.signInUrl,
+      expiresAt: data.expiresAt,
+      personalMessage: data.personalMessage || '',
+    };
+
     return this.send({
       typeId: 'invitation',
       to,
-      data: {
-        inviterName: data.inviterName,
-        role: data.role,
-        signInUrl: data.signInUrl,
-        expiresAt: data.expiresAt,
-        personalMessage: data.personalMessage || '',
-      },
+      data: templateData,
       sentBy,
       sentByEmail,
     });
@@ -509,15 +555,18 @@ export class UnifiedMailService {
     sentBy?: string,
     sentByEmail?: string
   ): Promise<MailResult> {
+    const templateData: Record<string, string> = {
+      inviterName: data.inviterName,
+      role: data.role,
+      inviteUrl: data.signInUrl,
+      signInUrl: data.signInUrl,
+      expiresAt: data.expiresAt,
+    };
+
     return this.send({
       typeId: 'invitation_reminder',
       to,
-      data: {
-        inviterName: data.inviterName,
-        role: data.role,
-        signInUrl: data.signInUrl,
-        expiresAt: data.expiresAt,
-      },
+      data: templateData,
       sentBy,
       sentByEmail,
     });
@@ -529,121 +578,33 @@ export class UnifiedMailService {
     sentBy?: string,
     sentByEmail?: string
   ): Promise<MailResult> {
+    const expiresFormatted = new Date(data.expiresAt).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    const templateData: Record<string, string> = {
+      storeNumber: data.storeNumber,
+      storeName: data.storeName,
+      signInUrl: data.signInUrl,
+      expiresAt: data.expiresAt,
+      expiresFormatted,
+      storeEmail: to,
+    };
+
     return this.send({
       typeId: 'store_signin',
       to,
-      data,
+      data: templateData,
       sentBy,
       sentByEmail,
     });
   }
 
-  private async sendRawEmail(
-    typeId: EmailTypeId,
-    email: { to: string; subject: string; html: string; text: string },
-    sentBy?: string,
-    sentByEmail?: string
-  ): Promise<MailResult> {
-    const settings = await this.getSettings();
-    const envCutoverEnabled = process.env.MAIL_CUTOVER_ENABLED === 'true';
-
-    const logEntry: Record<string, unknown> = {
-      to: email.to,
-      type: typeId,
-      subject: email.subject,
-      sentAt: new Date().toISOString(),
-      sentBy: sentBy || 'system',
-      sentByEmail: sentByEmail || 'system',
-    };
-
-    if (!settings.masterEnabled) {
-      logEntry.success = false;
-      logEntry.blocked = true;
-      logEntry.reason = 'Email sending is disabled (master switch off)';
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, blocked: true, reason: logEntry.reason as string, logOnly: true };
-    }
-
-    if (!envCutoverEnabled) {
-      logEntry.success = false;
-      logEntry.blocked = true;
-      logEntry.reason = 'Email sending is disabled (MAIL_CUTOVER_ENABLED not set)';
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, blocked: true, reason: logEntry.reason as string, logOnly: true };
-    }
-
-    const typeEnabled = settings.typeSettings[typeId]?.enabled !== false;
-    if (!typeEnabled) {
-      logEntry.success = false;
-      logEntry.blocked = true;
-      logEntry.reason = `Email type "${typeId}" is disabled`;
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, blocked: true, reason: logEntry.reason as string };
-    }
-
-    if (isWithinQuietHours(settings)) {
-      logEntry.success = false;
-      logEntry.blocked = true;
-      logEntry.reason = 'Within quiet hours';
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, blocked: true, reason: logEntry.reason as string };
-    }
-
-    if (!isSendDay(settings)) {
-      logEntry.success = false;
-      logEntry.blocked = true;
-      logEntry.reason = 'Not a send day';
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, blocked: true, reason: logEntry.reason as string };
-    }
-
-    if (!settings.smtp.configured) {
-      logEntry.success = false;
-      logEntry.error = 'SMTP not configured';
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, error: 'SMTP not configured' };
-    }
-
-    const password = await this.getSmtpPassword();
-    if (!password) {
-      logEntry.success = false;
-      logEntry.error = 'SMTP password not set';
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, error: 'SMTP password not set' };
-    }
-
-    try {
-      const transporter = createTransport({
-        host: settings.smtp.host,
-        port: settings.smtp.port,
-        secure: settings.smtp.secure,
-        auth: { user: settings.smtp.user, pass: password },
-        connectionTimeout: 10000,
-      });
-
-      const from = `${settings.sender.fromName} <${settings.sender.fromAddress}>`;
-      const info = await transporter.sendMail({
-        from,
-        to: email.to,
-        subject: email.subject,
-        html: email.html,
-        text: email.text,
-        replyTo: settings.sender.replyTo || undefined,
-      });
-
-      logEntry.success = true;
-      logEntry.messageId = info.messageId;
-      await this.db.collection('mailLog').add(logEntry);
-
-      return { success: true, messageId: info.messageId };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-      logEntry.success = false;
-      logEntry.error = errorMsg;
-      await this.db.collection('mailLog').add(logEntry);
-      return { success: false, error: errorMsg };
-    }
-  }
 }
 
 export function createUnifiedMailService(db: Firestore): UnifiedMailService {

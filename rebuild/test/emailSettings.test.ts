@@ -243,6 +243,224 @@ describe('Email Settings - Unified Mail Service', () => {
     }
   });
 
+  it('should render editor default identically to actual email sent (single source)', async () => {
+    const { DEFAULT_TEMPLATES, renderTemplate } = await import('../server/services/mailTemplates');
+    const {
+      createVerificationRequestEmail,
+      createVerificationReminderEmail,
+      createVerificationConfirmationEmail,
+      createDMVerificationRequestEmail,
+      createStoreSignInEmail,
+      createInvitationEmail,
+      createInvitationReminderEmail,
+      formatHoursForEmail,
+      formatWayfindingForEmail,
+      formatOneClickButtonsForEmail,
+    } = await import('../server/services/mailTemplates');
+    
+    const sampleHours = {
+      monday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+      tuesday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+      wednesday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+      thursday: { closed: false, intervals: [{ open: '10:00', close: '21:00' }] },
+      friday: { closed: false, intervals: [{ open: '10:00', close: '21:30' }] },
+      saturday: { closed: false, intervals: [{ open: '10:00', close: '21:30' }] },
+      sunday: { closed: false, intervals: [{ open: '11:00', close: '19:00' }] },
+    };
+    
+    const verificationData = {
+      storeName: 'Test Store',
+      storeNumber: '123',
+      storeEmail: 'test@store.com',
+      storeType: 'Retail',
+      verificationUrl: 'https://example.com/verify/abc',
+      expiresAt: '2026-12-01T00:00:00Z',
+      confirmUrl: 'https://example.com/confirm/abc',
+      updateUrl: 'https://example.com/update/abc',
+      hours: sampleHours,
+      wayfindingDirections: 'Near the food court',
+    };
+    
+    const createdEmail = createVerificationRequestEmail(verificationData);
+    
+    const expiresFormatted = new Date(verificationData.expiresAt).toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    const hoursFormatted = formatHoursForEmail(sampleHours);
+    const wayfindingFormatted = formatWayfindingForEmail(verificationData.wayfindingDirections);
+    const oneClickFormatted = formatOneClickButtonsForEmail(verificationData.confirmUrl, verificationData.updateUrl);
+    
+    const templateData = {
+      storeName: verificationData.storeName,
+      storeNumber: verificationData.storeNumber,
+      storeEmail: verificationData.storeEmail,
+      storeType: verificationData.storeType,
+      storeTypeHtml: `
+          <dt>Type</dt>
+          <dd>${verificationData.storeType}</dd>`,
+      storeTypeText: `\nType: ${verificationData.storeType}`,
+      verificationUrl: verificationData.verificationUrl,
+      expiresAt: verificationData.expiresAt,
+      expiresFormatted,
+      confirmUrl: verificationData.confirmUrl,
+      updateUrl: verificationData.updateUrl,
+      hoursHtml: hoursFormatted.html,
+      hoursText: hoursFormatted.text,
+      wayfindingHtml: wayfindingFormatted.html,
+      wayfindingText: wayfindingFormatted.text,
+      oneClickButtonsHtml: oneClickFormatted.html,
+      oneClickButtonsText: oneClickFormatted.text,
+    };
+    
+    const editorSubject = renderTemplate(DEFAULT_TEMPLATES.verification_request.subject, templateData);
+    const editorHtml = renderTemplate(DEFAULT_TEMPLATES.verification_request.bodyHtml, templateData);
+    const editorText = renderTemplate(DEFAULT_TEMPLATES.verification_request.bodyText, templateData);
+    
+    assert.strictEqual(createdEmail.subject, editorSubject, 'verification_request subject should match');
+    assert.strictEqual(createdEmail.html, editorHtml, 'verification_request HTML should match');
+    assert.strictEqual(createdEmail.text, editorText, 'verification_request text should match');
+    
+    const reminderData = {
+      ...verificationData,
+      daysRemaining: 3,
+      originalSentAt: '2026-11-24T00:00:00Z',
+    };
+    const reminderEmail = createVerificationReminderEmail(reminderData);
+    const reminderExpiresFormatted = new Date(reminderData.expiresAt).toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    const originalSentFormatted = new Date(reminderData.originalSentAt).toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric',
+    });
+    const reminderTemplateData = {
+      storeName: reminderData.storeName,
+      storeNumber: reminderData.storeNumber,
+      storeEmail: reminderData.storeEmail,
+      verificationUrl: reminderData.verificationUrl,
+      expiresAt: reminderData.expiresAt,
+      expiresFormatted: reminderExpiresFormatted,
+      daysRemaining: '3',
+      daysRemainingLabel: '3 days remaining',
+      originalSentAt: reminderData.originalSentAt,
+      originalSentFormatted,
+      urgencyClass: 'warning',
+      urgencyText: 'Reminder: 3 days remaining to respond',
+    };
+    const reminderEditorSubject = renderTemplate(DEFAULT_TEMPLATES.verification_reminder.subject, reminderTemplateData);
+    const reminderEditorHtml = renderTemplate(DEFAULT_TEMPLATES.verification_reminder.bodyHtml, reminderTemplateData);
+    const reminderEditorText = renderTemplate(DEFAULT_TEMPLATES.verification_reminder.bodyText, reminderTemplateData);
+    assert.strictEqual(reminderEmail.subject, reminderEditorSubject, 'verification_reminder subject should match');
+    assert.strictEqual(reminderEmail.html, reminderEditorHtml, 'verification_reminder HTML should match');
+    assert.strictEqual(reminderEmail.text, reminderEditorText, 'verification_reminder text should match');
+    
+    const confirmationData = {
+      storeName: 'Test Store',
+      storeNumber: '123',
+      storeEmail: 'test@store.com',
+      verifiedAt: '2026-11-30T14:30:00Z',
+    };
+    const confirmationEmail = createVerificationConfirmationEmail(confirmationData);
+    const verifiedFormatted = new Date(confirmationData.verifiedAt).toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    const confirmationTemplateData = {
+      storeName: confirmationData.storeName,
+      storeNumber: confirmationData.storeNumber,
+      storeEmail: confirmationData.storeEmail,
+      verifiedAt: confirmationData.verifiedAt,
+      verifiedFormatted,
+    };
+    const confirmationEditorSubject = renderTemplate(DEFAULT_TEMPLATES.verification_confirmation.subject, confirmationTemplateData);
+    const confirmationEditorHtml = renderTemplate(DEFAULT_TEMPLATES.verification_confirmation.bodyHtml, confirmationTemplateData);
+    const confirmationEditorText = renderTemplate(DEFAULT_TEMPLATES.verification_confirmation.bodyText, confirmationTemplateData);
+    assert.strictEqual(confirmationEmail.subject, confirmationEditorSubject, 'verification_confirmation subject should match');
+    assert.strictEqual(confirmationEmail.html, confirmationEditorHtml, 'verification_confirmation HTML should match');
+    assert.strictEqual(confirmationEmail.text, confirmationEditorText, 'verification_confirmation text should match');
+    
+    const dmData = {
+      recipientName: 'John Smith',
+      recipientType: 'dm' as const,
+      districtName: 'Southern California',
+      storeCount: 12,
+      verificationUrl: 'https://example.com/dm-verify/abc',
+      expiresAt: '2026-12-01T00:00:00Z',
+    };
+    const dmEmail = createDMVerificationRequestEmail(dmData);
+    const dmExpiresFormatted = new Date(dmData.expiresAt).toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+    const dmTemplateData = {
+      recipientName: dmData.recipientName,
+      recipientType: dmData.recipientType,
+      recipientLabel: 'District Manager',
+      contextNote: 'your district',
+      districtName: dmData.districtName,
+      storeCount: String(dmData.storeCount),
+      verificationUrl: dmData.verificationUrl,
+      expiresAt: dmData.expiresAt,
+      expiresFormatted: dmExpiresFormatted,
+    };
+    const dmEditorSubject = renderTemplate(DEFAULT_TEMPLATES.dm_verification_request.subject, dmTemplateData);
+    const dmEditorHtml = renderTemplate(DEFAULT_TEMPLATES.dm_verification_request.bodyHtml, dmTemplateData);
+    const dmEditorText = renderTemplate(DEFAULT_TEMPLATES.dm_verification_request.bodyText, dmTemplateData);
+    assert.strictEqual(dmEmail.subject, dmEditorSubject, 'dm_verification_request subject should match');
+    assert.strictEqual(dmEmail.html, dmEditorHtml, 'dm_verification_request HTML should match');
+    assert.strictEqual(dmEmail.text, dmEditorText, 'dm_verification_request text should match');
+    
+    const storeSignInData = {
+      storeName: 'Test Store',
+      storeNumber: '123',
+      storeEmail: 'test@store.com',
+      signInUrl: 'https://example.com/signin?token=abc',
+      expiresAt: '2026-12-01T12:00:00Z',
+    };
+    const storeSignInEmail = createStoreSignInEmail(storeSignInData);
+    const signInExpiresFormatted = new Date(storeSignInData.expiresAt).toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    const storeSignInTemplateData = {
+      storeName: storeSignInData.storeName,
+      storeNumber: storeSignInData.storeNumber,
+      storeEmail: storeSignInData.storeEmail,
+      signInUrl: storeSignInData.signInUrl,
+      expiresAt: storeSignInData.expiresAt,
+      expiresFormatted: signInExpiresFormatted,
+    };
+    const storeSignInEditorSubject = renderTemplate(DEFAULT_TEMPLATES.store_signin.subject, storeSignInTemplateData);
+    const storeSignInEditorHtml = renderTemplate(DEFAULT_TEMPLATES.store_signin.bodyHtml, storeSignInTemplateData);
+    const storeSignInEditorText = renderTemplate(DEFAULT_TEMPLATES.store_signin.bodyText, storeSignInTemplateData);
+    assert.strictEqual(storeSignInEmail.subject, storeSignInEditorSubject, 'store_signin subject should match');
+    assert.strictEqual(storeSignInEmail.html, storeSignInEditorHtml, 'store_signin HTML should match');
+    assert.strictEqual(storeSignInEmail.text, storeSignInEditorText, 'store_signin text should match');
+    
+    const invitationData = {
+      to: 'newuser@example.com',
+      inviterName: 'Admin User',
+      role: 'Steward',
+      inviteUrl: 'https://example.com/invite/abc',
+    };
+    const invitationEmail = createInvitationEmail(invitationData);
+    const invitationTemplateData = {
+      inviterName: invitationData.inviterName,
+      role: invitationData.role,
+      inviteUrl: invitationData.inviteUrl,
+    };
+    const invitationEditorSubject = renderTemplate(DEFAULT_TEMPLATES.invitation.subject, invitationTemplateData);
+    const invitationEditorHtml = renderTemplate(DEFAULT_TEMPLATES.invitation.bodyHtml, invitationTemplateData);
+    const invitationEditorText = renderTemplate(DEFAULT_TEMPLATES.invitation.bodyText, invitationTemplateData);
+    assert.strictEqual(invitationEmail.subject, invitationEditorSubject, 'invitation subject should match');
+    assert.strictEqual(invitationEmail.html, invitationEditorHtml, 'invitation HTML should match');
+    assert.strictEqual(invitationEmail.text, invitationEditorText, 'invitation text should match');
+    
+    const invitationReminderEmail = createInvitationReminderEmail(invitationData);
+    const invitationReminderEditorSubject = renderTemplate(DEFAULT_TEMPLATES.invitation_reminder.subject, invitationTemplateData);
+    const invitationReminderEditorHtml = renderTemplate(DEFAULT_TEMPLATES.invitation_reminder.bodyHtml, invitationTemplateData);
+    const invitationReminderEditorText = renderTemplate(DEFAULT_TEMPLATES.invitation_reminder.bodyText, invitationTemplateData);
+    assert.strictEqual(invitationReminderEmail.subject, invitationReminderEditorSubject, 'invitation_reminder subject should match');
+    assert.strictEqual(invitationReminderEmail.html, invitationReminderEditorHtml, 'invitation_reminder HTML should match');
+    assert.strictEqual(invitationReminderEmail.text, invitationReminderEditorText, 'invitation_reminder text should match');
+  });
+
   it('should gate sends on master switch (default off)', async () => {
     const { getEmailSettings } = await import('../server/routes/emailSettings');
     const { initializeApp, deleteApp } = await import('firebase-admin/app');

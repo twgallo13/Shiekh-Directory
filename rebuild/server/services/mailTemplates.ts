@@ -22,6 +22,20 @@ export interface VerificationEmailData {
   wayfindingDirections?: string;
 }
 
+export interface ReminderEmailData extends VerificationEmailData {
+  daysRemaining: number;
+  originalSentAt: string;
+}
+
+export interface DMVerificationEmailData {
+  recipientName: string;
+  recipientType: 'dm' | 'rm' | 'steward';
+  districtName: string;
+  storeCount: number;
+  verificationUrl: string;
+  expiresAt: string;
+}
+
 const DAYS_ORDERED: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_LABELS: Record<DayOfWeek, string> = {
   monday: 'Monday',
@@ -40,7 +54,7 @@ function formatTime(time24: string): string {
   return `${hours12}:${minutes.toString().padStart(2, '0')} ${period}`;
 }
 
-function formatHoursForEmail(hours: StandardHours | undefined): { html: string; text: string } {
+export function formatHoursForEmail(hours: StandardHours | undefined): { html: string; text: string } {
   if (!hours) {
     return { html: '<p><em>Hours not configured</em></p>', text: 'Hours not configured' };
   }
@@ -84,9 +98,56 @@ function formatHoursForEmail(hours: StandardHours | undefined): { html: string; 
   return { html, text: textLines };
 }
 
-export interface ReminderEmailData extends VerificationEmailData {
-  daysRemaining: number;
-  originalSentAt: string;
+export function formatWayfindingForEmail(directions: string | undefined): { html: string; text: string } {
+  if (!directions) {
+    return { html: '', text: '' };
+  }
+  return {
+    html: `
+      <div style="background-color: #F0F9FF; border-radius: 8px; padding: 16px; margin: 16px 0;">
+        <h4 style="margin: 0 0 8px 0; color: #0369A1; font-size: 14px;">How to Find Us</h4>
+        <p style="margin: 0; color: #374151; font-size: 14px;">${directions}</p>
+      </div>
+    `,
+    text: `
+HOW TO FIND US:
+${directions}
+`,
+  };
+}
+
+export function formatOneClickButtonsForEmail(confirmUrl: string | undefined, updateUrl: string | undefined): { html: string; text: string } {
+  if (!confirmUrl || !updateUrl) {
+    return { html: '', text: '' };
+  }
+  return {
+    html: `
+      <div style="text-align: center; margin: 30px 0;">
+        <p style="font-weight: 600; margin-bottom: 16px;">Is everything above correct?</p>
+        <a href="${confirmUrl}" class="button" style="display: inline-block; background-color: #059669; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin-right: 12px;">Yes, Correct</a>
+        <a href="${updateUrl}" class="button" style="display: inline-block; background-color: #2563EB; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">No, Update</a>
+      </div>
+      <p style="text-align: center; font-size: 13px; color: #6B7280; margin-bottom: 20px;">
+        Click <strong>Yes, Correct</strong> to confirm everything in one click.<br>
+        Click <strong>No, Update</strong> to sign in and make changes.
+      </p>
+      <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;">
+      <p style="text-align: center; font-size: 13px; color: #6B7280;">Or review all details:</p>
+    `,
+    text: `
+Is everything above correct?
+
+YES, CORRECT: ${confirmUrl}
+(Click to confirm everything in one click)
+
+NO, UPDATE: ${updateUrl}
+(Click to sign in and make changes)
+
+---
+
+Or review all details:
+`,
+  };
 }
 
 const SHIEKH_RED = '#DC2626';
@@ -106,6 +167,367 @@ const baseStyles = `
   .urgent { background-color: #FEE2E2; border-left: 4px solid #DC2626; }
 `;
 
+function wrapInEmailHtml(title: string, content: string, footerEmail?: string): string {
+  const footerLine = footerEmail ? `<p>This email was sent to ${footerEmail}</p>` : '';
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <style>${baseStyles}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>SHIEKH Store Directory</h1>
+    </div>
+    <div class="content">
+${content}
+    </div>
+    <div class="footer">
+      ${footerLine}
+      <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
+      <p style="font-size: 10px; color: #9CA3AF;">This is an automated message. Please do not reply directly to this email.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export function renderTemplate(template: string, data: Record<string, string>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(data)) {
+    const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+    result = result.replace(regex, value || '');
+  }
+  return result;
+}
+
+export const DEFAULT_TEMPLATES = {
+  verification_request: {
+    subject: '[Action Required] Verify Hours - Store {{storeNumber}}',
+    bodyHtml: wrapInEmailHtml('Hours Verification Request', `
+      <h2>Hours Verification Request</h2>
+      <p>Hello,</p>
+      <p>Please verify the following information for your store is correct.</p>
+      
+      <div class="store-info">
+        <dl>
+          <dt>Store</dt>
+          <dd>{{storeNumber}} - {{storeName}}</dd>{{storeTypeHtml}}
+        </dl>
+      </div>
+
+      <h3 style="margin-top: 24px; margin-bottom: 8px; color: #374151;">Current Hours</h3>
+      {{hoursHtml}}
+
+      {{wayfindingHtml}}
+
+      <p style="margin-top: 24px;">Please confirm this information is correct, or submit any needed corrections.</p>
+
+      {{oneClickButtonsHtml}}
+
+      <div style="text-align: center;">
+        <a href="{{verificationUrl}}" class="button">Verify Hours Now</a>
+      </div>
+
+      <div class="warning">
+        <strong>Please respond by:</strong> {{expiresFormatted}}
+      </div>
+
+      <p>If you have questions, please contact your District Manager or the operations team.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`, '{{storeEmail}}'),
+    bodyText: `SHIEKH Store Directory - Hours Verification Request
+
+Hello,
+
+Please verify the following information for your store is correct.
+
+Store: {{storeNumber}} - {{storeName}}{{storeTypeText}}
+
+CURRENT HOURS:
+{{hoursText}}
+{{wayfindingText}}
+Please confirm this information is correct, or submit any needed corrections.
+
+{{oneClickButtonsText}}
+Verify Hours Now: {{verificationUrl}}
+
+Please respond by: {{expiresFormatted}}
+
+If you have questions, please contact your District Manager or the operations team.
+
+Thank you,
+Shiekh Operations Team
+
+---
+This email was sent to {{storeEmail}}
+This is an automated message. Please do not reply directly to this email.`,
+  },
+
+  verification_reminder: {
+    subject: '[Reminder] Verify Hours - Store {{storeNumber}} - {{daysRemainingLabel}}',
+    bodyHtml: wrapInEmailHtml('Hours Verification Reminder', `
+      <h2>Reminder: Hours Verification Needed</h2>
+      
+      <div class="{{urgencyClass}}">
+        <strong>{{urgencyText}}</strong>
+      </div>
+
+      <p>Hello,</p>
+      <p>This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.</p>
+      
+      <div class="store-info">
+        <dl>
+          <dt>Store</dt>
+          <dd>{{storeNumber}} - {{storeName}}</dd>
+          <dt>Original Request Sent</dt>
+          <dd>{{originalSentFormatted}}</dd>
+        </dl>
+      </div>
+
+      <p>Please take a few minutes to review your store's hours and confirm they are accurate.</p>
+
+      <div style="text-align: center;">
+        <a href="{{verificationUrl}}" class="button">Verify Hours Now</a>
+      </div>
+
+      <div class="warning">
+        <strong>Deadline:</strong> {{expiresFormatted}}
+      </div>
+
+      <p>If you have questions or need assistance, please contact your District Manager.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`, '{{storeEmail}}'),
+    bodyText: `SHIEKH Store Directory - Reminder: Hours Verification Needed
+
+{{urgencyText}}
+
+Hello,
+
+This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.
+
+Store: {{storeNumber}} - {{storeName}}
+Original Request Sent: {{originalSentFormatted}}
+
+Please take a few minutes to review your store's hours and confirm they are accurate.
+
+Verify Hours Now: {{verificationUrl}}
+
+Deadline: {{expiresFormatted}}
+
+If you have questions or need assistance, please contact your District Manager.
+
+Thank you,
+Shiekh Operations Team
+
+---
+This email was sent to {{storeEmail}}
+This is an automated reminder. Please do not reply directly to this email.`,
+  },
+
+  verification_confirmation: {
+    subject: 'Hours Verified - Store {{storeNumber}}',
+    bodyHtml: wrapInEmailHtml('Hours Verified', `
+      <h2 style="color: #059669;">✓ Hours Verified</h2>
+      <p>Hello,</p>
+      <p>Thank you for verifying your store's operating hours.</p>
+      
+      <div class="store-info">
+        <dl>
+          <dt>Store</dt>
+          <dd>{{storeNumber}} - {{storeName}}</dd>
+          <dt>Verified On</dt>
+          <dd>{{verifiedFormatted}}</dd>
+        </dl>
+      </div>
+
+      <p>Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`),
+    bodyText: `SHIEKH Store Directory - Hours Verified
+
+Hello,
+
+Thank you for verifying your store's operating hours.
+
+Store: {{storeNumber}} - {{storeName}}
+Verified On: {{verifiedFormatted}}
+
+Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+
+  store_signin: {
+    subject: 'Sign in to Shiekh Directory - Store {{storeNumber}}',
+    bodyHtml: wrapInEmailHtml('Store Sign-In Link', `
+      <h2>Store Sign-In Link</h2>
+      <p>Hello,</p>
+      <p>You requested a sign-in link for the Shiekh Store Directory.</p>
+
+      <div class="store-info">
+        <dl>
+          <dt>Store</dt>
+          <dd>{{storeNumber}} - {{storeName}}</dd>
+        </dl>
+      </div>
+
+      <div style="text-align: center;">
+        <a href="{{signInUrl}}" class="button">Sign In Now</a>
+      </div>
+
+      <div class="warning">
+        <strong>This link expires:</strong> {{expiresFormatted}}
+      </div>
+
+      <p>If you didn't request this link, you can safely ignore this email.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`),
+    bodyText: `SHIEKH Store Directory - Store Sign-In Link
+
+Hello,
+
+You requested a sign-in link for the Shiekh Store Directory.
+
+Store: {{storeNumber}} - {{storeName}}
+
+Sign In Now: {{signInUrl}}
+
+This link expires: {{expiresFormatted}}
+
+If you didn't request this link, you can safely ignore this email.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+
+  dm_verification_request: {
+    subject: '[Action Required] District Verification - {{districtName}}',
+    bodyHtml: wrapInEmailHtml('District Verification Request', `
+      <h2>District Verification Request</h2>
+      <p>Hello {{recipientName}},</p>
+      <p>As {{recipientLabel}}, we need you to verify the store roster for {{contextNote}}.</p>
+      
+      <div class="store-info">
+        <dl>
+          <dt>District</dt>
+          <dd>{{districtName}}</dd>
+          <dt>Number of Stores</dt>
+          <dd>{{storeCount}}</dd>
+        </dl>
+      </div>
+
+      <p>Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.</p>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="{{verificationUrl}}" class="button">Review District Roster</a>
+      </div>
+
+      <div class="warning">
+        <strong>Please respond by:</strong> {{expiresFormatted}}
+      </div>
+
+      <p>If you have questions, please contact the operations team.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`),
+    bodyText: `SHIEKH Store Directory - District Verification Request
+
+Hello {{recipientName}},
+
+As {{recipientLabel}}, we need you to verify the store roster for {{contextNote}}.
+
+District: {{districtName}}
+Number of Stores: {{storeCount}}
+
+Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.
+
+Review District Roster: {{verificationUrl}}
+
+Please respond by: {{expiresFormatted}}
+
+If you have questions, please contact the operations team.
+
+Thank you,
+Shiekh Operations Team
+
+---
+This is an automated message. Please do not reply directly to this email.`,
+  },
+
+  invitation: {
+    subject: "You're invited to Shiekh Directory",
+    bodyHtml: wrapInEmailHtml("You're Invited!", `
+      <h2>You're Invited!</h2>
+      <p>Hello,</p>
+      <p>{{inviterName}} has invited you to join the Shiekh Store Directory as <strong>{{role}}</strong>.</p>
+
+      <div style="text-align: center;">
+        <a href="{{inviteUrl}}" class="button">Accept Invitation</a>
+      </div>
+
+      <p>If you have questions, please contact your manager or the person who sent this invitation.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`),
+    bodyText: `You're Invited!
+
+Hello,
+
+{{inviterName}} has invited you to join the Shiekh Store Directory as {{role}}.
+
+Accept Invitation: {{inviteUrl}}
+
+If you have questions, please contact your manager or the person who sent this invitation.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+
+  invitation_reminder: {
+    subject: "Reminder: You're invited to Shiekh Directory",
+    bodyHtml: wrapInEmailHtml('Reminder: Invitation Pending', `
+      <h2>Reminder: Invitation Pending</h2>
+
+      <div class="warning">
+        <strong>You have a pending invitation</strong>
+      </div>
+
+      <p>Hello,</p>
+      <p>This is a reminder that {{inviterName}} invited you to join the Shiekh Store Directory as <strong>{{role}}</strong>.</p>
+
+      <div style="text-align: center;">
+        <a href="{{inviteUrl}}" class="button">Accept Invitation</a>
+      </div>
+
+      <p>If you have questions, please contact your manager or the person who sent this invitation.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`),
+    bodyText: `Reminder: Invitation Pending
+
+You have a pending invitation
+
+Hello,
+
+This is a reminder that {{inviterName}} invited you to join the Shiekh Store Directory as {{role}}.
+
+Accept Invitation: {{inviteUrl}}
+
+If you have questions, please contact your manager or the person who sent this invitation.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+} as const;
+
+const RECIPIENT_TYPE_LABELS: Record<'dm' | 'rm' | 'steward', string> = {
+  dm: 'District Manager',
+  rm: 'Regional Manager',
+  steward: 'Steward',
+};
+
 export function createVerificationRequestEmail(data: VerificationEmailData): EmailMessage {
   const expiresDate = new Date(data.expiresAt);
   const expiresFormatted = expiresDate.toLocaleDateString('en-US', {
@@ -115,142 +537,34 @@ export function createVerificationRequestEmail(data: VerificationEmailData): Ema
     day: 'numeric',
   });
 
-  const hasOneClick = data.confirmUrl && data.updateUrl;
   const hoursFormatted = formatHoursForEmail(data.hours);
+  const wayfindingFormatted = formatWayfindingForEmail(data.wayfindingDirections);
+  const oneClickFormatted = formatOneClickButtonsForEmail(data.confirmUrl, data.updateUrl);
 
-  const wayfindingHtml = data.wayfindingDirections ? `
-      <div style="background-color: #F0F9FF; border-radius: 8px; padding: 16px; margin: 16px 0;">
-        <h4 style="margin: 0 0 8px 0; color: #0369A1; font-size: 14px;">How to Find Us</h4>
-        <p style="margin: 0; color: #374151; font-size: 14px;">${data.wayfindingDirections}</p>
-      </div>
-  ` : '';
-
-  const wayfindingText = data.wayfindingDirections ? `
-HOW TO FIND US:
-${data.wayfindingDirections}
-` : '';
-
-  const oneClickButtonsHtml = hasOneClick ? `
-      <div style="text-align: center; margin: 30px 0;">
-        <p style="font-weight: 600; margin-bottom: 16px;">Is everything above correct?</p>
-        <a href="${data.confirmUrl}" class="button" style="background-color: #059669; margin-right: 12px;">Yes, Correct</a>
-        <a href="${data.updateUrl}" class="button" style="background-color: #2563EB;">No, Update</a>
-      </div>
-      <p style="text-align: center; font-size: 13px; color: #6B7280; margin-bottom: 20px;">
-        Click <strong>Yes, Correct</strong> to confirm everything in one click.<br>
-        Click <strong>No, Update</strong> to sign in and make changes.
-      </p>
-      <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;">
-      <p style="text-align: center; font-size: 13px; color: #6B7280;">Or review all details:</p>
-  ` : '';
-
-  const oneClickButtonsText = hasOneClick ? `
-Is everything above correct?
-
-YES, CORRECT: ${data.confirmUrl}
-(Click to confirm everything in one click)
-
-NO, UPDATE: ${data.updateUrl}
-(Click to sign in and make changes)
-
----
-
-Or review all details:
-` : '';
-
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hours Verification Request</title>
-  <style>${baseStyles}</style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>SHIEKH Store Directory</h1>
-    </div>
-    <div class="content">
-      <h2>Hours Verification Request</h2>
-      <p>Hello,</p>
-      <p>Please verify the following information for your store is correct.</p>
-      
-      <div class="store-info">
-        <dl>
-          <dt>Store</dt>
-          <dd>${data.storeNumber} - ${data.storeName}</dd>${data.storeType ? `
+  const templateData: Record<string, string> = {
+    storeName: data.storeName,
+    storeNumber: data.storeNumber,
+    storeEmail: data.storeEmail,
+    storeTypeHtml: data.storeType ? `
           <dt>Type</dt>
-          <dd>${data.storeType}</dd>` : ''}
-        </dl>
-      </div>
+          <dd>${data.storeType}</dd>` : '',
+    storeTypeText: data.storeType ? `\nType: ${data.storeType}` : '',
+    verificationUrl: data.verificationUrl,
+    expiresFormatted,
+    hoursHtml: hoursFormatted.html,
+    hoursText: hoursFormatted.text,
+    wayfindingHtml: wayfindingFormatted.html,
+    wayfindingText: wayfindingFormatted.text,
+    oneClickButtonsHtml: oneClickFormatted.html,
+    oneClickButtonsText: oneClickFormatted.text,
+  };
 
-      <h3 style="margin-top: 24px; margin-bottom: 8px; color: #374151;">Current Hours</h3>
-      ${hoursFormatted.html}
-
-      ${wayfindingHtml}
-
-      <p style="margin-top: 24px;">Please confirm this information is correct, or submit any needed corrections.</p>
-
-      ${oneClickButtonsHtml}
-
-      <div style="text-align: center;">
-        <a href="${data.verificationUrl}" class="button">Verify Hours Now</a>
-      </div>
-
-      <div class="warning">
-        <strong>Please respond by:</strong> ${expiresFormatted}
-      </div>
-
-      <p>If you have questions, please contact your District Manager or the operations team.</p>
-
-      <p>Thank you,<br>Shiekh Operations Team</p>
-    </div>
-    <div class="footer">
-      <p>This email was sent to ${data.storeEmail}</p>
-      <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-      <p style="font-size: 10px; color: #9CA3AF;">This is an automated message. Please do not reply directly to this email.</p>
-    </div>
-  </div>
-</body>
-</html>`;
-
-  const text = `
-SHIEKH Store Directory - Hours Verification Request
-
-Hello,
-
-Please verify the following information for your store is correct.
-
-Store: ${data.storeNumber} - ${data.storeName}${data.storeType ? `
-Type: ${data.storeType}` : ''}
-
-CURRENT HOURS:
-${hoursFormatted.text}
-${wayfindingText}
-Please confirm this information is correct, or submit any needed corrections.
-
-${oneClickButtonsText}
-Verify Hours Now: ${data.verificationUrl}
-
-Please respond by: ${expiresFormatted}
-
-If you have questions, please contact your District Manager or the operations team.
-
-Thank you,
-Shiekh Operations Team
-
----
-This email was sent to ${data.storeEmail}
-This is an automated message. Please do not reply directly to this email.
-`;
-
+  const template = DEFAULT_TEMPLATES.verification_request;
   return {
     to: data.storeEmail,
-    subject: `[Action Required] Verify Hours - Store ${data.storeNumber}`,
-    html,
-    text,
+    subject: renderTemplate(template.subject, templateData),
+    html: renderTemplate(template.bodyHtml, templateData),
+    text: renderTemplate(template.bodyText, templateData),
   };
 }
 
@@ -263,100 +577,41 @@ export function createVerificationReminderEmail(data: ReminderEmailData): EmailM
     day: 'numeric',
   });
 
+  const originalSentFormatted = new Date(data.originalSentAt).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
   const urgencyClass = data.daysRemaining <= 1 ? 'warning urgent' : 'warning';
   const urgencyText = data.daysRemaining <= 1 
     ? 'URGENT: This request expires tomorrow!' 
     : `Reminder: ${data.daysRemaining} days remaining to respond`;
+  const daysRemainingLabel = data.daysRemaining === 1 
+    ? '1 day remaining' 
+    : `${data.daysRemaining} days remaining`;
 
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hours Verification Reminder</title>
-  <style>${baseStyles}</style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>SHIEKH Store Directory</h1>
-    </div>
-    <div class="content">
-      <h2>Reminder: Hours Verification Needed</h2>
-      
-      <div class="${urgencyClass}">
-        <strong>${urgencyText}</strong>
-      </div>
+  const templateData: Record<string, string> = {
+    storeName: data.storeName,
+    storeNumber: data.storeNumber,
+    storeEmail: data.storeEmail,
+    verificationUrl: data.verificationUrl,
+    expiresAt: data.expiresAt,
+    expiresFormatted,
+    originalSentAt: data.originalSentAt,
+    originalSentFormatted,
+    daysRemaining: String(data.daysRemaining),
+    daysRemainingLabel,
+    urgencyClass,
+    urgencyText,
+  };
 
-      <p>Hello,</p>
-      <p>This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.</p>
-      
-      <div class="store-info">
-        <dl>
-          <dt>Store</dt>
-          <dd>${data.storeNumber} - ${data.storeName}</dd>
-          <dt>Original Request Sent</dt>
-          <dd>${new Date(data.originalSentAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</dd>
-        </dl>
-      </div>
-
-      <p>Please take a few minutes to review your store's hours and confirm they are accurate.</p>
-
-      <div style="text-align: center;">
-        <a href="${data.verificationUrl}" class="button">Verify Hours Now</a>
-      </div>
-
-      <div class="warning">
-        <strong>Deadline:</strong> ${expiresFormatted}
-      </div>
-
-      <p>If you have questions or need assistance, please contact your District Manager.</p>
-
-      <p>Thank you,<br>Shiekh Operations Team</p>
-    </div>
-    <div class="footer">
-      <p>This email was sent to ${data.storeEmail}</p>
-      <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-      <p style="font-size: 10px; color: #9CA3AF;">This is an automated reminder. Please do not reply directly to this email.</p>
-    </div>
-  </div>
-</body>
-</html>`;
-
-  const text = `
-SHIEKH Store Directory - Reminder: Hours Verification Needed
-
-${urgencyText}
-
-Hello,
-
-This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.
-
-Store: ${data.storeNumber} - ${data.storeName}
-Original Request Sent: ${new Date(data.originalSentAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-
-Please take a few minutes to review your store's hours and confirm they are accurate.
-
-Verify Hours Now: ${data.verificationUrl}
-
-Deadline: ${expiresFormatted}
-
-If you have questions or need assistance, please contact your District Manager.
-
-Thank you,
-Shiekh Operations Team
-
----
-This email was sent to ${data.storeEmail}
-This is an automated reminder. Please do not reply directly to this email.
-`;
-
+  const template = DEFAULT_TEMPLATES.verification_reminder;
   return {
     to: data.storeEmail,
-    subject: `[Reminder] Verify Hours - Store ${data.storeNumber} - ${data.daysRemaining} day${data.daysRemaining === 1 ? '' : 's'} remaining`,
-    html,
-    text,
+    subject: renderTemplate(template.subject, templateData),
+    html: renderTemplate(template.bodyHtml, templateData),
+    text: renderTemplate(template.bodyText, templateData),
   };
 }
 
@@ -366,7 +621,7 @@ export function createVerificationConfirmationEmail(data: {
   storeEmail: string;
   verifiedAt: string;
 }): EmailMessage {
-  const verifiedDate = new Date(data.verifiedAt).toLocaleDateString('en-US', {
+  const verifiedFormatted = new Date(data.verifiedAt).toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
@@ -374,85 +629,21 @@ export function createVerificationConfirmationEmail(data: {
     minute: '2-digit',
   });
 
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hours Verified</title>
-  <style>${baseStyles}</style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>SHIEKH Store Directory</h1>
-    </div>
-    <div class="content">
-      <h2 style="color: #059669;">✓ Hours Verified</h2>
-      <p>Hello,</p>
-      <p>Thank you for verifying your store's operating hours.</p>
-      
-      <div class="store-info">
-        <dl>
-          <dt>Store</dt>
-          <dd>${data.storeNumber} - ${data.storeName}</dd>
-          <dt>Verified On</dt>
-          <dd>${verifiedDate}</dd>
-        </dl>
-      </div>
+  const templateData: Record<string, string> = {
+    storeName: data.storeName,
+    storeNumber: data.storeNumber,
+    storeEmail: data.storeEmail,
+    verifiedFormatted,
+  };
 
-      <p>Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.</p>
-
-      <p>Thank you,<br>Shiekh Operations Team</p>
-    </div>
-    <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>`;
-
-  const text = `
-SHIEKH Store Directory - Hours Verified
-
-Hello,
-
-Thank you for verifying your store's operating hours.
-
-Store: ${data.storeNumber} - ${data.storeName}
-Verified On: ${verifiedDate}
-
-Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.
-
-Thank you,
-Shiekh Operations Team
-`;
-
+  const template = DEFAULT_TEMPLATES.verification_confirmation;
   return {
     to: data.storeEmail,
-    subject: `Hours Verified - Store ${data.storeNumber}`,
-    html,
-    text,
+    subject: renderTemplate(template.subject, templateData),
+    html: renderTemplate(template.bodyHtml, templateData),
+    text: renderTemplate(template.bodyText, templateData),
   };
 }
-
-// === DM Verification Email ===
-
-export interface DMVerificationEmailData {
-  recipientName: string;
-  recipientType: 'dm' | 'rm' | 'steward';
-  districtName: string;
-  storeCount: number;
-  verificationUrl: string;
-  expiresAt: string;
-}
-
-const RECIPIENT_TYPE_LABELS: Record<'dm' | 'rm' | 'steward', string> = {
-  dm: 'District Manager',
-  rm: 'Regional Manager',
-  steward: 'Steward',
-};
 
 export function createDMVerificationRequestEmail(data: DMVerificationEmailData): Omit<EmailMessage, 'to'> {
   const expiresDate = new Date(data.expiresAt);
@@ -470,349 +661,95 @@ export function createDMVerificationRequestEmail(data: DMVerificationEmailData):
       ? 'a district in your region (the District Manager position is currently vacant)'
       : 'a district (both District Manager and Regional Manager positions are currently vacant)';
 
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>District Verification Request</title>
-  <style>${baseStyles}</style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>SHIEKH Store Directory</h1>
-    </div>
-    <div class="content">
-      <h2>District Verification Request</h2>
-      <p>Hello ${data.recipientName},</p>
-      <p>As ${recipientLabel}, we need you to verify the store roster for ${contextNote}.</p>
-      
-      <div class="store-info">
-        <dl>
-          <dt>District</dt>
-          <dd>${data.districtName}</dd>
-          <dt>Number of Stores</dt>
-          <dd>${data.storeCount}</dd>
-        </dl>
-      </div>
+  const templateData: Record<string, string> = {
+    recipientName: data.recipientName,
+    recipientLabel,
+    contextNote,
+    districtName: data.districtName,
+    storeCount: String(data.storeCount),
+    verificationUrl: data.verificationUrl,
+    expiresFormatted,
+  };
 
-      <p>Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.</p>
-
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${data.verificationUrl}" class="button">Review District Roster</a>
-      </div>
-
-      <div class="warning">
-        <strong>Please respond by:</strong> ${expiresFormatted}
-      </div>
-
-      <p>If you have questions, please contact the operations team.</p>
-
-      <p>Thank you,<br>Shiekh Operations Team</p>
-    </div>
-    <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-      <p style="font-size: 10px; color: #9CA3AF;">This is an automated message. Please do not reply directly to this email.</p>
-    </div>
-  </div>
-</body>
-</html>`;
-
-  const text = `
-SHIEKH Store Directory - District Verification Request
-
-Hello ${data.recipientName},
-
-As ${recipientLabel}, we need you to verify the store roster for ${contextNote}.
-
-District: ${data.districtName}
-Number of Stores: ${data.storeCount}
-
-Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.
-
-Review District Roster: ${data.verificationUrl}
-
-Please respond by: ${expiresFormatted}
-
-If you have questions, please contact the operations team.
-
-Thank you,
-Shiekh Operations Team
-
----
-This is an automated message. Please do not reply directly to this email.
-`;
-
+  const template = DEFAULT_TEMPLATES.dm_verification_request;
   return {
-    subject: `[Action Required] District Verification - ${data.districtName}`,
-    html,
-    text,
+    subject: renderTemplate(template.subject, templateData),
+    html: renderTemplate(template.bodyHtml, templateData),
+    text: renderTemplate(template.bodyText, templateData),
   };
 }
 
-// Default templates for the template editor - matches what's actually sent
-// These use placeholders that get rendered by the custom template system
-export const DEFAULT_TEMPLATES = {
-  verification_request: {
-    subject: '[Action Required] Verify Hours - Store {{storeNumber}}',
-    bodyHtml: `<h2>Hours Verification Request</h2>
-<p>Hello,</p>
-<p>Please verify the following information for your store is correct.</p>
-
-<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
-  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
-</div>
-
-<p>Please confirm this information is correct, or submit any needed corrections.</p>
-
-<p style="text-align: center; margin: 30px 0;">
-  <a href="{{verificationUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Verify Hours Now</a>
-</p>
-
-<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
-  <strong>Please respond by:</strong> {{expiresAt}}
-</div>
-
-<p>If you have questions, please contact your District Manager or the operations team.</p>
-
-<p>Thank you,<br>Shiekh Operations Team</p>`,
-    bodyText: `Hours Verification Request
-
-Hello,
-
-Please verify the following information for your store is correct.
-
-Store: {{storeNumber}} - {{storeName}}
-
-Please confirm this information is correct, or submit any needed corrections.
-
-Verify Hours Now: {{verificationUrl}}
-
-Please respond by: {{expiresAt}}
-
-If you have questions, please contact your District Manager or the operations team.
-
-Thank you,
-Shiekh Operations Team`,
-  },
-  verification_reminder: {
-    subject: '[Reminder] Verify Hours - Store {{storeNumber}} - {{daysRemaining}} days remaining',
-    bodyHtml: `<h2>Reminder: Hours Verification Needed</h2>
-
-<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
-  <strong>Reminder: {{daysRemaining}} days remaining to respond</strong>
-</div>
-
-<p>Hello,</p>
-<p>This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.</p>
-
-<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
-  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
-</div>
-
-<p>Please take a few minutes to review your store's hours and confirm they are accurate.</p>
-
-<p style="text-align: center; margin: 30px 0;">
-  <a href="{{verificationUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Verify Hours Now</a>
-</p>
-
-<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
-  <strong>Deadline:</strong> {{expiresAt}}
-</div>
-
-<p>If you have questions or need assistance, please contact your District Manager.</p>
-
-<p>Thank you,<br>Shiekh Operations Team</p>`,
-    bodyText: `Reminder: Hours Verification Needed
-
-Reminder: {{daysRemaining}} days remaining to respond
-
-Hello,
-
-This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.
-
-Store: {{storeNumber}} - {{storeName}}
-
-Please take a few minutes to review your store's hours and confirm they are accurate.
-
-Verify Hours Now: {{verificationUrl}}
-
-Deadline: {{expiresAt}}
-
-If you have questions or need assistance, please contact your District Manager.
-
-Thank you,
-Shiekh Operations Team`,
-  },
-  verification_confirmation: {
-    subject: 'Hours Verified - Store {{storeNumber}}',
-    bodyHtml: `<h2 style="color: #059669;">✓ Hours Verified</h2>
-<p>Hello,</p>
-<p>Thank you for verifying your store's operating hours.</p>
-
-<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
-  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
-  <p><strong>Verified On:</strong> {{verifiedAt}}</p>
-</div>
-
-<p>Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.</p>
-
-<p>Thank you,<br>Shiekh Operations Team</p>`,
-    bodyText: `Hours Verified
-
-Hello,
-
-Thank you for verifying your store's operating hours.
-
-Store: {{storeNumber}} - {{storeName}}
-Verified On: {{verifiedAt}}
-
-Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.
-
-Thank you,
-Shiekh Operations Team`,
-  },
-  store_signin: {
-    subject: 'Sign in to Shiekh Directory - Store {{storeNumber}}',
-    bodyHtml: `<h2>Store Sign-In Link</h2>
-<p>Hello,</p>
-<p>You requested a sign-in link for the Shiekh Store Directory.</p>
-
-<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
-  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
-</div>
-
-<p style="text-align: center; margin: 30px 0;">
-  <a href="{{signInUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Sign In Now</a>
-</p>
-
-<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
-  <strong>This link expires:</strong> {{expiresAt}}
-</div>
-
-<p>If you didn't request this link, you can safely ignore this email.</p>
-
-<p>Thank you,<br>Shiekh Operations Team</p>`,
-    bodyText: `Store Sign-In Link
-
-Hello,
-
-You requested a sign-in link for the Shiekh Store Directory.
-
-Store: {{storeNumber}} - {{storeName}}
-
-Sign In Now: {{signInUrl}}
-
-This link expires: {{expiresAt}}
-
-If you didn't request this link, you can safely ignore this email.
-
-Thank you,
-Shiekh Operations Team`,
-  },
-  dm_verification_request: {
-    subject: '[Action Required] District Verification - {{districtName}}',
-    bodyHtml: `<h2>District Verification Request</h2>
-<p>Hello {{recipientName}},</p>
-<p>We need you to verify the store roster for your district.</p>
-
-<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
-  <p><strong>District:</strong> {{districtName}}</p>
-  <p><strong>Number of Stores:</strong> {{storeCount}}</p>
-</div>
-
-<p>Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.</p>
-
-<p style="text-align: center; margin: 30px 0;">
-  <a href="{{verificationUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Review District Roster</a>
-</p>
-
-<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
-  <strong>Please respond by:</strong> {{expiresAt}}
-</div>
-
-<p>If you have questions, please contact the operations team.</p>
-
-<p>Thank you,<br>Shiekh Operations Team</p>`,
-    bodyText: `District Verification Request
-
-Hello {{recipientName}},
-
-We need you to verify the store roster for your district.
-
-District: {{districtName}}
-Number of Stores: {{storeCount}}
-
-Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.
-
-Review District Roster: {{verificationUrl}}
-
-Please respond by: {{expiresAt}}
-
-If you have questions, please contact the operations team.
-
-Thank you,
-Shiekh Operations Team`,
-  },
-  invitation: {
-    subject: "You're invited to Shiekh Directory",
-    bodyHtml: `<h2>You're Invited!</h2>
-<p>Hello,</p>
-<p>{{inviterName}} has invited you to join the Shiekh Store Directory as <strong>{{role}}</strong>.</p>
-
-<p style="text-align: center; margin: 30px 0;">
-  <a href="{{inviteUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Accept Invitation</a>
-</p>
-
-<p>If you have questions, please contact your manager or the person who sent this invitation.</p>
-
-<p>Thank you,<br>Shiekh Operations Team</p>`,
-    bodyText: `You're Invited!
-
-Hello,
-
-{{inviterName}} has invited you to join the Shiekh Store Directory as {{role}}.
-
-Accept Invitation: {{inviteUrl}}
-
-If you have questions, please contact your manager or the person who sent this invitation.
-
-Thank you,
-Shiekh Operations Team`,
-  },
-  invitation_reminder: {
-    subject: "Reminder: You're invited to Shiekh Directory",
-    bodyHtml: `<h2>Reminder: Invitation Pending</h2>
-
-<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
-  <strong>You have a pending invitation</strong>
-</div>
-
-<p>Hello,</p>
-<p>This is a reminder that {{inviterName}} invited you to join the Shiekh Store Directory as <strong>{{role}}</strong>.</p>
-
-<p style="text-align: center; margin: 30px 0;">
-  <a href="{{inviteUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Accept Invitation</a>
-</p>
-
-<p>If you have questions, please contact your manager or the person who sent this invitation.</p>
-
-<p>Thank you,<br>Shiekh Operations Team</p>`,
-    bodyText: `Reminder: Invitation Pending
-
-You have a pending invitation
-
-Hello,
-
-This is a reminder that {{inviterName}} invited you to join the Shiekh Store Directory as {{role}}.
-
-Accept Invitation: {{inviteUrl}}
-
-If you have questions, please contact your manager or the person who sent this invitation.
-
-Thank you,
-Shiekh Operations Team`,
-  },
-} as const;
+export function createStoreSignInEmail(data: {
+  storeName: string;
+  storeNumber: string;
+  storeEmail: string;
+  signInUrl: string;
+  expiresAt: string;
+}): EmailMessage {
+  const expiresFormatted = new Date(data.expiresAt).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  const templateData: Record<string, string> = {
+    storeName: data.storeName,
+    storeNumber: data.storeNumber,
+    storeEmail: data.storeEmail,
+    signInUrl: data.signInUrl,
+    expiresFormatted,
+  };
+
+  const template = DEFAULT_TEMPLATES.store_signin;
+  return {
+    to: data.storeEmail,
+    subject: renderTemplate(template.subject, templateData),
+    html: renderTemplate(template.bodyHtml, templateData),
+    text: renderTemplate(template.bodyText, templateData),
+  };
+}
+
+export function createInvitationEmail(data: {
+  to: string;
+  inviterName: string;
+  role: string;
+  inviteUrl: string;
+}): EmailMessage {
+  const templateData: Record<string, string> = {
+    inviterName: data.inviterName,
+    role: data.role,
+    inviteUrl: data.inviteUrl,
+  };
+
+  const template = DEFAULT_TEMPLATES.invitation;
+  return {
+    to: data.to,
+    subject: renderTemplate(template.subject, templateData),
+    html: renderTemplate(template.bodyHtml, templateData),
+    text: renderTemplate(template.bodyText, templateData),
+  };
+}
+
+export function createInvitationReminderEmail(data: {
+  to: string;
+  inviterName: string;
+  role: string;
+  inviteUrl: string;
+}): EmailMessage {
+  const templateData: Record<string, string> = {
+    inviterName: data.inviterName,
+    role: data.role,
+    inviteUrl: data.inviteUrl,
+  };
+
+  const template = DEFAULT_TEMPLATES.invitation_reminder;
+  return {
+    to: data.to,
+    subject: renderTemplate(template.subject, templateData),
+    html: renderTemplate(template.bodyHtml, templateData),
+    text: renderTemplate(template.bodyText, templateData),
+  };
+}

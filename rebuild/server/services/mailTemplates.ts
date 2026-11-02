@@ -188,7 +188,7 @@ ${content}
     <div class="footer">
       ${footerLine}
       <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-      <p style="font-size: 10px; color: #6B7280;">This is an automated message. Please do not reply directly to this email.</p>
+      <p style="font-size: 10px; color: #4B5563;">This is an automated message. Please do not reply directly to this email.</p>
     </div>
   </div>
 </body>

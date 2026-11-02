@@ -175,7 +175,8 @@ export function DirectoryView() {
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
       <h1 className="sr-only">Store Directory</h1>
       {/* Search and Filters - fixed height to prevent CLS */}
-      <div className="bg-white border-b border-gray-200 sticky top-14 z-10 min-h-[72px] lg:min-h-[64px]">
+      {/* Mobile: py-3(24) + search(44) + gap(12) + 2-row grid(44+8+44=96) = 176px */}
+      <div className="bg-white border-b border-gray-200 sticky top-14 z-10 min-h-[176px] lg:min-h-[64px]">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex flex-col lg:flex-row lg:items-center gap-3">
             {/* Search Input - fixed height */}
@@ -195,8 +196,8 @@ export function DirectoryView() {
               )}
             </div>
             
-            {/* Filters - always render but hide visually when searching to prevent CLS */}
-            <div className={`flex flex-wrap gap-2 lg:gap-3 ${showSearchResults ? 'invisible h-0 overflow-hidden lg:h-auto lg:visible' : ''}`}>
+            {/* Filters - grid layout with fixed cell sizes to prevent CLS */}
+            <div className={`grid grid-cols-2 gap-2 lg:flex lg:flex-wrap lg:gap-3 ${showSearchResults ? 'invisible h-0 overflow-hidden lg:h-auto lg:visible' : ''}`}>
               <select
                 value={selectedRegion}
                 onChange={(e) => {
@@ -204,7 +205,7 @@ export function DirectoryView() {
                   setSelectedDistrict('');
                 }}
                 aria-label="Filter by region"
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+                className="w-full lg:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
               >
                 <option value="">All Regions</option>
                 {regions.map(region => (
@@ -216,7 +217,7 @@ export function DirectoryView() {
                 value={selectedDistrict}
                 onChange={(e) => setSelectedDistrict(e.target.value)}
                 aria-label="Filter by district"
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+                className="w-full lg:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
               >
                 <option value="">All Districts</option>
                 {filteredDistricts.map(district => (
@@ -228,7 +229,7 @@ export function DirectoryView() {
                 value={selectedKind}
                 onChange={(e) => setSelectedKind(e.target.value)}
                 aria-label="Filter by location type"
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+                className="w-full lg:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
               >
                 <option value="store">Stores</option>
                 <option value="facility">Facilities</option>
@@ -239,7 +240,7 @@ export function DirectoryView() {
                 value={selectedStoreType}
                 onChange={(e) => setSelectedStoreType(e.target.value)}
                 aria-label="Filter by store type"
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
+                className="w-full lg:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
               >
                 <option value="">All Types</option>
                 {STORE_TYPES.map(t => (
@@ -251,8 +252,27 @@ export function DirectoryView() {
         </div>
       </div>
       
-      {/* Content - fixed height skeleton to prevent CLS */}
+      {/* Content - fixed height elements to prevent CLS */}
       <div className="max-w-7xl mx-auto px-4 py-4 lg:py-6">
+        {/* Store count line - always rendered with fixed height to prevent CLS */}
+        {!showSearchResults && (
+          <div className="flex items-center justify-between mb-4 h-[20px]">
+            {loading ? (
+              <div className="h-4 bg-gray-200 rounded w-20 animate-pulse" />
+            ) : (
+              <p className="text-sm text-gray-500">
+                {locations.length} {selectedKind === 'all' ? 'location' : selectedKind}{locations.length !== 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
+        )}
+        {showSearchResults && (
+          <div className="mb-4 h-[20px]">
+            <p className="text-sm text-gray-500">
+              {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchQuery}"
+            </p>
+          </div>
+        )}
         {loading ? (
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: PAGE_SIZE }).map((_, i) => (
@@ -290,9 +310,6 @@ export function DirectoryView() {
           </div>
         ) : showSearchResults ? (
           <div>
-            <p className="text-sm text-gray-500 mb-4">
-              {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} for "{searchQuery}"
-            </p>
             {searchResults.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 No results found
@@ -314,12 +331,6 @@ export function DirectoryView() {
           </div>
         ) : (
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-gray-500">
-                {locations.length} {selectedKind === 'all' ? 'location' : selectedKind}{locations.length !== 1 ? 's' : ''}
-              </p>
-            </div>
-            
             {locations.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
                 <Store className="w-12 h-12 text-gray-300 mx-auto" />

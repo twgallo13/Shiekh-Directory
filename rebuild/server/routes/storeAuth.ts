@@ -1,11 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
-import { randomBytes, createHmac } from 'crypto';
+import { randomBytes } from 'crypto';
 import { createUnifiedMailService } from '../services/unifiedMail';
+import { generateToken, generateSessionId, hashToken, hashSessionId } from '../services/tokenAuth';
 import type { Location, AuditLogEntry } from '../../src/types';
 
-const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
-const SESSION_SECRET = process.env.STORE_SESSION_SECRET || 'dev-session-secret-not-for-production';
 const TOKEN_EXPIRY_HOURS = 24;
 const SESSION_EXPIRY_HOURS = 12;
 
@@ -55,22 +54,6 @@ export interface StoreSession {
   createdAt: string;
   createdBy: string;
   userAgent?: string;
-}
-
-function generateToken(): string {
-  return randomBytes(32).toString('base64url');
-}
-
-function generateSessionId(): string {
-  return randomBytes(32).toString('base64url');
-}
-
-function hashToken(token: string): string {
-  return createHmac('sha256', TOKEN_SECRET).update(token).digest('hex');
-}
-
-function hashSessionId(sessionId: string): string {
-  return createHmac('sha256', SESSION_SECRET).update(sessionId).digest('hex');
 }
 
 function parseStoreEmail(email: string): { valid: boolean; storeNumber?: number } {
@@ -194,10 +177,9 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
       const appUrl = getAppUrl(req);
       const signInUrl = `${appUrl}/store-signin?token=${token}`;
-      const signInUrlRedacted = `${appUrl}/store-signin?token=[REDACTED:${tokenId}]`;
 
       const mailService = createUnifiedMailService(db);
-      const mailResult = await mailService.sendStoreSignIn(
+      await mailService.sendStoreSignIn(
         email.toLowerCase(),
         {
           storeNumber: location.storeNumber,
@@ -208,19 +190,6 @@ export function createStoreAuthRouter(db: Firestore): Router {
         'system',
         email.toLowerCase()
       );
-
-      await db.collection('mailLog').add({
-        to: email.toLowerCase(),
-        type: 'store-signin',
-        locationId: location.id,
-        storeNumber: location.storeNumber,
-        signInUrl: signInUrlRedacted,
-        tokenId,
-        sentAt: now.toISOString(),
-        success: mailResult.success,
-        blocked: mailResult.blocked,
-        reason: mailResult.reason || mailResult.error,
-      });
 
       await logAudit(db, {
         userId: 'system',
@@ -239,7 +208,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
       res.json({
         success: true,
-        message: 'Sign-in link sent to store mailbox',
+        message: 'If this is a valid store mailbox, a sign-in link will be sent.',
         email: email.toLowerCase(),
       });
     } catch (error) {
@@ -825,4 +794,5 @@ async function logAudit(
   });
 }
 
-export { parseStoreEmail, hashSessionId };
+export { parseStoreEmail };
+export { hashSessionId } from '../services/tokenAuth';

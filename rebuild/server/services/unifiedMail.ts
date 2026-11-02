@@ -1,6 +1,6 @@
 import { createTransport } from 'nodemailer';
 import type { Firestore } from 'firebase-admin/firestore';
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import {
   getEmailSettings,
   isEmailTypeEnabled,
@@ -19,10 +19,36 @@ import {
 
 const ENCRYPTION_KEY_ENV = 'SMTP_ENCRYPTION_KEY';
 const ALGORITHM = 'aes-256-gcm';
+const REQUIRED_KEY_LENGTH = 32;
+
+let encryptionKeyCache: Buffer | null = null;
+
+export function isEncryptionKeyConfigured(): boolean {
+  const keyBase64 = process.env[ENCRYPTION_KEY_ENV];
+  if (!keyBase64) return false;
+  try {
+    const keyBuffer = Buffer.from(keyBase64, 'base64');
+    return keyBuffer.length === REQUIRED_KEY_LENGTH;
+  } catch {
+    return false;
+  }
+}
 
 function getEncryptionKey(): Buffer {
-  const keySource = process.env[ENCRYPTION_KEY_ENV] || process.env.STORE_AUTH_TOKEN_SECRET || 'default-key-not-for-production';
-  return scryptSync(keySource, 'smtp-salt', 32);
+  if (encryptionKeyCache) return encryptionKeyCache;
+  
+  const keyBase64 = process.env[ENCRYPTION_KEY_ENV];
+  if (!keyBase64) {
+    throw new Error(`${ENCRYPTION_KEY_ENV} environment variable is required for SMTP password encryption. Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`);
+  }
+  
+  const keyBuffer = Buffer.from(keyBase64, 'base64');
+  if (keyBuffer.length !== REQUIRED_KEY_LENGTH) {
+    throw new Error(`${ENCRYPTION_KEY_ENV} must be a 32-byte key encoded as base64 (44 characters). Got ${keyBuffer.length} bytes.`);
+  }
+  
+  encryptionKeyCache = keyBuffer;
+  return keyBuffer;
 }
 
 export function encryptPassword(password: string): string {
@@ -33,6 +59,15 @@ export function encryptPassword(password: string): string {
   encrypted += cipher.final('hex');
   const authTag = cipher.getAuthTag();
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+}
+
+export function canEncryptSmtpPassword(): { ok: boolean; error?: string } {
+  try {
+    getEncryptionKey();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Unknown error' };
+  }
 }
 
 export function decryptPassword(encryptedData: string): string {

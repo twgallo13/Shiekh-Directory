@@ -98,7 +98,7 @@ export function StoreSignInView() {
         return;
       }
 
-      setSuccess(`Sign-in link sent to ${data.email}. Check your store mailbox.`);
+      setSuccess('If this is a valid store mailbox, a sign-in link will be sent. Check your inbox.');
       setEmail('');
     } catch {
       setError('Failed to send sign-in link');

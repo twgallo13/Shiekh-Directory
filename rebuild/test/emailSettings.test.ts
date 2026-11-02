@@ -177,6 +177,22 @@ describe('Email Settings', () => {
 });
 
 describe('Email Settings - Security', () => {
+  let originalKey: string | undefined;
+  
+  before(() => {
+    originalKey = process.env.SMTP_ENCRYPTION_KEY;
+    // Set a valid 32-byte test key for encryption tests
+    process.env.SMTP_ENCRYPTION_KEY = Buffer.from('test-key-32-bytes-long-for-aes!!').toString('base64');
+  });
+  
+  after(() => {
+    if (originalKey !== undefined) {
+      process.env.SMTP_ENCRYPTION_KEY = originalKey;
+    } else {
+      delete process.env.SMTP_ENCRYPTION_KEY;
+    }
+  });
+  
   it('should not allow password retrieval via API', () => {
     assert.ok(true, 'Password is write-only by design');
   });
@@ -546,9 +562,9 @@ describe('UnifiedMailService - Schedule Tests', () => {
     process.env.MAIL_CUTOVER_ENABLED = 'true';
     
     const now = new Date();
-    const currentHour = now.getHours();
-    const quietStart = `${String(currentHour).padStart(2, '0')}:00`;
-    const quietEnd = `${String((currentHour + 2) % 24).padStart(2, '0')}:00`;
+    const utcHour = now.getUTCHours();
+    const quietStart = `${String(utcHour).padStart(2, '0')}:00`;
+    const quietEnd = `${String((utcHour + 2) % 24).padStart(2, '0')}:00`;
     
     await scheduleDb.collection('settings').doc('email').set({
       masterEnabled: true,

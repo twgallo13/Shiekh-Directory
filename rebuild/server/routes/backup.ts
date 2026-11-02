@@ -123,20 +123,24 @@ export function createBackupRouter(db: Firestore): Router {
       const now = new Date();
       const snapshotId = `snapshot-${now.toISOString().replace(/[:.]/g, '-')}`;
 
+      const EXCLUDED_DOCS = ['settings/email_smtp_password'];
+      
+      const defaultCollections = [
+        'locations',
+        'regions',
+        'districts',
+        'people',
+        'assignments',
+        'users',
+        'hoursTemplates',
+        'customFields',
+        'apiClients',
+        'settings',
+      ];
+      
       const collectionsToBackup = requestedCollections?.length > 0 
         ? requestedCollections 
-        : [
-            'locations',
-            'regions',
-            'districts',
-            'people',
-            'assignments',
-            'users',
-            'hoursTemplates',
-            'customFields',
-            'apiClients',
-            'settings',
-          ];
+        : defaultCollections;
 
       await db.collection('snapshots').doc(snapshotId).set({
         status: 'in-progress',
@@ -166,10 +170,15 @@ export function createBackupRouter(db: Firestore): Router {
 
       for (const collectionName of collectionsToBackup) {
         const collSnap = await db.collection(collectionName).get();
-        snapshotData.data[collectionName] = collSnap.docs.map(doc => ({
-          id: doc.id,
-          data: doc.data() as Record<string, unknown>,
-        }));
+        snapshotData.data[collectionName] = collSnap.docs
+          .filter(doc => {
+            const fullPath = `${collectionName}/${doc.id}`;
+            return !EXCLUDED_DOCS.includes(fullPath);
+          })
+          .map(doc => ({
+            id: doc.id,
+            data: doc.data() as Record<string, unknown>,
+          }));
       }
 
       const jsonStr = JSON.stringify(snapshotData);

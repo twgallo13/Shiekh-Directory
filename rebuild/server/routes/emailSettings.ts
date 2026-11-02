@@ -3,7 +3,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { createTransport } from 'nodemailer';
 import type { AuthUser } from '../../src/types';
-import { encryptPassword, decryptPassword, DEFAULT_TEMPLATES } from '../services/unifiedMail';
+import { encryptPassword, decryptPassword, canEncryptSmtpPassword, isEncryptionKeyConfigured, DEFAULT_TEMPLATES } from '../services/unifiedMail';
 
 interface AuditLogEntry {
   userId: string;
@@ -261,7 +261,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
           ...settings,
           envCutoverEnabled,
           effectiveEnabled: settings.masterEnabled && envCutoverEnabled,
+          encryptionKeyConfigured: isEncryptionKeyConfigured(),
           emailTypes: EMAIL_TYPES,
+          defaultTemplates: DEFAULT_TEMPLATES,
           stats,
         },
       });
@@ -723,6 +725,18 @@ export function createEmailSettingsRouter(db: Firestore): Router {
       if (!password || typeof password !== 'string') {
         return res.status(400).json({
           error: { code: 'invalid_request', message: 'password is required', requestId: res.locals.requestId },
+        });
+      }
+      
+      const encryptCheck = canEncryptSmtpPassword();
+      if (!encryptCheck.ok) {
+        return res.status(503).json({
+          error: { 
+            code: 'encryption_not_configured', 
+            message: 'SMTP password encryption is not configured. The SMTP_ENCRYPTION_KEY environment variable must be set.',
+            details: encryptCheck.error,
+            requestId: res.locals.requestId,
+          },
         });
       }
       
@@ -1228,7 +1242,7 @@ export function createEmailSettingsRouter(db: Firestore): Router {
     }
   });
   
-  router.post('/outbox/:id/retry', async (req: Request, res: Response) => {
+  router.delete('/type/:typeId/template/history/:version', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser | undefined;
       if (!authUser || authUser.role !== 'Admin') {
@@ -1236,44 +1250,59 @@ export function createEmailSettingsRouter(db: Firestore): Router {
           error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
         });
       }
+
+      const { typeId, version } = req.params;
+      const versionNum = parseInt(version, 10);
       
-      const { id } = req.params;
-      const mailDoc = await db.collection('mailLog').doc(id).get();
-      
-      if (!mailDoc.exists) {
+      if (!typeId || !EMAIL_TYPES.find(t => t.id === typeId)) {
+        return res.status(400).json({
+          error: { code: 'invalid_type', message: 'Invalid email type', requestId: res.locals.requestId },
+        });
+      }
+
+      if (isNaN(versionNum) || versionNum < 1) {
+        return res.status(400).json({
+          error: { code: 'invalid_version', message: 'Invalid version number', requestId: res.locals.requestId },
+        });
+      }
+
+      const validTypeId = typeId as EmailTypeId;
+      const settings = await getSettings();
+      const typeSettings = settings.typeSettings[validTypeId];
+      const history = typeSettings?.templateHistory || [];
+
+      const versionIndex = history.findIndex((h: { version: number }) => h.version === versionNum);
+      if (versionIndex === -1) {
         return res.status(404).json({
-          error: { code: 'not_found', message: 'Mail entry not found', requestId: res.locals.requestId },
+          error: { code: 'not_found', message: `Version ${versionNum} not found in history`, requestId: res.locals.requestId },
         });
       }
-      
-      const mailData = mailDoc.data();
-      if (mailData?.success && !mailData?.blocked) {
-        return res.status(400).json({
-          error: { code: 'already_sent', message: 'Email was already sent successfully', requestId: res.locals.requestId },
-        });
-      }
-      
-      if (mailData?.blocked && mailData?.reason?.includes('disabled')) {
-        return res.status(400).json({
-          error: { 
-            code: 'cannot_retry', 
-            message: 'This email was blocked because email sending was disabled. Enable email sending first, then trigger the action that originally sent this email.',
-            requestId: res.locals.requestId,
-          },
-        });
-      }
-      
-      return res.status(400).json({
-        error: { 
-          code: 'retry_not_supported', 
-          message: 'Automatic retry is not available. Please trigger the original action (e.g., send verification request) to resend.',
-          requestId: res.locals.requestId,
-        },
+
+      const newHistory = history.filter((h: { version: number }) => h.version !== versionNum);
+
+      await settingsRef().update({
+        [`typeSettings.${typeId}.templateHistory`]: newHistory,
+        updatedAt: new Date().toISOString(),
+        updatedBy: authUser.uid,
+        updatedByEmail: authUser.email,
       });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'delete',
+        entityType: 'email-template-history',
+        entityId: `${typeId}-v${versionNum}`,
+        entityName: `Delete ${typeId} template version ${versionNum}`,
+        changes: [{ field: 'deletedVersion', oldValue: versionNum, newValue: null }],
+      });
+
+      res.json({ success: true, typeId, deletedVersion: versionNum, remainingVersions: newHistory.length });
     } catch (error) {
-      console.error('Retry email error:', error);
+      console.error('Delete template history version error:', error);
       res.status(500).json({
-        error: { code: 'internal_error', message: 'Failed to process retry', requestId: res.locals.requestId },
+        error: { code: 'internal_error', message: 'Failed to delete template version', requestId: res.locals.requestId },
       });
     }
   });

@@ -44,6 +44,7 @@ interface EmailSettings {
   masterEnabled: boolean;
   envCutoverEnabled: boolean;
   effectiveEnabled: boolean;
+  encryptionKeyConfigured: boolean;
   typeSettings: Record<string, EmailTypeSettings>;
   sender: {
     fromName: string;
@@ -68,6 +69,7 @@ interface EmailSettings {
   };
   appBaseUrl: string;
   emailTypes: EmailType[];
+  defaultTemplates: Record<string, { subject: string; bodyHtml: string; bodyText: string }>;
   stats: {
     last7Days: {
       sent: number;
@@ -121,44 +123,6 @@ function formatTimeAgo(dateStr: string): string {
 function formatDayName(day: string): string {
   return day.charAt(0).toUpperCase() + day.slice(1, 3);
 }
-
-const DEFAULT_TEMPLATES: Record<string, { subject: string; bodyHtml: string; bodyText: string }> = {
-  verification_request: {
-    subject: '[Action Required] Verify Hours - Store {{storeNumber}}',
-    bodyHtml: '<p>Hello,</p><p>Please verify your store hours for <strong>{{storeName}}</strong> (Store {{storeNumber}}).</p><p><a href="{{verificationUrl}}">Click here to verify</a></p><p>This request expires on {{expiresAt}}.</p>',
-    bodyText: 'Hello,\n\nPlease verify your store hours for {{storeName}} (Store {{storeNumber}}).\n\nVerify here: {{verificationUrl}}\n\nThis request expires on {{expiresAt}}.',
-  },
-  verification_reminder: {
-    subject: '[Reminder] Verify Hours - Store {{storeNumber}} - {{daysRemaining}} days remaining',
-    bodyHtml: '<p>Hello,</p><p>This is a reminder to verify your store hours for <strong>{{storeName}}</strong>.</p><p>{{daysRemaining}} days remaining to respond.</p><p><a href="{{verificationUrl}}">Verify now</a></p>',
-    bodyText: 'Hello,\n\nThis is a reminder to verify your store hours for {{storeName}}.\n\n{{daysRemaining}} days remaining to respond.\n\nVerify here: {{verificationUrl}}',
-  },
-  verification_confirmation: {
-    subject: 'Hours Verified - Store {{storeNumber}}',
-    bodyHtml: '<p>Hello,</p><p>Thank you for verifying the hours for <strong>{{storeName}}</strong> (Store {{storeNumber}}).</p><p>Verified on: {{verifiedAt}}</p>',
-    bodyText: 'Hello,\n\nThank you for verifying the hours for {{storeName}} (Store {{storeNumber}}).\n\nVerified on: {{verifiedAt}}',
-  },
-  store_signin: {
-    subject: 'Sign in to Shiekh Directory - Store {{storeNumber}}',
-    bodyHtml: '<p>Hello,</p><p>Click the link below to sign in to the Shiekh Directory for <strong>{{storeName}}</strong>.</p><p><a href="{{signInUrl}}">Sign In</a></p><p>This link expires on {{expiresAt}}.</p>',
-    bodyText: 'Hello,\n\nSign in to the Shiekh Directory for {{storeName}}:\n\n{{signInUrl}}\n\nThis link expires on {{expiresAt}}.',
-  },
-  dm_verification_request: {
-    subject: '[Action Required] District Verification - {{districtName}}',
-    bodyHtml: '<p>Hello {{recipientName}},</p><p>Please review the roster for <strong>{{districtName}}</strong> ({{storeCount}} stores).</p><p><a href="{{verificationUrl}}">Review District Roster</a></p><p>Please respond by {{expiresAt}}.</p>',
-    bodyText: 'Hello {{recipientName}},\n\nPlease review the roster for {{districtName}} ({{storeCount}} stores).\n\nReview here: {{verificationUrl}}\n\nPlease respond by {{expiresAt}}.',
-  },
-  invitation: {
-    subject: "You're invited to Shiekh Directory",
-    bodyHtml: '<p>Hello,</p><p><strong>{{inviterName}}</strong> has invited you to join the Shiekh Directory as <strong>{{role}}</strong>.</p><p><a href="{{signInUrl}}">Accept Invitation</a></p><p>This invitation expires on {{expiresAt}}.</p>',
-    bodyText: 'Hello,\n\n{{inviterName}} has invited you to join the Shiekh Directory as {{role}}.\n\nAccept here: {{signInUrl}}\n\nThis invitation expires on {{expiresAt}}.',
-  },
-  invitation_reminder: {
-    subject: "Reminder: You're invited to Shiekh Directory",
-    bodyHtml: '<p>Hello,</p><p>This is a reminder that <strong>{{inviterName}}</strong> invited you to join the Shiekh Directory as <strong>{{role}}</strong>.</p><p><a href="{{signInUrl}}">Accept Invitation</a></p><p>This invitation expires on {{expiresAt}}.</p>',
-    bodyText: 'Hello,\n\nThis is a reminder that {{inviterName}} invited you to join the Shiekh Directory as {{role}}.\n\nAccept here: {{signInUrl}}\n\nThis invitation expires on {{expiresAt}}.',
-  },
-};
 
 export function EmailSettingsView() {
   const { getIdToken } = useAuth();
@@ -335,7 +299,7 @@ export function EmailSettingsView() {
     if (!settings) return;
     const typeSettings = settings.typeSettings[type.id];
     const customTemplate = typeSettings?.template;
-    const defaultTemplate = DEFAULT_TEMPLATES[type.id];
+    const defaultTemplate = settings.defaultTemplates?.[type.id];
     
     setEditingType(type);
     setTemplateForm({
@@ -371,6 +335,31 @@ export function EmailSettingsView() {
     }, 0);
   };
   
+  const SAMPLE_VALUES: Record<string, string> = {
+    storeName: 'Mall of America Store',
+    storeNumber: '042',
+    storeEmail: 'store042@shiekhshoes.com',
+    storeType: 'Retail',
+    verificationUrl: 'https://directory.shiekh.com/verify/abc123',
+    confirmUrl: 'https://directory.shiekh.com/confirm/abc123',
+    updateUrl: 'https://directory.shiekh.com/update/abc123',
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
+    verifiedAt: new Date().toLocaleDateString(),
+    daysRemaining: '3',
+    signInUrl: 'https://directory.shiekh.com/signin',
+    districtName: 'Southern California',
+    recipientName: 'John Smith',
+    recipientType: 'DM',
+    storeCount: '12',
+    inviterName: 'Sarah Admin',
+    role: 'Steward',
+    personalMessage: 'Welcome to the team!',
+  };
+
+  const renderWithSampleValues = (text: string): string => {
+    return text.replace(/\{\{(\w+)\}\}/g, (_, key) => SAMPLE_VALUES[key] || `[${key}]`);
+  };
+
   const validatePlaceholders = (text: string, validPlaceholders: string[]): string[] => {
     const regex = /\{\{(\w+)\}\}/g;
     const invalid: string[] = [];
@@ -428,7 +417,7 @@ export function EmailSettingsView() {
       });
       if (!res.ok) throw new Error('Failed to reset');
       await fetchSettings();
-      const defaultTemplate = DEFAULT_TEMPLATES[editingType.id];
+      const defaultTemplate = settings?.defaultTemplates?.[editingType.id];
       setTemplateForm({
         subject: defaultTemplate?.subject || '',
         bodyHtml: defaultTemplate?.bodyHtml || '',
@@ -1637,16 +1626,16 @@ export function EmailSettingsView() {
               {/* Preview Column - always visible at lg+, toggle on mobile */}
               <div className={`border border-gray-200 rounded-lg overflow-hidden bg-gray-50 ${showPreview ? '' : 'hidden lg:block'}`}>
                 <div className="bg-white border-b border-gray-200 px-4 py-2">
-                  <p className="text-sm text-gray-600">Live Preview</p>
+                  <p className="text-sm text-gray-600">Live Preview (with sample data)</p>
                   <p className="font-medium text-gray-900 truncate">
-                    {templateForm.subject || '(No subject)'}
+                    {renderWithSampleValues(templateForm.subject) || '(No subject)'}
                   </p>
                 </div>
                 <div className="p-4 bg-white max-h-[400px] overflow-y-auto">
                   {templateForm.bodyHtml ? (
                     <div 
                       className="prose prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ __html: templateForm.bodyHtml }}
+                      dangerouslySetInnerHTML={{ __html: renderWithSampleValues(templateForm.bodyHtml) }}
                     />
                   ) : (
                     <p className="text-gray-400 italic">Start typing to see preview...</p>

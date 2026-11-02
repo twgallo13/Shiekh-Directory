@@ -1,6 +1,5 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
-import { randomBytes, createHmac } from 'crypto';
 import type {
   AuthUser,
   AuditLogEntry,
@@ -13,8 +12,8 @@ import type {
   Region,
 } from '../../src/types';
 import { createUnifiedMailService } from '../services/unifiedMail';
+import { generateToken, hashToken } from '../services/tokenAuth';
 
-const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
 const DEFAULT_DM_OFFSET_DAYS = 14;
 const BACKUP_STEWARD_EMAIL = 'andres@shiekhshoes.org';
 
@@ -38,14 +37,6 @@ function getAppUrl(req: Request): string {
   return 'https://directory.shiekh.com';
 }
 const DM_VERIFICATION_EXPIRY_DAYS = 14;
-
-function generateToken(): string {
-  return randomBytes(32).toString('base64url');
-}
-
-function hashToken(token: string): string {
-  return createHmac('sha256', TOKEN_SECRET).update(token).digest('hex');
-}
 
 interface PrimaryRecipient {
   personId: string;

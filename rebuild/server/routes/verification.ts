@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
-import { randomBytes, createHmac } from 'crypto';
+import { randomBytes } from 'crypto';
 import type {
   Location,
   AuthUser,
@@ -9,8 +9,7 @@ import type {
 } from '../../src/types';
 import { getStoreTypeLabel } from '../../src/types';
 import { createUnifiedMailService } from '../services/unifiedMail';
-
-const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
+import { generateToken, hashToken } from '../services/tokenAuth';
 
 function getAppUrl(req: Request): string {
   if (process.env.APP_URL) {
@@ -30,14 +29,6 @@ function getAppUrl(req: Request): string {
     return `${protocol}://${host}`;
   }
   return 'https://directory.shiekh.com';
-}
-
-function generateToken(): string {
-  return randomBytes(32).toString('base64url');
-}
-
-function hashToken(token: string): string {
-  return createHmac('sha256', TOKEN_SECRET).update(token).digest('hex');
 }
 
 export function createVerificationRouter(db: Firestore): Router {

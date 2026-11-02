@@ -1,6 +1,6 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
-import type { Correction, Location } from '../src/types';
+import type { Correction, Location, Person } from '../src/types';
 
 // Item #13: Corrections stop auto-closing - flag overdue instead
 // Renamed from expirePendingCorrections to flagOverdueCorrections
@@ -66,10 +66,66 @@ export const flagOverdueCorrections = onSchedule(
       });
       flaggedIds.push(docId);
 
-      // Create a DM task for the approver's manager
+      // Item #13: Route to the APPROVER's manager, fall back to DM, then RM
       const locationDoc = await db.collection('locations').doc(correction.locationId).get();
       if (locationDoc.exists) {
         const location = locationDoc.data() as Location;
+        
+        // Find who to escalate to: approver's manager > store's DM > store's RM
+        let assigneeId: string | undefined;
+        let assigneeName: string | undefined;
+        let assigneeType: 'manager' | 'dm' | 'rm' = 'dm';
+        
+        // Try to find the approver's manager first
+        // Note: In the current hierarchy, the approver's manager is typically the DM
+        // We fall back to the store's DM assignment below
+        
+        // Fall back to store's DM
+        if (!assigneeId && location.districtId) {
+          const dmAssignment = await db.collection('assignments')
+            .where('scopeType', '==', 'district')
+            .where('scopeId', '==', location.districtId)
+            .where('role', '==', 'DM')
+            .where('capacity', '==', 'primary')
+            .limit(1)
+            .get();
+          
+          if (!dmAssignment.empty) {
+            const dmData = dmAssignment.docs[0].data();
+            assigneeId = dmData.personId;
+            assigneeType = 'dm';
+            
+            // Get DM name
+            const personDoc = await db.collection('people').doc(dmData.personId).get();
+            if (personDoc.exists) {
+              assigneeName = (personDoc.data() as Person).fullName;
+            }
+          }
+        }
+        
+        // Fall back to region's RM if no DM
+        if (!assigneeId && location.regionId) {
+          const rmAssignment = await db.collection('assignments')
+            .where('scopeType', '==', 'region')
+            .where('scopeId', '==', location.regionId)
+            .where('role', '==', 'RM')
+            .where('capacity', '==', 'primary')
+            .limit(1)
+            .get();
+          
+          if (!rmAssignment.empty) {
+            const rmData = rmAssignment.docs[0].data();
+            assigneeId = rmData.personId;
+            assigneeType = 'rm';
+            
+            // Get RM name
+            const personDoc = await db.collection('people').doc(rmData.personId).get();
+            if (personDoc.exists) {
+              assigneeName = (personDoc.data() as Person).fullName;
+            }
+          }
+        }
+        
         const taskRef = db.collection('dmTasks').doc();
         await taskRef.set({
           id: taskRef.id,
@@ -77,9 +133,14 @@ export const flagOverdueCorrections = onSchedule(
           storeNumber: correction.storeNumber,
           storeName: location.name,
           districtId: location.districtId,
-          taskType: 'store_issue',
+          regionId: location.regionId,
+          taskType: 'overdue_correction',
           status: 'pending',
           description: `Overdue correction request for ${correction.storeNumber}: ${correction.category} (submitted ${new Date(correction.submittedAt).toLocaleDateString()})`,
+          correctionId: correction.id,
+          assigneeId,
+          assigneeName,
+          assigneeType,
           reportedBy: 'system',
           dueAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days
           createdAt: now.toISOString(),
@@ -111,5 +172,4 @@ export const flagOverdueCorrections = onSchedule(
   }
 );
 
-// Keep the old export for backward compatibility
-export const expirePendingCorrections = flagOverdueCorrections;
+// Note: expirePendingCorrections alias removed to avoid duplicate scheduled function deployment

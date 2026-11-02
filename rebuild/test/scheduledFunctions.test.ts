@@ -34,8 +34,8 @@ describe('Scheduled Functions Exports', () => {
       'expireOldVerificationRequests should be exported'
     );
     assert.ok(
-      functionsFile.includes('expirePendingCorrections'),
-      'expirePendingCorrections should be exported (fix 2, kept for compat after rename to flagOverdueCorrections)'
+      functionsFile.includes('flagOverdueCorrections'),
+      'flagOverdueCorrections should be exported (single export to avoid duplicate schedules)'
     );
     assert.ok(
       functionsFile.includes('export { escalateToDM }'),

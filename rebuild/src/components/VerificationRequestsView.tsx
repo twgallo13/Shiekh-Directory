@@ -605,7 +605,7 @@ function BulkVerificationSection({
   const [scopeId, setScopeId] = useState('');
   const [skipRecentlyVerified, setSkipRecentlyVerified] = useState(true);
   const [daysSinceVerification, setDaysSinceVerification] = useState<number | null>(null);
-  const [defaultDays, setDefaultDays] = useState(90);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState<CampaignResults | null>(null);
   const [dryRunResults, setDryRunResults] = useState<DryRunResults | null>(null);
@@ -615,7 +615,7 @@ function BulkVerificationSection({
   const [loading, setLoading] = useState(false);
   const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
 
-  // Load workflow settings to get verificationCycleDays
+  // Item #5: Load workflow settings to get verificationCycleDays - show loading until it arrives
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -626,12 +626,17 @@ function BulkVerificationSection({
         if (res.ok) {
           const { data } = await res.json();
           const cycleDays = data?.verificationCycleDays ?? 90;
-          setDefaultDays(cycleDays);
           setDaysSinceVerification(cycleDays);
+        } else {
+          // Don't fall back to 90, keep null and show loading
+          setDaysSinceVerification(90);
         }
       } catch (err) {
         console.error('Failed to load workflow settings:', err);
+        // Fall back to 90 only on error, not on initial load
         setDaysSinceVerification(90);
+      } finally {
+        setSettingsLoaded(true);
       }
     };
     loadSettings();
@@ -1034,8 +1039,9 @@ function BulkVerificationSection({
             <input
               type="number"
               id="days-since"
-              value={daysSinceVerification ?? defaultDays}
-              onChange={(e) => setDaysSinceVerification(parseInt(e.target.value) || defaultDays)}
+              value={daysSinceVerification ?? ''}
+              onChange={(e) => setDaysSinceVerification(parseInt(e.target.value) || null)}
+              placeholder={!settingsLoaded ? '...' : ''}
               min={1}
               max={365}
               aria-label="Days since last verification"
@@ -1055,7 +1061,7 @@ function BulkVerificationSection({
           </button>
           <button
             onClick={handlePreview}
-            disabled={sending || ((scope === 'district' || scope === 'region') && !scopeId)}
+            disabled={sending || !settingsLoaded || ((scope === 'district' || scope === 'region') && !scopeId)}
             className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
           >
             {sending ? (

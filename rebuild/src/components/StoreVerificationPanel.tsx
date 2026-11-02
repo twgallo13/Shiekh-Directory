@@ -47,6 +47,28 @@ export function StoreVerificationPanel({ location, onVerified }: StoreVerificati
     return null;
   }
 
+  // Item #3: Store sees 'Changes submitted' when in_review or awaiting_response after responding
+  if (pendingRequest.status === 'in_review' || (pendingRequest.status === 'awaiting_response' && pendingRequest.respondedAt)) {
+    return (
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+        <div className="flex items-start gap-3">
+          <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="font-medium text-blue-800">Changes Submitted</h3>
+            <p className="text-sm text-blue-700 mt-1">
+              Your response has been submitted and is awaiting review.
+            </p>
+            {pendingRequest.respondedAt && (
+              <p className="text-xs text-blue-600 mt-1">
+                Submitted {new Date(pendingRequest.respondedAt).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
       <div className="flex items-start gap-3">

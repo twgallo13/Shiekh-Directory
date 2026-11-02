@@ -379,9 +379,17 @@ export function createVerificationRouter(db: Firestore): Router {
     }
   });
 
-  router.get('/:id', async (req: Request, res: Response) => {
+  // Reserved paths that should not match /:id - handled by later routes
+  const RESERVED_IDS = ['stats', 'pending', 'bulk', 'test-link'];
+  
+  router.get('/:id', async (req: Request, res: Response, next) => {
+    const { id } = req.params;
+    // Skip reserved paths - let them fall through to specific routes
+    if (RESERVED_IDS.includes(id)) {
+      return next('route');
+    }
+    
     try {
-      const { id } = req.params;
       const authUser = res.locals.authUser as AuthUser;
 
       if (!authUser) {
@@ -786,9 +794,14 @@ export function createVerificationRouter(db: Firestore): Router {
     }
   });
 
-  router.post('/:id/cancel', async (req: Request, res: Response) => {
+  router.post('/:id/cancel', async (req: Request, res: Response, next) => {
+    const { id } = req.params;
+    // Skip 'bulk' - handled by /bulk/cancel route
+    if (id === 'bulk') {
+      return next('route');
+    }
+    
     try {
-      const { id } = req.params;
       const authUser = res.locals.authUser as AuthUser;
 
       if (!authUser) {
@@ -918,7 +931,7 @@ export function createVerificationRouter(db: Firestore): Router {
           storeNumber: request.storeNumber,
           storeName: location.name,
           districtId: location.districtId,
-          taskType: 'store_issue',
+          taskType: 'fix_contact',
           status: 'pending',
           description: `Email bounced for store ${request.storeNumber}. Contact info needs correction: ${request.sentTo}`,
           reportedBy: authUser.email,
@@ -1620,7 +1633,7 @@ export function createVerificationRouter(db: Firestore): Router {
           userId: authUser.uid,
           userEmail: authUser.email,
           userRole: authUser.role,
-          action: 'bulk_close',
+          action: 'bulk-cancel',
           entityType: 'verification',
           entityId: 'bulk',
           entityName: `Bulk cancel (${cancelled.length} verification requests)`,

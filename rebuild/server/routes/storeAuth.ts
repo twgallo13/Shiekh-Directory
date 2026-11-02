@@ -757,6 +757,19 @@ export function createStoreAuthRouter(db: Firestore): Router {
       };
 
       if (action === 'confirm') {
+        // Item #2: Send confirmation email on one-click confirm
+        const mailService = createUnifiedMailService(db);
+        await mailService.sendVerificationConfirmation(
+          {
+            storeName: location.name,
+            storeNumber: location.storeNumber,
+            storeEmail: location.sharedInboxEmail || tokenData.storeEmail,
+            verifiedAt: now.toISOString(),
+          },
+          tokenData.storeEmail,
+          tokenData.storeEmail
+        );
+
         await logAudit(db, {
           userId: tokenData.storeEmail,
           userEmail: tokenData.storeEmail,

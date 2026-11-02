@@ -334,7 +334,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "respondedAt", "order": "DESCENDING" }
+        { "fieldPath": "respondedAt", "order": "ASCENDING" }
       ]
     }
   ],

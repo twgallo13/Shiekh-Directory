@@ -30,6 +30,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'revoke-session': 'Session revoked',
   'revoke-all-sessions': 'All sessions revoked',
   'bulk-send': 'Bulk sent',
+  'bulk-cancel': 'Bulk cancelled',
+  'bulk-reissue': 'Bulk reissued',
   'invite-user': 'User invited',
   'revoke-invitation': 'Invitation revoked',
   'archive': 'Archived',

@@ -504,6 +504,8 @@ export type AuditAction =
   | 'revoke-session'
   | 'revoke-all-sessions'
   | 'bulk-send'
+  | 'bulk-cancel'
+  | 'bulk-reissue'
   | 'invite-user'
   | 'revoke-invitation'
   | 'archive'

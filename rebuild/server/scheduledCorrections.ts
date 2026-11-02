@@ -67,21 +67,20 @@ export const flagOverdueCorrections = onSchedule(
       flaggedIds.push(docId);
 
       // Item #13: Route to the APPROVER's manager, fall back to DM, then RM
+      // The approver for a correction is typically the DM of the store's district.
+      // The DM's manager in the hierarchy is the RM of the region.
       const locationDoc = await db.collection('locations').doc(correction.locationId).get();
       if (locationDoc.exists) {
         const location = locationDoc.data() as Location;
         
-        // Find who to escalate to: approver's manager > store's DM > store's RM
+        // Find who to escalate to: RM (DM's manager) > DM > fallback RM
         let assigneeId: string | undefined;
         let assigneeName: string | undefined;
         let assigneeType: 'manager' | 'dm' | 'rm' = 'dm';
+        let dmPersonId: string | undefined;
         
-        // Try to find the approver's manager first
-        // Note: In the current hierarchy, the approver's manager is typically the DM
-        // We fall back to the store's DM assignment below
-        
-        // Fall back to store's DM
-        if (!assigneeId && location.districtId) {
+        // Step 1: Find the store's DM (the expected approver)
+        if (location.districtId) {
           const dmAssignment = await db.collection('assignments')
             .where('scopeType', '==', 'district')
             .where('scopeId', '==', location.districtId)
@@ -91,20 +90,13 @@ export const flagOverdueCorrections = onSchedule(
             .get();
           
           if (!dmAssignment.empty) {
-            const dmData = dmAssignment.docs[0].data();
-            assigneeId = dmData.personId;
-            assigneeType = 'dm';
-            
-            // Get DM name
-            const personDoc = await db.collection('people').doc(dmData.personId).get();
-            if (personDoc.exists) {
-              assigneeName = (personDoc.data() as Person).fullName;
-            }
+            dmPersonId = dmAssignment.docs[0].data().personId;
           }
         }
         
-        // Fall back to region's RM if no DM
-        if (!assigneeId && location.regionId) {
+        // Step 2: Find the RM (DM's manager in org hierarchy) for the region
+        // This is the "approver's manager"
+        if (location.regionId) {
           const rmAssignment = await db.collection('assignments')
             .where('scopeType', '==', 'region')
             .where('scopeId', '==', location.regionId)
@@ -116,13 +108,23 @@ export const flagOverdueCorrections = onSchedule(
           if (!rmAssignment.empty) {
             const rmData = rmAssignment.docs[0].data();
             assigneeId = rmData.personId;
-            assigneeType = 'rm';
+            assigneeType = 'manager'; // RM is the DM's manager
             
-            // Get RM name
             const personDoc = await db.collection('people').doc(rmData.personId).get();
             if (personDoc.exists) {
               assigneeName = (personDoc.data() as Person).fullName;
             }
+          }
+        }
+        
+        // Step 3: Fall back to DM if no RM found
+        if (!assigneeId && dmPersonId) {
+          assigneeId = dmPersonId;
+          assigneeType = 'dm';
+          
+          const personDoc = await db.collection('people').doc(dmPersonId).get();
+          if (personDoc.exists) {
+            assigneeName = (personDoc.data() as Person).fullName;
           }
         }
         

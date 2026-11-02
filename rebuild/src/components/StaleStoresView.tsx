@@ -160,7 +160,7 @@ export function StaleStoresView() {
               <button
                 onClick={handleExportCSV}
                 disabled={exporting || data.staleStores.length === 0}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 min-h-[44px]"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-50 min-h-[44px]"
               >
                 <Download className="h-4 w-4" />
                 {exporting ? 'Exporting...' : 'Export CSV'}

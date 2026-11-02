@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2, XCircle } from 'lucide-react';
+import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -222,18 +222,17 @@ export function VerificationRequestsView() {
         </div>
 
         {locationIdFilter && (
-          <div className="mb-4 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
-            <Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" />
-            <span className="text-sm text-blue-800">
-              Filtering by store: <strong>{locationFilterName || locationIdFilter}</strong>
+          <div className="mb-4 flex items-start gap-2 bg-blue-50 text-blue-700 px-4 py-3 rounded-lg">
+            <Building2 className="w-5 h-5 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span>
+              Showing requests for a specific store ({locationFilterName || locationIdFilter}).{' '}
+              <button 
+                onClick={clearLocationFilter} 
+                className="underline hover:no-underline"
+              >
+                Show all
+              </button>
             </span>
-            <button
-              onClick={clearLocationFilter}
-              className="ml-auto p-1 hover:bg-blue-100 rounded min-h-[36px] min-w-[36px] flex items-center justify-center"
-              aria-label="Clear store filter"
-            >
-              <XCircle className="w-4 h-4 text-blue-600" aria-hidden="true" />
-            </button>
           </div>
         )}
 

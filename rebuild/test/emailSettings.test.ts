@@ -28,6 +28,12 @@ describe('Email Settings', () => {
   });
 
   describe('Email Types', () => {
+    it('should define exactly 7 email types', async () => {
+      const { EMAIL_TYPES } = await import('../server/routes/emailSettings');
+      
+      assert.strictEqual(EMAIL_TYPES.length, 7, 'Should have exactly 7 email types for 7 switches');
+    });
+
     it('should define all required email types', async () => {
       const { EMAIL_TYPES } = await import('../server/routes/emailSettings');
       
@@ -80,6 +86,32 @@ describe('Email Settings', () => {
       for (const type of EMAIL_TYPES) {
         assert.ok(type.purpose, `${type.id} should have purpose`);
         assert.ok(type.audienceLabel, `${type.id} should have audienceLabel`);
+      }
+    });
+  });
+
+  describe('API Response Structure', () => {
+    it('should return {data: ...} response with emailTypes array having 7 items', async () => {
+      const { getEmailSettings, EMAIL_TYPES } = await import('../server/routes/emailSettings');
+      
+      const settings = await getEmailSettings(db);
+      
+      const responseData = {
+        data: {
+          ...settings,
+          emailTypes: EMAIL_TYPES,
+        },
+      };
+      
+      assert.ok(responseData.data, 'Response should have data property');
+      assert.ok(responseData.data.emailTypes, 'data should have emailTypes property');
+      assert.strictEqual(responseData.data.emailTypes.length, 7, 'emailTypes should have 7 items for 7 switches');
+      
+      for (const type of responseData.data.emailTypes) {
+        assert.ok(type.id, 'Each type should have id');
+        assert.ok(type.name, 'Each type should have name');
+        assert.ok(type.description, 'Each type should have description');
+        assert.ok(type.audience, 'Each type should have audience');
       }
     });
   });

@@ -265,7 +265,7 @@ export function WorkflowRulesView() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = await res.json();
+        const { data } = await res.json();
         setEmailSettings(data);
       }
     } catch {

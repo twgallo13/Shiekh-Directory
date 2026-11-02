@@ -162,7 +162,7 @@ export function DMTasksView() {
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {(['pending', 'in_progress', 'completed', 'cancelled', ''] as const).map(status => (
           <button
             key={status || 'all'}

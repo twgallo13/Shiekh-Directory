@@ -215,9 +215,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
   router.get('/', async (_req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser | undefined;
-      if (!authUser || authUser.role !== 'Admin') {
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
         return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
         });
       }
       
@@ -384,9 +384,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
   router.put('/type/:typeId/template', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser | undefined;
-      if (!authUser || authUser.role !== 'Admin') {
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
         return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
         });
       }
       
@@ -494,9 +494,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
   router.post('/type/:typeId/template/reset', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser | undefined;
-      if (!authUser || authUser.role !== 'Admin') {
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
         return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
         });
       }
       
@@ -538,9 +538,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
   router.post('/type/:typeId/template/restore/:version', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser | undefined;
-      if (!authUser || authUser.role !== 'Admin') {
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
         return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
         });
       }
       
@@ -1222,9 +1222,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
   router.delete('/type/:typeId/template/history/:version', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser | undefined;
-      if (!authUser || authUser.role !== 'Admin') {
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
         return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
         });
       }
 

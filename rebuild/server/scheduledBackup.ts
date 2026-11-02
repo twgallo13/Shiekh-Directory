@@ -29,6 +29,9 @@ const DIRECTORY_COLLECTIONS = [
   'closures',
   'customFields',
   'verificationRequests',
+  'dmVerificationRequests',
+  'corrections',
+  'dmTasks',
 ];
 
 const USERS_COLLECTION = 'users';

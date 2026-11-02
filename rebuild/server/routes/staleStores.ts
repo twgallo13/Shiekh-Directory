@@ -3,6 +3,15 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type { AuthUser, Location } from '../../src/types';
 import { getWorkflowRules } from '../services/workflowSettings';
 
+function escapeCsvValue(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  // Guard against formula injection
+  const needsPrefix = /^[=+\-@\t\r]/.test(str);
+  const escaped = str.replace(/"/g, '""');
+  return needsPrefix ? `"'${escaped}"` : `"${escaped}"`;
+}
+
 export interface StaleStoreItem {
   id: string;
   storeNumber: string;
@@ -316,7 +325,7 @@ export function createStaleStoresRouter(db: Firestore): Router {
         return b.daysSinceVerification - a.daysSinceVerification;
       });
 
-      // Generate CSV
+      // Generate CSV with proper escaping
       const csvHeader = 'Store Number,Store Name,District,Region,Last Verified,Days Since Verification,Days Overdue\n';
       const csvRows = staleStores.map(store => {
         const daysOverdue = store.daysSinceVerification !== null 
@@ -325,7 +334,15 @@ export function createStaleStoresRouter(db: Firestore): Router {
         const lastVerified = store.lastVerifiedAt 
           ? new Date(store.lastVerifiedAt).toLocaleDateString()
           : 'Never';
-        return `"${store.storeNumber}","${store.name}","${store.districtName || ''}","${store.regionName || ''}","${lastVerified}","${store.daysSinceVerification ?? 'Never'}","${daysOverdue}"`;
+        return [
+          escapeCsvValue(store.storeNumber),
+          escapeCsvValue(store.name),
+          escapeCsvValue(store.districtName),
+          escapeCsvValue(store.regionName),
+          escapeCsvValue(lastVerified),
+          escapeCsvValue(store.daysSinceVerification),
+          escapeCsvValue(daysOverdue),
+        ].join(',');
       }).join('\n');
       
       const csv = csvHeader + csvRows;

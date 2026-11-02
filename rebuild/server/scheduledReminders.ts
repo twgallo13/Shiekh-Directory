@@ -1,10 +1,8 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
-import { createUnifiedMailService } from './services/unifiedMail';
+import { createUnifiedMailService, getEmailSettings } from './services/unifiedMail';
 import { getWorkflowRules } from './services/workflowSettings';
 import type { VerificationRequest, Location } from '../src/types';
-
-const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
 
 export const sendVerificationReminders = onSchedule(
   {
@@ -16,10 +14,12 @@ export const sendVerificationReminders = onSchedule(
   async () => {
     const db = getFirestore();
     const workflowRules = await getWorkflowRules(db);
+    const emailSettings = await getEmailSettings(db);
+    const appBaseUrl = emailSettings.appBaseUrl || 'https://directory.shiekh.com';
     
     const now = new Date();
     const ptFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Los_Angeles',
+      timeZone: emailSettings.schedule.timezone || 'America/Los_Angeles',
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -29,18 +29,30 @@ export const sendVerificationReminders = onSchedule(
     const sendHour = parseInt(workflowRules.reminderSendTime.split(':')[0], 10);
     
     if (currentHourPT !== sendHour) {
-      console.log(`[Reminders] Not send time. Current: ${currentTimePT} PT, configured: ${workflowRules.reminderSendTime} PT`);
+      console.log(`[Reminders] Not send time. Current: ${currentTimePT}, configured: ${workflowRules.reminderSendTime}`);
+      return;
+    }
+    
+    // Check quiet hours
+    const quietStart = parseInt(emailSettings.schedule.quietHoursStart.split(':')[0], 10);
+    const quietEnd = parseInt(emailSettings.schedule.quietHoursEnd.split(':')[0], 10);
+    const isInQuietHours = quietStart > quietEnd 
+      ? (currentHourPT >= quietStart || currentHourPT < quietEnd)
+      : (currentHourPT >= quietStart && currentHourPT < quietEnd);
+    
+    if (isInQuietHours) {
+      console.log(`[Reminders] In quiet hours (${emailSettings.schedule.quietHoursStart}-${emailSettings.schedule.quietHoursEnd}), skipping`);
       return;
     }
     
     const dayFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Los_Angeles',
+      timeZone: emailSettings.schedule.timezone || 'America/Los_Angeles',
       weekday: 'long',
     });
     const currentDayPT = dayFormatter.format(now).toLowerCase();
-    const sendDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    const sendDays: string[] = emailSettings.schedule.sendDays || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
     if (!sendDays.includes(currentDayPT)) {
-      console.log(`[Reminders] Not a send day. Current: ${currentDayPT}`);
+      console.log(`[Reminders] Not a send day. Current: ${currentDayPT}, allowed: ${sendDays.join(', ')}`);
       return;
     }
     
@@ -90,12 +102,18 @@ export const sendVerificationReminders = onSchedule(
           }
         }
         
-        if (workflowRules.maxReminders > 0 && (request.reminderCount || 0) >= workflowRules.maxReminders) {
+        // maxReminders = 0 means no reminders allowed
+        if (workflowRules.maxReminders === 0) {
+          console.log(`[Reminders] Skipping ${request.id} - reminders disabled (maxReminders=0)`);
+          continue;
+        }
+        
+        if ((request.reminderCount || 0) >= workflowRules.maxReminders) {
           console.log(`[Reminders] Skipping ${request.id} - max reminders reached (${workflowRules.maxReminders})`);
           continue;
         }
 
-        const verificationUrl = `${APP_URL}/verify/${request.id}`;
+        const verificationUrl = `${appBaseUrl}/verify/${request.id}`;
         const emailData = {
           storeName: location.name,
           storeNumber: location.storeNumber,

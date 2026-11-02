@@ -136,6 +136,11 @@ export function createBackupRouter(db: Firestore): Router {
         'customFields',
         'apiClients',
         'settings',
+        'verificationRequests',
+        'dmVerificationRequests',
+        'corrections',
+        'dmTasks',
+        'closures',
       ];
       
       const collectionsToBackup = requestedCollections?.length > 0 

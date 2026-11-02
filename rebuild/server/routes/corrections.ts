@@ -7,6 +7,7 @@ import type {
   AuditLogEntry,
 } from '../../src/types';
 import { canApproveCorrections } from '../../src/lib/permissions';
+import { getWorkflowRules } from '../services/workflowSettings';
 
 export function createCorrectionsRouter(db: Firestore): Router {
   const router = Router();
@@ -267,7 +268,11 @@ export function createCorrectionsRouter(db: Firestore): Router {
         currentValues.standardHours = location.standardHours;
       }
 
-      const now = new Date().toISOString();
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const workflowRules = await getWorkflowRules(db);
+      const expiresAt = new Date(now.getTime() + workflowRules.correctionExpiryDays * 24 * 60 * 60 * 1000);
+      
       const correctionRef = db.collection('corrections').doc();
       const correction: Omit<Correction, 'id'> = {
         status: 'pending',
@@ -279,13 +284,14 @@ export function createCorrectionsRouter(db: Firestore): Router {
         submittedBy: authUser.uid,
         submittedByEmail: authUser.email,
         submittedByRole: authUser.role,
-        submittedAt: now,
+        submittedAt: nowIso,
+        expiresAt: expiresAt.toISOString(),
         proposedChanges: proposedChanges || {},
         proposedNote: proposedNote?.trim() || undefined,
         currentValues,
         locationVersion: location.version,
-        createdAt: now,
-        updatedAt: now,
+        createdAt: nowIso,
+        updatedAt: nowIso,
         updatedBy: authUser.uid,
         version: 1,
       };
@@ -545,7 +551,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
 
       const now = new Date().toISOString();
       const batch = db.batch();
-      const archivedIds: string[] = [];
+      const archivedCorrections: { id: string; storeNumber: string; previousStatus: string }[] = [];
       const skippedIds: string[] = [];
 
       for (const id of ids) {
@@ -573,12 +579,27 @@ export function createCorrectionsRouter(db: Firestore): Router {
           updatedBy: authUser.uid,
           version: correction.version + 1,
         });
-        archivedIds.push(id);
+        archivedCorrections.push({ id, storeNumber: correction.storeNumber, previousStatus: correction.status });
       }
 
-      if (archivedIds.length > 0) {
+      if (archivedCorrections.length > 0) {
         await batch.commit();
 
+        // Log one audit entry per item
+        for (const { id, storeNumber, previousStatus } of archivedCorrections) {
+          await logAudit(db, {
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'archive',
+            entityType: 'correction',
+            entityId: id,
+            entityName: `Correction for ${storeNumber}`,
+            changes: [{ field: 'status', oldValue: previousStatus, newValue: 'archived' }],
+          });
+        }
+
+        // Plus a summary entry
         await logAudit(db, {
           userId: authUser.uid,
           userEmail: authUser.email,
@@ -586,10 +607,12 @@ export function createCorrectionsRouter(db: Firestore): Router {
           action: 'bulk_archive',
           entityType: 'correction',
           entityId: 'bulk',
-          entityName: `Bulk archive (${archivedIds.length} corrections)`,
-          changes: [{ field: 'archived_count', newValue: archivedIds.length }],
+          entityName: `Bulk archive (${archivedCorrections.length} corrections)`,
+          changes: [{ field: 'archived_count', newValue: archivedCorrections.length }],
         });
       }
+      
+      const archivedIds = archivedCorrections.map(c => c.id);
 
       return res.json({ 
         data: { 
@@ -640,7 +663,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
 
       const now = new Date().toISOString();
       const batch = db.batch();
-      const closedIds: string[] = [];
+      const closedCorrections: { id: string; storeNumber: string }[] = [];
       const skippedIds: string[] = [];
 
       for (const id of ids) {
@@ -668,12 +691,27 @@ export function createCorrectionsRouter(db: Firestore): Router {
           updatedBy: authUser.uid,
           version: correction.version + 1,
         });
-        closedIds.push(id);
+        closedCorrections.push({ id, storeNumber: correction.storeNumber });
       }
 
-      if (closedIds.length > 0) {
+      if (closedCorrections.length > 0) {
         await batch.commit();
 
+        // Log one audit entry per item
+        for (const { id, storeNumber } of closedCorrections) {
+          await logAudit(db, {
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'reject',
+            entityType: 'correction',
+            entityId: id,
+            entityName: `Correction for ${storeNumber}`,
+            changes: [{ field: 'status', oldValue: 'pending', newValue: 'rejected' }],
+          });
+        }
+
+        // Plus a summary entry
         await logAudit(db, {
           userId: authUser.uid,
           userEmail: authUser.email,
@@ -681,10 +719,12 @@ export function createCorrectionsRouter(db: Firestore): Router {
           action: 'bulk_close',
           entityType: 'correction',
           entityId: 'bulk',
-          entityName: `Bulk close (${closedIds.length} corrections)`,
-          changes: [{ field: 'closed_count', newValue: closedIds.length }],
+          entityName: `Bulk close (${closedCorrections.length} corrections)`,
+          changes: [{ field: 'closed_count', newValue: closedCorrections.length }],
         });
       }
+      
+      const closedIds = closedCorrections.map(c => c.id);
 
       return res.json({ 
         data: { 

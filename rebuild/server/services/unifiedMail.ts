@@ -612,3 +612,4 @@ export function createUnifiedMailService(db: Firestore): UnifiedMailService {
 }
 
 export { DEFAULT_TEMPLATES };
+export { getEmailSettings };

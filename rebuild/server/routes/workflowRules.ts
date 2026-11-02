@@ -11,29 +11,6 @@ import {
   type WorkflowRules 
 } from '../services/workflowSettings';
 
-interface AuditLogEntry {
-  userId: string;
-  userEmail: string;
-  userRole: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  entityName: string;
-  changes?: { field: string; oldValue?: unknown; newValue?: unknown }[];
-}
-
-async function logAudit(
-  db: Firestore,
-  entry: Omit<AuditLogEntry, 'id' | 'timestamp'>
-): Promise<void> {
-  const auditRef = db.collection('auditLog').doc();
-  await auditRef.set({
-    ...entry,
-    id: auditRef.id,
-    timestamp: new Date().toISOString(),
-  });
-}
-
 export function createWorkflowRulesRouter(db: Firestore): Router {
   const router = Router();
 
@@ -76,8 +53,6 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
       }
 
       const fieldKey = field as keyof WorkflowRules;
-      const oldRules = await getWorkflowRules(db);
-      const oldValue = oldRules[fieldKey];
 
       const result = await updateWorkflowRule(
         db,
@@ -94,16 +69,7 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
         });
       }
 
-      await logAudit(db, {
-        userId: authUser.uid,
-        userEmail: authUser.email,
-        userRole: authUser.role,
-        action: 'update',
-        entityType: 'workflow-rules',
-        entityId: field,
-        entityName: `Workflow Rule: ${field}`,
-        changes: [{ field, oldValue, newValue: value }],
-      });
+      // Note: updateWorkflowRule already handles audit logging via logSettingsChange
 
       const newRules = await getWorkflowRules(db);
       res.json({ data: newRules });
@@ -127,9 +93,6 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
       }
 
       const fieldKey = field as keyof WorkflowRules;
-      const oldRules = await getWorkflowRules(db);
-      const oldValue = oldRules[fieldKey];
-      const defaultValue = DEFAULT_WORKFLOW_RULES[fieldKey];
 
       const result = await resetWorkflowRule(
         db,
@@ -145,16 +108,7 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
         });
       }
 
-      await logAudit(db, {
-        userId: authUser.uid,
-        userEmail: authUser.email,
-        userRole: authUser.role,
-        action: 'reset',
-        entityType: 'workflow-rules',
-        entityId: field,
-        entityName: `Workflow Rule: ${field}`,
-        changes: [{ field, oldValue, newValue: defaultValue }],
-      });
+      // Note: resetWorkflowRule calls updateWorkflowRule which handles audit logging
 
       const newRules = await getWorkflowRules(db);
       res.json({ data: newRules });

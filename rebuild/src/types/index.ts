@@ -636,6 +636,7 @@ export interface Correction extends RecordMetadata {
   submittedByEmail: string;
   submittedByRole: UserRole;
   submittedAt: string;
+  expiresAt: string; // ISO timestamp when correction auto-expires
   // The proposed changes
   proposedChanges: Record<string, unknown>;
   proposedNote?: string; // User's description of the issue
@@ -677,4 +678,32 @@ export interface AuthUser {
     regionIds: string[];
     locationIds: string[]; // All locations in their districts
   };
+}
+
+// === DM Tasks ===
+export type DMTaskType = 'hours_wrong' | 'store_issue' | 'verification_followup';
+export type DMTaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface DMTask {
+  id: string;
+  locationId: string;
+  storeNumber: string;
+  storeName: string;
+  districtId: string;
+  taskType: DMTaskType;
+  status: DMTaskStatus;
+  description: string;
+  reportedBy: string;
+  verificationRequestId?: string | null;
+  dueAt: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  updatedBy?: string;
+  completedAt?: string;
+  completedBy?: string;
+  completedNote?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancelledReason?: string;
 }

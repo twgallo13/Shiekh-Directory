@@ -187,6 +187,7 @@ export function createEditRouter(db: Firestore): Router {
 
       if (requiresApproval && Object.keys(proposedChanges).length > 0) {
         const correctionRef = db.collection('corrections').doc();
+        const correctionWorkflowRules = await getWorkflowRules(db);
         // Determine type and category from the proposed changes
         const hasPhone = Object.keys(proposedChanges).includes('mainPhone');
         const hasAddress = Object.keys(proposedChanges).includes('address');
@@ -194,6 +195,9 @@ export function createEditRouter(db: Firestore): Router {
         const hasDirections = Object.keys(proposedChanges).includes('wayfindingDirections');
         const type = hasPhone ? 'phone' : hasAddress ? 'address' : hasInbox ? 'inbox' : 'hours';
         const category = hasPhone ? 'phone' : hasDirections ? 'directions' : hasAddress ? 'address' : hasInbox ? 'other' : 'hours';
+        
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + correctionWorkflowRules.correctionExpiryDays * 24 * 60 * 60 * 1000);
         
         const correction: Omit<Correction, 'id'> = {
           status: 'pending',
@@ -205,12 +209,13 @@ export function createEditRouter(db: Firestore): Router {
           submittedBy: authUser.uid,
           submittedByEmail: authUser.email,
           submittedByRole: authUser.role,
-          submittedAt: new Date().toISOString(),
+          submittedAt: now.toISOString(),
+          expiresAt: expiresAt.toISOString(),
           proposedChanges,
           currentValues,
           locationVersion: location.version,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
           updatedBy: authUser.uid,
           version: 1,
         };

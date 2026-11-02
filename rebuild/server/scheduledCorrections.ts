@@ -1,6 +1,5 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
-import { getWorkflowRules } from './services/workflowSettings';
 import type { Correction } from '../src/types';
 
 export const expirePendingCorrections = onSchedule(
@@ -12,17 +11,13 @@ export const expirePendingCorrections = onSchedule(
   },
   async () => {
     const db = getFirestore();
-    const workflowRules = await getWorkflowRules(db);
-    
     const now = new Date();
-    const expiryThreshold = new Date(now.getTime() - workflowRules.correctionExpiryDays * 24 * 60 * 60 * 1000);
     
     console.log(`[Correction Expiry] Running at ${now.toISOString()}`);
-    console.log(`[Correction Expiry] Expiring corrections older than ${expiryThreshold.toISOString()} (${workflowRules.correctionExpiryDays} days)`);
 
     const pendingCorrections = await db.collection('corrections')
       .where('status', '==', 'pending')
-      .where('submittedAt', '<', expiryThreshold.toISOString())
+      .where('expiresAt', '<', now.toISOString())
       .limit(500)
       .get();
 
@@ -42,7 +37,7 @@ export const expirePendingCorrections = onSchedule(
         status: 'expired',
         expiredAt: now.toISOString(),
         expiredBy: 'system',
-        expiredReason: `Auto-expired after ${workflowRules.correctionExpiryDays} days`,
+        expiredReason: `Auto-expired (past expiresAt)`,
         previousStatus: correction.status,
         updatedAt: now.toISOString(),
         updatedBy: 'system',
@@ -65,7 +60,6 @@ export const expirePendingCorrections = onSchedule(
       entityName: `Scheduled correction expiry (${expiredIds.length} corrections)`,
       changes: [
         { field: 'expired_count', newValue: expiredIds.length },
-        { field: 'expiry_threshold_days', newValue: workflowRules.correctionExpiryDays },
       ],
       timestamp: now.toISOString(),
     });

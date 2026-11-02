@@ -175,77 +175,8 @@ async function getStoresInDistrict(
 export function createDMVerificationRouter(db: Firestore): Router {
   const router = Router();
 
-  router.get('/settings', async (_req: Request, res: Response) => {
-    try {
-      const authUser = res.locals.authUser as AuthUser | undefined;
-      if (!authUser || authUser.role !== 'Admin') {
-        return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
-        });
-      }
-
-      const workflowRules = await getWorkflowRules(db);
-      const settingsDoc = await db.collection('settings').doc('dmVerification').get();
-      const settings = settingsDoc.exists ? settingsDoc.data() : {};
-
-      return res.json({
-        data: {
-          dmOffsetDays: settings?.dmOffsetDays ?? workflowRules.dmEscalationDays,
-        },
-      });
-    } catch (error) {
-      console.error('Get DM verification settings error:', error);
-      return res.status(500).json({
-        error: { code: 'get_error', message: 'Failed to get settings', requestId: res.locals.requestId },
-      });
-    }
-  });
-
-  router.patch('/settings', async (req: Request, res: Response) => {
-    try {
-      const authUser = res.locals.authUser as AuthUser | undefined;
-      if (!authUser || authUser.role !== 'Admin') {
-        return res.status(403).json({
-          error: { code: 'forbidden', message: 'Admin access required', requestId: res.locals.requestId },
-        });
-      }
-
-      const { dmOffsetDays } = req.body;
-      if (typeof dmOffsetDays !== 'number' || dmOffsetDays < 0 || dmOffsetDays > 30) {
-        return res.status(400).json({
-          error: { code: 'invalid_request', message: 'dmOffsetDays must be a number between 0 and 30', requestId: res.locals.requestId },
-        });
-      }
-
-      const workflowRules = await getWorkflowRules(db);
-      const oldSettingsDoc = await db.collection('settings').doc('dmVerification').get();
-      const oldSettings = oldSettingsDoc.exists ? oldSettingsDoc.data() : null;
-      const oldDmOffsetDays = oldSettings?.dmOffsetDays ?? workflowRules.dmEscalationDays;
-
-      await db.collection('settings').doc('dmVerification').set(
-        { dmOffsetDays, updatedAt: new Date().toISOString(), updatedBy: authUser.uid },
-        { merge: true }
-      );
-
-      await logAudit(db, {
-        userId: authUser.uid,
-        userEmail: authUser.email,
-        userRole: authUser.role,
-        action: 'update',
-        entityType: 'verification',
-        entityId: 'dmVerification-settings',
-        entityName: 'DM Verification Settings',
-        changes: [{ field: 'dmOffsetDays', oldValue: oldDmOffsetDays, newValue: dmOffsetDays }],
-      });
-
-      return res.json({ data: { dmOffsetDays } });
-    } catch (error) {
-      console.error('Update DM verification settings error:', error);
-      return res.status(500).json({
-        error: { code: 'update_error', message: 'Failed to update settings', requestId: res.locals.requestId },
-      });
-    }
-  });
+  // Note: DM escalation settings (dmEscalationDays, dmEscalationEnabled) are now
+  // managed through workflow rules at /api/app/workflow-rules
 
   router.get('/', async (req: Request, res: Response) => {
     try {

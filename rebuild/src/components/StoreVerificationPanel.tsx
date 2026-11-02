@@ -212,9 +212,14 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
             </button>
           </div>
           {hoursCorrect === false && (
-            <p className="text-sm text-gray-500 mt-2">
-              Contact your district manager to update store hours.
-            </p>
+            <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <p className="text-sm text-orange-800 font-medium">
+                Hours need updating?
+              </p>
+              <p className="text-sm text-orange-700 mt-1">
+                After submitting this response, you'll be able to submit a correction request with your proposed hours changes.
+              </p>
+            </div>
           )}
         </fieldset>
 

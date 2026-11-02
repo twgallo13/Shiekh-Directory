@@ -11,6 +11,8 @@ import { onRequest } from 'firebase-functions/v2/https';
 import app from './index';
 
 export { sendVerificationReminders, expireOldVerificationRequests } from './scheduledReminders';
+export { expirePendingCorrections } from './scheduledCorrections';
+export { escalateToDM } from './scheduledDMEscalation';
 
 export const api = onRequest(
   {

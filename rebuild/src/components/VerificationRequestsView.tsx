@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2 } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -10,6 +10,7 @@ export function VerificationRequestsView() {
   useDocumentTitle('Verification');
   
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { getIdToken, authUser } = useAuth();
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,23 +20,44 @@ export function VerificationRequestsView() {
   const [filter, setFilter] = useState<'pending' | 'confirmed' | 'expired' | 'cancelled'>('pending');
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [showNewRequest, setShowNewRequest] = useState(false);
+  const [locationFilterName, setLocationFilterName] = useState<string | null>(null);
+
+  const locationIdFilter = searchParams.get('locationId');
 
   const isAdminOrSteward = authUser?.role === 'Admin' || authUser?.role === 'Steward';
   const isLeader = authUser?.role === 'Leader';
   const hasAccess = isAdminOrSteward || isLeader;
+
+  const clearLocationFilter = () => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('locationId');
+      return next;
+    });
+    setLocationFilterName(null);
+  };
 
   const loadRequests = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const token = await getIdToken();
-      const response = await fetch(`/api/app/verification?status=${filter}`, {
+      const params = new URLSearchParams({ status: filter });
+      if (locationIdFilter) {
+        params.set('locationId', locationIdFilter);
+      }
+      const response = await fetch(`/api/app/verification?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       
       if (response.ok) {
         const { data } = await response.json();
         setRequests(data);
+        if (locationIdFilter && data.length > 0) {
+          setLocationFilterName(data[0].locationName || data[0].storeNumber || locationIdFilter);
+        } else if (locationIdFilter) {
+          setLocationFilterName(locationIdFilter);
+        }
       } else {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error?.message || 'Failed to load requests');
@@ -46,7 +68,7 @@ export function VerificationRequestsView() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken, filter]);
+  }, [getIdToken, filter, locationIdFilter]);
 
   useEffect(() => {
     loadRequests();
@@ -198,6 +220,22 @@ export function VerificationRequestsView() {
             </button>
           ))}
         </div>
+
+        {locationIdFilter && (
+          <div className="mb-4 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+            <Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" />
+            <span className="text-sm text-blue-800">
+              Filtering by store: <strong>{locationFilterName || locationIdFilter}</strong>
+            </span>
+            <button
+              onClick={clearLocationFilter}
+              className="ml-auto p-1 hover:bg-blue-100 rounded min-h-[36px] min-w-[36px] flex items-center justify-center"
+              aria-label="Clear store filter"
+            >
+              <XCircle className="w-4 h-4 text-blue-600" aria-hidden="true" />
+            </button>
+          </div>
+        )}
 
         {/* Bulk verification by district/region - Admin/Steward only */}
         {isAdminOrSteward && (

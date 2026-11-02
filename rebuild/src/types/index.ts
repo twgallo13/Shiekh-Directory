@@ -505,7 +505,12 @@ export type AuditAction =
   | 'revoke-all-sessions'
   | 'bulk-send'
   | 'invite-user'
-  | 'revoke-invitation';
+  | 'revoke-invitation'
+  | 'archive'
+  | 'bulk_archive'
+  | 'bulk_close'
+  | 'expire_corrections'
+  | 'reset';
 
 export interface AuditLogEntry {
   id: string;
@@ -514,7 +519,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client' | 'workflow-rules' | 'settings' | 'email-settings';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store
@@ -606,7 +611,7 @@ export interface DMVerificationRequest extends RecordMetadata {
 }
 
 // === Corrections (requires Steward approval) ===
-export type CorrectionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type CorrectionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'archived' | 'expired';
 export type CorrectionType = 'phone' | 'address' | 'inbox' | 'hours';
 
 // User-facing categories for issue reporting

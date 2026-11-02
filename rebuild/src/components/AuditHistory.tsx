@@ -32,6 +32,11 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'bulk-send': 'Bulk sent',
   'invite-user': 'User invited',
   'revoke-invitation': 'Invitation revoked',
+  'archive': 'Archived',
+  'bulk_archive': 'Bulk archived',
+  'bulk_close': 'Bulk closed',
+  'expire_corrections': 'Corrections expired',
+  'reset': 'Reset to default',
 };
 
 const ROLE_COLORS: Record<UserRole, string> = {

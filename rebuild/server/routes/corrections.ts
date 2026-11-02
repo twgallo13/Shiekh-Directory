@@ -24,6 +24,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
       const status = req.query.status as string;
       const category = req.query.category as string;
       const myRequests = req.query.myRequests === 'true';
+      const includeArchived = req.query.includeArchived === 'true';
       
       let query;
       
@@ -42,7 +43,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
         }
       }
 
-      const snapshot = await query.limit(100).get();
+      const snapshot = await query.limit(200).get();
       
       let corrections: Correction[] = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -52,6 +53,11 @@ export function createCorrectionsRouter(db: Firestore): Router {
       // Filter by category if specified (done in memory since Firestore has index limitations)
       if (category) {
         corrections = corrections.filter(c => c.category === category);
+      }
+      
+      // Hide archived unless explicitly requested
+      if (!includeArchived && !status) {
+        corrections = corrections.filter(c => c.status !== 'archived');
       }
 
       return res.json({ data: corrections });
@@ -436,6 +442,263 @@ export function createCorrectionsRouter(db: Firestore): Router {
       console.error('Reject correction error:', error);
       return res.status(500).json({
         error: { code: 'reject_error', message: 'Failed to reject correction', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // Archive a single correction
+  router.post('/:id/archive', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!canApproveCorrections(authUser)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'You don\'t have permission to archive corrections', requestId: res.locals.requestId },
+        });
+      }
+
+      const correctionRef = db.collection('corrections').doc(id);
+      const correctionDoc = await correctionRef.get();
+
+      if (!correctionDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Correction not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const correction = correctionDoc.data() as Correction;
+
+      if (correction.status === 'archived') {
+        return res.status(400).json({
+          error: { code: 'already_archived', message: 'Correction is already archived', requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date().toISOString();
+      await correctionRef.update({
+        status: 'archived',
+        archivedAt: now,
+        archivedBy: authUser.uid,
+        archivedByEmail: authUser.email,
+        previousStatus: correction.status,
+        updatedAt: now,
+        updatedBy: authUser.uid,
+        version: correction.version + 1,
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'archive',
+        entityType: 'correction',
+        entityId: id,
+        entityName: `Correction for ${correction.storeNumber}`,
+        changes: [{ field: 'status', oldValue: correction.status, newValue: 'archived' }],
+      });
+
+      return res.json({ data: { success: true } });
+    } catch (error) {
+      console.error('Archive correction error:', error);
+      return res.status(500).json({
+        error: { code: 'archive_error', message: 'Failed to archive correction', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // Bulk archive corrections
+  router.post('/bulk/archive', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { ids } = req.body;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!canApproveCorrections(authUser)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'You don\'t have permission to archive corrections', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          error: { code: 'ids_required', message: 'Array of correction IDs is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (ids.length > 100) {
+        return res.status(400).json({
+          error: { code: 'too_many_ids', message: 'Cannot archive more than 100 corrections at once', requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date().toISOString();
+      const batch = db.batch();
+      const archivedIds: string[] = [];
+      const skippedIds: string[] = [];
+
+      for (const id of ids) {
+        const correctionRef = db.collection('corrections').doc(id);
+        const correctionDoc = await correctionRef.get();
+        
+        if (!correctionDoc.exists) {
+          skippedIds.push(id);
+          continue;
+        }
+        
+        const correction = correctionDoc.data() as Correction;
+        if (correction.status === 'archived') {
+          skippedIds.push(id);
+          continue;
+        }
+
+        batch.update(correctionRef, {
+          status: 'archived',
+          archivedAt: now,
+          archivedBy: authUser.uid,
+          archivedByEmail: authUser.email,
+          previousStatus: correction.status,
+          updatedAt: now,
+          updatedBy: authUser.uid,
+          version: correction.version + 1,
+        });
+        archivedIds.push(id);
+      }
+
+      if (archivedIds.length > 0) {
+        await batch.commit();
+
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'bulk_archive',
+          entityType: 'correction',
+          entityId: 'bulk',
+          entityName: `Bulk archive (${archivedIds.length} corrections)`,
+          changes: [{ field: 'archived_count', newValue: archivedIds.length }],
+        });
+      }
+
+      return res.json({ 
+        data: { 
+          success: true, 
+          archived: archivedIds.length, 
+          skipped: skippedIds.length,
+          archivedIds,
+          skippedIds,
+        } 
+      });
+    } catch (error) {
+      console.error('Bulk archive corrections error:', error);
+      return res.status(500).json({
+        error: { code: 'bulk_archive_error', message: 'Failed to archive corrections', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // Bulk close (reject) corrections
+  router.post('/bulk/close', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { ids, notes } = req.body;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!canApproveCorrections(authUser)) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'You don\'t have permission to close corrections', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          error: { code: 'ids_required', message: 'Array of correction IDs is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (ids.length > 100) {
+        return res.status(400).json({
+          error: { code: 'too_many_ids', message: 'Cannot close more than 100 corrections at once', requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date().toISOString();
+      const batch = db.batch();
+      const closedIds: string[] = [];
+      const skippedIds: string[] = [];
+
+      for (const id of ids) {
+        const correctionRef = db.collection('corrections').doc(id);
+        const correctionDoc = await correctionRef.get();
+        
+        if (!correctionDoc.exists) {
+          skippedIds.push(id);
+          continue;
+        }
+        
+        const correction = correctionDoc.data() as Correction;
+        if (correction.status !== 'pending') {
+          skippedIds.push(id);
+          continue;
+        }
+
+        batch.update(correctionRef, {
+          status: 'rejected',
+          reviewedBy: authUser.uid,
+          reviewedByEmail: authUser.email,
+          reviewedAt: now,
+          reviewNotes: notes || 'Bulk closed',
+          updatedAt: now,
+          updatedBy: authUser.uid,
+          version: correction.version + 1,
+        });
+        closedIds.push(id);
+      }
+
+      if (closedIds.length > 0) {
+        await batch.commit();
+
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'bulk_close',
+          entityType: 'correction',
+          entityId: 'bulk',
+          entityName: `Bulk close (${closedIds.length} corrections)`,
+          changes: [{ field: 'closed_count', newValue: closedIds.length }],
+        });
+      }
+
+      return res.json({ 
+        data: { 
+          success: true, 
+          closed: closedIds.length, 
+          skipped: skippedIds.length,
+          closedIds,
+          skippedIds,
+        } 
+      });
+    } catch (error) {
+      console.error('Bulk close corrections error:', error);
+      return res.status(500).json({
+        error: { code: 'bulk_close_error', message: 'Failed to close corrections', requestId: res.locals.requestId },
       });
     }
   });

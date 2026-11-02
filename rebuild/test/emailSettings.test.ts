@@ -33,7 +33,7 @@ describe('Email Settings', () => {
         'store_signin',
       ];
       
-      const typeIds = EMAIL_TYPES.map(t => t.id);
+      const typeIds = EMAIL_TYPES.map(t => t.id) as string[];
       for (const expected of expectedTypes) {
         assert.ok(typeIds.includes(expected), `Missing email type: ${expected}`);
       }
@@ -55,6 +55,24 @@ describe('Email Settings', () => {
       assert.ok(categories.has('verification'), 'Should have verification category');
       assert.ok(categories.has('admin'), 'Should have admin category');
       assert.ok(categories.has('authentication'), 'Should have authentication category');
+    });
+
+    it('should categorize email types by audience', async () => {
+      const { EMAIL_TYPES } = await import('../server/routes/emailSettings');
+      
+      const audiences = new Set(EMAIL_TYPES.map(t => t.audience));
+      assert.ok(audiences.has('stores'), 'Should have stores audience');
+      assert.ok(audiences.has('leaders'), 'Should have leaders audience');
+      assert.ok(audiences.has('admins'), 'Should have admins audience');
+    });
+
+    it('should have purpose and audienceLabel for each type', async () => {
+      const { EMAIL_TYPES } = await import('../server/routes/emailSettings');
+      
+      for (const type of EMAIL_TYPES) {
+        assert.ok(type.purpose, `${type.id} should have purpose`);
+        assert.ok(type.audienceLabel, `${type.id} should have audienceLabel`);
+      }
     });
   });
 

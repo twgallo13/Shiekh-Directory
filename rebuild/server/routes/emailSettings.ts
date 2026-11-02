@@ -31,51 +31,72 @@ export const EMAIL_TYPES = [
   {
     id: 'verification_request',
     name: 'Hours Verification Request',
-    description: 'Sent to stores asking them to verify their operating hours',
+    description: 'Asks stores to confirm their operating hours are correct',
     placeholders: ['storeName', 'storeNumber', 'storeEmail', 'storeType', 'verificationUrl', 'expiresAt', 'hours', 'wayfindingDirections', 'confirmUrl', 'updateUrl'],
     category: 'verification',
+    audience: 'stores',
+    audienceLabel: 'Store Contacts',
+    purpose: 'Request hours confirmation',
   },
   {
     id: 'verification_reminder',
     name: 'Hours Verification Reminder',
-    description: 'Reminder sent to stores that have not responded to verification requests',
+    description: 'Follow-up for stores that haven\'t responded yet',
     placeholders: ['storeName', 'storeNumber', 'storeEmail', 'verificationUrl', 'expiresAt', 'daysRemaining', 'originalSentAt'],
     category: 'verification',
+    audience: 'stores',
+    audienceLabel: 'Store Contacts',
+    purpose: 'Remind about pending request',
   },
   {
     id: 'verification_confirmation',
-    name: 'Hours Verification Confirmation',
-    description: 'Confirmation sent to stores after they verify their hours',
+    name: 'Hours Verified',
+    description: 'Thank-you confirmation after hours are verified',
     placeholders: ['storeName', 'storeNumber', 'storeEmail', 'verifiedAt'],
     category: 'verification',
-  },
-  {
-    id: 'dm_verification_request',
-    name: 'District Verification Request',
-    description: 'Sent to District/Regional Managers asking them to verify store roster',
-    placeholders: ['recipientName', 'recipientType', 'districtName', 'storeCount', 'verificationUrl', 'expiresAt'],
-    category: 'verification',
-  },
-  {
-    id: 'invitation',
-    name: 'User Invitation',
-    description: 'Invitation email for new users to join the directory',
-    placeholders: ['inviterName', 'role', 'signInUrl', 'expiresAt', 'personalMessage'],
-    category: 'admin',
-  },
-  {
-    id: 'invitation_reminder',
-    name: 'Invitation Reminder',
-    description: 'Reminder for pending user invitations',
-    placeholders: ['inviterName', 'role', 'signInUrl', 'expiresAt'],
-    category: 'admin',
+    audience: 'stores',
+    audienceLabel: 'Store Contacts',
+    purpose: 'Confirm hours received',
   },
   {
     id: 'store_signin',
     name: 'Store Sign-In Link',
-    description: 'Passwordless sign-in link for store mailboxes',
+    description: 'Passwordless link for store contacts to sign in',
     placeholders: ['storeNumber', 'storeName', 'signInUrl', 'expiresAt'],
     category: 'authentication',
+    audience: 'stores',
+    audienceLabel: 'Store Contacts',
+    purpose: 'Enable secure sign-in',
+  },
+  {
+    id: 'dm_verification_request',
+    name: 'District Roster Review',
+    description: 'Asks District/Regional Managers to review their store roster',
+    placeholders: ['recipientName', 'recipientType', 'districtName', 'storeCount', 'verificationUrl', 'expiresAt'],
+    category: 'verification',
+    audience: 'leaders',
+    audienceLabel: 'District & Regional Leaders',
+    purpose: 'Request roster review',
+  },
+  {
+    id: 'invitation',
+    name: 'Team Invitation',
+    description: 'Invites new team members to join the directory',
+    placeholders: ['inviterName', 'role', 'signInUrl', 'expiresAt', 'personalMessage'],
+    category: 'admin',
+    audience: 'admins',
+    audienceLabel: 'Team Members',
+    purpose: 'Invite new user',
+  },
+  {
+    id: 'invitation_reminder',
+    name: 'Invitation Reminder',
+    description: 'Nudge for pending team invitations',
+    placeholders: ['inviterName', 'role', 'signInUrl', 'expiresAt'],
+    category: 'admin',
+    audience: 'admins',
+    audienceLabel: 'Team Members',
+    purpose: 'Remind about invitation',
   },
 ] as const;
 
@@ -205,12 +226,41 @@ export function createEmailSettingsRouter(db: Firestore): Router {
       const settings = await getSettings();
       const envCutoverEnabled = process.env.MAIL_CUTOVER_ENABLED === 'true';
       
+      // Get 7-day stats for overview
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const [recentMailSnap, pendingVerificationsSnap, pendingInvitationsSnap] = await Promise.all([
+        db.collection('mailLog')
+          .where('sentAt', '>=', sevenDaysAgo)
+          .get(),
+        db.collection('verificationRequests')
+          .where('status', '==', 'pending')
+          .get(),
+        db.collection('invitations')
+          .where('status', '==', 'pending')
+          .get(),
+      ]);
+      
+      const recentMail = recentMailSnap.docs.map(d => d.data());
+      const stats = {
+        last7Days: {
+          sent: recentMail.filter(m => m.success === true && !m.blocked).length,
+          logged: recentMail.filter(m => !m.success && !m.blocked && !m.error).length,
+          failed: recentMail.filter(m => m.success === false || m.error).length,
+          suppressed: recentMail.filter(m => m.blocked === true).length,
+        },
+        pendingRecipients: {
+          verifications: pendingVerificationsSnap.size,
+          invitations: pendingInvitationsSnap.size,
+        },
+      };
+      
       res.json({
         data: {
           ...settings,
           envCutoverEnabled,
           effectiveEnabled: settings.masterEnabled && envCutoverEnabled,
           emailTypes: EMAIL_TYPES,
+          stats,
         },
       });
     } catch (error) {

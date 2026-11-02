@@ -1,8 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { AuthUser, Location } from '../../src/types';
-
-const STALE_THRESHOLD_DAYS = 90;
+import { getWorkflowRules } from '../services/workflowSettings';
 
 export interface StaleStoreItem {
   id: string;
@@ -34,8 +33,11 @@ export function createStaleStoresRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
+      const verificationCycleDays = workflowRules.verificationCycleDays;
+      
       const now = Date.now();
-      const thresholdDate = new Date(now - STALE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
+      const thresholdDate = new Date(now - verificationCycleDays * 24 * 60 * 60 * 1000);
 
       const baseQuery = db.collection('locations')
         .where('lifecycle', '==', 'active')
@@ -145,7 +147,7 @@ export function createStaleStoresRouter(db: Firestore): Router {
 
       res.json({
         staleStores,
-        thresholdDays: STALE_THRESHOLD_DAYS,
+        thresholdDays: verificationCycleDays,
         totalCount: staleStores.length,
       });
     } catch (error) {

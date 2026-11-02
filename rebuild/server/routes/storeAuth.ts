@@ -3,10 +3,8 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { randomBytes } from 'crypto';
 import { createUnifiedMailService } from '../services/unifiedMail';
 import { generateToken, generateSessionId, hashToken, hashSessionId } from '../services/tokenAuth';
+import { getWorkflowRules } from '../services/workflowSettings';
 import type { Location, AuditLogEntry } from '../../src/types';
-
-const TOKEN_EXPIRY_HOURS = 24;
-const SESSION_EXPIRY_HOURS = 12;
 
 function getAppUrl(req: Request): string {
   if (process.env.APP_URL) {
@@ -144,11 +142,12 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
       const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
 
+      const workflowRules = await getWorkflowRules(db);
       const token = generateToken();
       const tokenHash = hashToken(token);
       const tokenId = `tok_${randomBytes(8).toString('hex')}`;
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + workflowRules.signInLinkHours * 60 * 60 * 1000);
 
       const tokenDoc: Omit<OneClickToken, 'id'> & { tokenId: string } = {
         locationId: location.id,
@@ -229,6 +228,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
       const tokenHash = hashToken(token);
       const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       const now = new Date();
@@ -262,7 +262,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
 
         const sessionId = generateSessionId();
         const sessionHash = hashSessionId(sessionId);
-        const expiresAt = new Date(now.getTime() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
+        const expiresAt = new Date(now.getTime() + workflowRules.storeSessionHours * 60 * 60 * 1000);
 
         const sessionData: StoreSession = {
           locationId: location.id,
@@ -503,8 +503,9 @@ export function createStoreAuthRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + workflowRules.storeOneClickLinkDays * 24 * 60 * 60 * 1000);
 
       const confirmToken = generateToken();
       const updateToken = generateToken();
@@ -566,6 +567,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       const now = new Date();
       const userAgent = req.get('user-agent');
+      const workflowRules = await getWorkflowRules(db);
 
       const result = await db.runTransaction(async (transaction) => {
         const tokenDoc = await transaction.get(tokenRef);
@@ -625,7 +627,7 @@ export function createStoreAuthRouter(db: Firestore): Router {
         if (action === 'update') {
           const sessionId = generateSessionId();
           const sessionHash = hashSessionId(sessionId);
-          const expiresAt = new Date(now.getTime() + SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
+          const expiresAt = new Date(now.getTime() + workflowRules.storeSessionHours * 60 * 60 * 1000);
 
           const sessionData: StoreSession = {
             locationId: location.id,

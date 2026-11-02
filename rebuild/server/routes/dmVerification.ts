@@ -13,8 +13,8 @@ import type {
 } from '../../src/types';
 import { createUnifiedMailService } from '../services/unifiedMail';
 import { generateToken, hashToken } from '../services/tokenAuth';
+import { getWorkflowRules } from '../services/workflowSettings';
 
-const DEFAULT_DM_OFFSET_DAYS = 14;
 const BACKUP_STEWARD_EMAIL = 'andres@shiekhshoes.org';
 
 function getAppUrl(req: Request): string {
@@ -36,7 +36,6 @@ function getAppUrl(req: Request): string {
   }
   return 'https://directory.shiekh.com';
 }
-const DM_VERIFICATION_EXPIRY_DAYS = 14;
 
 interface PrimaryRecipient {
   personId: string;
@@ -185,12 +184,13 @@ export function createDMVerificationRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
       const settingsDoc = await db.collection('settings').doc('dmVerification').get();
       const settings = settingsDoc.exists ? settingsDoc.data() : {};
 
       return res.json({
         data: {
-          dmOffsetDays: settings?.dmOffsetDays ?? DEFAULT_DM_OFFSET_DAYS,
+          dmOffsetDays: settings?.dmOffsetDays ?? workflowRules.dmEscalationDays,
         },
       });
     } catch (error) {
@@ -341,8 +341,9 @@ export function createDMVerificationRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + DM_VERIFICATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + workflowRules.dmExpiryDays * 24 * 60 * 60 * 1000);
 
       const stores = await getStoresInDistrict(db, districtId);
 

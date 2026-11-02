@@ -4,6 +4,7 @@ import { randomBytes } from 'crypto';
 import type { UserRole } from '../../src/types';
 import { createUnifiedMailService } from '../services/unifiedMail';
 import { isEmailDomainAllowed, getAllowedDomains } from '../config/auth';
+import { getWorkflowRules } from '../services/workflowSettings';
 
 export interface Invitation {
   id: string;
@@ -19,7 +20,6 @@ export interface Invitation {
   revokedBy?: string;
 }
 
-const INVITATION_EXPIRY_DAYS = 7;
 const VALID_ROLES: UserRole[] = ['Admin', 'Steward', 'Leader', 'Viewer'];
 
 function getAppUrl(req: Request): string {
@@ -163,8 +163,9 @@ export function createInvitationsRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + workflowRules.invitationExpiryDays * 24 * 60 * 60 * 1000);
       const invitationId = `inv_${randomBytes(12).toString('hex')}`;
 
       const invitation: Omit<Invitation, 'id'> = {
@@ -284,8 +285,9 @@ export function createInvitationsRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + workflowRules.invitationExpiryDays * 24 * 60 * 60 * 1000);
 
       await invDoc.ref.update({
         expiresAt: expiresAt.toISOString(),

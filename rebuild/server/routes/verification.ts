@@ -10,6 +10,7 @@ import type {
 import { getStoreTypeLabel } from '../../src/types';
 import { createUnifiedMailService } from '../services/unifiedMail';
 import { generateToken, hashToken } from '../services/tokenAuth';
+import { getWorkflowRules } from '../services/workflowSettings';
 
 function getAppUrl(req: Request): string {
   if (process.env.APP_URL) {
@@ -179,8 +180,9 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + workflowRules.requestExpiryDays * 24 * 60 * 60 * 1000);
 
       const requestRef = db.collection('verificationRequests').doc();
       const verificationRequest: Omit<VerificationRequest, 'id'> = {
@@ -890,7 +892,9 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      const { scope, scopeId, skipRecentlyVerified, daysSinceVerification = 90, dryRun } = req.body;
+      const workflowRules = await getWorkflowRules(db);
+      const { scope, scopeId, skipRecentlyVerified, dryRun } = req.body;
+      const daysSinceVerification = req.body.daysSinceVerification ?? workflowRules.verificationCycleDays;
 
       if (!scope || !['district', 'region', 'all'].includes(scope)) {
         return res.status(400).json({
@@ -967,7 +971,7 @@ export function createVerificationRouter(db: Firestore): Router {
       };
 
       const campaignId = `camp_${randomBytes(8).toString('hex')}`;
-      const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(now.getTime() + workflowRules.requestExpiryDays * 24 * 60 * 60 * 1000);
       const appUrl = getAppUrl(req);
       const mailService = createUnifiedMailService(db);
 

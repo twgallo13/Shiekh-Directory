@@ -1,23 +1,51 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createUnifiedMailService } from './services/unifiedMail';
+import { getWorkflowRules } from './services/workflowSettings';
 import type { VerificationRequest, Location } from '../src/types';
 
 const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
 
 export const sendVerificationReminders = onSchedule(
   {
-    schedule: '0 9 * * 1-5',
+    schedule: '0 * * * *',
     timeZone: 'America/Los_Angeles',
     retryCount: 3,
     memory: '256MiB',
   },
   async () => {
     const db = getFirestore();
-    const mailService = createUnifiedMailService(db);
-
+    const workflowRules = await getWorkflowRules(db);
+    
     const now = new Date();
-    const reminderThresholds = [3, 1];
+    const ptFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const currentTimePT = ptFormatter.format(now);
+    const currentHourPT = parseInt(currentTimePT.split(':')[0], 10);
+    const sendHour = parseInt(workflowRules.reminderSendTime.split(':')[0], 10);
+    
+    if (currentHourPT !== sendHour) {
+      console.log(`[Reminders] Not send time. Current: ${currentTimePT} PT, configured: ${workflowRules.reminderSendTime} PT`);
+      return;
+    }
+    
+    const dayFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      weekday: 'long',
+    });
+    const currentDayPT = dayFormatter.format(now).toLowerCase();
+    const sendDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    if (!sendDays.includes(currentDayPT)) {
+      console.log(`[Reminders] Not a send day. Current: ${currentDayPT}`);
+      return;
+    }
+    
+    const mailService = createUnifiedMailService(db);
+    const reminderThresholds = workflowRules.reminderLeadDays;
 
     for (const daysBeforeExpiry of reminderThresholds) {
       const targetDate = new Date(now);
@@ -56,10 +84,15 @@ export const sendVerificationReminders = onSchedule(
         const lastReminder = request.lastReminderAt ? new Date(request.lastReminderAt) : null;
         if (lastReminder) {
           const hoursSinceLastReminder = (now.getTime() - lastReminder.getTime()) / (1000 * 60 * 60);
-          if (hoursSinceLastReminder < 20) {
-            console.log(`[Reminders] Skipping ${request.id} - reminder sent ${hoursSinceLastReminder.toFixed(1)}h ago`);
+          if (hoursSinceLastReminder < workflowRules.minReminderGapHours) {
+            console.log(`[Reminders] Skipping ${request.id} - reminder sent ${hoursSinceLastReminder.toFixed(1)}h ago (min gap: ${workflowRules.minReminderGapHours}h)`);
             continue;
           }
+        }
+        
+        if (workflowRules.maxReminders > 0 && (request.reminderCount || 0) >= workflowRules.maxReminders) {
+          console.log(`[Reminders] Skipping ${request.id} - max reminders reached (${workflowRules.maxReminders})`);
+          continue;
         }
 
         const verificationUrl = `${APP_URL}/verify/${request.id}`;

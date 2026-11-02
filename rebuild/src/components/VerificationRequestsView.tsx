@@ -31,6 +31,13 @@ export function VerificationRequestsView() {
   const [showBulkReissue, setShowBulkReissue] = useState(false);
   const [bulkReason, setBulkReason] = useState('');
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  
+  // Item #10: Bulk assign/send
+  const [showBulkAssign, setShowBulkAssign] = useState(false);
+  const [showBulkSend, setShowBulkSend] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState('');
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
+  const [assignees, setAssignees] = useState<Array<{ id: string; fullName: string; email: string }>>([]);
 
   const locationIdFilter = searchParams.get('locationId');
 
@@ -306,6 +313,106 @@ export function VerificationRequestsView() {
     }
   };
 
+  // Item #10: Load assignees (people) for bulk assign
+  const loadAssignees = useCallback(async () => {
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/people', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const { data } = await response.json();
+        setAssignees(data || []);
+      }
+    } catch {
+      // Ignore - assignees list will be empty
+    }
+  }, [getIdToken]);
+
+  // Item #10: Bulk assign handler
+  const handleBulkAssign = async () => {
+    if (!selectedAssigneeId) {
+      setError('Please select an assignee');
+      return;
+    }
+    setBulkProcessing(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/verification/bulk/assign', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ids: Array.from(selectedIds),
+          assigneeId: selectedAssigneeId,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        setError(result.error?.message || 'Failed to assign');
+        return;
+      }
+
+      setShowBulkAssign(false);
+      setSelectedAssigneeId(null);
+      setAssigneeSearch('');
+      setSelectedIds(new Set());
+      loadRequests();
+    } catch {
+      setError('Failed to assign verification requests');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  // Item #10: Bulk send reminders handler
+  const handleBulkSend = async () => {
+    setBulkProcessing(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/verification/bulk/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ids: Array.from(selectedIds),
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        setError(result.error?.message || 'Failed to send reminders');
+        return;
+      }
+
+      const result = await response.json();
+      setShowBulkSend(false);
+      setSelectedIds(new Set());
+      loadRequests();
+      
+      // Show success message with counts
+      if (result.data) {
+        const { sent, skipped, failed } = result.data;
+        if (sent > 0) {
+          setError(null);
+        } else if (skipped > 0 || failed > 0) {
+          setError(`Reminders: ${sent} sent, ${skipped} skipped, ${failed} failed`);
+        }
+      }
+    } catch {
+      setError('Failed to send reminders');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
   const selectedRequest = requests.find(r => r.id === selectedId);
 
   if (!authUser || !hasAccess) {
@@ -407,12 +514,28 @@ export function VerificationRequestsView() {
               {selectedIds.size} selected
             </span>
             <div className="flex-1" />
+            {(filter === 'pending' || filter === 'awaiting_response') && (
+              <>
+                <button
+                  onClick={() => { loadAssignees(); setShowBulkAssign(true); }}
+                  className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 min-h-[36px]"
+                >
+                  Assign
+                </button>
+                <button
+                  onClick={() => setShowBulkSend(true)}
+                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 min-h-[36px]"
+                >
+                  Send Reminders
+                </button>
+              </>
+            )}
             {(filter === 'pending' || filter === 'awaiting_response' || filter === 'in_review') && (
               <button
                 onClick={() => setShowBulkCancel(true)}
                 className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 min-h-[36px]"
               >
-                Bulk Cancel
+                Cancel
               </button>
             )}
             {(filter === 'cancelled' || filter === 'expired') && (
@@ -420,7 +543,7 @@ export function VerificationRequestsView() {
                 onClick={() => setShowBulkReissue(true)}
                 className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[36px]"
               >
-                Bulk Reissue
+                Reissue
               </button>
             )}
             <button
@@ -740,6 +863,138 @@ export function VerificationRequestsView() {
           {bulkReason.trim().length > 0 && bulkReason.trim().length < 3 && (
             <p className="text-sm text-red-600">Reason must be at least 3 characters</p>
           )}
+        </div>
+      </Dialog>
+
+      {/* Item #10: Bulk Assign Dialog */}
+      <Dialog
+        isOpen={showBulkAssign}
+        onClose={() => { setShowBulkAssign(false); setSelectedAssigneeId(null); setAssigneeSearch(''); }}
+        title="Assign Verification Requests"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setShowBulkAssign(false); setSelectedAssigneeId(null); setAssigneeSearch(''); }}
+              disabled={bulkProcessing}
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBulkAssign}
+              disabled={bulkProcessing || !selectedAssigneeId}
+              className="flex-1 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+            >
+              {bulkProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  Assigning...
+                </>
+              ) : (
+                <>Assign {selectedIds.size} Request{selectedIds.size > 1 ? 's' : ''}</>
+              )}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            Select a person to assign to <strong>{selectedIds.size}</strong> verification request{selectedIds.size > 1 ? 's' : ''}.
+          </p>
+          <FormField id="assignee-search" label="Search by name or email">
+            <input
+              id="assignee-search"
+              type="text"
+              value={assigneeSearch}
+              onChange={(e) => setAssigneeSearch(e.target.value)}
+              placeholder="Search..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-h-[44px]"
+            />
+          </FormField>
+          <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
+            {assignees
+              .filter(p => 
+                !assigneeSearch ||
+                p.fullName.toLowerCase().includes(assigneeSearch.toLowerCase()) ||
+                p.email.toLowerCase().includes(assigneeSearch.toLowerCase())
+              )
+              .slice(0, 50)
+              .map(person => (
+                <button
+                  key={person.id}
+                  onClick={() => setSelectedAssigneeId(person.id)}
+                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 border-b last:border-b-0 min-h-[44px] ${
+                    selectedAssigneeId === person.id ? 'bg-purple-50 border-purple-300' : ''
+                  }`}
+                >
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                    selectedAssigneeId === person.id ? 'border-purple-600 bg-purple-600' : 'border-gray-300'
+                  }`}>
+                    {selectedAssigneeId === person.id && (
+                      <Check className="w-3 h-3 text-white" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{person.fullName}</p>
+                    <p className="text-sm text-gray-500 truncate">{person.email}</p>
+                  </div>
+                </button>
+              ))}
+            {assignees.length === 0 && (
+              <div className="px-4 py-8 text-center text-gray-500">
+                No people found
+              </div>
+            )}
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Item #10: Bulk Send Reminders Dialog */}
+      <Dialog
+        isOpen={showBulkSend}
+        onClose={() => setShowBulkSend(false)}
+        title="Send Verification Reminders"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowBulkSend(false)}
+              disabled={bulkProcessing}
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBulkSend}
+              disabled={bulkProcessing}
+              className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+            >
+              {bulkProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="w-4 h-4" aria-hidden="true" />
+                  Send {selectedIds.size} Reminder{selectedIds.size > 1 ? 's' : ''}
+                </>
+              )}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            You are about to send reminder emails to <strong>{selectedIds.size}</strong> store{selectedIds.size > 1 ? 's' : ''}.
+          </p>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+            <p className="font-medium">Note:</p>
+            <ul className="mt-1 space-y-1 list-disc list-inside">
+              <li>Reminders will only be sent to pending/awaiting requests</li>
+              <li>Requests with bounced emails will be skipped</li>
+              <li>Email delivery depends on SMTP configuration</li>
+            </ul>
+          </div>
         </div>
       </Dialog>
     </div>

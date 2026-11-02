@@ -20,6 +20,8 @@ export interface VerificationEmailData {
   updateUrl?: string;
   hours?: StandardHours;
   wayfindingDirections?: string;
+  verificationRequestId?: string; // #7: For bounce tracking
+  locationId?: string; // #7: For bounce tracking
 }
 
 export interface ReminderEmailData extends VerificationEmailData {

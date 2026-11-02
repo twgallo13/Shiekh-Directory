@@ -68,8 +68,14 @@ export const flagOverdueCorrections = onSchedule(
 
       // Item #13: Route to APPROVER's manager if there's an assigned approver,
       // otherwise fall back to DM, then RM.
-      // For pending/overdue corrections, there's no assigned approver yet,
-      // so we escalate directly to the DM, then RM.
+      //
+      // NOTE: The Correction type does NOT have an 'assignedTo' or 'approverId' field.
+      // It only has 'reviewedBy' which is set AFTER review is complete.
+      // For pending/overdue corrections, no approver is assigned yet.
+      // Therefore, we use the DM→RM fallback path.
+      //
+      // If a future version adds an 'assignedApproverId' field to Correction,
+      // this code should look up that person's manager first.
       const locationDoc = await db.collection('locations').doc(correction.locationId).get();
       if (locationDoc.exists) {
         const location = locationDoc.data() as Location;
@@ -78,16 +84,47 @@ export const flagOverdueCorrections = onSchedule(
         let assigneeName: string | undefined;
         let assigneeType: 'manager' | 'dm' | 'rm' = 'dm';
         
-        // Check if there's already a reviewer assigned (rare for overdue corrections)
-        // If so, find their manager
+        // #13: If reviewedBy is set (rare for overdue corrections - would mean partial review),
+        // try to find that reviewer's manager. The manager would be the RM if reviewer is DM,
+        // or Steward/Admin if reviewer is RM.
         if (correction.reviewedBy) {
-          // Find the reviewer's manager by looking up their assignments
-          // The reviewer's manager would be whoever manages their scope
-          // This is complex and rarely applies to overdue corrections
-          // For now, we treat reviewedBy as already handled and skip
+          // Look up the reviewer's role by checking their assignments
+          const reviewerDmAssignment = await db.collection('assignments')
+            .where('personId', '==', correction.reviewedBy)
+            .where('role', '==', 'DM')
+            .where('capacity', '==', 'primary')
+            .limit(1)
+            .get();
+          
+          if (!reviewerDmAssignment.empty) {
+            // Reviewer is a DM, escalate to their region's RM
+            const districtId = reviewerDmAssignment.docs[0].data().scopeId;
+            const districtDoc = await db.collection('districts').doc(districtId).get();
+            if (districtDoc.exists) {
+              const regionId = (districtDoc.data() as { regionId?: string }).regionId;
+              if (regionId) {
+                const rmAssignment = await db.collection('assignments')
+                  .where('scopeType', '==', 'region')
+                  .where('scopeId', '==', regionId)
+                  .where('role', '==', 'RM')
+                  .where('capacity', '==', 'primary')
+                  .limit(1)
+                  .get();
+                if (!rmAssignment.empty) {
+                  const rmData = rmAssignment.docs[0].data();
+                  assigneeId = rmData.personId;
+                  assigneeType = 'manager';
+                  const personDoc = await db.collection('people').doc(rmData.personId).get();
+                  if (personDoc.exists) {
+                    assigneeName = (personDoc.data() as Person).fullName;
+                  }
+                }
+              }
+            }
+          }
         }
         
-        // Primary path: Route to the store's DM
+        // Primary path: Route to the store's DM (if no reviewer's manager found)
         if (!assigneeId && location.districtId) {
           const dmAssignment = await db.collection('assignments')
             .where('scopeType', '==', 'district')

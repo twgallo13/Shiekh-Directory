@@ -142,6 +142,8 @@ export const sendVerificationReminders = onSchedule(
           expiresAt: request.expiresAt,
           daysRemaining: daysBeforeExpiry,
           originalSentAt: request.sentAt,
+          verificationRequestId: request.id, // #7: For bounce tracking
+          locationId: request.locationId, // #7: For bounce tracking
         };
 
         const result = await mailService.sendVerificationReminder(emailData, 'system', 'reminders@system');

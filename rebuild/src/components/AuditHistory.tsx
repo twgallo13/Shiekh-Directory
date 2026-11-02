@@ -32,6 +32,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'bulk-send': 'Bulk sent',
   'bulk-cancel': 'Bulk cancelled',
   'bulk-reissue': 'Bulk reissued',
+  'bulk-assign': 'Bulk assigned',
   'invite-user': 'User invited',
   'revoke-invitation': 'Invitation revoked',
   'archive': 'Archived',

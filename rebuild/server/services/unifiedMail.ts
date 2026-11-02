@@ -103,6 +103,9 @@ export interface SendEmailOptions {
   isTest?: boolean;
   sentBy?: string;
   sentByEmail?: string;
+  verificationRequestId?: string; // Optional: links mail log to verification request for bounce tracking
+  locationId?: string; // Optional: links mail log to location
+  storeNumber?: string; // Optional: for context in mail log
 }
 
 
@@ -182,7 +185,7 @@ export class UnifiedMailService {
   }
 
   async send(options: SendEmailOptions): Promise<MailResult> {
-    const { typeId, to, data, isTest, sentBy, sentByEmail } = options;
+    const { typeId, to, data, isTest, sentBy, sentByEmail, verificationRequestId, locationId, storeNumber } = options;
     const settings = await this.getSettings();
     const envCutoverEnabled = process.env.MAIL_CUTOVER_ENABLED === 'true';
 
@@ -194,6 +197,11 @@ export class UnifiedMailService {
       sentByEmail: sentByEmail || 'system',
       isTest: isTest || false,
     };
+    
+    // #7 FIX: Include verificationRequestId for bounce tracking
+    if (verificationRequestId) logEntry.verificationRequestId = verificationRequestId;
+    if (locationId) logEntry.locationId = locationId;
+    if (storeNumber) logEntry.storeNumber = storeNumber;
 
     if (!settings.masterEnabled) {
       logEntry.success = false;
@@ -290,8 +298,87 @@ export class UnifiedMailService {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       logEntry.success = false;
       logEntry.error = errorMsg;
+      
+      // #7 FIX: Auto-bounce on permanent SMTP failure (5xx codes or invalid recipient)
+      const isPermanentFailure = this.isPermanentSmtpFailure(errorMsg);
+      if (isPermanentFailure && verificationRequestId) {
+        logEntry.autoBounced = true;
+        await this.handleAutoBounce(verificationRequestId, errorMsg);
+      }
+      
       await this.db.collection('mailLog').add(logEntry);
       return { success: false, error: errorMsg };
+    }
+  }
+  
+  // #7: Detect permanent SMTP failures that indicate bounce
+  private isPermanentSmtpFailure(errorMsg: string): boolean {
+    const lowerError = errorMsg.toLowerCase();
+    // Check for 5xx SMTP codes
+    if (/\b5\d{2}\b/.test(errorMsg)) return true;
+    // Check for common bounce indicators
+    const bounceKeywords = [
+      'mailbox not found',
+      'user unknown',
+      'no such user',
+      'invalid recipient',
+      'address rejected',
+      'recipient rejected',
+      'does not exist',
+      'mailbox unavailable',
+      'undeliverable',
+      'permanent failure',
+    ];
+    return bounceKeywords.some(keyword => lowerError.includes(keyword));
+  }
+  
+  // #7: Auto-bounce handler - marks request and creates DM task
+  private async handleAutoBounce(verificationRequestId: string, reason: string): Promise<void> {
+    try {
+      const now = new Date();
+      const requestRef = this.db.collection('verificationRequests').doc(verificationRequestId);
+      const requestDoc = await requestRef.get();
+      
+      if (!requestDoc.exists) return;
+      
+      const request = requestDoc.data()!;
+      if (request.emailBounced) return; // Already bounced
+      
+      // Mark as bounced
+      await requestRef.update({
+        emailBounced: true,
+        emailBouncedAt: now.toISOString(),
+        emailBouncedReason: `Auto-detected: ${reason}`,
+        updatedAt: now.toISOString(),
+        updatedBy: 'system',
+      });
+      
+      // Create fix_contact DM task
+      const locationDoc = await this.db.collection('locations').doc(request.locationId).get();
+      if (locationDoc.exists) {
+        const location = locationDoc.data()!;
+        const taskRef = this.db.collection('dmTasks').doc();
+        await taskRef.set({
+          id: taskRef.id,
+          locationId: request.locationId,
+          storeNumber: request.storeNumber,
+          storeName: location.name,
+          districtId: location.districtId,
+          taskType: 'fix_contact',
+          status: 'pending',
+          description: `Email auto-bounced for store ${request.storeNumber}: ${reason}`,
+          reportedBy: 'system',
+          verificationRequestId,
+          dueAt: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+          createdAt: now.toISOString(),
+          createdBy: 'system',
+          updatedAt: now.toISOString(),
+        });
+      }
+      
+      console.log(`[UnifiedMail] Auto-bounced verification ${verificationRequestId}: ${reason}`);
+    } catch (error) {
+      console.error('[UnifiedMail] Failed to auto-bounce:', error);
     }
   }
 
@@ -395,6 +482,9 @@ export class UnifiedMailService {
       data: templateData,
       sentBy,
       sentByEmail,
+      verificationRequestId: data.verificationRequestId,
+      locationId: data.locationId,
+      storeNumber: data.storeNumber,
     });
   }
 
@@ -446,6 +536,9 @@ export class UnifiedMailService {
       data: templateData,
       sentBy,
       sentByEmail,
+      verificationRequestId: data.verificationRequestId,
+      locationId: data.locationId,
+      storeNumber: data.storeNumber,
     });
   }
 

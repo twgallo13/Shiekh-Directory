@@ -506,6 +506,7 @@ export type AuditAction =
   | 'bulk-send'
   | 'bulk-cancel'
   | 'bulk-reissue'
+  | 'bulk-assign'
   | 'invite-user'
   | 'revoke-invitation'
   | 'archive'

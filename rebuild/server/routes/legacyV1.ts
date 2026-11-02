@@ -315,17 +315,19 @@ async function mapV1Location(
     .get();
   const activeClosure = closuresSnap.empty ? null : { id: closuresSnap.docs[0].id, ...closuresSnap.docs[0].data() } as Closure;
 
+  // Tolerate missing address fields (real data can have them missing)
+  const address = location.address || {};
   const result: Record<string, unknown> = {
     id,
     storeNumber: location.storeNumber,
     recordStatus: 'Active',
     name: location.name,
-    address: location.address.street,
-    suite: location.address.suite || null,
-    city: location.address.city,
-    state: location.address.state,
-    zipCode: location.address.zip,
-    timeZone: location.timeZone,
+    address: address.street || null,
+    suite: address.suite || null,
+    city: address.city || null,
+    state: address.state || null,
+    zipCode: address.zip || null,
+    timeZone: location.timeZone || 'America/Los_Angeles',
     locationInboxEmail: location.sharedInboxEmail || null,
     customMetadata: {},
     updatedAt: location.updatedAt,

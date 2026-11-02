@@ -171,12 +171,35 @@ export function createVerificationRouter(db: Firestore): Router {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + workflowRules.requestExpiryDays * 24 * 60 * 60 * 1000);
 
+      // #10: Look up the store's DM as default assignee
+      let assigneeId: string | undefined;
+      let assigneeName: string | undefined;
+      if (location.districtId) {
+        const dmAssignment = await db.collection('assignments')
+          .where('scopeType', '==', 'district')
+          .where('scopeId', '==', location.districtId)
+          .where('role', '==', 'DM')
+          .where('capacity', '==', 'primary')
+          .limit(1)
+          .get();
+        if (!dmAssignment.empty) {
+          const dmData = dmAssignment.docs[0].data();
+          assigneeId = dmData.personId;
+          const personDoc = await db.collection('people').doc(dmData.personId).get();
+          if (personDoc.exists) {
+            assigneeName = (personDoc.data() as { fullName?: string }).fullName;
+          }
+        }
+      }
+
       const requestRef = db.collection('verificationRequests').doc();
       const verificationRequest: Omit<VerificationRequest, 'id'> = {
         locationId,
         locationName: location.name,
         storeNumber: location.storeNumber,
         storeType: location.storeType || undefined, // Item #10: Include store type
+        assigneeId, // #10: Default to DM
+        assigneeName, // #10: Default to DM
         status: 'pending',
         sentAt: now.toISOString(),
         sentTo: location.sharedInboxEmail,
@@ -267,6 +290,8 @@ export function createVerificationRouter(db: Firestore): Router {
         updateUrl,
         hours: location.standardHours,
         wayfindingDirections: location.wayfindingDirections,
+        verificationRequestId: requestRef.id, // #7: For bounce tracking
+        locationId: location.id, // #7: For bounce tracking
       };
 
       const mailResult = await mailService.sendVerificationRequest(emailData, authUser.uid, authUser.email);
@@ -733,13 +758,52 @@ export function createVerificationRouter(db: Firestore): Router {
         };
 
         for (const [field, value] of Object.entries(request.proposedChanges)) {
-          if (field === 'mainPhone' || field === 'sharedInboxEmail' || field === 'address') {
+          if (field === 'mainPhone' || field === 'sharedInboxEmail') {
             updateData[field] = value;
             const oldVal = location[field as keyof Location];
             auditChanges.push({ 
               field, 
               oldValue: (typeof oldVal === 'string' || typeof oldVal === 'number' || typeof oldVal === 'boolean') ? oldVal : null, 
               newValue: (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') ? value : null 
+            });
+          } else if (field === 'address' && typeof value === 'object' && value !== null) {
+            // #4 FIX: Merge address changes instead of replacing - keep city, state, zip, geo
+            const existingAddress = (location.address || {}) as unknown as Record<string, unknown>;
+            const addressChanges = value as Record<string, string>;
+            const mergedAddress = { ...existingAddress, ...addressChanges };
+            updateData.address = mergedAddress;
+            
+            for (const [addrField, addrValue] of Object.entries(addressChanges)) {
+              const oldAddrVal = existingAddress[addrField];
+              auditChanges.push({
+                field: `address.${addrField}`,
+                oldValue: typeof oldAddrVal === 'string' ? oldAddrVal : null,
+                newValue: addrValue,
+              });
+            }
+          } else if (field === 'holidayHours' && typeof value === 'object' && value !== null) {
+            // #4 FIX: Apply holiday hours by creating an hours exception
+            const holidayData = value as { date: string; label: string; closed: boolean; open?: string; close?: string };
+            const exceptionRef = db.collection('locations').doc(request.locationId).collection('hoursExceptions').doc();
+            const hoursException = {
+              id: exceptionRef.id,
+              type: 'holiday' as const,
+              label: holidayData.label,
+              startDate: holidayData.date,
+              endDate: holidayData.date,
+              closed: holidayData.closed,
+              intervals: holidayData.closed ? [] : [{ open: holidayData.open || '09:00', close: holidayData.close || '18:00' }],
+              createdAt: now.toISOString(),
+              createdBy: authUser.uid,
+              updatedAt: now.toISOString(),
+              updatedBy: authUser.uid,
+              source: 'verification_approval',
+              verificationRequestId: id,
+            };
+            await exceptionRef.set(hoursException);
+            auditChanges.push({
+              field: 'holidayHours',
+              newValue: `${holidayData.label} (${holidayData.date})`,
             });
           }
         }
@@ -1381,6 +1445,8 @@ export function createVerificationRouter(db: Firestore): Router {
             updateUrl,
             hours: location.standardHours,
             wayfindingDirections: location.wayfindingDirections,
+            verificationRequestId: requestRef.id, // #7: For bounce tracking
+            locationId: location.id, // #7: For bounce tracking
           };
 
           const mailResult = await mailService.sendVerificationRequest(emailData, authUser.uid, authUser.email);
@@ -1815,6 +1881,8 @@ export function createVerificationRouter(db: Firestore): Router {
           updateUrl,
           hours: location.standardHours,
           wayfindingDirections: location.wayfindingDirections,
+          verificationRequestId: newRequestRef.id, // #7: For bounce tracking
+          locationId: location.id, // #7: For bounce tracking
         };
 
         const mailResult = await mailService.sendVerificationRequest(emailData, authUser.uid, authUser.email);
@@ -1874,6 +1942,244 @@ export function createVerificationRouter(db: Firestore): Router {
       console.error('Bulk reissue error:', error);
       res.status(500).json({
         error: { code: 'bulk_reissue_error', message: 'Failed to reissue verification requests', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // #10: Bulk assign verification requests to a specific person
+  router.post('/bulk/assign', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { ids, assigneeId } = req.body;
+
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          error: { code: 'ids_required', message: 'Array of verification request IDs is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (ids.length > 100) {
+        return res.status(400).json({
+          error: { code: 'too_many_ids', message: 'Cannot assign more than 100 requests at once', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!assigneeId || typeof assigneeId !== 'string') {
+        return res.status(400).json({
+          error: { code: 'assignee_required', message: 'assigneeId is required', requestId: res.locals.requestId },
+        });
+      }
+
+      // Look up the assignee's name
+      const personDoc = await db.collection('people').doc(assigneeId).get();
+      if (!personDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'assignee_not_found', message: 'Assignee not found', requestId: res.locals.requestId },
+        });
+      }
+      const assigneeName = (personDoc.data() as { fullName?: string }).fullName || 'Unknown';
+
+      const now = new Date();
+      const assigned: { id: string; storeNumber: string }[] = [];
+      const skipped: string[] = [];
+
+      for (const id of ids) {
+        const requestDoc = await db.collection('verificationRequests').doc(id).get();
+        if (!requestDoc.exists) {
+          skipped.push(id);
+          continue;
+        }
+
+        const request = requestDoc.data() as VerificationRequest;
+        
+        // Can only assign active requests
+        const assignableStatuses = ['pending', 'awaiting_response', 'in_review'];
+        if (!assignableStatuses.includes(request.status)) {
+          skipped.push(id);
+          continue;
+        }
+
+        await requestDoc.ref.update({
+          assigneeId,
+          assigneeName,
+          updatedAt: now.toISOString(),
+          updatedBy: authUser.uid,
+          version: (request.version || 0) + 1,
+        });
+
+        assigned.push({ id, storeNumber: request.storeNumber });
+      }
+
+      // Log summary
+      if (assigned.length > 0) {
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'bulk-assign',
+          entityType: 'verification',
+          entityId: 'bulk',
+          entityName: `Bulk assign (${assigned.length} verification requests)`,
+          changes: [
+            { field: 'assigned_count', newValue: assigned.length },
+            { field: 'assigneeId', newValue: assigneeId },
+            { field: 'assigneeName', newValue: assigneeName },
+          ],
+        });
+      }
+
+      res.json({
+        data: {
+          assigned: assigned.length,
+          skipped: skipped.length,
+          assignedIds: assigned.map(a => a.id),
+          skippedIds: skipped,
+          assigneeName,
+        },
+      });
+    } catch (error) {
+      console.error('Bulk assign error:', error);
+      res.status(500).json({
+        error: { code: 'bulk_assign_error', message: 'Failed to assign verification requests', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // #10: Bulk send reminders for pending verification requests
+  router.post('/bulk/send', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { ids } = req.body;
+
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          error: { code: 'ids_required', message: 'Array of verification request IDs is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (ids.length > 50) {
+        return res.status(400).json({
+          error: { code: 'too_many_ids', message: 'Cannot send more than 50 reminders at once', requestId: res.locals.requestId },
+        });
+      }
+
+      let appUrl: string;
+      try {
+        appUrl = await getAppBaseUrl(db);
+      } catch (error) {
+        console.error('[Verification] appBaseUrl not configured:', error);
+        return res.status(503).json({
+          error: { code: 'config_error', message: 'Email settings not configured', requestId: res.locals.requestId },
+        });
+      }
+
+      const mailService = createUnifiedMailService(db);
+      const now = new Date();
+      const sent: { id: string; storeNumber: string }[] = [];
+      const skipped: string[] = [];
+      const failed: string[] = [];
+
+      for (const id of ids) {
+        const requestDoc = await db.collection('verificationRequests').doc(id).get();
+        if (!requestDoc.exists) {
+          skipped.push(id);
+          continue;
+        }
+
+        const request = requestDoc.data() as VerificationRequest;
+        
+        // Can only send reminders for pending/awaiting requests
+        if (request.status !== 'pending' && request.status !== 'awaiting_response') {
+          skipped.push(id);
+          continue;
+        }
+
+        // Skip if bounced
+        if (request.emailBounced) {
+          skipped.push(id);
+          continue;
+        }
+
+        const locationDoc = await db.collection('locations').doc(request.locationId).get();
+        if (!locationDoc.exists || !locationDoc.data()?.sharedInboxEmail) {
+          skipped.push(id);
+          continue;
+        }
+
+        const location = locationDoc.data()!;
+        const daysRemaining = Math.ceil((new Date(request.expiresAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        const emailData = {
+          storeName: location.name,
+          storeNumber: request.storeNumber,
+          storeEmail: location.sharedInboxEmail,
+          verificationUrl: `${appUrl}/verify/${id}`,
+          expiresAt: request.expiresAt,
+          daysRemaining,
+          originalSentAt: request.sentAt,
+          verificationRequestId: id,
+          locationId: request.locationId,
+        };
+
+        const result = await mailService.sendVerificationReminder(emailData, authUser.uid, authUser.email);
+
+        if (result.success && !result.blocked) {
+          await requestDoc.ref.update({
+            lastReminderAt: now.toISOString(),
+            reminderCount: (request.reminderCount || 0) + 1,
+          });
+          sent.push({ id, storeNumber: request.storeNumber });
+        } else if (result.blocked) {
+          skipped.push(id);
+        } else {
+          failed.push(id);
+        }
+      }
+
+      // Log summary
+      if (sent.length > 0) {
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'bulk-send',
+          entityType: 'verification',
+          entityId: 'bulk-reminder',
+          entityName: `Bulk send reminders (${sent.length} verification requests)`,
+          changes: [
+            { field: 'sent_count', newValue: sent.length },
+            { field: 'skipped_count', newValue: skipped.length },
+            { field: 'failed_count', newValue: failed.length },
+          ],
+        });
+      }
+
+      res.json({
+        data: {
+          sent: sent.length,
+          skipped: skipped.length,
+          failed: failed.length,
+          sentIds: sent.map(s => s.id),
+          skippedIds: skipped,
+          failedIds: failed,
+        },
+      });
+    } catch (error) {
+      console.error('Bulk send error:', error);
+      res.status(500).json({
+        error: { code: 'bulk_send_error', message: 'Failed to send reminders', requestId: res.locals.requestId },
       });
     }
   });

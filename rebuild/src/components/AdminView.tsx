@@ -245,7 +245,7 @@ function UsersTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
             placeholder="Search users..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 min-w-[150px] max-w-xs px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            className="flex-1 min-w-[150px] max-w-xs px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px]"
           />
           <select
             value={roleFilter}
@@ -261,7 +261,7 @@ function UsersTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm whitespace-nowrap"
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm whitespace-nowrap min-h-[44px]"
         >
           <Plus className="w-4 h-4" />
           Add User
@@ -2370,7 +2370,7 @@ function AuditLogTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Audit Log</h2>
-          <p className="text-sm text-gray-600">Track who made changes, when, and what changed.</p>
+          <p className="text-sm text-gray-700">Track who made changes, when, and what changed.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <FormField id="audit-entity-type" label="Filter by type">
@@ -2401,9 +2401,10 @@ function AuditLogTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
           <button
             onClick={fetchAuditLog}
             disabled={loading}
+            aria-label="Refresh audit log"
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 text-sm min-h-[44px] mt-6"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -2416,13 +2417,13 @@ function AuditLogTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
 
       {loading ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-          <Loader2 className="w-6 h-6 animate-spin text-gray-600 mx-auto mb-2" />
-          <p className="text-gray-500">Loading audit log...</p>
+          <Loader2 className="w-6 h-6 animate-spin text-gray-700 mx-auto mb-2" />
+          <p className="text-gray-700">Loading audit log...</p>
         </div>
       ) : entries.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-          <History className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-gray-500">No audit entries found</p>
+          <History className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-gray-700">No audit entries found</p>
         </div>
       ) : (
         <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-200">
@@ -2442,11 +2443,11 @@ function AuditLogTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                       {entry.entityType}
                     </span>
                   </div>
-                  <div className="mt-1 text-sm text-gray-600">
+                  <div className="mt-1 text-sm text-gray-700">
                     <span className="font-medium">{entry.entityName}</span>
-                    {entry.entityId && <span className="text-gray-400 ml-1 text-xs">({entry.entityId.slice(0, 8)}...)</span>}
+                    {entry.entityId && <span className="text-gray-500 ml-1 text-xs">({entry.entityId.slice(0, 8)}...)</span>}
                   </div>
-                  <div className="mt-1 text-xs text-gray-500">
+                  <div className="mt-1 text-xs text-gray-700">
                     by <span className="font-medium">{entry.userEmail}</span>
                     <span className="mx-1">•</span>
                     <span className={`px-1.5 py-0.5 rounded ${
@@ -2527,7 +2528,7 @@ function DataQualityTab() {
     <div className="space-y-6">
       <div className="border border-gray-200 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Stale Stores</h3>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-700 mb-4">
           Identify stores with verification older than 90 days or never verified. Leaders see only stores in their district.
         </p>
         <a
@@ -2540,11 +2541,11 @@ function DataQualityTab() {
 
       <div className="border border-gray-200 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Restore Drill Status</h3>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-gray-700 mb-4">
           Periodic restore drills validate backup integrity without affecting production data.
         </p>
         {loadingDrill ? (
-          <p className="text-sm text-gray-500">Loading drill status...</p>
+          <p className="text-sm text-gray-700">Loading drill status...</p>
         ) : lastDrill ? (
           <div className="bg-gray-50 rounded-md p-4 space-y-2">
             <div className="flex items-center justify-between">

@@ -171,11 +171,11 @@ export function VerificationRequestsView() {
             {isAdminOrSteward && (
               <button
                 onClick={() => setShowNewRequest(true)}
-                aria-label="Send verification request"
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium min-h-[44px]"
               >
                 <Send className="w-4 h-4" aria-hidden="true" />
-                <span className="hidden sm:inline" aria-hidden="true">Send Request</span>
+                <span className="hidden sm:inline">Send Request</span>
+                <span className="sr-only sm:hidden">Send Request</span>
               </button>
             )}
           </div>

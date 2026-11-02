@@ -93,11 +93,13 @@ describe('Stale Stores API', () => {
 });
 
 describe('Stale Stores - v2 Data Shape', () => {
+  const testRunId = `stale_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let testLocationId: string;
+  let hierarchyIds: { regionId: string; districtId: string };
   const db = getTestDb();
 
   before(async () => {
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString();
     
@@ -107,8 +109,8 @@ describe('Stale Stores - v2 Data Shape', () => {
       lifecycle: 'active',
       storeNumber: 'V2T001',
       name: 'V2 Test Store',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       lastVerifiedAt: old,
       address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
@@ -151,8 +153,8 @@ describe('Stale Stores - v2 Data Shape', () => {
       lifecycle: 'retired',
       storeNumber: 'V2T002',
       name: 'Retired V2 Store',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       address: { street: '456 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
       createdAt: now,
@@ -183,8 +185,8 @@ describe('Stale Stores - v2 Data Shape', () => {
       lifecycle: 'active',
       storeNumber: 'WH001',
       name: 'Test Warehouse',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       address: { street: '789 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
       createdAt: now,

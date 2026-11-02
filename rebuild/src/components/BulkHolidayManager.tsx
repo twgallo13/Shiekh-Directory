@@ -301,7 +301,7 @@ export function BulkHolidayManager() {
             onClick={() => setStatesExpanded(!statesExpanded)}
             className="w-full flex items-center justify-between min-h-[44px]"
             aria-expanded={statesExpanded}
-            aria-label={statesExpanded ? 'Collapse state filter' : 'Expand state filter'}
+            aria-label={statesExpanded ? 'Collapse Filter by State' : 'Expand Filter by State'}
           >
             <div className="flex items-center gap-2 text-gray-700">
               <Store className="w-5 h-5" />

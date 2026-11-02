@@ -6,10 +6,12 @@ const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 
 describe('v2 Regression Tests - Store Number Formats', () => {
   const db = getTestDb();
+  const testRunId = `fmt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let testLocationId: string;
+  let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
     const locationRef = db.collection('locations').doc();
@@ -18,8 +20,8 @@ describe('v2 Regression Tests - Store Number Formats', () => {
       lifecycle: 'active',
       storeNumber: '07',
       name: 'v2 Format Store Seven',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       sharedInboxEmail: 'store7@shiekhshoes.com',
       address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
@@ -54,11 +56,13 @@ describe('v2 Regression Tests - Store Number Formats', () => {
 
 describe('v2 Regression Tests - Location Doc ID', () => {
   const db = getTestDb();
+  const testRunId = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let testLocationId: string;
+  let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
     await seedTestUsers();
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
     const locationRef = db.collection('locations').doc();
@@ -67,8 +71,8 @@ describe('v2 Regression Tests - Location Doc ID', () => {
       lifecycle: 'active',
       storeNumber: '08',
       name: 'v2 Doc ID Test Store',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       sharedInboxEmail: 'store8@shiekh.test',
       address: { street: '456 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
@@ -128,13 +132,15 @@ describe('v2 Regression Tests - Location Doc ID', () => {
 
 describe('v2 Regression Tests - Lifecycle and Kind Fields', () => {
   const db = getTestDb();
+  const testRunId = `lc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let activeStoreId: string;
   let retiredStoreId: string;
   let warehouseId: string;
+  let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
     await seedTestUsers();
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString();
     
@@ -144,8 +150,8 @@ describe('v2 Regression Tests - Lifecycle and Kind Fields', () => {
       lifecycle: 'active',
       storeNumber: 'R01',
       name: 'Active Regression Store',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       lastVerifiedAt: old,
       address: { street: '100 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
@@ -161,8 +167,8 @@ describe('v2 Regression Tests - Lifecycle and Kind Fields', () => {
       lifecycle: 'retired',
       storeNumber: 'R02',
       name: 'Retired Regression Store',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       address: { street: '200 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
       createdAt: now,
@@ -177,8 +183,8 @@ describe('v2 Regression Tests - Lifecycle and Kind Fields', () => {
       lifecycle: 'active',
       storeNumber: 'WH01',
       name: 'Active Warehouse',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       address: { street: '300 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
       createdAt: now,
@@ -233,12 +239,14 @@ describe('v2 Regression Tests - Lifecycle and Kind Fields', () => {
 
 describe('v2 Regression Tests - Missing Fields Tolerance', () => {
   const db = getTestDb();
+  const testRunId = `mf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let testLocationId: string;
   let correctionId: string;
+  let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
     await seedTestUsers();
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
     const locationRef = db.collection('locations').doc();
@@ -247,8 +255,8 @@ describe('v2 Regression Tests - Missing Fields Tolerance', () => {
       lifecycle: 'active',
       storeNumber: 'MF01',
       name: 'Missing Fields Store',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       address: { street: '999 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
       createdAt: now,
@@ -419,11 +427,13 @@ describe('v2 Regression Tests - Hours Normalization', () => {
 
 describe('v2 Regression Tests - Campaign Archive Filter', () => {
   const db = getTestDb();
+  const testRunId = `ca_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let archivedCampaignId: string;
   let testLocationId: string;
+  let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     await seedTestUsers();
     const now = new Date().toISOString();
     
@@ -433,8 +443,8 @@ describe('v2 Regression Tests - Campaign Archive Filter', () => {
       lifecycle: 'active',
       storeNumber: '99',
       name: 'Archive Filter Test Store',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       sharedInboxEmail: 'archivetest@shiekhshoes.com',
       address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
@@ -452,7 +462,7 @@ describe('v2 Regression Tests - Campaign Archive Filter', () => {
       },
       body: JSON.stringify({
         scope: 'district',
-        scopeId: 'test-district-1',
+        scopeId: hierarchyIds.districtId,
         dryRun: false,
       }),
     });
@@ -508,11 +518,12 @@ describe('v2 Regression Tests - Campaign Archive Filter', () => {
 
 describe('v2 Regression Tests - PersonDetailView Scope Error Handling', () => {
   const db = getTestDb();
+  const testRunId = `pd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let testPersonId: string;
 
   before(async () => {
     await seedTestUsers();
-    await seedTestHierarchy();
+    await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
     const personRef = db.collection('people').doc();
@@ -590,10 +601,12 @@ describe('v2 Regression Tests - PersonDetailView Scope Error Handling', () => {
 
 describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
   const db = getTestDb();
+  const testRunId = `signin_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const testStores: { id: string; storeNumber: string }[] = [];
+  let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
     const formats = [
@@ -609,8 +622,8 @@ describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
         lifecycle: 'active',
         storeNumber: format.storeNumber,
         name: `Store ${format.storeNumber}`,
-        districtId: 'test-district-1',
-        regionId: 'test-region-1',
+        districtId: hierarchyIds.districtId,
+        regionId: hierarchyIds.regionId,
         sharedInboxEmail: format.email,
         address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
         timeZone: 'America/Los_Angeles',
@@ -661,12 +674,14 @@ describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
 
 describe('v2 Regression Tests - Hours Template Picker', () => {
   const db = getTestDb();
+  const testRunId = `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   let testTemplateId: string;
   let testLocationId: string;
+  let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
     await seedTestUsers();
-    await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
     // Create a test template with defaultForTypes
@@ -701,8 +716,8 @@ describe('v2 Regression Tests - Hours Template Picker', () => {
       storeNumber: 'TPL01',
       name: 'Template Test Store',
       storeType: 'enclosed_mall',
-      districtId: 'test-district-1',
-      regionId: 'test-region-1',
+      districtId: hierarchyIds.districtId,
+      regionId: hierarchyIds.regionId,
       sharedInboxEmail: 'tpltest@shiekhshoes.com',
       address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',

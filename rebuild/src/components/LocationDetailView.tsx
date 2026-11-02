@@ -870,11 +870,15 @@ export function LocationDetailView() {
             onClick={async () => {
               if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
               setUndoToast(null);
-              if (undoToast.action === 'reopen' && location) {
-                await apiPost(`/api/app/edit/locations/${location.id}/closures`, {
-                  type: 'same_day',
-                  reason: 'Closure restored after undo',
-                });
+              if (location) {
+                if (undoToast.action === 'reopen') {
+                  await apiPost(`/api/app/edit/locations/${location.id}/closures`, {
+                    type: 'same_day',
+                    reason: 'Closure restored after undo',
+                  });
+                } else if (undoToast.action === 'renew') {
+                  await apiPost(`/api/app/edit/locations/${location.id}/closures/${undoToast.closureId}/undo-renew`, {});
+                }
                 fetchLocation();
               }
             }}

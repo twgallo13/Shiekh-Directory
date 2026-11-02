@@ -111,6 +111,9 @@ export function Dialog({
 
     return () => {
       document.body.style.overflow = '';
+      if (wasOpen.current) {
+        restoreFocus();
+      }
     };
   }, [isOpen, getFocusableElements, restoreFocus]);
 

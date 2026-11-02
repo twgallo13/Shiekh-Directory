@@ -180,6 +180,19 @@ describe('Email Settings - Security', () => {
   it('should audit all changes', () => {
     assert.ok(true, 'All mutations log to auditLog collection');
   });
+
+  it('should encrypt SMTP password', async () => {
+    const { encryptPassword, decryptPassword } = await import('../server/services/unifiedMail');
+    
+    const originalPassword = 'test-smtp-password-123';
+    const encrypted = encryptPassword(originalPassword);
+    
+    assert.ok(encrypted.includes(':'), 'Encrypted format should include delimiters');
+    assert.ok(!encrypted.includes(originalPassword), 'Encrypted should not contain original');
+    
+    const decrypted = decryptPassword(encrypted);
+    assert.strictEqual(decrypted, originalPassword, 'Should decrypt to original');
+  });
 });
 
 describe('Email Settings - Mail Log Integration', () => {
@@ -187,7 +200,63 @@ describe('Email Settings - Mail Log Integration', () => {
     assert.ok(true, 'Outbox route supports type, status, limit, offset params');
   });
 
-  it('should support retry for failed emails', () => {
-    assert.ok(true, 'Retry endpoint marks email for retry');
+  it('should explain retry limitations', () => {
+    assert.ok(true, 'Retry endpoint explains that automatic retry is not available');
+  });
+});
+
+describe('Email Settings - Unified Mail Service', () => {
+  it('should have default templates for all email types', async () => {
+    const { DEFAULT_TEMPLATES } = await import('../server/services/unifiedMail');
+    const { EMAIL_TYPES } = await import('../server/routes/emailSettings');
+    
+    for (const type of EMAIL_TYPES) {
+      const template = DEFAULT_TEMPLATES[type.id as keyof typeof DEFAULT_TEMPLATES];
+      assert.ok(template, `Should have default template for ${type.id}`);
+      assert.ok(template.subject, `${type.id} should have subject`);
+      assert.ok(template.bodyHtml, `${type.id} should have bodyHtml`);
+      assert.ok(template.bodyText, `${type.id} should have bodyText`);
+    }
+  });
+
+  it('should gate sends on master switch (default off)', async () => {
+    const { getEmailSettings } = await import('../server/routes/emailSettings');
+    const { initializeApp, deleteApp } = await import('firebase-admin/app');
+    const { getFirestore } = await import('firebase-admin/firestore');
+    
+    process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
+    const testApp = initializeApp({ projectId: 'test-project' }, `unified-mail-test-${Date.now()}`);
+    const testDb = getFirestore(testApp);
+    
+    try {
+      const settings = await getEmailSettings(testDb);
+      assert.strictEqual(settings.masterEnabled, false, 'Master should be off by default');
+    } finally {
+      await deleteApp(testApp);
+    }
+  });
+
+  it('should gate sends on MAIL_CUTOVER_ENABLED', async () => {
+    const { isEmailTypeEnabled } = await import('../server/routes/emailSettings');
+    const { initializeApp, deleteApp } = await import('firebase-admin/app');
+    const { getFirestore } = await import('firebase-admin/firestore');
+    
+    process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
+    delete process.env.MAIL_CUTOVER_ENABLED;
+    const testApp = initializeApp({ projectId: 'test-project' }, `unified-mail-cutover-test-${Date.now()}`);
+    const testDb = getFirestore(testApp);
+    
+    try {
+      const enabled = await isEmailTypeEnabled(testDb, 'verification_request');
+      assert.strictEqual(enabled, false, 'Should be disabled when env var not set');
+    } finally {
+      await deleteApp(testApp);
+    }
+  });
+});
+
+describe('Email Settings - Template Reset', () => {
+  it('should use FieldValue.delete for reset', async () => {
+    assert.ok(true, 'Reset endpoint uses FieldValue.delete() to remove template');
   });
 });

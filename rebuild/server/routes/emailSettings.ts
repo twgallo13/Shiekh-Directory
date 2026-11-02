@@ -1,7 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { createTransport } from 'nodemailer';
 import type { AuthUser } from '../../src/types';
+import { encryptPassword, decryptPassword, DEFAULT_TEMPLATES } from '../services/unifiedMail';
 
 interface AuditLogEntry {
   userId: string;
@@ -244,9 +246,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
       const stats = {
         last7Days: {
           sent: recentMail.filter(m => m.success === true && !m.blocked).length,
-          logged: recentMail.filter(m => !m.success && !m.blocked && !m.error).length,
-          failed: recentMail.filter(m => m.success === false || m.error).length,
-          suppressed: recentMail.filter(m => m.blocked === true).length,
+          logged: recentMail.filter(m => m.blocked === true && m.reason?.includes('disabled')).length,
+          failed: recentMail.filter(m => m.success === false && !m.blocked && m.error).length,
+          suppressed: recentMail.filter(m => m.blocked === true && !m.reason?.includes('disabled')).length,
         },
         pendingRecipients: {
           verifications: pendingVerificationsSnap.size,
@@ -508,24 +510,12 @@ export function createEmailSettingsRouter(db: Firestore): Router {
         });
       }
       
-      const settings = await getSettings();
-      const currentTypeSettings = settings.typeSettings[typeId as EmailTypeId] || { enabled: true };
-      
-      const updatedTypeSettings = {
-        ...settings.typeSettings,
-        [typeId]: {
-          ...currentTypeSettings,
-          template: undefined,
-        },
-      };
-      
-      await settingsRef().set({
-        ...settings,
-        typeSettings: updatedTypeSettings,
+      await settingsRef().update({
+        [`typeSettings.${typeId}.template`]: FieldValue.delete(),
         updatedAt: new Date().toISOString(),
         updatedBy: authUser.uid,
         updatedByEmail: authUser.email,
-      }, { merge: true });
+      });
       
       await logAudit(db, {
         userId: authUser.uid,
@@ -745,8 +735,9 @@ export function createEmailSettingsRouter(db: Firestore): Router {
         configured: true,
       };
       
+      const encryptedPassword = encryptPassword(password);
       await smtpPasswordRef().set({
-        password,
+        encryptedPassword,
         updatedAt: new Date().toISOString(),
         updatedBy: authUser.uid,
       });
@@ -807,7 +798,23 @@ export function createEmailSettingsRouter(db: Firestore): Router {
         });
       }
       
-      const { password } = passwordDoc.data() as { password: string };
+      const pwdData = passwordDoc.data() as { encryptedPassword?: string; password?: string };
+      let password: string;
+      try {
+        if (pwdData.encryptedPassword) {
+          password = decryptPassword(pwdData.encryptedPassword);
+        } else if (pwdData.password) {
+          password = pwdData.password;
+        } else {
+          return res.status(400).json({
+            error: { code: 'not_configured', message: 'SMTP password not set', requestId: res.locals.requestId },
+          });
+        }
+      } catch {
+        return res.status(400).json({
+          error: { code: 'decryption_failed', message: 'Failed to decrypt SMTP password', requestId: res.locals.requestId },
+        });
+      }
       
       const transporter = createTransport({
         host: settings.smtp.host,
@@ -1030,30 +1037,7 @@ export function createEmailSettingsRouter(db: Firestore): Router {
       }
       
       const settings = await getSettings();
-      if (!settings.smtp.configured) {
-        return res.status(400).json({
-          error: { code: 'not_configured', message: 'SMTP not configured', requestId: res.locals.requestId },
-        });
-      }
-      
-      const passwordDoc = await smtpPasswordRef().get();
-      if (!passwordDoc.exists) {
-        return res.status(400).json({
-          error: { code: 'not_configured', message: 'SMTP password not set', requestId: res.locals.requestId },
-        });
-      }
-      
-      const { password } = passwordDoc.data() as { password: string };
-      
-      const transporter = createTransport({
-        host: settings.smtp.host,
-        port: settings.smtp.port,
-        secure: settings.smtp.secure,
-        auth: {
-          user: settings.smtp.user,
-          pass: password,
-        },
-      });
+      const envCutoverEnabled = process.env.MAIL_CUTOVER_ENABLED === 'true';
       
       const sampleData: Record<string, string> = {};
       for (const placeholder of emailType.placeholders) {
@@ -1075,22 +1059,88 @@ export function createEmailSettingsRouter(db: Firestore): Router {
       sampleData.storeCount = '5';
       
       const typeSettings = settings.typeSettings[typeId as EmailTypeId];
-      let subject = `[TEST] ${emailType.name}`;
-      let bodyHtml = `<p>This is a test email for: <strong>${emailType.name}</strong></p><p>Placeholders: ${emailType.placeholders.join(', ')}</p>`;
-      let bodyText = `This is a test email for: ${emailType.name}\nPlaceholders: ${emailType.placeholders.join(', ')}`;
+      const defaultTemplate = DEFAULT_TEMPLATES[typeId as EmailTypeId];
+      const template = typeSettings?.template || defaultTemplate;
       
-      if (typeSettings?.template) {
-        subject = typeSettings.template.subject;
-        bodyHtml = typeSettings.template.bodyHtml;
-        bodyText = typeSettings.template.bodyText;
-        
-        for (const [key, value] of Object.entries(sampleData)) {
-          const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-          subject = subject.replace(regex, value);
-          bodyHtml = bodyHtml.replace(regex, value);
-          bodyText = bodyText.replace(regex, value);
-        }
+      let subject = template?.subject || `[TEST] ${emailType.name}`;
+      let bodyHtml = template?.bodyHtml || `<p>This is a test email for: <strong>${emailType.name}</strong></p>`;
+      let bodyText = template?.bodyText || `This is a test email for: ${emailType.name}`;
+      
+      for (const [key, value] of Object.entries(sampleData)) {
+        const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+        subject = subject.replace(regex, value);
+        bodyHtml = bodyHtml.replace(regex, value);
+        bodyText = bodyText.replace(regex, value);
       }
+      
+      const logEntry: Record<string, unknown> = {
+        to: authUser.email,
+        type: `test-${typeId}`,
+        subject: `[TEST] ${subject}`,
+        sentAt: new Date().toISOString(),
+        sentBy: authUser.uid,
+        sentByEmail: authUser.email,
+        isTest: true,
+      };
+      
+      if (!settings.masterEnabled || !envCutoverEnabled) {
+        const reason = !settings.masterEnabled 
+          ? 'Email sending is disabled (master switch off)'
+          : 'Email sending is disabled (MAIL_CUTOVER_ENABLED not set)';
+        
+        logEntry.success = false;
+        logEntry.blocked = true;
+        logEntry.reason = reason;
+        await db.collection('mailLog').add(logEntry);
+        
+        return res.json({ 
+          success: true, 
+          sentTo: authUser.email,
+          logOnly: true,
+          message: `Test email logged but NOT sent: ${reason}. Enable email sending to actually deliver test emails.`,
+        });
+      }
+      
+      if (!settings.smtp.configured) {
+        return res.status(400).json({
+          error: { code: 'not_configured', message: 'SMTP not configured', requestId: res.locals.requestId },
+        });
+      }
+      
+      const passwordDoc = await smtpPasswordRef().get();
+      if (!passwordDoc.exists) {
+        return res.status(400).json({
+          error: { code: 'not_configured', message: 'SMTP password not set', requestId: res.locals.requestId },
+        });
+      }
+      
+      const pwdData = passwordDoc.data() as { encryptedPassword?: string; password?: string };
+      let password: string;
+      try {
+        if (pwdData.encryptedPassword) {
+          password = decryptPassword(pwdData.encryptedPassword);
+        } else if (pwdData.password) {
+          password = pwdData.password;
+        } else {
+          return res.status(400).json({
+            error: { code: 'not_configured', message: 'SMTP password not set', requestId: res.locals.requestId },
+          });
+        }
+      } catch {
+        return res.status(400).json({
+          error: { code: 'decryption_failed', message: 'Failed to decrypt SMTP password', requestId: res.locals.requestId },
+        });
+      }
+      
+      const transporter = createTransport({
+        host: settings.smtp.host,
+        port: settings.smtp.port,
+        secure: settings.smtp.secure,
+        auth: {
+          user: settings.smtp.user,
+          pass: password,
+        },
+      });
       
       await transporter.sendMail({
         from: `${settings.sender.fromName} <${settings.sender.fromAddress}>`,
@@ -1101,16 +1151,8 @@ export function createEmailSettingsRouter(db: Firestore): Router {
         replyTo: settings.sender.replyTo || undefined,
       });
       
-      await db.collection('mailLog').add({
-        to: authUser.email,
-        type: `test-${typeId}`,
-        subject: `[TEST] ${subject}`,
-        status: 'sent',
-        sentAt: new Date().toISOString(),
-        sentBy: authUser.uid,
-        sentByEmail: authUser.email,
-        isTest: true,
-      });
+      logEntry.success = true;
+      await db.collection('mailLog').add(logEntry);
       
       await logAudit(db, {
         userId: authUser.uid,
@@ -1211,28 +1253,27 @@ export function createEmailSettingsRouter(db: Firestore): Router {
         });
       }
       
-      await mailDoc.ref.update({
-        retryRequested: true,
-        retryRequestedAt: new Date().toISOString(),
-        retryRequestedBy: authUser.uid,
-      });
+      if (mailData?.blocked && mailData?.reason?.includes('disabled')) {
+        return res.status(400).json({
+          error: { 
+            code: 'cannot_retry', 
+            message: 'This email was blocked because email sending was disabled. Enable email sending first, then trigger the action that originally sent this email.',
+            requestId: res.locals.requestId,
+          },
+        });
+      }
       
-      await logAudit(db, {
-        userId: authUser.uid,
-        userEmail: authUser.email,
-        userRole: authUser.role,
-        action: 'retry',
-        entityType: 'email',
-        entityId: id,
-        entityName: `Retry email to ${mailData?.to}`,
-        changes: [{ field: 'retryRequested', newValue: true }],
+      return res.status(400).json({
+        error: { 
+          code: 'retry_not_supported', 
+          message: 'Automatic retry is not available. Please trigger the original action (e.g., send verification request) to resend.',
+          requestId: res.locals.requestId,
+        },
       });
-      
-      res.json({ success: true, message: 'Retry requested' });
     } catch (error) {
       console.error('Retry email error:', error);
       res.status(500).json({
-        error: { code: 'internal_error', message: 'Failed to request retry', requestId: res.locals.requestId },
+        error: { code: 'internal_error', message: 'Failed to process retry', requestId: res.locals.requestId },
       });
     }
   });

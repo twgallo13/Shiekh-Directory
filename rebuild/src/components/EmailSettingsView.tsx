@@ -122,6 +122,44 @@ function formatDayName(day: string): string {
   return day.charAt(0).toUpperCase() + day.slice(1, 3);
 }
 
+const DEFAULT_TEMPLATES: Record<string, { subject: string; bodyHtml: string; bodyText: string }> = {
+  verification_request: {
+    subject: '[Action Required] Verify Hours - Store {{storeNumber}}',
+    bodyHtml: '<p>Hello,</p><p>Please verify your store hours for <strong>{{storeName}}</strong> (Store {{storeNumber}}).</p><p><a href="{{verificationUrl}}">Click here to verify</a></p><p>This request expires on {{expiresAt}}.</p>',
+    bodyText: 'Hello,\n\nPlease verify your store hours for {{storeName}} (Store {{storeNumber}}).\n\nVerify here: {{verificationUrl}}\n\nThis request expires on {{expiresAt}}.',
+  },
+  verification_reminder: {
+    subject: '[Reminder] Verify Hours - Store {{storeNumber}} - {{daysRemaining}} days remaining',
+    bodyHtml: '<p>Hello,</p><p>This is a reminder to verify your store hours for <strong>{{storeName}}</strong>.</p><p>{{daysRemaining}} days remaining to respond.</p><p><a href="{{verificationUrl}}">Verify now</a></p>',
+    bodyText: 'Hello,\n\nThis is a reminder to verify your store hours for {{storeName}}.\n\n{{daysRemaining}} days remaining to respond.\n\nVerify here: {{verificationUrl}}',
+  },
+  verification_confirmation: {
+    subject: 'Hours Verified - Store {{storeNumber}}',
+    bodyHtml: '<p>Hello,</p><p>Thank you for verifying the hours for <strong>{{storeName}}</strong> (Store {{storeNumber}}).</p><p>Verified on: {{verifiedAt}}</p>',
+    bodyText: 'Hello,\n\nThank you for verifying the hours for {{storeName}} (Store {{storeNumber}}).\n\nVerified on: {{verifiedAt}}',
+  },
+  store_signin: {
+    subject: 'Sign in to Shiekh Directory - Store {{storeNumber}}',
+    bodyHtml: '<p>Hello,</p><p>Click the link below to sign in to the Shiekh Directory for <strong>{{storeName}}</strong>.</p><p><a href="{{signInUrl}}">Sign In</a></p><p>This link expires on {{expiresAt}}.</p>',
+    bodyText: 'Hello,\n\nSign in to the Shiekh Directory for {{storeName}}:\n\n{{signInUrl}}\n\nThis link expires on {{expiresAt}}.',
+  },
+  dm_verification_request: {
+    subject: '[Action Required] District Verification - {{districtName}}',
+    bodyHtml: '<p>Hello {{recipientName}},</p><p>Please review the roster for <strong>{{districtName}}</strong> ({{storeCount}} stores).</p><p><a href="{{verificationUrl}}">Review District Roster</a></p><p>Please respond by {{expiresAt}}.</p>',
+    bodyText: 'Hello {{recipientName}},\n\nPlease review the roster for {{districtName}} ({{storeCount}} stores).\n\nReview here: {{verificationUrl}}\n\nPlease respond by {{expiresAt}}.',
+  },
+  invitation: {
+    subject: "You're invited to Shiekh Directory",
+    bodyHtml: '<p>Hello,</p><p><strong>{{inviterName}}</strong> has invited you to join the Shiekh Directory as <strong>{{role}}</strong>.</p><p><a href="{{signInUrl}}">Accept Invitation</a></p><p>This invitation expires on {{expiresAt}}.</p>',
+    bodyText: 'Hello,\n\n{{inviterName}} has invited you to join the Shiekh Directory as {{role}}.\n\nAccept here: {{signInUrl}}\n\nThis invitation expires on {{expiresAt}}.',
+  },
+  invitation_reminder: {
+    subject: "Reminder: You're invited to Shiekh Directory",
+    bodyHtml: '<p>Hello,</p><p>This is a reminder that <strong>{{inviterName}}</strong> invited you to join the Shiekh Directory as <strong>{{role}}</strong>.</p><p><a href="{{signInUrl}}">Accept Invitation</a></p><p>This invitation expires on {{expiresAt}}.</p>',
+    bodyText: 'Hello,\n\nThis is a reminder that {{inviterName}} invited you to join the Shiekh Directory as {{role}}.\n\nAccept here: {{signInUrl}}\n\nThis invitation expires on {{expiresAt}}.',
+  },
+};
+
 export function EmailSettingsView() {
   const { getIdToken } = useAuth();
   const [settings, setSettings] = useState<EmailSettings | null>(null);
@@ -296,11 +334,14 @@ export function EmailSettingsView() {
   const openTemplateEditor = (type: EmailType) => {
     if (!settings) return;
     const typeSettings = settings.typeSettings[type.id];
+    const customTemplate = typeSettings?.template;
+    const defaultTemplate = DEFAULT_TEMPLATES[type.id];
+    
     setEditingType(type);
     setTemplateForm({
-      subject: typeSettings?.template?.subject || '',
-      bodyHtml: typeSettings?.template?.bodyHtml || '',
-      bodyText: typeSettings?.template?.bodyText || '',
+      subject: customTemplate?.subject || defaultTemplate?.subject || '',
+      bodyHtml: customTemplate?.bodyHtml || defaultTemplate?.bodyHtml || '',
+      bodyText: customTemplate?.bodyText || defaultTemplate?.bodyText || '',
     });
     setTemplateDirty(false);
     setShowPreview(false);
@@ -387,7 +428,12 @@ export function EmailSettingsView() {
       });
       if (!res.ok) throw new Error('Failed to reset');
       await fetchSettings();
-      setTemplateForm({ subject: '', bodyHtml: '', bodyText: '' });
+      const defaultTemplate = DEFAULT_TEMPLATES[editingType.id];
+      setTemplateForm({
+        subject: defaultTemplate?.subject || '',
+        bodyHtml: defaultTemplate?.bodyHtml || '',
+        bodyText: defaultTemplate?.bodyText || '',
+      });
       setTemplateDirty(false);
       setConfirmResetTemplate(false);
       showToast('Template reset to default');
@@ -432,7 +478,11 @@ export function EmailSettingsView() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || 'Failed to send');
-      showToast(`Test email sent to ${data.sentTo}`);
+      if (data.logOnly) {
+        showToast(data.message || `Test logged (not sent) - enable email sending to deliver`, 'error');
+      } else {
+        showToast(`Test email sent to ${data.sentTo}`);
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to send test', 'error');
     } finally {
@@ -549,21 +599,6 @@ export function EmailSettingsView() {
     }
   };
   
-  const retryEmail = async (id: string) => {
-    try {
-      const token = await getIdToken();
-      const res = await fetch(`/api/app/email-settings/outbox/${id}/retry`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to retry');
-      await fetchOutbox();
-      showToast('Retry requested');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to retry', 'error');
-    }
-  };
-
   // Group email types by audience
   const typesByAudience = useMemo(() => {
     if (!settings) return {};
@@ -704,7 +739,7 @@ export function EmailSettingsView() {
                 className={`px-6 py-3 rounded-lg font-medium min-h-[44px] flex items-center gap-2 ${
                   settings.masterEnabled
                     ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    : 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-green-700 text-white hover:bg-green-800'
                 } disabled:opacity-50`}
               >
                 {settings.masterEnabled ? (
@@ -880,7 +915,7 @@ export function EmailSettingsView() {
                               className={`px-4 py-2 rounded-lg text-sm font-medium min-h-[44px] ${
                                 enabled
                                   ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                  : 'bg-green-600 text-white hover:bg-green-700'
+                                  : 'bg-green-700 text-white hover:bg-green-800'
                               } disabled:opacity-50`}
                               aria-label={enabled ? `Disable ${type.name}` : `Enable ${type.name}`}
                             >
@@ -1088,7 +1123,7 @@ export function EmailSettingsView() {
               </div>
               <div>
                 <label htmlFor="replyTo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Reply-To Address <span className="text-gray-400 font-normal">(optional)</span>
+                  Reply-To Address <span className="text-gray-600 font-normal">(optional)</span>
                 </label>
                 <input
                   id="replyTo"
@@ -1222,7 +1257,7 @@ export function EmailSettingsView() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <label className="flex items-center gap-3 cursor-pointer min-h-[44px] py-2">
                 <input
                   type="checkbox"
                   id="smtpSecure"
@@ -1233,10 +1268,10 @@ export function EmailSettingsView() {
                   }}
                   className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
-                <label htmlFor="smtpSecure" className="text-sm text-gray-700">
+                <span className="text-sm text-gray-700">
                   Use SSL/TLS encryption (required for port 465)
-                </label>
-              </div>
+                </span>
+              </label>
               <div className="pt-4 border-t border-gray-200 flex flex-wrap gap-3">
                 <button
                   onClick={saveSmtp}
@@ -1300,85 +1335,124 @@ export function EmailSettingsView() {
                 <p className="mt-2 text-gray-500">No emails sent yet.</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100 overflow-x-auto">
-                <table className="w-full min-w-[600px]">
-                  <thead>
-                    <tr className="text-left text-sm text-gray-500 bg-gray-50">
-                      <th className="px-5 py-3 font-medium">Recipient</th>
-                      <th className="px-5 py-3 font-medium">Type</th>
-                      <th className="px-5 py-3 font-medium">Status</th>
-                      <th className="px-5 py-3 font-medium">When</th>
-                      <th className="px-5 py-3 font-medium sr-only">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {outbox.map(entry => {
-                      let status: 'sent' | 'logged' | 'failed' | 'suppressed' = 'logged';
-                      let statusColor = 'bg-gray-100 text-gray-600';
-                      let statusLabel = 'Logged';
-                      
-                      if (entry.blocked) {
-                        status = 'suppressed';
-                        statusColor = 'bg-amber-100 text-amber-700';
-                        statusLabel = 'Suppressed';
-                      } else if (entry.success === false || entry.error) {
-                        status = 'failed';
-                        statusColor = 'bg-red-100 text-red-700';
-                        statusLabel = 'Failed';
-                      } else if (entry.success) {
-                        status = 'sent';
-                        statusColor = 'bg-green-100 text-green-700';
-                        statusLabel = 'Sent';
-                      }
-                      
-                      const typeName = settings.emailTypes.find(t => t.id === entry.type || `test-${t.id}` === entry.type)?.name || entry.type;
-                      
-                      return (
-                        <tr key={entry.id} className="hover:bg-gray-50">
-                          <td className="px-5 py-4">
-                            <p className="font-medium text-gray-900 truncate max-w-[200px]">{entry.to}</p>
-                          </td>
-                          <td className="px-5 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-700">{typeName}</span>
-                              {entry.isTest && (
-                                <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
-                                  test
-                                </span>
+              <>
+                {/* Mobile: Card view */}
+                <div className="lg:hidden divide-y divide-gray-100">
+                  {outbox.map(entry => {
+                    let statusColor = 'bg-gray-100 text-gray-700';
+                    let statusLabel = 'Logged';
+                    
+                    if (entry.blocked) {
+                      statusColor = 'bg-amber-100 text-amber-800';
+                      statusLabel = 'Suppressed';
+                    } else if (entry.success === false || entry.error) {
+                      statusColor = 'bg-red-100 text-red-800';
+                      statusLabel = 'Failed';
+                    } else if (entry.success) {
+                      statusColor = 'bg-green-100 text-green-800';
+                      statusLabel = 'Sent';
+                    }
+                    
+                    const typeName = settings.emailTypes.find(t => t.id === entry.type || `test-${t.id}` === entry.type)?.name || entry.type;
+                    
+                    return (
+                      <div key={entry.id} className="p-4 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-medium text-gray-900 break-all">{entry.to}</p>
+                          <span className={`px-2 py-1 text-xs rounded-full flex-shrink-0 ${statusColor}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap text-sm">
+                          <span className="text-gray-700">{typeName}</span>
+                          {entry.isTest && (
+                            <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">test</span>
+                          )}
+                          <span className="text-gray-500">· {formatTimeAgo(entry.sentAt)}</span>
+                        </div>
+                        {entry.error && (
+                          <p className="text-xs text-red-600">{entry.error}</p>
+                        )}
+                        {entry.reason && (
+                          <p className="text-xs text-gray-500">{entry.reason}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {/* Desktop: Table view with contained scroll */}
+                <div 
+                  className="hidden lg:block overflow-x-auto focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset" 
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Email log table, scrollable"
+                >
+                  <table className="w-full min-w-[700px]">
+                    <thead>
+                      <tr className="text-left text-sm text-gray-600 bg-gray-50">
+                        <th className="px-5 py-3 font-medium">Recipient</th>
+                        <th className="px-5 py-3 font-medium">Type</th>
+                        <th className="px-5 py-3 font-medium">Status</th>
+                        <th className="px-5 py-3 font-medium">When</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {outbox.map(entry => {
+                        let statusColor = 'bg-gray-100 text-gray-700';
+                        let statusLabel = 'Logged';
+                        
+                        if (entry.blocked) {
+                          statusColor = 'bg-amber-100 text-amber-800';
+                          statusLabel = 'Suppressed';
+                        } else if (entry.success === false || entry.error) {
+                          statusColor = 'bg-red-100 text-red-800';
+                          statusLabel = 'Failed';
+                        } else if (entry.success) {
+                          statusColor = 'bg-green-100 text-green-800';
+                          statusLabel = 'Sent';
+                        }
+                        
+                        const typeName = settings.emailTypes.find(t => t.id === entry.type || `test-${t.id}` === entry.type)?.name || entry.type;
+                        
+                        return (
+                          <tr key={entry.id} className="hover:bg-gray-50">
+                            <td className="px-5 py-4">
+                              <p className="font-medium text-gray-900 truncate max-w-[250px]">{entry.to}</p>
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-700">{typeName}</span>
+                                {entry.isTest && (
+                                  <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">test</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-5 py-4">
+                              <span className={`px-2 py-1 text-xs rounded-full ${statusColor}`}>
+                                {statusLabel}
+                              </span>
+                              {entry.error && (
+                                <p className="text-xs text-red-600 mt-1 truncate max-w-[200px]" title={entry.error}>
+                                  {entry.error}
+                                </p>
                               )}
-                            </div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <span className={`px-2 py-1 text-xs rounded-full ${statusColor}`}>
-                              {statusLabel}
-                            </span>
-                            {entry.error && (
-                              <p className="text-xs text-red-600 mt-1 truncate max-w-[200px]" title={entry.error}>
-                                {entry.error}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-5 py-4 text-sm text-gray-500">
-                            {formatTimeAgo(entry.sentAt)}
-                          </td>
-                          <td className="px-5 py-4">
-                            {status === 'failed' && (
-                              <button
-                                onClick={() => retryEmail(entry.id)}
-                                className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded hover:bg-blue-100 min-h-[36px] flex items-center gap-1"
-                                aria-label={`Retry sending to ${entry.to}`}
-                              >
-                                <RotateCcw className="w-4 h-4" aria-hidden="true" />
-                                Retry
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              {entry.reason && (
+                                <p className="text-xs text-gray-500 mt-1 truncate max-w-[200px]" title={entry.reason}>
+                                  {entry.reason}
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-5 py-4 text-sm text-gray-600">
+                              {formatTimeAgo(entry.sentAt)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -1427,9 +1501,10 @@ export function EmailSettingsView() {
           <div className="space-y-4">
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2 pb-4 border-b border-gray-200">
+              {/* Mobile-only preview toggle */}
               <button
                 onClick={() => setShowPreview(!showPreview)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-1 ${
+                className={`lg:hidden px-3 py-2 rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-1 ${
                   showPreview ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -1460,7 +1535,7 @@ export function EmailSettingsView() {
               )}
               
               {templateDirty && (
-                <span className="text-sm text-amber-600 flex items-center gap-1">
+                <span className="text-sm text-amber-700 font-medium flex items-center gap-1">
                   <AlertCircle className="w-4 h-4" aria-hidden="true" />
                   Unsaved changes
                 </span>
@@ -1477,7 +1552,7 @@ export function EmailSettingsView() {
                   <button
                     key={p}
                     onClick={() => insertPlaceholder(p)}
-                    className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm hover:bg-blue-100 min-h-[36px] flex items-center gap-1"
+                    className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm hover:bg-blue-100 min-h-[44px] flex items-center gap-1"
                   >
                     <Plus className="w-3 h-3" aria-hidden="true" />
                     {p}
@@ -1499,89 +1574,85 @@ export function EmailSettingsView() {
               </div>
             )}
 
-            {/* Editor / Preview */}
-            <div className={`grid gap-4 ${showPreview ? 'lg:grid-cols-2' : ''}`}>
+            {/* Editor / Preview - always two-pane at lg+ */}
+            <div className="grid gap-4 lg:grid-cols-2">
               {/* Editor Column */}
-              <div className={showPreview ? '' : ''}>
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="templateSubject" className="block text-sm font-medium text-gray-700 mb-1">
-                      Subject Line
-                    </label>
-                    <input
-                      id="templateSubject"
-                      type="text"
-                      value={templateForm.subject}
-                      onChange={(e) => {
-                        setTemplateForm({ ...templateForm, subject: e.target.value });
-                        setTemplateDirty(true);
-                      }}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]"
-                      placeholder="Verify Your Store Hours - {{storeName}}"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label htmlFor="templateHtml" className="block text-sm font-medium text-gray-700 mb-1">
-                      Email Body (HTML)
-                    </label>
-                    <textarea
-                      ref={templateEditorRef}
-                      id="templateHtml"
-                      value={templateForm.bodyHtml}
-                      onChange={(e) => {
-                        setTemplateForm({ ...templateForm, bodyHtml: e.target.value });
-                        setTemplateDirty(true);
-                      }}
-                      rows={showPreview ? 12 : 8}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                      placeholder="<p>Hello,</p><p>Please verify your hours at {{storeName}}...</p>"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label htmlFor="templateText" className="block text-sm font-medium text-gray-700 mb-1">
-                      Plain Text Version
-                    </label>
-                    <textarea
-                      id="templateText"
-                      value={templateForm.bodyText}
-                      onChange={(e) => {
-                        setTemplateForm({ ...templateForm, bodyText: e.target.value });
-                        setTemplateDirty(true);
-                      }}
-                      rows={4}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                      placeholder="Hello, Please verify your hours..."
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Shown when HTML can't be displayed.
-                    </p>
-                  </div>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="templateSubject" className="block text-sm font-medium text-gray-700 mb-1">
+                    Subject Line
+                  </label>
+                  <input
+                    id="templateSubject"
+                    type="text"
+                    value={templateForm.subject}
+                    onChange={(e) => {
+                      setTemplateForm({ ...templateForm, subject: e.target.value });
+                      setTemplateDirty(true);
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]"
+                    placeholder="Verify Your Store Hours - {{storeName}}"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="templateHtml" className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Body (HTML)
+                  </label>
+                  <textarea
+                    ref={templateEditorRef}
+                    id="templateHtml"
+                    value={templateForm.bodyHtml}
+                    onChange={(e) => {
+                      setTemplateForm({ ...templateForm, bodyHtml: e.target.value });
+                      setTemplateDirty(true);
+                    }}
+                    rows={12}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    placeholder="<p>Hello,</p><p>Please verify your hours at {{storeName}}...</p>"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="templateText" className="block text-sm font-medium text-gray-700 mb-1">
+                    Plain Text Version
+                  </label>
+                  <textarea
+                    id="templateText"
+                    value={templateForm.bodyText}
+                    onChange={(e) => {
+                      setTemplateForm({ ...templateForm, bodyText: e.target.value });
+                      setTemplateDirty(true);
+                    }}
+                    rows={4}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    placeholder="Hello, Please verify your hours..."
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    Shown when HTML can't be displayed.
+                  </p>
                 </div>
               </div>
 
-              {/* Preview Column */}
-              {showPreview && (
-                <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                  <div className="bg-white border-b border-gray-200 px-4 py-2">
-                    <p className="text-sm text-gray-500">Preview</p>
-                    <p className="font-medium text-gray-900 truncate">
-                      {templateForm.subject || '(No subject)'}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-white max-h-[400px] overflow-y-auto">
-                    {templateForm.bodyHtml ? (
-                      <div 
-                        className="prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: templateForm.bodyHtml }}
-                      />
-                    ) : (
-                      <p className="text-gray-400 italic">Start typing to see preview...</p>
-                    )}
-                  </div>
+              {/* Preview Column - always visible at lg+, toggle on mobile */}
+              <div className={`border border-gray-200 rounded-lg overflow-hidden bg-gray-50 ${showPreview ? '' : 'hidden lg:block'}`}>
+                <div className="bg-white border-b border-gray-200 px-4 py-2">
+                  <p className="text-sm text-gray-600">Live Preview</p>
+                  <p className="font-medium text-gray-900 truncate">
+                    {templateForm.subject || '(No subject)'}
+                  </p>
                 </div>
-              )}
+                <div className="p-4 bg-white max-h-[400px] overflow-y-auto">
+                  {templateForm.bodyHtml ? (
+                    <div 
+                      className="prose prose-sm max-w-none"
+                      dangerouslySetInnerHTML={{ __html: templateForm.bodyHtml }}
+                    />
+                  ) : (
+                    <p className="text-gray-400 italic">Start typing to see preview...</p>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* History Drawer */}
@@ -1645,7 +1716,7 @@ export function EmailSettingsView() {
             <button
               onClick={() => doToggleMaster(true)}
               disabled={saving}
-              className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 min-h-[44px]"
+              className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-50 min-h-[44px]"
             >
               {saving ? 'Enabling...' : 'Enable Emails'}
             </button>

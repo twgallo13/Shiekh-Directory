@@ -203,11 +203,12 @@ describe('Firestore Index Validation', () => {
     assert.ok(dmTasksIndexes.has('locationId:asc,createdAt:desc'), 'Should have locationId + createdAt index (All tab with locationId)');
   });
   
-  it('corrections collection has locationId filter index', () => {
+  it('corrections collection has locationId filter indexes', () => {
     const correctionsIndexes = indexMap.get('corrections');
     assert.ok(correctionsIndexes, 'corrections collection should have indexes');
     
-    assert.ok(correctionsIndexes.has('locationId:asc,status:asc,submittedAt:desc'), 'Should have locationId + status + submittedAt index');
+    assert.ok(correctionsIndexes.has('locationId:asc,status:asc,submittedAt:desc'), 'Should have locationId + status + submittedAt index (for approvers)');
+    assert.ok(correctionsIndexes.has('locationId:asc,status:asc,submittedBy:asc,submittedAt:desc'), 'Should have locationId + status + submittedBy + submittedAt index (for non-approvers)');
   });
   
   it('assignments collection has required indexes', () => {

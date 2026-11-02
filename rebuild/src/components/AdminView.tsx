@@ -4,10 +4,11 @@ import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye
 import { useAuth } from '../context/AuthContext';
 import { HoursTemplatesView } from './HoursTemplatesView';
 import { EmailSettingsView } from './EmailSettingsView';
+import { WorkflowRulesView } from './WorkflowRulesView';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'workflow-rules' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
 
 interface User {
   id: string;
@@ -93,36 +94,48 @@ export function AdminView() {
           </div>
           <div className="relative mt-3 -mb-px">
             <div className="flex gap-1 overflow-x-auto scrollbar-hide" role="tablist" aria-label="Admin sections">
+              {/* Group 1: People & Access */}
               <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users} panelId="panel-users">
                 Users
               </TabButton>
-            <TabButton id="api-clients" active={activeTab === 'api-clients'} onClick={setActiveTab} icon={Key} panelId="panel-api-clients">
-              API Clients
-            </TabButton>
-            <TabButton id="custom-fields" active={activeTab === 'custom-fields'} onClick={setActiveTab} icon={Settings} panelId="panel-custom-fields">
-              Custom Fields
-            </TabButton>
-            <TabButton id="import" active={activeTab === 'import'} onClick={setActiveTab} icon={Upload} panelId="panel-import">
-              Import
-            </TabButton>
-            <TabButton id="communications" active={activeTab === 'communications'} onClick={setActiveTab} icon={Mail} panelId="panel-communications">
-              Communications
-            </TabButton>
-            <TabButton id="email" active={activeTab === 'email'} onClick={setActiveTab} icon={Settings} panelId="panel-email">
-              Email
-            </TabButton>
-            <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History} panelId="panel-audit-log">
-              Audit Log
-            </TabButton>
-            <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock} panelId="panel-hours-templates">
-              Hours Templates
-            </TabButton>
-            <TabButton id="backups" active={activeTab === 'backups'} onClick={setActiveTab} icon={Database} panelId="panel-backups">
-              Backups
-            </TabButton>
-            <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle} panelId="panel-data-quality">
-              Data Quality
-            </TabButton>
+              <TabButton id="api-clients" active={activeTab === 'api-clients'} onClick={setActiveTab} icon={Key} panelId="panel-api-clients">
+                API Clients
+              </TabButton>
+              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
+              {/* Group 2: Data Management */}
+              <TabButton id="custom-fields" active={activeTab === 'custom-fields'} onClick={setActiveTab} icon={Settings} panelId="panel-custom-fields">
+                Custom Fields
+              </TabButton>
+              <TabButton id="import" active={activeTab === 'import'} onClick={setActiveTab} icon={Upload} panelId="panel-import">
+                Import
+              </TabButton>
+              <TabButton id="backups" active={activeTab === 'backups'} onClick={setActiveTab} icon={Database} panelId="panel-backups">
+                Backups
+              </TabButton>
+              <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle} panelId="panel-data-quality">
+                Data Quality
+              </TabButton>
+              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
+              {/* Group 3: Workflows & Rules */}
+              <TabButton id="workflow-rules" active={activeTab === 'workflow-rules'} onClick={setActiveTab} icon={Settings} panelId="panel-workflow-rules">
+                Workflow Rules
+              </TabButton>
+              <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock} panelId="panel-hours-templates">
+                Hours Templates
+              </TabButton>
+              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
+              {/* Group 4: Communications */}
+              <TabButton id="email" active={activeTab === 'email'} onClick={setActiveTab} icon={Mail} panelId="panel-email">
+                Email
+              </TabButton>
+              <TabButton id="communications" active={activeTab === 'communications'} onClick={setActiveTab} icon={Mail} panelId="panel-communications">
+                Send
+              </TabButton>
+              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
+              {/* Group 5: Monitoring */}
+              <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History} panelId="panel-audit-log">
+                Audit Log
+              </TabButton>
             </div>
             {/* Scroll hint - gradient fade on right */}
             <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white pointer-events-none sm:hidden" aria-hidden="true" />
@@ -148,6 +161,9 @@ export function AdminView() {
         </div>
         <div id="panel-email" role="tabpanel" aria-labelledby="tab-email" hidden={activeTab !== 'email'}>
           {activeTab === 'email' && <EmailSettingsView />}
+        </div>
+        <div id="panel-workflow-rules" role="tabpanel" aria-labelledby="tab-workflow-rules" hidden={activeTab !== 'workflow-rules'}>
+          {activeTab === 'workflow-rules' && <WorkflowRulesView />}
         </div>
         <div id="panel-audit-log" role="tabpanel" aria-labelledby="tab-audit-log" hidden={activeTab !== 'audit-log'}>
           {activeTab === 'audit-log' && <AuditLogTab getIdToken={getIdToken} />}

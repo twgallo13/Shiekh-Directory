@@ -1,14 +1,9 @@
 import { type Request, type Response, type NextFunction, Router } from 'express';
-import { randomUUID, createHmac } from 'crypto';
+import { randomUUID } from 'crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAuthClient } from '../firebase';
+import { hashSessionId } from '../services/tokenAuth';
 import type { User, AuthUser, Assignment } from '../../src/types';
-
-const SESSION_SECRET = process.env.STORE_SESSION_SECRET || 'dev-session-secret-not-for-production';
-
-function hashSessionId(sessionId: string): string {
-  return createHmac('sha256', SESSION_SECRET).update(sessionId).digest('hex');
-}
 
 interface StoreSession {
   locationId: string;

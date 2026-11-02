@@ -551,3 +551,268 @@ This is an automated message. Please do not reply directly to this email.
     text,
   };
 }
+
+// Default templates for the template editor - matches what's actually sent
+// These use placeholders that get rendered by the custom template system
+export const DEFAULT_TEMPLATES = {
+  verification_request: {
+    subject: '[Action Required] Verify Hours - Store {{storeNumber}}',
+    bodyHtml: `<h2>Hours Verification Request</h2>
+<p>Hello,</p>
+<p>Please verify the following information for your store is correct.</p>
+
+<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
+</div>
+
+<p>Please confirm this information is correct, or submit any needed corrections.</p>
+
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{verificationUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Verify Hours Now</a>
+</p>
+
+<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
+  <strong>Please respond by:</strong> {{expiresAt}}
+</div>
+
+<p>If you have questions, please contact your District Manager or the operations team.</p>
+
+<p>Thank you,<br>Shiekh Operations Team</p>`,
+    bodyText: `Hours Verification Request
+
+Hello,
+
+Please verify the following information for your store is correct.
+
+Store: {{storeNumber}} - {{storeName}}
+
+Please confirm this information is correct, or submit any needed corrections.
+
+Verify Hours Now: {{verificationUrl}}
+
+Please respond by: {{expiresAt}}
+
+If you have questions, please contact your District Manager or the operations team.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+  verification_reminder: {
+    subject: '[Reminder] Verify Hours - Store {{storeNumber}} - {{daysRemaining}} days remaining',
+    bodyHtml: `<h2>Reminder: Hours Verification Needed</h2>
+
+<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
+  <strong>Reminder: {{daysRemaining}} days remaining to respond</strong>
+</div>
+
+<p>Hello,</p>
+<p>This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.</p>
+
+<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
+</div>
+
+<p>Please take a few minutes to review your store's hours and confirm they are accurate.</p>
+
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{verificationUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Verify Hours Now</a>
+</p>
+
+<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
+  <strong>Deadline:</strong> {{expiresAt}}
+</div>
+
+<p>If you have questions or need assistance, please contact your District Manager.</p>
+
+<p>Thank you,<br>Shiekh Operations Team</p>`,
+    bodyText: `Reminder: Hours Verification Needed
+
+Reminder: {{daysRemaining}} days remaining to respond
+
+Hello,
+
+This is a reminder to verify the operating hours for your store. We haven't received a response to our earlier request.
+
+Store: {{storeNumber}} - {{storeName}}
+
+Please take a few minutes to review your store's hours and confirm they are accurate.
+
+Verify Hours Now: {{verificationUrl}}
+
+Deadline: {{expiresAt}}
+
+If you have questions or need assistance, please contact your District Manager.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+  verification_confirmation: {
+    subject: 'Hours Verified - Store {{storeNumber}}',
+    bodyHtml: `<h2 style="color: #059669;">✓ Hours Verified</h2>
+<p>Hello,</p>
+<p>Thank you for verifying your store's operating hours.</p>
+
+<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
+  <p><strong>Verified On:</strong> {{verifiedAt}}</p>
+</div>
+
+<p>Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.</p>
+
+<p>Thank you,<br>Shiekh Operations Team</p>`,
+    bodyText: `Hours Verified
+
+Hello,
+
+Thank you for verifying your store's operating hours.
+
+Store: {{storeNumber}} - {{storeName}}
+Verified On: {{verifiedAt}}
+
+Your store's hours are now confirmed in the directory. If any changes are needed in the future, please contact your District Manager or the operations team.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+  store_signin: {
+    subject: 'Sign in to Shiekh Directory - Store {{storeNumber}}',
+    bodyHtml: `<h2>Store Sign-In Link</h2>
+<p>Hello,</p>
+<p>You requested a sign-in link for the Shiekh Store Directory.</p>
+
+<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <p><strong>Store:</strong> {{storeNumber}} - {{storeName}}</p>
+</div>
+
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{signInUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Sign In Now</a>
+</p>
+
+<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
+  <strong>This link expires:</strong> {{expiresAt}}
+</div>
+
+<p>If you didn't request this link, you can safely ignore this email.</p>
+
+<p>Thank you,<br>Shiekh Operations Team</p>`,
+    bodyText: `Store Sign-In Link
+
+Hello,
+
+You requested a sign-in link for the Shiekh Store Directory.
+
+Store: {{storeNumber}} - {{storeName}}
+
+Sign In Now: {{signInUrl}}
+
+This link expires: {{expiresAt}}
+
+If you didn't request this link, you can safely ignore this email.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+  dm_verification_request: {
+    subject: '[Action Required] District Verification - {{districtName}}',
+    bodyHtml: `<h2>District Verification Request</h2>
+<p>Hello {{recipientName}},</p>
+<p>We need you to verify the store roster for your district.</p>
+
+<div style="background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <p><strong>District:</strong> {{districtName}}</p>
+  <p><strong>Number of Stores:</strong> {{storeCount}}</p>
+</div>
+
+<p>Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.</p>
+
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{verificationUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Review District Roster</a>
+</p>
+
+<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
+  <strong>Please respond by:</strong> {{expiresAt}}
+</div>
+
+<p>If you have questions, please contact the operations team.</p>
+
+<p>Thank you,<br>Shiekh Operations Team</p>`,
+    bodyText: `District Verification Request
+
+Hello {{recipientName}},
+
+We need you to verify the store roster for your district.
+
+District: {{districtName}}
+Number of Stores: {{storeCount}}
+
+Please review each store's SM, ASM, and Key Holder assignments and confirm they are correct. If any assignments need to be updated, you can submit corrections directly.
+
+Review District Roster: {{verificationUrl}}
+
+Please respond by: {{expiresAt}}
+
+If you have questions, please contact the operations team.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+  invitation: {
+    subject: "You're invited to Shiekh Directory",
+    bodyHtml: `<h2>You're Invited!</h2>
+<p>Hello,</p>
+<p>{{inviterName}} has invited you to join the Shiekh Store Directory as <strong>{{role}}</strong>.</p>
+
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{inviteUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Accept Invitation</a>
+</p>
+
+<p>If you have questions, please contact your manager or the person who sent this invitation.</p>
+
+<p>Thank you,<br>Shiekh Operations Team</p>`,
+    bodyText: `You're Invited!
+
+Hello,
+
+{{inviterName}} has invited you to join the Shiekh Store Directory as {{role}}.
+
+Accept Invitation: {{inviteUrl}}
+
+If you have questions, please contact your manager or the person who sent this invitation.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+  invitation_reminder: {
+    subject: "Reminder: You're invited to Shiekh Directory",
+    bodyHtml: `<h2>Reminder: Invitation Pending</h2>
+
+<div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px; margin: 16px 0;">
+  <strong>You have a pending invitation</strong>
+</div>
+
+<p>Hello,</p>
+<p>This is a reminder that {{inviterName}} invited you to join the Shiekh Store Directory as <strong>{{role}}</strong>.</p>
+
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{inviteUrl}}" style="display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">Accept Invitation</a>
+</p>
+
+<p>If you have questions, please contact your manager or the person who sent this invitation.</p>
+
+<p>Thank you,<br>Shiekh Operations Team</p>`,
+    bodyText: `Reminder: Invitation Pending
+
+You have a pending invitation
+
+Hello,
+
+This is a reminder that {{inviterName}} invited you to join the Shiekh Store Directory as {{role}}.
+
+Accept Invitation: {{inviteUrl}}
+
+If you have questions, please contact your manager or the person who sent this invitation.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+} as const;

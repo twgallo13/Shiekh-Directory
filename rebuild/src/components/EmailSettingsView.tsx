@@ -335,18 +335,20 @@ export function EmailSettingsView() {
     }, 0);
   };
   
+  const baseUrl = settings?.appBaseUrl || window.location.origin;
   const SAMPLE_VALUES: Record<string, string> = {
     storeName: 'Mall of America Store',
     storeNumber: '042',
     storeEmail: 'store042@shiekhshoes.com',
     storeType: 'Retail',
-    verificationUrl: 'https://directory.shiekh.com/verify/abc123',
-    confirmUrl: 'https://directory.shiekh.com/confirm/abc123',
-    updateUrl: 'https://directory.shiekh.com/update/abc123',
+    verificationUrl: `${baseUrl}/verify/abc123`,
+    confirmUrl: `${baseUrl}/confirm/abc123`,
+    updateUrl: `${baseUrl}/update/abc123`,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(),
     verifiedAt: new Date().toLocaleDateString(),
     daysRemaining: '3',
-    signInUrl: 'https://directory.shiekh.com/signin',
+    signInUrl: `${baseUrl}/store-signin?token=abc123`,
+    inviteUrl: `${baseUrl}/invite/abc123`,
     districtName: 'Southern California',
     recipientName: 'John Smith',
     recipientType: 'DM',
@@ -1246,17 +1248,19 @@ export function EmailSettingsView() {
                   </p>
                 </div>
               </div>
-              <label className="flex items-center gap-3 cursor-pointer min-h-[44px] py-2">
-                <input
-                  type="checkbox"
-                  id="smtpSecure"
-                  checked={smtpForm.secure}
-                  onChange={(e) => {
-                    setSmtpForm({ ...smtpForm, secure: e.target.checked });
-                    setSmtpDirty(true);
-                  }}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
+              <label className="flex items-center gap-3 cursor-pointer min-h-[44px] py-2" htmlFor="smtpSecure">
+                <span className="relative flex items-center justify-center w-[44px] h-[44px] -m-2">
+                  <input
+                    type="checkbox"
+                    id="smtpSecure"
+                    checked={smtpForm.secure}
+                    onChange={(e) => {
+                      setSmtpForm({ ...smtpForm, secure: e.target.checked });
+                      setSmtpDirty(true);
+                    }}
+                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                </span>
                 <span className="text-sm text-gray-700">
                   Use SSL/TLS encryption (required for port 465)
                 </span>

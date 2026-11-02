@@ -12,6 +12,7 @@ import {
   createVerificationReminderEmail,
   createVerificationConfirmationEmail,
   createDMVerificationRequestEmail,
+  DEFAULT_TEMPLATES,
   type VerificationEmailData,
   type ReminderEmailData,
   type DMVerificationEmailData,
@@ -104,43 +105,6 @@ export interface SendEmailOptions {
   sentByEmail?: string;
 }
 
-const DEFAULT_TEMPLATES: Record<EmailTypeId, { subject: string; bodyHtml: string; bodyText: string }> = {
-  verification_request: {
-    subject: '[Action Required] Verify Hours - Store {{storeNumber}}',
-    bodyHtml: '<p>Please verify your store hours at <a href="{{verificationUrl}}">{{verificationUrl}}</a></p>',
-    bodyText: 'Please verify your store hours at {{verificationUrl}}',
-  },
-  verification_reminder: {
-    subject: '[Reminder] Verify Hours - Store {{storeNumber}} - {{daysRemaining}} days remaining',
-    bodyHtml: '<p>Reminder: Please verify your store hours. {{daysRemaining}} days remaining.</p>',
-    bodyText: 'Reminder: Please verify your store hours. {{daysRemaining}} days remaining.',
-  },
-  verification_confirmation: {
-    subject: 'Hours Verified - Store {{storeNumber}}',
-    bodyHtml: '<p>Thank you for verifying your hours for {{storeName}}.</p>',
-    bodyText: 'Thank you for verifying your hours for {{storeName}}.',
-  },
-  store_signin: {
-    subject: 'Sign in to Shiekh Directory - Store {{storeNumber}}',
-    bodyHtml: '<p>Click <a href="{{signInUrl}}">here</a> to sign in.</p>',
-    bodyText: 'Sign in at: {{signInUrl}}',
-  },
-  dm_verification_request: {
-    subject: '[Action Required] District Verification - {{districtName}}',
-    bodyHtml: '<p>Please review the roster for {{districtName}}.</p>',
-    bodyText: 'Please review the roster for {{districtName}}.',
-  },
-  invitation: {
-    subject: "You're invited to Shiekh Directory",
-    bodyHtml: '<p>{{inviterName}} has invited you to join as {{role}}.</p>',
-    bodyText: '{{inviterName}} has invited you to join as {{role}}.',
-  },
-  invitation_reminder: {
-    subject: "Reminder: You're invited to Shiekh Directory",
-    bodyHtml: '<p>Reminder: {{inviterName}} invited you to join as {{role}}.</p>',
-    bodyText: 'Reminder: {{inviterName}} invited you to join as {{role}}.',
-  },
-};
 
 function isWithinQuietHours(settings: EmailSettings): boolean {
   const tz = settings.schedule.timezone || 'America/Los_Angeles';

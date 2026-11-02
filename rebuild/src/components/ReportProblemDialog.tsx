@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Location, CorrectionCategory } from '../types';
 import { apiPost } from '../lib/api';
+import { Dialog } from './Dialog';
 
 interface Props {
   location: Location;
@@ -55,168 +56,85 @@ export function ReportProblemDialog({ location, onClose, onSuccess }: Props) {
     }
   };
 
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '1rem',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          backgroundColor: 'white',
-          borderRadius: '0.5rem',
-          padding: '1.5rem',
-          maxWidth: '500px',
-          width: '100%',
-          maxHeight: '90vh',
-          overflow: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
+  const footer = (
+    <div className="flex gap-3 justify-end flex-wrap">
+      <button
+        type="button"
+        onClick={onClose}
+        disabled={submitting}
+        className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm hover:bg-gray-50 disabled:opacity-50 min-h-[44px]"
       >
-        <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.25rem', fontWeight: 600 }}>
-          Report a Problem
-        </h2>
-        <p style={{ margin: '0 0 1rem 0', color: '#6b7280', fontSize: '0.875rem' }}>
-          {location.storeNumber} · {location.name}
-        </p>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.5rem', 
-              fontWeight: 500,
-              fontSize: '0.875rem',
-            }}>
-              What needs correction?
-            </label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {CATEGORIES.map(cat => (
-                <label
-                  key={cat.value}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    padding: '0.75rem',
-                    borderRadius: '0.375rem',
-                    border: `2px solid ${category === cat.value ? '#3b82f6' : '#e5e7eb'}`,
-                    backgroundColor: category === cat.value ? '#eff6ff' : 'white',
-                    cursor: 'pointer',
-                    minHeight: '44px',
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="category"
-                    value={cat.value}
-                    checked={category === cat.value}
-                    onChange={(e) => setCategory(e.target.value as CorrectionCategory)}
-                    style={{ 
-                      marginRight: '0.75rem', 
-                      marginTop: '0.125rem',
-                      width: '18px',
-                      height: '18px',
-                    }}
-                  />
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: '0.875rem' }}>{cat.label}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{cat.description}</div>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '0.5rem', 
-              fontWeight: 500,
-              fontSize: '0.875rem',
-            }}>
-              Additional details (optional)
-            </label>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Describe the issue or what the correct information should be..."
-              rows={3}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '0.375rem',
-                border: '1px solid #d1d5db',
-                fontSize: '0.875rem',
-                resize: 'vertical',
-              }}
-            />
-          </div>
-
-          {error && (
-            <div style={{
-              padding: '0.75rem',
-              backgroundColor: '#fee2e2',
-              color: '#991b1b',
-              borderRadius: '0.375rem',
-              marginBottom: '1rem',
-              fontSize: '0.875rem',
-            }}>
-              {error}
-            </div>
-          )}
-
-          <div style={{ 
-            display: 'flex', 
-            gap: '0.75rem', 
-            justifyContent: 'flex-end',
-            flexWrap: 'wrap',
-          }}>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              style={{
-                padding: '0.5rem 1rem',
-                borderRadius: '0.375rem',
-                border: '1px solid #d1d5db',
-                backgroundColor: 'white',
-                fontSize: '0.875rem',
-                cursor: 'pointer',
-                minHeight: '44px',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || !category}
-              style={{
-                padding: '0.5rem 1rem',
-                borderRadius: '0.375rem',
-                border: 'none',
-                backgroundColor: submitting || !category ? '#9ca3af' : '#3b82f6',
-                color: 'white',
-                fontSize: '0.875rem',
-                cursor: submitting || !category ? 'not-allowed' : 'pointer',
-                minHeight: '44px',
-              }}
-            >
-              {submitting ? 'Submitting...' : 'Submit Request'}
-            </button>
-          </div>
-        </form>
-      </div>
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="report-problem-form"
+        disabled={submitting || !category}
+        className="px-4 py-2 rounded-lg text-sm text-white min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400"
+      >
+        {submitting ? 'Submitting...' : 'Submit Request'}
+      </button>
     </div>
+  );
+
+  return (
+    <Dialog isOpen={true} onClose={onClose} title="Report a Problem" footer={footer}>
+      <p className="text-sm text-gray-600 mb-4">
+        {location.storeNumber} · {location.name}
+      </p>
+
+      <form id="report-problem-form" onSubmit={handleSubmit}>
+        <fieldset className="mb-4">
+          <legend className="block mb-2 font-medium text-sm text-gray-700">
+            What needs correction?
+          </legend>
+          <div className="flex flex-col gap-2">
+            {CATEGORIES.map(cat => (
+              <label
+                key={cat.value}
+                className={`flex items-start p-3 rounded-md border-2 cursor-pointer min-h-[44px] ${
+                  category === cat.value 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="category"
+                  value={cat.value}
+                  checked={category === cat.value}
+                  onChange={(e) => setCategory(e.target.value as CorrectionCategory)}
+                  className="mt-0.5 mr-3 w-[18px] h-[18px]"
+                />
+                <div>
+                  <div className="font-medium text-sm">{cat.label}</div>
+                  <div className="text-xs text-gray-500">{cat.description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="mb-4">
+          <label htmlFor="report-note" className="block mb-2 font-medium text-sm text-gray-700">
+            Additional details (optional)
+          </label>
+          <textarea
+            id="report-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Describe the issue or what the correct information should be..."
+            rows={3}
+            className="w-full px-3 py-2 rounded-md border border-gray-300 text-sm resize-y"
+          />
+        </div>
+
+        {error && (
+          <div className="p-3 bg-red-50 text-red-800 rounded-md mb-4 text-sm">
+            {error}
+          </div>
+        )}
+      </form>
+    </Dialog>
   );
 }

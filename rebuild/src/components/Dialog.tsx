@@ -22,7 +22,8 @@ export function Dialog({
 }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const previousActiveElement = useRef<Element | null>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
   const titleId = `dialog-title-${title.replace(/\s+/g, '-').toLowerCase()}`;
 
   const sizeClasses = {
@@ -31,6 +32,21 @@ export function Dialog({
     lg: 'max-w-2xl',
     xl: 'max-w-4xl',
   };
+
+  const restoreFocus = useCallback(() => {
+    if (triggerRef?.current) {
+      triggerRef.current.focus();
+    } else if (previousActiveElement.current instanceof HTMLElement) {
+      previousActiveElement.current.focus();
+    }
+  }, [triggerRef]);
+
+  const handleClose = useCallback(() => {
+    onClose();
+    requestAnimationFrame(() => {
+      restoreFocus();
+    });
+  }, [onClose, restoreFocus]);
 
   const getFocusableElements = useCallback(() => {
     if (!dialogRef.current) return [];
@@ -48,7 +64,7 @@ export function Dialog({
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      onClose();
+      handleClose();
       return;
     }
 
@@ -71,11 +87,11 @@ export function Dialog({
         }
       }
     }
-  }, [getFocusableElements, onClose]);
+  }, [getFocusableElements, handleClose]);
 
   useEffect(() => {
-    if (isOpen) {
-      previousActiveElement.current = document.activeElement;
+    if (isOpen && !wasOpen.current) {
+      previousActiveElement.current = document.activeElement as HTMLElement;
       document.body.style.overflow = 'hidden';
       
       requestAnimationFrame(() => {
@@ -86,20 +102,17 @@ export function Dialog({
           closeButtonRef.current.focus();
         }
       });
-    } else {
+    } else if (!isOpen && wasOpen.current) {
       document.body.style.overflow = '';
-      
-      if (triggerRef?.current) {
-        triggerRef.current.focus();
-      } else if (previousActiveElement.current instanceof HTMLElement) {
-        previousActiveElement.current.focus();
-      }
+      restoreFocus();
     }
+    
+    wasOpen.current = isOpen;
 
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isOpen, getFocusableElements, triggerRef]);
+  }, [isOpen, getFocusableElements, restoreFocus]);
 
   if (!isOpen) return null;
 
@@ -111,7 +124,7 @@ export function Dialog({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/50"
-        onClick={onClose}
+        onClick={handleClose}
         aria-hidden="true"
       />
       
@@ -131,7 +144,7 @@ export function Dialog({
           </h2>
           <button
             ref={closeButtonRef}
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close dialog"
             className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2"
           >

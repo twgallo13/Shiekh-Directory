@@ -74,7 +74,17 @@ export function AppLayout({ children }: AppLayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* H6: Skip to content link */}
-      <a href="#main" className="skip-link">
+      <a 
+        href="#main" 
+        className="skip-link"
+        onClick={(e) => {
+          e.preventDefault();
+          const main = document.getElementById('main');
+          if (main) {
+            main.focus();
+          }
+        }}
+      >
         Skip to content
       </a>
       <OfflineBanner />
@@ -94,8 +104,8 @@ export function AppLayout({ children }: AppLayoutProps) {
               />
             </button>
 
-            {/* Desktop Navigation */}
-            <nav className="hidden lg:flex items-center gap-1">
+            {/* Desktop Navigation - show at xl (1280px) and above */}
+            <nav className="hidden xl:flex items-center gap-1">
               <NavLink
                 onClick={() => handleNavigation('/')}
                 isActive={isActivePath('/')}
@@ -249,11 +259,11 @@ export function AppLayout({ children }: AppLayoutProps) {
               </div>
             </nav>
 
-            {/* Mobile Menu Button */}
+            {/* Mobile Menu Button - show below xl (1280px) */}
             <button
               ref={mobileButtonRef}
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 hover:bg-blue-600 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center"
+              className="xl:hidden p-2 hover:bg-blue-600 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center"
               aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={mobileMenuOpen}
             >
@@ -262,17 +272,17 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile Menu - show below xl (1280px) */}
         {mobileMenuOpen && (
           <>
             <div
-              className="fixed inset-0 bg-black/20 z-40 lg:hidden"
+              className="fixed inset-0 bg-black/20 z-40 xl:hidden"
               onClick={() => setMobileMenuOpen(false)}
               aria-hidden="true"
             />
             <div
               ref={mobileMenuRef}
-              className="fixed right-0 top-14 w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100vh-56px)] overflow-y-auto lg:hidden"
+              className="fixed right-0 top-14 w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100vh-56px)] overflow-y-auto xl:hidden"
             >
               <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
                 <div className="flex items-center gap-3">
@@ -416,7 +426,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       </header>
 
-      <main id="main" className="flex-1">
+      <main id="main" tabIndex={-1} className="flex-1 outline-none">
         {children}
       </main>
     </div>

@@ -356,20 +356,20 @@ export function HierarchyView() {
 
               return (
                 <div key={region.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <div className="flex items-center gap-3 p-4 hover:bg-gray-50">
+                  <div className="flex items-center gap-3 p-4 hover:bg-gray-50 flex-wrap">
                     <button
                       onClick={() => toggleRegion(region.id)}
                       aria-expanded={isExpanded}
                       aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${region.name}`}
                       className="min-w-[44px] min-h-[44px] flex items-center justify-center -ml-2"
                     >
-                      {isExpanded ? <ChevronDown className="w-5 h-5 text-gray-600" /> : <ChevronRight className="w-5 h-5 text-gray-600" />}
+                      {isExpanded ? <ChevronDown className="w-5 h-5 text-gray-600" aria-hidden="true" /> : <ChevronRight className="w-5 h-5 text-gray-600" aria-hidden="true" />}
                     </button>
-                    <Building className="w-5 h-5 text-purple-600" />
-                    <div className="flex-1">
+                    <Building className="w-5 h-5 text-purple-600 hidden sm:block" aria-hidden="true" />
+                    <div className="flex-1 min-w-0">
                       <span className="font-semibold text-gray-900">{region.name}</span>
                       <span className="ml-2 text-sm text-gray-500">({region.code})</span>
-                      <span className="ml-3 text-sm">
+                      <span className="block sm:inline sm:ml-3 text-sm">
                         RM: {region.rmStatus === 'filled' ? (
                           <span className="text-purple-600">{region.rmName}</span>
                         ) : (
@@ -380,17 +380,17 @@ export function HierarchyView() {
                         )}
                       </span>
                     </div>
-                    <span className="text-sm text-gray-500">{districts.length} districts</span>
+                    <span className="text-sm text-gray-500 hidden sm:inline">{districts.length} districts</span>
                     {canManage && (
                       <div className="flex">
                         <button onClick={() => openAssignRM(region.id)} aria-label="Assign regional manager" className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg">
-                          <UserPlus className="w-4 h-4" />
+                          <UserPlus className="w-4 h-4" aria-hidden="true" />
                         </button>
                         <button onClick={() => openEditRegion(region)} aria-label="Edit region" className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-                          <Edit2 className="w-4 h-4" />
+                          <Edit2 className="w-4 h-4" aria-hidden="true" />
                         </button>
                         <button onClick={() => handleRetire('region', region.id)} aria-label="Delete region" className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
                         </button>
                       </div>
                     )}
@@ -412,20 +412,20 @@ export function HierarchyView() {
 
                         return (
                           <div key={district.id} className="border-t border-gray-100">
-                            <div className="flex items-center gap-3 p-3 pl-8 hover:bg-gray-100">
+                            <div className="flex items-center gap-3 p-3 pl-4 sm:pl-8 hover:bg-gray-100 flex-wrap">
                               <button
                                 onClick={() => toggleDistrict(district.id)}
                                 aria-expanded={isDistrictExpanded}
                                 aria-label={`${isDistrictExpanded ? 'Collapse' : 'Expand'} ${district.name}`}
                                 className="min-w-[44px] min-h-[44px] flex items-center justify-center -ml-2"
                               >
-                                {isDistrictExpanded ? <ChevronDown className="w-4 h-4 text-gray-600" /> : <ChevronRight className="w-4 h-4 text-gray-600" />}
+                                {isDistrictExpanded ? <ChevronDown className="w-4 h-4 text-gray-600" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-gray-600" aria-hidden="true" />}
                               </button>
-                              <Users className="w-4 h-4 text-blue-600" />
-                              <div className="flex-1">
+                              <Users className="w-4 h-4 text-blue-600 hidden sm:block" aria-hidden="true" />
+                              <div className="flex-1 min-w-0">
                                 <span className="font-medium text-gray-800">{district.name}</span>
                                 <span className="ml-2 text-sm text-gray-500">({district.code})</span>
-                                <span className="ml-3 text-sm">
+                                <span className="block sm:inline sm:ml-3 text-sm">
                                   DM: {district.dmStatus === 'filled' ? (
                                     <span className="text-blue-600">{district.dmName}</span>
                                   ) : (
@@ -436,7 +436,7 @@ export function HierarchyView() {
                                   )}
                                 </span>
                               </div>
-                              <span className="text-xs text-gray-500">{locations.length} stores</span>
+                              <span className="text-xs text-gray-500 hidden sm:inline">{locations.length} stores</span>
                               {canManage && (
                                 <div className="flex">
                                   <button onClick={() => openAssignDM(district.id)} aria-label="Assign district manager" className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg">

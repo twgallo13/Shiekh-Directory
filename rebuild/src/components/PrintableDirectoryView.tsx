@@ -239,10 +239,11 @@ export function PrintableDirectoryView() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => navigate('/')}
+              aria-label="Back to Directory"
               className="flex items-center gap-2 text-gray-600 hover:text-gray-900 min-h-[44px]"
             >
               <ArrowLeft className="w-5 h-5" aria-hidden="true" />
-              <span className="hidden sm:inline">Back to Directory</span>
+              <span className="hidden sm:inline" aria-hidden="true">Back to Directory</span>
             </button>
             <h1 className="sr-only">Print and Export Directory</h1>
 
@@ -267,18 +268,20 @@ export function PrintableDirectoryView() {
               <button
                 onClick={handleDownloadCsv}
                 disabled={preparing}
+                aria-label="Download CSV"
                 className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm min-h-[44px]"
               >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">CSV</span>
+                <Download className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden sm:inline" aria-hidden="true">CSV</span>
               </button>
 
               <button
                 onClick={handlePrint}
+                aria-label="Print directory"
                 className="flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm min-h-[44px]"
               >
-                <Printer className="w-4 h-4" />
-                <span className="hidden sm:inline">Print</span>
+                <Printer className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden sm:inline" aria-hidden="true">Print</span>
               </button>
             </div>
           </div>

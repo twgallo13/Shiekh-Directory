@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { Closure, District, LocationListItem } from '../types';
+import { Dialog } from './Dialog';
 
 interface ClosureBoardItem {
   id: string;
@@ -39,6 +40,9 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
   const [selectedDistrict, setSelectedDistrict] = useState<string>(districtFilter || '');
   const [statusFilter, setStatusFilter] = useState<'active' | 'ended' | 'all'>('active');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmRenew, setConfirmRenew] = useState<{ locationId: string; closureId: string; storeName: string } | null>(null);
+  const [undoToast, setUndoToast] = useState<{ message: string; action: 'renew'; locationId: string; closureId: string } | null>(null);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadClosures = useCallback(async () => {
     try {
@@ -120,7 +124,7 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
     }
   };
 
-  const handleRenewClosure = async (locationId: string, closureId: string) => {
+  const executeRenewClosure = async (locationId: string, closureId: string) => {
     try {
       setActionError(null);
       const token = await getIdToken();
@@ -132,9 +136,36 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.error?.message || 'Failed to renew closure');
       }
+      
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+      setUndoToast({ message: 'Closure renewed', action: 'renew', locationId, closureId });
+      undoTimeoutRef.current = setTimeout(() => setUndoToast(null), 8000);
+      
       loadClosures();
     } catch (err) {
       console.error('Failed to renew closure:', err);
+      setActionError((err as Error).message);
+    }
+  };
+
+  const handleUndoRenew = async () => {
+    if (!undoToast) return;
+    try {
+      setActionError(null);
+      const token = await getIdToken();
+      const response = await fetch(`/api/app/edit/locations/${undoToast.locationId}/closures/${undoToast.closureId}/undo-renew`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Failed to undo renewal');
+      }
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+      setUndoToast(null);
+      loadClosures();
+    } catch (err) {
+      console.error('Failed to undo renewal:', err);
       setActionError((err as Error).message);
     }
   };
@@ -326,7 +357,7 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     {(!item.closure.type || item.closure.type === 'same_day') && (
                       <button
-                        onClick={() => handleRenewClosure(item.locationId, item.closureId)}
+                        onClick={() => setConfirmRenew({ locationId: item.locationId, closureId: item.closureId, storeName: `${item.storeNumber} · ${item.locationName}` })}
                         style={{
                           padding: '0.375rem 0.75rem',
                           fontSize: '0.75rem',
@@ -363,6 +394,119 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Confirm Renew Dialog */}
+      <Dialog
+        isOpen={!!confirmRenew}
+        onClose={() => setConfirmRenew(null)}
+        title="Confirm Renew Closure"
+        footer={
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button
+              onClick={() => setConfirmRenew(null)}
+              style={{
+                flex: 1,
+                padding: '0.625rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '0.5rem',
+                fontWeight: 500,
+                color: '#374151',
+                backgroundColor: 'white',
+                cursor: 'pointer',
+                minHeight: '44px',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirmRenew) return;
+                const { locationId, closureId } = confirmRenew;
+                setConfirmRenew(null);
+                await executeRenewClosure(locationId, closureId);
+              }}
+              style={{
+                flex: 1,
+                padding: '0.625rem',
+                border: 'none',
+                borderRadius: '0.5rem',
+                fontWeight: 500,
+                color: 'white',
+                backgroundColor: '#8b5cf6',
+                cursor: 'pointer',
+                minHeight: '44px',
+              }}
+            >
+              Renew Closure
+            </button>
+          </div>
+        }
+      >
+        <p style={{ color: '#374151', margin: 0 }}>
+          Are you sure you want to renew the closure for <strong>{confirmRenew?.storeName}</strong>?
+        </p>
+        <p style={{ color: '#6b7280', marginTop: '0.5rem', fontSize: '0.875rem' }}>
+          This will extend the closure by another day.
+        </p>
+      </Dialog>
+
+      {/* Undo Toast */}
+      {undoToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            bottom: '1rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            backgroundColor: '#8b5cf6',
+            color: 'white',
+            padding: '0.75rem 1rem',
+            borderRadius: '0.5rem',
+            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+            zIndex: 50,
+          }}
+        >
+          <span>{undoToast.message}</span>
+          <button
+            onClick={handleUndoRenew}
+            style={{
+              padding: '0.25rem 0.75rem',
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.25rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              minHeight: '32px',
+            }}
+          >
+            Undo
+          </button>
+          <button
+            onClick={() => {
+              if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+              setUndoToast(null);
+            }}
+            aria-label="Dismiss"
+            style={{
+              padding: '0.25rem',
+              backgroundColor: 'transparent',
+              color: 'white',
+              border: 'none',
+              cursor: 'pointer',
+              minHeight: '32px',
+              minWidth: '32px',
+            }}
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>

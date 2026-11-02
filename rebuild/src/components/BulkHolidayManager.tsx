@@ -357,20 +357,27 @@ export function BulkHolidayManager() {
         </div>
 
         {/* Preview Button */}
-        <button
-          onClick={handlePreview}
-          disabled={!selectedHoliday || previewing}
-          className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {previewing ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Generating Preview...
-            </>
-          ) : (
-            'Preview Affected Stores'
+        <div className="space-y-2">
+          <button
+            onClick={handlePreview}
+            disabled={!selectedHoliday || previewing}
+            className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
+          >
+            {previewing ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
+                Generating Preview...
+              </>
+            ) : (
+              'Preview Affected Stores'
+            )}
+          </button>
+          {!selectedHoliday && (
+            <p className="text-sm text-gray-500 text-center">
+              Select a holiday above to enable preview
+            </p>
           )}
-        </button>
+        </div>
 
         {/* Error */}
         {error && (

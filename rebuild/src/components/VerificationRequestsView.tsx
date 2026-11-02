@@ -171,10 +171,11 @@ export function VerificationRequestsView() {
             {isAdminOrSteward && (
               <button
                 onClick={() => setShowNewRequest(true)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                aria-label="Send verification request"
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium min-h-[44px]"
               >
-                <Send className="w-4 h-4" />
-                <span className="hidden sm:inline">Send Request</span>
+                <Send className="w-4 h-4" aria-hidden="true" />
+                <span className="hidden sm:inline" aria-hidden="true">Send Request</span>
               </button>
             )}
           </div>
@@ -365,57 +366,68 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
     }
   };
 
+  const footer = (
+    <button
+      onClick={handleSend}
+      disabled={!selectedLocationId || sending}
+      className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
+    >
+      <Send className="w-4 h-4" aria-hidden="true" />
+      {sending ? 'Sending...' : 'Send Verification Request'}
+    </button>
+  );
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Send Verification Request</h2>
-          <button onClick={onClose} aria-label="Close" className="p-2 hover:bg-gray-100 rounded-lg min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Dialog isOpen={true} onClose={onClose} title="Send Verification Request" footer={footer}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Select a store to send a verification request. The request will be sent to the store's shared inbox email.
+        </p>
 
-        <div className="p-4 space-y-4">
-          <p className="text-sm text-gray-600">
-            Select a store to send a verification request. The request will be sent to the store's shared inbox email.
-          </p>
-
+        <div>
+          <label htmlFor="store-search" className="sr-only">Search stores</label>
           <input
+            id="store-search"
             type="text"
             placeholder="Search stores..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]"
           />
+        </div>
 
-          {error && (
-            <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
-              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        )}
 
-          {loading ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            </div>
-          ) : filteredLocations.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              {search ? 'No matching stores found' : 'No stores with shared inbox email'}
-            </div>
-          ) : (
-            <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg divide-y">
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          </div>
+        ) : filteredLocations.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            {search ? 'No matching stores found' : 'No stores with shared inbox email'}
+          </div>
+        ) : (
+          <fieldset>
+            <legend className="sr-only">Select a store</legend>
+            <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg divide-y" role="radiogroup" aria-label="Store selection">
               {filteredLocations.map(loc => (
                 <button
                   key={loc.id}
                   onClick={() => setSelectedLocationId(loc.id)}
-                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 ${
+                  role="radio"
+                  aria-checked={selectedLocationId === loc.id}
+                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 min-h-[44px] ${
                     selectedLocationId === loc.id ? 'bg-blue-50 border-blue-500' : ''
                   }`}
                 >
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                     selectedLocationId === loc.id ? 'border-blue-600 bg-blue-600' : 'border-gray-300'
-                  }`}>
+                  }`} aria-hidden="true">
                     {selectedLocationId === loc.id && (
                       <Check className="w-3 h-3 text-white" />
                     )}
@@ -427,21 +439,10 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
                 </button>
               ))}
             </div>
-          )}
-        </div>
-
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3">
-          <button
-            onClick={handleSend}
-            disabled={!selectedLocationId || sending}
-            className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            <Send className="w-4 h-4" />
-            {sending ? 'Sending...' : 'Send Verification Request'}
-          </button>
-        </div>
+          </fieldset>
+        )}
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -625,42 +626,24 @@ function BulkVerificationSection({
     }
   };
 
-  if (!expanded) {
-    return (
-      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-        <button
-          onClick={() => setExpanded(true)}
-          className="w-full flex items-center justify-between text-left"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Send className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
-              <p className="text-sm text-gray-500">Send verification requests to all stores in a district or region</p>
-            </div>
-          </div>
-          <ChevronRight className="w-5 h-5 text-gray-600" />
-        </button>
-      </div>
-    );
-  }
+  const handleClose = () => {
+    setExpanded(false);
+    setDryRunResults(null);
+    setResults(null);
+    setError(null);
+  };
 
-  return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
-        <button onClick={() => setExpanded(false)} aria-label="Close campaign panel" className="text-gray-600 hover:text-gray-600 min-h-[44px] min-w-[44px] flex items-center justify-center -m-2">
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      {loading ? (
+  const renderDialogContent = () => {
+    if (loading) {
+      return (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
         </div>
-      ) : dryRunResults ? (
+      );
+    }
+
+    if (dryRunResults) {
+      return (
         <div className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h4 className="font-medium text-blue-800 mb-2">Campaign Preview</h4>
@@ -714,30 +697,34 @@ function BulkVerificationSection({
           <div className="flex gap-3">
             <button
               onClick={() => setDryRunResults(null)}
-              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
             >
               Back
             </button>
             <button
               onClick={handleSend}
               disabled={sending || dryRunResults.wouldSend === 0}
-              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
             >
               {sending ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                   Sending...
                 </>
               ) : (
                 <>
-                  <Send className="w-4 h-4" />
+                  <Send className="w-4 h-4" aria-hidden="true" />
                   Send to {dryRunResults.wouldSend} Stores
                 </>
               )}
             </button>
           </div>
         </div>
-      ) : results ? (
+      );
+    }
+
+    if (results) {
+      return (
         <div className="space-y-4">
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <h4 className="font-medium text-green-800 mb-2">Campaign Complete</h4>
@@ -784,146 +771,186 @@ function BulkVerificationSection({
             )}
           </div>
           <button
-            onClick={() => { setResults(null); setExpanded(false); }}
-            className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
+            onClick={handleClose}
+            className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
           >
             Done
           </button>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {error && (
-            <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              {error}
-            </div>
-          )}
+      );
+    }
 
+    return (
+      <div className="space-y-4">
+        {error && (
+          <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" aria-hidden="true" />
+            {error}
+          </div>
+        )}
+
+        <fieldset>
+          <legend className="block text-sm font-medium text-gray-700 mb-2">Campaign Scope</legend>
+          <div className="flex gap-2" role="radiogroup" aria-label="Campaign scope">
+            <button
+              onClick={() => { setScope('district'); setScopeId(''); }}
+              role="radio"
+              aria-checked={scope === 'district'}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors min-h-[44px] ${
+                scope === 'district' 
+                  ? 'bg-blue-50 border-blue-300 text-blue-700' 
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <MapPin className="w-4 h-4" aria-hidden="true" />
+              District
+            </button>
+            <button
+              onClick={() => { setScope('region'); setScopeId(''); }}
+              role="radio"
+              aria-checked={scope === 'region'}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors min-h-[44px] ${
+                scope === 'region' 
+                  ? 'bg-blue-50 border-blue-300 text-blue-700' 
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Building2 className="w-4 h-4" aria-hidden="true" />
+              Region
+            </button>
+            <button
+              onClick={() => { setScope('all'); setScopeId(''); }}
+              role="radio"
+              aria-checked={scope === 'all'}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors min-h-[44px] ${
+                scope === 'all' 
+                  ? 'bg-blue-50 border-blue-300 text-blue-700' 
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              All Stores
+            </button>
+          </div>
+        </fieldset>
+
+        {scope === 'district' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Scope</label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => { setScope('district'); setScopeId(''); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                  scope === 'district' 
-                    ? 'bg-blue-50 border-blue-300 text-blue-700' 
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <MapPin className="w-4 h-4" />
-                District
-              </button>
-              <button
-                onClick={() => { setScope('region'); setScopeId(''); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                  scope === 'region' 
-                    ? 'bg-blue-50 border-blue-300 text-blue-700' 
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <Building2 className="w-4 h-4" />
-                Region
-              </button>
-              <button
-                onClick={() => { setScope('all'); setScopeId(''); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                  scope === 'all' 
-                    ? 'bg-blue-50 border-blue-300 text-blue-700' 
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                All Stores
-              </button>
-            </div>
+            <label htmlFor="campaign-district" className="block text-sm font-medium text-gray-700 mb-1">Select District</label>
+            <select
+              id="campaign-district"
+              value={scopeId}
+              onChange={(e) => setScopeId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+            >
+              <option value="">Choose a district...</option>
+              {districts
+                .filter(d => d.lifecycle === 'active')
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+            </select>
           </div>
+        )}
 
-          {scope === 'district' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Select District</label>
-              <select
-                value={scopeId}
-                onChange={(e) => setScopeId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Choose a district...</option>
-                {districts
-                  .filter(d => d.lifecycle === 'active')
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-              </select>
-            </div>
-          )}
+        {scope === 'region' && (
+          <div>
+            <label htmlFor="campaign-region" className="block text-sm font-medium text-gray-700 mb-1">Select Region</label>
+            <select
+              id="campaign-region"
+              value={scopeId}
+              onChange={(e) => setScopeId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+            >
+              <option value="">Choose a region...</option>
+              {regions
+                .filter(r => r.lifecycle === 'active')
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(r => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+            </select>
+          </div>
+        )}
 
-          {scope === 'region' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Select Region</label>
-              <select
-                value={scopeId}
-                onChange={(e) => setScopeId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Choose a region...</option>
-                {regions
-                  .filter(r => r.lifecycle === 'active')
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-              </select>
-            </div>
-          )}
-
-          <div className="border-t border-gray-200 pt-4">
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={skipRecentlyVerified}
-                onChange={(e) => setSkipRecentlyVerified(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-gray-700">
-                Skip stores verified in the last
-                <input
-                  type="number"
-                  value={daysSinceVerification}
-                  onChange={(e) => setDaysSinceVerification(parseInt(e.target.value) || 90)}
-                  min={1}
-                  max={365}
-                  className="mx-2 w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center"
-                  disabled={!skipRecentlyVerified}
-                />
-                days
-              </span>
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="skip-recent"
+              checked={skipRecentlyVerified}
+              onChange={(e) => setSkipRecentlyVerified(e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="skip-recent" className="text-sm text-gray-700">
+              Skip stores verified in the last
             </label>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              onClick={() => setExpanded(false)}
-              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handlePreview}
-              disabled={sending || ((scope === 'district' || scope === 'region') && !scopeId)}
-              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {sending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                'Preview Campaign'
-              )}
-            </button>
+            <label htmlFor="days-since" className="sr-only">Days since last verification</label>
+            <input
+              type="number"
+              id="days-since"
+              value={daysSinceVerification}
+              onChange={(e) => setDaysSinceVerification(parseInt(e.target.value) || 90)}
+              min={1}
+              max={365}
+              aria-label="Days since last verification"
+              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center min-h-[44px]"
+              disabled={!skipRecentlyVerified}
+            />
+            <span className="text-sm text-gray-700">days</span>
           </div>
         </div>
-      )}
-    </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={handleClose}
+            className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handlePreview}
+            disabled={sending || ((scope === 'district' || scope === 'region') && !scopeId)}
+            className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+          >
+            {sending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                Loading...
+              </>
+            ) : (
+              'Preview Campaign'
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full flex items-center justify-between text-left min-h-[44px]"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Send className="w-5 h-5 text-blue-600" aria-hidden="true" />
+            </div>
+            <div>
+              <h3 className="font-medium text-gray-900">Bulk Verification Campaign</h3>
+              <p className="text-sm text-gray-500">Send verification requests to all stores in a district or region</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-gray-600" aria-hidden="true" />
+        </button>
+      </div>
+
+      <Dialog isOpen={expanded} onClose={handleClose} title="Bulk Verification Campaign" size="lg">
+        {renderDialogContent()}
+      </Dialog>
+    </>
   );
 }
 

@@ -659,7 +659,11 @@ describe('Verification Route - Leader Scope', () => {
 
   before(async () => {
     await seedTestUsers();
-    hierarchyIds = await seedTestHierarchy();
+    hierarchyIds = await seedTestHierarchy(testRunId);
+    cleanupIds.push({ collection: 'regions', id: hierarchyIds.regionId });
+    cleanupIds.push({ collection: 'regions', id: hierarchyIds.region2Id });
+    cleanupIds.push({ collection: 'districts', id: hierarchyIds.districtId });
+    cleanupIds.push({ collection: 'districts', id: hierarchyIds.district2Id });
     
     leaderLocationIds = await seedTestLocationsForDistrict(
       hierarchyIds.districtId, 
@@ -677,7 +681,9 @@ describe('Verification Route - Leader Scope', () => {
     );
     cleanupIds.push(...otherDistrictLocationIds.map(id => ({ collection: 'locations', id })));
     
-    await seedTestLeader(hierarchyIds.districtId);
+    const leaderResult = await seedTestLeader(hierarchyIds.districtId, testRunId);
+    cleanupIds.push({ collection: 'people', id: leaderResult.personId });
+    cleanupIds.push({ collection: 'assignments', id: `test-assignment-${testRunId}` });
     
     const db = getTestDb();
     const now = new Date().toISOString();

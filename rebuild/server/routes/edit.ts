@@ -651,6 +651,91 @@ export function createEditRouter(db: Firestore): Router {
     }
   });
 
+  // Undo a closure renewal (subtracts one day from endsAt, decrements renewalCount)
+  router.post('/locations/:locationId/closures/:closureId/undo-renew', async (req: Request, res: Response) => {
+    try {
+      const { locationId, closureId } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      const permissions = canEditLocation(authUser, locationId);
+      if (!permissions.closure) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'You don\'t have permission to modify closures', requestId: res.locals.requestId },
+        });
+      }
+
+      const closureRef = db.collection(`locations/${locationId}/closures`).doc(closureId);
+      const closureDoc = await closureRef.get();
+
+      if (!closureDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Closure not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const closure = closureDoc.data() as Closure;
+      if (closure.status !== 'active') {
+        return res.status(400).json({
+          error: { code: 'invalid_status', message: 'Closure is not active', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!closure.renewalCount || closure.renewalCount < 1) {
+        return res.status(400).json({
+          error: { code: 'not_renewed', message: 'Closure has not been renewed', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!closure.endsAt) {
+        return res.status(400).json({
+          error: { code: 'no_end_date', message: 'Closure has no end date to undo', requestId: res.locals.requestId },
+        });
+      }
+
+      // Subtract 24 hours from the current endsAt
+      const currentEndsAt = new Date(closure.endsAt);
+      const newEndsAt = new Date(currentEndsAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const newRenewalCount = closure.renewalCount - 1;
+
+      const locationDoc = await db.collection('locations').doc(locationId).get();
+      const location = locationDoc.data() as Location;
+
+      await closureRef.update({
+        endsAt: newEndsAt,
+        renewalCount: newRenewalCount,
+      });
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'closure',
+        entityId: closureId,
+        entityName: `Closure for ${location?.storeNumber || locationId}`,
+        locationId,
+        changes: [
+          { field: 'endsAt', oldValue: closure.endsAt, newValue: newEndsAt },
+          { field: 'renewalCount', oldValue: closure.renewalCount, newValue: newRenewalCount },
+          { field: 'note', oldValue: undefined, newValue: 'Renewal undone' },
+        ],
+      });
+
+      return res.json({ data: { success: true, newEndsAt } });
+    } catch (error) {
+      console.error('Undo renew closure error:', error);
+      return res.status(500).json({
+        error: { code: 'closure_error', message: 'Failed to undo closure renewal', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   return router;
 }
 

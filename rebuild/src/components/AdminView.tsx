@@ -92,31 +92,31 @@ export function AdminView() {
           </div>
           <div className="relative mt-3 -mb-px">
             <div className="flex gap-1 overflow-x-auto scrollbar-hide" role="tablist" aria-label="Admin sections">
-              <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users}>
+              <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users} panelId="panel-users">
                 Users
               </TabButton>
-            <TabButton id="api-clients" active={activeTab === 'api-clients'} onClick={setActiveTab} icon={Key}>
+            <TabButton id="api-clients" active={activeTab === 'api-clients'} onClick={setActiveTab} icon={Key} panelId="panel-api-clients">
               API Clients
             </TabButton>
-            <TabButton id="custom-fields" active={activeTab === 'custom-fields'} onClick={setActiveTab} icon={Settings}>
+            <TabButton id="custom-fields" active={activeTab === 'custom-fields'} onClick={setActiveTab} icon={Settings} panelId="panel-custom-fields">
               Custom Fields
             </TabButton>
-            <TabButton id="import" active={activeTab === 'import'} onClick={setActiveTab} icon={Upload}>
+            <TabButton id="import" active={activeTab === 'import'} onClick={setActiveTab} icon={Upload} panelId="panel-import">
               Import
             </TabButton>
-            <TabButton id="communications" active={activeTab === 'communications'} onClick={setActiveTab} icon={Mail}>
+            <TabButton id="communications" active={activeTab === 'communications'} onClick={setActiveTab} icon={Mail} panelId="panel-communications">
               Communications
             </TabButton>
-            <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History}>
+            <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History} panelId="panel-audit-log">
               Audit Log
             </TabButton>
-            <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock}>
+            <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock} panelId="panel-hours-templates">
               Hours Templates
             </TabButton>
-            <TabButton id="backups" active={activeTab === 'backups'} onClick={setActiveTab} icon={Database}>
+            <TabButton id="backups" active={activeTab === 'backups'} onClick={setActiveTab} icon={Database} panelId="panel-backups">
               Backups
             </TabButton>
-            <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle}>
+            <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle} panelId="panel-data-quality">
               Data Quality
             </TabButton>
             </div>
@@ -127,29 +127,53 @@ export function AdminView() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {activeTab === 'users' && <UsersTab getIdToken={getIdToken} />}
-        {activeTab === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
-        {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
-        {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
-        {activeTab === 'communications' && <CommunicationsTab getIdToken={getIdToken} />}
-        {activeTab === 'audit-log' && <AuditLogTab getIdToken={getIdToken} />}
-        {activeTab === 'hours-templates' && <HoursTemplatesTab />}
-        {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
-        {activeTab === 'data-quality' && <DataQualityTab />}
+        <div id="panel-users" role="tabpanel" aria-labelledby="tab-users" hidden={activeTab !== 'users'}>
+          {activeTab === 'users' && <UsersTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-api-clients" role="tabpanel" aria-labelledby="tab-api-clients" hidden={activeTab !== 'api-clients'}>
+          {activeTab === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-custom-fields" role="tabpanel" aria-labelledby="tab-custom-fields" hidden={activeTab !== 'custom-fields'}>
+          {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-import" role="tabpanel" aria-labelledby="tab-import" hidden={activeTab !== 'import'}>
+          {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-communications" role="tabpanel" aria-labelledby="tab-communications" hidden={activeTab !== 'communications'}>
+          {activeTab === 'communications' && <CommunicationsTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-audit-log" role="tabpanel" aria-labelledby="tab-audit-log" hidden={activeTab !== 'audit-log'}>
+          {activeTab === 'audit-log' && <AuditLogTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-hours-templates" role="tabpanel" aria-labelledby="tab-hours-templates" hidden={activeTab !== 'hours-templates'}>
+          {activeTab === 'hours-templates' && <HoursTemplatesTab />}
+        </div>
+        <div id="panel-backups" role="tabpanel" aria-labelledby="tab-backups" hidden={activeTab !== 'backups'}>
+          {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-data-quality" role="tabpanel" aria-labelledby="tab-data-quality" hidden={activeTab !== 'data-quality'}>
+          {activeTab === 'data-quality' && <DataQualityTab />}
+        </div>
       </div>
     </div>
   );
 }
 
-function TabButton({ id, active, onClick, icon: Icon, children }: {
+function TabButton({ id, active, onClick, icon: Icon, children, panelId }: {
   id: TabId;
   active: boolean;
   onClick: (id: TabId) => void;
   icon: typeof Users;
   children: React.ReactNode;
+  panelId: string;
 }) {
   return (
     <button
+      id={`tab-${id}`}
+      role="tab"
+      aria-selected={active}
+      aria-controls={panelId}
+      tabIndex={active ? 0 : -1}
       onClick={() => onClick(id)}
       className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors min-h-[44px] ${
         active
@@ -157,7 +181,7 @@ function TabButton({ id, active, onClick, icon: Icon, children }: {
           : 'text-gray-700 border-transparent hover:text-gray-900 hover:bg-gray-100'
       }`}
     >
-      <Icon className="w-4 h-4" />
+      <Icon className="w-4 h-4" aria-hidden="true" />
       {children}
     </button>
   );

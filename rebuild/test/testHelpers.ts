@@ -59,13 +59,14 @@ export interface SeedHierarchyResult {
   district2Id: string;
 }
 
-export async function seedTestHierarchy(): Promise<SeedHierarchyResult> {
+export async function seedTestHierarchy(uniqueId?: string): Promise<SeedHierarchyResult> {
   const db = getTestDb();
   const now = new Date().toISOString();
+  const suffix = uniqueId || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  const regionRef = db.collection('regions').doc('test-region-1');
+  const regionRef = db.collection('regions').doc(`test-region-1-${suffix}`);
   await regionRef.set({
-    code: 'WEST',
+    code: `WEST_${suffix.slice(-4).toUpperCase()}`,
     name: 'West Region',
     lifecycle: 'active',
     createdAt: now,
@@ -74,9 +75,9 @@ export async function seedTestHierarchy(): Promise<SeedHierarchyResult> {
     version: 1,
   });
 
-  const region2Ref = db.collection('regions').doc('test-region-2');
+  const region2Ref = db.collection('regions').doc(`test-region-2-${suffix}`);
   await region2Ref.set({
-    code: 'EAST',
+    code: `EAST_${suffix.slice(-4).toUpperCase()}`,
     name: 'East Region',
     lifecycle: 'active',
     createdAt: now,
@@ -85,9 +86,9 @@ export async function seedTestHierarchy(): Promise<SeedHierarchyResult> {
     version: 1,
   });
 
-  const districtRef = db.collection('districts').doc('test-district-1');
+  const districtRef = db.collection('districts').doc(`test-district-1-${suffix}`);
   await districtRef.set({
-    code: 'LA-CENTRAL',
+    code: `LA_${suffix.slice(-4).toUpperCase()}`,
     name: 'LA Central District',
     regionId: regionRef.id,
     lifecycle: 'active',
@@ -97,9 +98,9 @@ export async function seedTestHierarchy(): Promise<SeedHierarchyResult> {
     version: 1,
   });
 
-  const district2Ref = db.collection('districts').doc('test-district-2');
+  const district2Ref = db.collection('districts').doc(`test-district-2-${suffix}`);
   await district2Ref.set({
-    code: 'NYC-CENTRAL',
+    code: `NYC_${suffix.slice(-4).toUpperCase()}`,
     name: 'NYC Central District',
     regionId: region2Ref.id,
     lifecycle: 'active',
@@ -117,11 +118,12 @@ export async function seedTestHierarchy(): Promise<SeedHierarchyResult> {
   };
 }
 
-export async function seedTestLeader(districtId: string): Promise<{ userId: string; personId: string }> {
+export async function seedTestLeader(districtId: string, uniqueId?: string): Promise<{ userId: string; personId: string }> {
   const db = getTestDb();
   const now = new Date().toISOString();
+  const suffix = uniqueId || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  const personRef = db.collection('people').doc('test-leader-person');
+  const personRef = db.collection('people').doc(`test-leader-person-${suffix}`);
   await personRef.set({
     fullName: 'Test Leader Person',
     lifecycle: 'active',
@@ -136,7 +138,7 @@ export async function seedTestLeader(districtId: string): Promise<{ userId: stri
     personId: personRef.id,
   });
 
-  const assignmentRef = db.collection('assignments').doc();
+  const assignmentRef = db.collection('assignments').doc(`test-assignment-${suffix}`);
   await assignmentRef.set({
     personId: personRef.id,
     role: 'DM',

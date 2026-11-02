@@ -47,13 +47,26 @@ export function createDMTasksRouter(db: Firestore): Router {
         });
       }
 
-      const { status, districtId } = req.query;
+      const { status, districtId, locationId } = req.query;
       
       let query: FirebaseFirestore.Query = db.collection('dmTasks')
         .orderBy('createdAt', 'desc')
         .limit(100);
 
-      if (status) {
+      if (locationId) {
+        query = db.collection('dmTasks')
+          .where('locationId', '==', locationId)
+          .orderBy('createdAt', 'desc')
+          .limit(100);
+        
+        if (status) {
+          query = db.collection('dmTasks')
+            .where('locationId', '==', locationId)
+            .where('status', '==', status)
+            .orderBy('createdAt', 'desc')
+            .limit(100);
+        }
+      } else if (status) {
         query = db.collection('dmTasks')
           .where('status', '==', status)
           .orderBy('createdAt', 'desc')

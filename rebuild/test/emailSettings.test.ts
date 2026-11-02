@@ -973,3 +973,56 @@ describe('UnifiedMailService - Type-Specific Send Methods', () => {
     assert.strictEqual(result.blocked, true, 'Should be blocked (master off)');
   });
 });
+
+describe('getAppBaseUrl', () => {
+  let appBaseUrlDb: Firestore;
+  let testApp: App;
+  
+  before(async () => {
+    process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
+    testApp = initializeApp({ projectId: 'test-project' }, `test-app-baseurl-${testRunId}`);
+    appBaseUrlDb = getFirestore(testApp);
+  });
+  
+  after(async () => {
+    if (testApp) await deleteApp(testApp);
+  });
+
+  it('should throw error when appBaseUrl is empty string', async () => {
+    const { getAppBaseUrl } = await import('../server/routes/emailSettings');
+    
+    await appBaseUrlDb.collection('settings').doc('email').set({
+      masterEnabled: false,
+      appBaseUrl: '',
+      sender: { fromName: 'Test' },
+    });
+    
+    await assert.rejects(
+      () => getAppBaseUrl(appBaseUrlDb),
+      (err: Error) => err.message.includes('appBaseUrl is not configured'),
+      'Should reject with configuration error'
+    );
+  });
+
+  it('should return appBaseUrl when configured', async () => {
+    const { getAppBaseUrl } = await import('../server/routes/emailSettings');
+    
+    await appBaseUrlDb.collection('settings').doc('email').set({
+      masterEnabled: false,
+      appBaseUrl: 'https://example.com',
+      sender: { fromName: 'Test' },
+    });
+    
+    const result = await getAppBaseUrl(appBaseUrlDb);
+    assert.strictEqual(result, 'https://example.com');
+  });
+  
+  it('should return default appBaseUrl when no settings exist', async () => {
+    const { getAppBaseUrl } = await import('../server/routes/emailSettings');
+    
+    await appBaseUrlDb.collection('settings').doc('email').delete().catch(() => {});
+    
+    const result = await getAppBaseUrl(appBaseUrlDb);
+    assert.ok(result.startsWith('https://'), 'Default appBaseUrl should be a valid URL');
+  });
+});

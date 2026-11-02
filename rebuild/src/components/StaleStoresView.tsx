@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { AlertTriangle, Calendar, RefreshCw, Store, ExternalLink, Download, Filter } from 'lucide-react';
+import { AlertTriangle, Calendar, RefreshCw, Store, ExternalLink, Download, Filter, ClipboardList, FileCheck, CheckSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -282,23 +282,55 @@ export function StaleStoresView() {
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 sm:flex-shrink-0">
-                      <button
-                        onClick={() => handleReissueVerification(store.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 min-h-[44px]"
-                        aria-label={`Send verification to ${store.name}`}
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        Send Verification
-                      </button>
-                      <button
-                        onClick={() => navigate(`/location/${store.id}`)}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 min-h-[44px]"
-                        aria-label={`View details for ${store.name}`}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        View
-                      </button>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:flex-shrink-0">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleReissueVerification(store.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 min-h-[44px]"
+                          aria-label={`Send verification to ${store.name}`}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          <span className="hidden sm:inline">Send Verification</span>
+                          <span className="sm:hidden">Verify</span>
+                        </button>
+                        <button
+                          onClick={() => navigate(`/location/${store.id}`)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 min-h-[44px]"
+                          aria-label={`View details for ${store.name}`}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          View
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => navigate(`/verification?locationId=${store.id}`)}
+                          className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 min-h-[32px]"
+                          aria-label={`View verification requests for ${store.name}`}
+                          title="Verification Requests"
+                        >
+                          <FileCheck className="h-3.5 w-3.5" />
+                          <span className="hidden lg:inline">Requests</span>
+                        </button>
+                        <button
+                          onClick={() => navigate(`/corrections?locationId=${store.id}`)}
+                          className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 min-h-[32px]"
+                          aria-label={`View corrections for ${store.name}`}
+                          title="Corrections"
+                        >
+                          <ClipboardList className="h-3.5 w-3.5" />
+                          <span className="hidden lg:inline">Corrections</span>
+                        </button>
+                        <button
+                          onClick={() => navigate(`/dm-tasks?locationId=${store.id}`)}
+                          className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 min-h-[32px]"
+                          aria-label={`View DM tasks for ${store.name}`}
+                          title="DM Tasks"
+                        >
+                          <CheckSquare className="h-3.5 w-3.5" />
+                          <span className="hidden lg:inline">DM Tasks</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );

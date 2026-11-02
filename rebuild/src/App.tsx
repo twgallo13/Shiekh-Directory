@@ -9,6 +9,7 @@ const LocationDetailView = lazy(() => import('./components/LocationDetailView').
 const PersonDetailView = lazy(() => import('./components/PersonDetailView').then(m => ({ default: m.PersonDetailView })));
 const SignInView = lazy(() => import('./components/SignInView').then(m => ({ default: m.SignInView })));
 const CorrectionsQueue = lazy(() => import('./components/CorrectionsQueue').then(m => ({ default: m.CorrectionsQueue })));
+const DMTasksView = lazy(() => import('./components/DMTasksView').then(m => ({ default: m.DMTasksView })));
 const BulkHolidayManager = lazy(() => import('./components/BulkHolidayManager').then(m => ({ default: m.BulkHolidayManager })));
 const VerificationRequestsView = lazy(() => import('./components/VerificationRequestsView').then(m => ({ default: m.VerificationRequestsView })));
 const PrintableDirectoryView = lazy(() => import('./components/PrintableDirectoryView').then(m => ({ default: m.PrintableDirectoryView })));
@@ -21,6 +22,7 @@ const StaleStoresView = lazy(() => import('./components/StaleStoresView').then(m
 const StoreSignInView = lazy(() => import('./components/StoreSignInView').then(m => ({ default: m.StoreSignInView })));
 const VerifyActionView = lazy(() => import('./components/VerifyActionView').then(m => ({ default: m.VerifyActionView })));
 const DMVerifyView = lazy(() => import('./components/DMVerifyView').then(m => ({ default: m.DMVerifyView })));
+const StoreHoursChangeView = lazy(() => import('./components/StoreHoursChangeView').then(m => ({ default: m.StoreHoursChangeView })));
 const MyRequestsView = lazy(() => import('./components/MyRequestsView').then(m => ({ default: m.MyRequestsView })));
 const ApiDocsView = lazy(() => import('./components/ApiDocsView').then(m => ({ default: m.ApiDocsView })));
 
@@ -134,6 +136,7 @@ function AppRoutes() {
         <Route path="/signin" element={<SignInView />} />
         <Route path="/store-signin" element={<StoreSignInView />} />
         <Route path="/verify-action" element={<VerifyActionView />} />
+        <Route path="/store-hours-change" element={<StoreHoursChangeView />} />
       <Route path="/dm-verify/:id" element={<OptionalAuthLayout><DMVerifyView /></OptionalAuthLayout>} />
       <Route
         path="/"
@@ -171,6 +174,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <RouteErrorBoundary>
               <CorrectionsQueuePage />
+            </RouteErrorBoundary>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dm-tasks"
+        element={
+          <ProtectedRoute>
+            <RouteErrorBoundary>
+              <DMTasksView />
             </RouteErrorBoundary>
           </ProtectedRoute>
         }

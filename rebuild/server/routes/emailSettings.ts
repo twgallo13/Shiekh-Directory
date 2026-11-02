@@ -1314,3 +1314,12 @@ export async function getSmtpPassword(db: Firestore): Promise<string | null> {
   }
   return (doc.data() as { password: string }).password;
 }
+
+export async function getAppBaseUrl(db: Firestore): Promise<string> {
+  const settings = await getEmailSettings(db);
+  if (!settings.appBaseUrl) {
+    console.error('[Config Error] appBaseUrl is not configured in email settings - emails may contain invalid links');
+    throw new Error('appBaseUrl is not configured. Set it in Admin > Email Settings before sending emails.');
+  }
+  return settings.appBaseUrl;
+}

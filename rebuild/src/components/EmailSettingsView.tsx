@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  Mail, Power, PowerOff, Send, Clock, Server, FileText, History, RotateCcw, Eye,
-  AlertTriangle, Check, X, RefreshCw, Loader2, Users, UserCheck, Shield,
-  Plus, ExternalLink, Calendar, ToggleLeft, ToggleRight, Info, AlertCircle
+  Mail, Power, PowerOff, Send, Clock, Server, FileText,
+  AlertTriangle, Check, RefreshCw, Loader2,
+  ExternalLink, Calendar, ToggleLeft, ToggleRight, Info, AlertCircle
 } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { useAuth } from '../context/AuthContext';
@@ -24,20 +24,9 @@ interface EmailTemplate {
   bodyText: string;
 }
 
-interface TemplateHistory {
-  version: number;
-  subject: string;
-  bodyHtml: string;
-  bodyText: string;
-  changedAt: string;
-  changedBy: string;
-  changedByEmail: string;
-}
-
 interface EmailTypeSettings {
   enabled: boolean;
   template?: EmailTemplate;
-  templateHistory?: TemplateHistory[];
 }
 
 interface EmailSettings {
@@ -95,7 +84,7 @@ interface OutboxEntry {
   isTest?: boolean;
 }
 
-type SectionId = 'overview' | 'types' | 'schedule' | 'sender' | 'outbox';
+type SectionId = 'overview' | 'schedule' | 'sender' | 'outbox';
 
 interface Toast {
   id: string;
@@ -133,19 +122,8 @@ export function EmailSettingsView() {
   const [outboxLoading, setOutboxLoading] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   
-  // Template editor state
-  const [editingType, setEditingType] = useState<EmailType | null>(null);
-  const [templateForm, setTemplateForm] = useState({ subject: '', bodyHtml: '', bodyText: '' });
-  const [templateDirty, setTemplateDirty] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [sendingTest, setSendingTest] = useState(false);
-  
   // Confirmation dialogs
   const [confirmEnableEmail, setConfirmEnableEmail] = useState(false);
-  const [confirmResetTemplate, setConfirmResetTemplate] = useState(false);
-  const [confirmRestoreVersion, setConfirmRestoreVersion] = useState<TemplateHistory | null>(null);
-  const [confirmCloseUnsaved, setConfirmCloseUnsaved] = useState(false);
   
   // Form states
   const [senderForm, setSenderForm] = useState({ fromName: '', fromAddress: '', replyTo: '', footerText: '' });
@@ -159,8 +137,6 @@ export function EmailSettingsView() {
   });
   const [scheduleDirty, setScheduleDirty] = useState(false);
   const [appUrlForm, setAppUrlForm] = useState('');
-  
-  const templateEditorRef = useRef<HTMLTextAreaElement>(null);
   
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     const id = Math.random().toString(36).slice(2);
@@ -231,14 +207,14 @@ export function EmailSettingsView() {
   // Unsaved changes guard
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (templateDirty || senderDirty || smtpDirty || scheduleDirty) {
+      if (senderDirty || smtpDirty || scheduleDirty) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [templateDirty, senderDirty, smtpDirty, scheduleDirty]);
+  }, [senderDirty, smtpDirty, scheduleDirty]);
 
   const toggleMaster = async (enable: boolean) => {
     if (!settings) return;
@@ -266,287 +242,6 @@ export function EmailSettingsView() {
     } finally {
       setSaving(false);
       setConfirmEnableEmail(false);
-    }
-  };
-  
-  const toggleTypeEnabled = async (typeId: string, enable: boolean) => {
-    if (!settings) return;
-    try {
-      setSaving(true);
-      const token = await getIdToken();
-      const res = await fetch(`/api/app/email-settings/type/${typeId}`, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: enable }),
-      });
-      if (!res.ok) throw new Error('Failed to update');
-      await fetchSettings();
-      const typeName = settings.emailTypes.find(t => t.id === typeId)?.name || typeId;
-      showToast(`${typeName} ${enable ? 'enabled' : 'disabled'}`);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to update', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-  
-  const openTemplateEditor = (type: EmailType) => {
-    if (!settings) return;
-    const typeSettings = settings.typeSettings[type.id];
-    const customTemplate = typeSettings?.template;
-    const defaultTemplate = settings.defaultTemplates?.[type.id];
-    
-    setEditingType(type);
-    setTemplateForm({
-      subject: customTemplate?.subject || defaultTemplate?.subject || '',
-      bodyHtml: customTemplate?.bodyHtml || defaultTemplate?.bodyHtml || '',
-      bodyText: customTemplate?.bodyText || defaultTemplate?.bodyText || '',
-    });
-    setTemplateDirty(false);
-    setShowPreview(false);
-    setShowHistory(false);
-  };
-  
-  const closeTemplateEditor = () => {
-    if (templateDirty) {
-      setConfirmCloseUnsaved(true);
-    } else {
-      setEditingType(null);
-    }
-  };
-  
-  const insertPlaceholder = (placeholder: string) => {
-    const textarea = templateEditorRef.current;
-    if (!textarea) return;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = templateForm.bodyHtml;
-    const newText = text.slice(0, start) + `{{${placeholder}}}` + text.slice(end);
-    setTemplateForm({ ...templateForm, bodyHtml: newText });
-    setTemplateDirty(true);
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(start + placeholder.length + 4, start + placeholder.length + 4);
-    }, 0);
-  };
-  
-  const baseUrl = settings?.appBaseUrl || window.location.origin;
-  const sampleExpiresDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  const sampleVerifiedDate = new Date();
-  const SAMPLE_VALUES: Record<string, string> = {
-    storeName: 'Mall of America Store',
-    storeNumber: '042',
-    storeEmail: 'store042@shiekhshoes.com',
-    storeType: 'Retail',
-    storeTypeHtml: `
-          <dt>Type</dt>
-          <dd>Retail</dd>`,
-    storeTypeText: '\nType: Retail',
-    verificationUrl: `${baseUrl}/verify/abc123`,
-    confirmUrl: `${baseUrl}/confirm/abc123`,
-    updateUrl: `${baseUrl}/update/abc123`,
-    expiresAt: sampleExpiresDate.toISOString(),
-    expiresFormatted: sampleExpiresDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-    verifiedAt: sampleVerifiedDate.toISOString(),
-    verifiedFormatted: sampleVerifiedDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }),
-    daysRemaining: '3',
-    daysRemainingLabel: '3 days remaining',
-    originalSentAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-    originalSentFormatted: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-    urgencyClass: 'warning',
-    urgencyText: 'Reminder: 3 days remaining to respond',
-    signInUrl: `${baseUrl}/store-signin?token=abc123`,
-    inviteUrl: `${baseUrl}/invite/abc123`,
-    districtName: 'Southern California',
-    recipientName: 'John Smith',
-    recipientType: 'DM',
-    recipientLabel: 'District Manager',
-    contextNote: 'your district',
-    storeCount: '12',
-    inviterName: 'Sarah Admin',
-    role: 'Steward',
-    personalMessage: 'Welcome to the team!',
-    hoursHtml: `
-    <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-      <thead>
-        <tr style="background-color: #F3F4F6;">
-          <th style="padding: 8px 12px; text-align: left; border-bottom: 2px solid #D1D5DB;">Day</th>
-          <th style="padding: 8px 12px; text-align: left; border-bottom: 2px solid #D1D5DB;">Hours</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Monday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
-        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Tuesday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
-        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Wednesday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
-        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Thursday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:00 PM</td></tr>
-        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Friday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:30 PM</td></tr>
-        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Saturday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">10:00 AM - 9:30 PM</td></tr>
-        <tr><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB; font-weight: 500;">Sunday</td><td style="padding: 6px 12px; border-bottom: 1px solid #E5E7EB;">11:00 AM - 7:00 PM</td></tr>
-      </tbody>
-    </table>`,
-    hoursText: `  Monday       10:00 AM - 9:00 PM
-  Tuesday      10:00 AM - 9:00 PM
-  Wednesday    10:00 AM - 9:00 PM
-  Thursday     10:00 AM - 9:00 PM
-  Friday       10:00 AM - 9:30 PM
-  Saturday     10:00 AM - 9:30 PM
-  Sunday       11:00 AM - 7:00 PM`,
-    wayfindingHtml: `
-      <div style="background-color: #F0F9FF; border-radius: 8px; padding: 16px; margin: 16px 0;">
-        <h4 style="margin: 0 0 8px 0; color: #0369A1; font-size: 14px;">How to Find Us</h4>
-        <p style="margin: 0; color: #374151; font-size: 14px;">Located on Level 2, near the food court entrance. Look for the red Shiekh sign.</p>
-      </div>`,
-    wayfindingText: `
-HOW TO FIND US:
-Located on Level 2, near the food court entrance. Look for the red Shiekh sign.
-`,
-    oneClickButtonsHtml: `
-      <div style="text-align: center; margin: 30px 0;">
-        <p style="font-weight: 600; margin-bottom: 16px;">Is everything above correct?</p>
-        <a href="${baseUrl}/confirm/abc123" class="button" style="display: inline-block; background-color: #059669; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin-right: 12px;">Yes, Correct</a>
-        <a href="${baseUrl}/update/abc123" class="button" style="display: inline-block; background-color: #2563EB; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600;">No, Update</a>
-      </div>
-      <p style="text-align: center; font-size: 13px; color: #6B7280; margin-bottom: 20px;">
-        Click <strong>Yes, Correct</strong> to confirm everything in one click.<br>
-        Click <strong>No, Update</strong> to sign in and make changes.
-      </p>
-      <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;">
-      <p style="text-align: center; font-size: 13px; color: #6B7280;">Or review all details:</p>`,
-    oneClickButtonsText: `
-Is everything above correct?
-
-YES, CORRECT: ${baseUrl}/confirm/abc123
-(Click to confirm everything in one click)
-
-NO, UPDATE: ${baseUrl}/update/abc123
-(Click to sign in and make changes)
-
----
-
-Or review all details:
-`,
-  };
-
-  const renderWithSampleValues = (text: string): string => {
-    return text.replace(/\{\{(\w+)\}\}/g, (_, key) => SAMPLE_VALUES[key] || `[${key}]`);
-  };
-
-  const validatePlaceholders = (text: string, validPlaceholders: string[]): string[] => {
-    const regex = /\{\{(\w+)\}\}/g;
-    const invalid: string[] = [];
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      if (!validPlaceholders.includes(match[1])) {
-        invalid.push(match[1]);
-      }
-    }
-    return invalid;
-  };
-  
-  const templateInvalidPlaceholders = useMemo(() => {
-    if (!editingType) return [];
-    const allText = templateForm.subject + templateForm.bodyHtml + templateForm.bodyText;
-    return validatePlaceholders(allText, editingType.placeholders);
-  }, [editingType, templateForm]);
-  
-  const saveTemplate = async () => {
-    if (!editingType) return;
-    if (templateInvalidPlaceholders.length > 0) {
-      showToast(`Unknown placeholders: ${templateInvalidPlaceholders.join(', ')}`, 'error');
-      return;
-    }
-    try {
-      setSaving(true);
-      const token = await getIdToken();
-      const res = await fetch(`/api/app/email-settings/type/${editingType.id}/template`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(templateForm),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error?.message || 'Failed to save');
-      }
-      await fetchSettings();
-      setTemplateDirty(false);
-      showToast('Template saved');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to save', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-  
-  const resetTemplate = async () => {
-    if (!editingType) return;
-    try {
-      setSaving(true);
-      const token = await getIdToken();
-      const res = await fetch(`/api/app/email-settings/type/${editingType.id}/template/reset`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to reset');
-      await fetchSettings();
-      const defaultTemplate = settings?.defaultTemplates?.[editingType.id];
-      setTemplateForm({
-        subject: defaultTemplate?.subject || '',
-        bodyHtml: defaultTemplate?.bodyHtml || '',
-        bodyText: defaultTemplate?.bodyText || '',
-      });
-      setTemplateDirty(false);
-      setConfirmResetTemplate(false);
-      showToast('Template reset to default');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to reset', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-  
-  const restoreVersion = async (entry: TemplateHistory) => {
-    if (!editingType) return;
-    try {
-      setSaving(true);
-      const token = await getIdToken();
-      const res = await fetch(`/api/app/email-settings/type/${editingType.id}/template/restore/${entry.version}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to restore');
-      await fetchSettings();
-      setTemplateForm({ subject: entry.subject, bodyHtml: entry.bodyHtml, bodyText: entry.bodyText });
-      setTemplateDirty(false);
-      setConfirmRestoreVersion(null);
-      setShowHistory(false);
-      showToast(`Restored version ${entry.version}`);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to restore', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-  
-  const sendTestEmail = async () => {
-    if (!editingType) return;
-    try {
-      setSendingTest(true);
-      const token = await getIdToken();
-      const res = await fetch(`/api/app/email-settings/test-send/${editingType.id}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || 'Failed to send');
-      if (data.logOnly) {
-        showToast(data.message || `Test logged (not sent) - enable email sending to deliver`, 'error');
-      } else {
-        showToast(`Test email sent to ${data.sentTo}`);
-      }
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to send test', 'error');
-    } finally {
-      setSendingTest(false);
     }
   };
   
@@ -658,24 +353,6 @@ Or review all details:
       setSaving(false);
     }
   };
-  
-  // Group email types by audience
-  const typesByAudience = useMemo(() => {
-    if (!settings) return {};
-    const groups: Record<string, EmailType[]> = {};
-    for (const type of settings.emailTypes) {
-      if (!groups[type.audience]) groups[type.audience] = [];
-      groups[type.audience].push(type);
-    }
-    return groups;
-  }, [settings]);
-  
-  const audienceOrder = ['stores', 'leaders', 'admins'];
-  const audienceIcons: Record<string, typeof Users> = {
-    stores: Users,
-    leaders: UserCheck,
-    admins: Shield,
-  };
 
   if (loading) {
     return (
@@ -706,7 +383,6 @@ Or review all details:
 
   const sections: { id: SectionId; label: string; icon: typeof Mail }[] = [
     { id: 'overview', label: 'Overview', icon: Mail },
-    { id: 'types', label: 'Email Types', icon: FileText },
     { id: 'schedule', label: 'Schedule', icon: Clock },
     { id: 'sender', label: 'Sender & Provider', icon: Server },
     { id: 'outbox', label: 'Outbox', icon: Send },
@@ -897,99 +573,6 @@ Or review all details:
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Email Types Section */}
-      {activeSection === 'types' && (
-        <div id="panel-types" role="tabpanel" aria-labelledby="tab-types" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Email Types</h2>
-              <p className="text-sm text-gray-600 mt-1">
-                Control which emails are sent and customize their templates.
-              </p>
-            </div>
-          </div>
-
-          {audienceOrder.map(audience => {
-            const types = typesByAudience[audience];
-            if (!types || types.length === 0) return null;
-            const Icon = audienceIcons[audience] || Users;
-            const audienceLabel = types[0]?.audienceLabel || audience;
-            
-            return (
-              <div key={audience} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <div className="bg-gray-50 px-5 py-3 border-b border-gray-200 flex items-center gap-3">
-                  <Icon className="w-5 h-5 text-gray-600" aria-hidden="true" />
-                  <h3 className="font-semibold text-gray-900">{audienceLabel}</h3>
-                  <span className="text-sm text-gray-500">
-                    ({types.filter(t => settings.typeSettings[t.id]?.enabled !== false).length} of {types.length} active)
-                  </span>
-                </div>
-                <div className="divide-y divide-gray-100">
-                  {types.map(type => {
-                    const typeSettings = settings.typeSettings[type.id];
-                    const enabled = typeSettings?.enabled !== false;
-                    const hasCustomTemplate = !!typeSettings?.template;
-                    const historyCount = typeSettings?.templateHistory?.length || 0;
-                    const lastEdited = typeSettings?.templateHistory?.[historyCount - 1]?.changedAt;
-                    
-                    return (
-                      <div key={type.id} className="p-4 sm:p-5">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="font-medium text-gray-900">{type.name}</h4>
-                              <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                              }`}>
-                                {enabled ? 'Active' : 'Off'}
-                              </span>
-                              {hasCustomTemplate && (
-                                <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
-                                  Custom
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-600 mt-1">{type.description}</p>
-                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                              <span>{type.purpose}</span>
-                              {lastEdited && (
-                                <span>Last edited {formatTimeAgo(lastEdited)}</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                              onClick={() => openTemplateEditor(type)}
-                              className="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 min-h-[44px] flex items-center gap-1"
-                              aria-label={`Edit template for ${type.name}`}
-                            >
-                              <FileText className="w-4 h-4" aria-hidden="true" />
-                              <span className="hidden sm:inline">Edit</span>
-                            </button>
-                            <button
-                              onClick={() => toggleTypeEnabled(type.id, !enabled)}
-                              disabled={saving}
-                              className={`px-4 py-2 rounded-lg text-sm font-medium min-h-[44px] ${
-                                enabled
-                                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                  : 'bg-green-700 text-white hover:bg-green-800'
-                              } disabled:opacity-50`}
-                              aria-label={enabled ? `Disable ${type.name}` : `Enable ${type.name}`}
-                            >
-                              {enabled ? 'Disable' : 'Enable'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
         </div>
       )}
 
@@ -1480,248 +1063,6 @@ Or review all details:
         </div>
       )}
 
-      {/* Template Editor Dialog */}
-      {editingType && (
-        <Dialog
-          isOpen={true}
-          onClose={closeTemplateEditor}
-          title={`Edit: ${editingType.name}`}
-          size="xl"
-          footer={
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={closeTemplateEditor}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
-              >
-                Cancel
-              </button>
-              <div className="flex-1" />
-              {settings.smtp.configured && (
-                <button
-                  onClick={sendTestEmail}
-                  disabled={sendingTest || templateInvalidPlaceholders.length > 0}
-                  className="px-4 py-2 border border-blue-300 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-50 min-h-[44px] flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {sendingTest ? (
-                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Send className="w-4 h-4" aria-hidden="true" />
-                  )}
-                  Send Test to Me
-                </button>
-              )}
-              <button
-                onClick={saveTemplate}
-                disabled={saving || templateInvalidPlaceholders.length > 0}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
-              >
-                {saving ? 'Saving...' : 'Save Template'}
-              </button>
-            </div>
-          }
-        >
-          <div className="space-y-4">
-            {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-2 pb-4 border-b border-gray-200">
-              {/* Mobile-only preview toggle */}
-              <button
-                onClick={() => setShowPreview(!showPreview)}
-                className={`lg:hidden px-3 py-2 rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-1 ${
-                  showPreview ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <Eye className="w-4 h-4" aria-hidden="true" />
-                {showPreview ? 'Hide Preview' : 'Preview'}
-              </button>
-              
-              {(settings.typeSettings[editingType.id]?.templateHistory?.length || 0) > 0 && (
-                <button
-                  onClick={() => setShowHistory(!showHistory)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-1 ${
-                    showHistory ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <History className="w-4 h-4" aria-hidden="true" />
-                  History
-                </button>
-              )}
-              
-              {settings.typeSettings[editingType.id]?.template && (
-                <button
-                  onClick={() => setConfirmResetTemplate(true)}
-                  className="px-3 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-1"
-                >
-                  <RotateCcw className="w-4 h-4" aria-hidden="true" />
-                  Reset to Default
-                </button>
-              )}
-              
-              {templateDirty && (
-                <span className="text-sm text-amber-700 font-medium flex items-center gap-1">
-                  <AlertCircle className="w-4 h-4" aria-hidden="true" />
-                  Unsaved changes
-                </span>
-              )}
-            </div>
-
-            {/* Placeholder Chips */}
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">
-                Click to insert a placeholder:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {editingType.placeholders.map(p => (
-                  <button
-                    key={p}
-                    onClick={() => insertPlaceholder(p)}
-                    className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm hover:bg-blue-100 min-h-[44px] flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" aria-hidden="true" />
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Invalid Placeholders Warning */}
-            {templateInvalidPlaceholders.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2" role="alert">
-                <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" aria-hidden="true" />
-                <div>
-                  <p className="font-medium text-red-800">Unknown placeholders</p>
-                  <p className="text-sm text-red-700 mt-1">
-                    Remove or fix: {templateInvalidPlaceholders.map(p => `{{${p}}}`).join(', ')}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Editor / Preview - always two-pane at lg+ */}
-            <div className="grid gap-4 lg:grid-cols-2">
-              {/* Editor Column */}
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="templateSubject" className="block text-sm font-medium text-gray-700 mb-1">
-                    Subject Line
-                  </label>
-                  <input
-                    id="templateSubject"
-                    type="text"
-                    value={templateForm.subject}
-                    onChange={(e) => {
-                      setTemplateForm({ ...templateForm, subject: e.target.value });
-                      setTemplateDirty(true);
-                    }}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]"
-                    placeholder="Verify Your Store Hours - {{storeName}}"
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="templateHtml" className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Body (HTML)
-                  </label>
-                  <textarea
-                    ref={templateEditorRef}
-                    id="templateHtml"
-                    value={templateForm.bodyHtml}
-                    onChange={(e) => {
-                      setTemplateForm({ ...templateForm, bodyHtml: e.target.value });
-                      setTemplateDirty(true);
-                    }}
-                    rows={12}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                    placeholder="<p>Hello,</p><p>Please verify your hours at {{storeName}}...</p>"
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="templateText" className="block text-sm font-medium text-gray-700 mb-1">
-                    Plain Text Version
-                  </label>
-                  <textarea
-                    id="templateText"
-                    value={templateForm.bodyText}
-                    onChange={(e) => {
-                      setTemplateForm({ ...templateForm, bodyText: e.target.value });
-                      setTemplateDirty(true);
-                    }}
-                    rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                    placeholder="Hello, Please verify your hours..."
-                  />
-                  <p className="text-xs text-gray-600 mt-1">
-                    Shown when HTML can't be displayed.
-                  </p>
-                </div>
-              </div>
-
-              {/* Preview Column - always visible at lg+, toggle on mobile */}
-              <div className={`border border-gray-200 rounded-lg overflow-hidden bg-gray-50 ${showPreview ? '' : 'hidden lg:block'}`}>
-                <div className="bg-white border-b border-gray-200 px-4 py-2">
-                  <p className="text-sm text-gray-600">Live Preview (with sample data)</p>
-                  <p className="font-medium text-gray-900 truncate">
-                    {renderWithSampleValues(templateForm.subject) || '(No subject)'}
-                  </p>
-                </div>
-                <div className="p-4 bg-white max-h-[400px] overflow-y-auto">
-                  {templateForm.bodyHtml ? (
-                    <div 
-                      className="prose prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ __html: renderWithSampleValues(templateForm.bodyHtml) }}
-                    />
-                  ) : (
-                    <p className="text-gray-400 italic">Start typing to see preview...</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* History Drawer */}
-            {showHistory && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden mt-4">
-                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-                  <h4 className="font-medium text-gray-900">Version History</h4>
-                  <button
-                    onClick={() => setShowHistory(false)}
-                    className="p-1 hover:bg-gray-200 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
-                    aria-label="Close history"
-                  >
-                    <X className="w-5 h-5" aria-hidden="true" />
-                  </button>
-                </div>
-                <div className="max-h-[300px] overflow-y-auto divide-y divide-gray-100">
-                  {(settings.typeSettings[editingType.id]?.templateHistory || [])
-                    .sort((a, b) => b.version - a.version)
-                    .map(entry => (
-                      <div key={entry.version} className="p-4 hover:bg-gray-50">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <span className="font-medium text-gray-900">Version {entry.version}</span>
-                            <p className="text-sm text-gray-500">
-                              {formatTimeAgo(entry.changedAt)} by {entry.changedByEmail}
-                            </p>
-                            <p className="text-sm text-gray-600 mt-1 truncate">
-                              Subject: {entry.subject}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => setConfirmRestoreVersion(entry)}
-                            className="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded hover:bg-blue-100 min-h-[36px] flex items-center gap-1"
-                          >
-                            <RotateCcw className="w-4 h-4" aria-hidden="true" />
-                            Restore
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </Dialog>
-      )}
-
       {/* Confirm Enable Email Dialog */}
       <Dialog
         isOpen={confirmEnableEmail}
@@ -1777,92 +1118,6 @@ Or review all details:
         </div>
       </Dialog>
 
-      {/* Confirm Reset Template Dialog */}
-      <Dialog
-        isOpen={confirmResetTemplate}
-        onClose={() => setConfirmResetTemplate(false)}
-        title="Reset Template to Default?"
-        footer={
-          <div className="flex gap-3">
-            <button
-              onClick={() => setConfirmResetTemplate(false)}
-              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={resetTemplate}
-              disabled={saving}
-              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 min-h-[44px]"
-            >
-              {saving ? 'Resetting...' : 'Reset Template'}
-            </button>
-          </div>
-        }
-      >
-        <p className="text-gray-700">
-          This will replace your custom template with the system default. Your version history will be preserved.
-        </p>
-      </Dialog>
-
-      {/* Confirm Restore Version Dialog */}
-      <Dialog
-        isOpen={!!confirmRestoreVersion}
-        onClose={() => setConfirmRestoreVersion(null)}
-        title="Restore This Version?"
-        footer={
-          <div className="flex gap-3">
-            <button
-              onClick={() => setConfirmRestoreVersion(null)}
-              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => confirmRestoreVersion && restoreVersion(confirmRestoreVersion)}
-              disabled={saving}
-              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
-            >
-              {saving ? 'Restoring...' : 'Restore Version'}
-            </button>
-          </div>
-        }
-      >
-        <p className="text-gray-700">
-          This will restore version {confirmRestoreVersion?.version} and save it as a new version. Your current template will be replaced.
-        </p>
-      </Dialog>
-
-      {/* Confirm Close Unsaved Dialog */}
-      <Dialog
-        isOpen={confirmCloseUnsaved}
-        onClose={() => setConfirmCloseUnsaved(false)}
-        title="Discard Unsaved Changes?"
-        footer={
-          <div className="flex gap-3">
-            <button
-              onClick={() => setConfirmCloseUnsaved(false)}
-              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
-            >
-              Keep Editing
-            </button>
-            <button
-              onClick={() => {
-                setConfirmCloseUnsaved(false);
-                setEditingType(null);
-                setTemplateDirty(false);
-              }}
-              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 min-h-[44px]"
-            >
-              Discard Changes
-            </button>
-          </div>
-        }
-      >
-        <p className="text-gray-700">
-          You have unsaved changes to this template. Are you sure you want to close without saving?
-        </p>
-      </Dialog>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getWorkflowRules } from './services/workflowSettings';
 import { createUnifiedMailService } from './services/unifiedMail';
+import { getAppBaseUrl } from './routes/emailSettings';
 import type { VerificationRequest, Location, DMVerificationRequest } from '../src/types';
 
 export const escalateToDM = onSchedule(
@@ -26,17 +27,24 @@ export const escalateToDM = onSchedule(
     console.log(`[DM Escalation] Running at ${now.toISOString()}`);
     console.log(`[DM Escalation] Escalating requests older than ${escalationThreshold.toISOString()} (${workflowRules.dmEscalationDays} days)`);
 
-    const pendingRequests = await db.collection('verificationRequests')
+    // Query for pending requests that haven't been responded to and are old enough
+    // Filter client-side for dmEscalated to include docs where field is missing (treat as not escalated)
+    const pendingRequestsSnapshot = await db.collection('verificationRequests')
       .where('status', '==', 'pending')
       .where('respondedAt', '==', null)
-      .where('dmEscalated', '==', false)
       .where('sentAt', '<', escalationThreshold.toISOString())
-      .limit(100)
+      .limit(200)
       .get();
 
-    console.log(`[DM Escalation] Found ${pendingRequests.size} requests to escalate`);
+    // Filter out already-escalated requests (missing dmEscalated field treated as false)
+    const eligibleDocs = pendingRequestsSnapshot.docs.filter(doc => {
+      const data = doc.data();
+      return data.dmEscalated !== true;
+    }).slice(0, 100);
 
-    if (pendingRequests.size === 0) {
+    console.log(`[DM Escalation] Found ${eligibleDocs.length} requests to escalate (from ${pendingRequestsSnapshot.size} pending)`);
+
+    if (eligibleDocs.length === 0) {
       console.log('[DM Escalation] No requests to escalate');
       return;
     }
@@ -44,7 +52,7 @@ export const escalateToDM = onSchedule(
     const locationIds = new Set<string>();
     const requests: (VerificationRequest & { id: string })[] = [];
     
-    for (const doc of pendingRequests.docs) {
+    for (const doc of eligibleDocs) {
       const request = { id: doc.id, ...doc.data() } as VerificationRequest & { id: string };
       requests.push(request);
       locationIds.add(request.locationId);
@@ -75,6 +83,14 @@ export const escalateToDM = onSchedule(
     const mailService = createUnifiedMailService(db);
     let escalatedCount = 0;
     let dmRequestsCreated = 0;
+    
+    let appBaseUrl: string;
+    try {
+      appBaseUrl = await getAppBaseUrl(db);
+    } catch (error) {
+      console.error('[DM Escalation] Cannot send emails - appBaseUrl not configured:', error);
+      return;
+    }
 
     for (const [districtId, { requests: districtRequests, locations: districtLocations }] of requestsByDistrict) {
       const districtDoc = await db.collection('districts').doc(districtId).get();
@@ -166,7 +182,7 @@ export const escalateToDM = onSchedule(
             recipientType: 'dm',
             districtName: district?.name || districtId,
             storeCount: districtLocations.length,
-            verificationUrl: `${process.env.APP_URL || 'https://directory.shiekh.com'}/dm-verify/${dmRequestRef.id}`,
+            verificationUrl: `${appBaseUrl}/dm-verify/${dmRequestRef.id}`,
             expiresAt: expiresAt.toISOString(),
           },
           'system',

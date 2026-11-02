@@ -217,8 +217,14 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
                 Hours need updating?
               </p>
               <p className="text-sm text-orange-700 mt-1">
-                After submitting this response, you'll be able to submit a correction request with your proposed hours changes.
+                After submitting this response, you can submit your proposed hours changes for approval.
               </p>
+              <a
+                href="/store-hours-change"
+                className="inline-block mt-2 text-sm font-medium text-orange-700 underline hover:no-underline"
+              >
+                Go to Hours Change Form →
+              </a>
             </div>
           )}
         </fieldset>

@@ -24,6 +24,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
 
       const status = req.query.status as string;
       const category = req.query.category as string;
+      const locationId = req.query.locationId as string;
       const myRequests = req.query.myRequests === 'true';
       const includeArchived = req.query.includeArchived === 'true';
       
@@ -50,6 +51,11 @@ export function createCorrectionsRouter(db: Firestore): Router {
         id: doc.id,
         ...doc.data(),
       })) as Correction[];
+
+      // Filter by locationId if specified (done in memory since Firestore has index limitations)
+      if (locationId) {
+        corrections = corrections.filter(c => c.locationId === locationId);
+      }
 
       // Filter by category if specified (done in memory since Firestore has index limitations)
       if (category) {

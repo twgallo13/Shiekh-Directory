@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Settings, RotateCcw, Loader2, Clock, Calendar, Mail, Users, Shield, History } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Settings, RotateCcw, Loader2, Clock, Calendar, Mail, Users, Shield, History, FileText, Eye, EyeOff, AlertTriangle, Store, Building2, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Dialog } from './Dialog';
 
 interface WorkflowRules {
   verificationCycleDays: number;
@@ -43,6 +44,41 @@ interface Toast {
   message: string;
   type: 'success' | 'error';
 }
+
+interface EmailType {
+  id: string;
+  name: string;
+  description: string;
+  purpose: string;
+  audience: string;
+  audienceLabel: string;
+  placeholders: string[];
+}
+
+interface EmailTemplate {
+  subject: string;
+  bodyHtml: string;
+  bodyText: string;
+}
+
+interface EmailTypeSettings {
+  enabled: boolean;
+  template?: EmailTemplate;
+}
+
+interface EmailSettings {
+  masterEnabled: boolean;
+  typeSettings: Record<string, EmailTypeSettings>;
+  emailTypes: EmailType[];
+  defaultTemplates: Record<string, EmailTemplate>;
+}
+
+const AUDIENCE_ORDER = ['stores', 'leadership', 'admin'];
+const AUDIENCE_ICONS: Record<string, React.ElementType> = {
+  stores: Store,
+  leadership: Building2,
+  admin: User,
+};
 
 const RULE_DESCRIPTIONS: Record<keyof WorkflowRules, { label: string; description: string; unit?: string }> = {
   verificationCycleDays: {
@@ -173,6 +209,15 @@ export function WorkflowRulesView() {
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  
+  // Email template state
+  const [emailSettings, setEmailSettings] = useState<EmailSettings | null>(null);
+  const [editingType, setEditingType] = useState<EmailType | null>(null);
+  const [templateForm, setTemplateForm] = useState({ subject: '', bodyHtml: '', bodyText: '' });
+  const [templateDirty, setTemplateDirty] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [confirmResetTemplate, setConfirmResetTemplate] = useState(false);
+  const templateEditorRef = useRef<HTMLTextAreaElement>(null);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     const id = crypto.randomUUID();
@@ -213,10 +258,128 @@ export function WorkflowRulesView() {
     }
   }, [getIdToken]);
 
+  const fetchEmailSettings = useCallback(async () => {
+    try {
+      const token = await getIdToken();
+      const res = await fetch('/api/app/email-settings', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEmailSettings(data);
+      }
+    } catch {
+      // Email settings fetch errors are non-fatal
+    }
+  }, [getIdToken]);
+
   useEffect(() => {
     fetchRules();
     fetchHistory();
-  }, [fetchRules, fetchHistory]);
+    fetchEmailSettings();
+  }, [fetchRules, fetchHistory, fetchEmailSettings]);
+
+  const toggleTypeEnabled = async (typeId: string, enabled: boolean) => {
+    try {
+      setSaving(`type-${typeId}`);
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/email-settings/type/${typeId}/toggle`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      await fetchEmailSettings();
+      showToast(`Email ${enabled ? 'enabled' : 'disabled'}`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update', 'error');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const openTemplateEditor = (type: EmailType) => {
+    if (!emailSettings) return;
+    const typeSettings = emailSettings.typeSettings[type.id];
+    const customTemplate = typeSettings?.template;
+    const defaultTemplate = emailSettings.defaultTemplates?.[type.id];
+    
+    setEditingType(type);
+    setTemplateForm({
+      subject: customTemplate?.subject || defaultTemplate?.subject || '',
+      bodyHtml: customTemplate?.bodyHtml || defaultTemplate?.bodyHtml || '',
+      bodyText: customTemplate?.bodyText || defaultTemplate?.bodyText || '',
+    });
+    setTemplateDirty(false);
+    setShowPreview(false);
+  };
+
+  const closeTemplateEditor = () => {
+    setEditingType(null);
+    setTemplateDirty(false);
+    setConfirmResetTemplate(false);
+  };
+
+  const saveTemplate = async () => {
+    if (!editingType) return;
+    try {
+      setSaving('template');
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/email-settings/type/${editingType.id}/template`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(templateForm),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error?.message || 'Failed to save');
+      }
+      await fetchEmailSettings();
+      setTemplateDirty(false);
+      showToast('Template saved');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save', 'error');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const resetTemplate = async () => {
+    if (!editingType) return;
+    try {
+      setSaving('template');
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/email-settings/type/${editingType.id}/template/reset`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to reset');
+      await fetchEmailSettings();
+      const defaultTemplate = emailSettings?.defaultTemplates?.[editingType.id];
+      setTemplateForm({
+        subject: defaultTemplate?.subject || '',
+        bodyHtml: defaultTemplate?.bodyHtml || '',
+        bodyText: defaultTemplate?.bodyText || '',
+      });
+      setTemplateDirty(false);
+      setConfirmResetTemplate(false);
+      showToast('Template reset to default');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to reset', 'error');
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const typesByAudience = useMemo(() => {
+    if (!emailSettings?.emailTypes) return {};
+    return emailSettings.emailTypes.reduce((acc, type) => {
+      const audience = type.audience || 'other';
+      if (!acc[audience]) acc[audience] = [];
+      acc[audience].push(type);
+      return acc;
+    }, {} as Record<string, EmailType[]>);
+  }, [emailSettings]);
 
   const updateRule = async (field: keyof WorkflowRules, value: unknown) => {
     try {
@@ -463,6 +626,89 @@ export function WorkflowRulesView() {
         </div>
       ))}
 
+      {/* Email Templates Section */}
+      {emailSettings && (
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center gap-3">
+            <Mail className="w-5 h-5 text-gray-500" aria-hidden="true" />
+            <div>
+              <h3 className="font-semibold text-gray-900">Email Templates</h3>
+              <p className="text-sm text-gray-600">Control which emails are sent and customize their templates</p>
+            </div>
+          </div>
+          
+          {AUDIENCE_ORDER.map(audience => {
+            const types = typesByAudience[audience];
+            if (!types || types.length === 0) return null;
+            const AudienceIcon = AUDIENCE_ICONS[audience] || Users;
+            const audienceLabel = types[0]?.audienceLabel || audience;
+            
+            return (
+              <div key={audience} className="border-b border-gray-200 last:border-b-0">
+                <div className="px-6 py-3 bg-gray-50 flex items-center gap-2 border-b border-gray-100">
+                  <AudienceIcon className="w-4 h-4 text-gray-500" aria-hidden="true" />
+                  <span className="text-sm font-medium text-gray-700">{audienceLabel}</span>
+                  <span className="text-xs text-gray-500">
+                    ({types.filter(t => emailSettings.typeSettings[t.id]?.enabled !== false).length} of {types.length} active)
+                  </span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {types.map(type => {
+                    const typeSettings = emailSettings.typeSettings[type.id];
+                    const enabled = typeSettings?.enabled !== false;
+                    const hasCustomTemplate = !!typeSettings?.template;
+                    const isSavingType = saving === `type-${type.id}`;
+                    
+                    return (
+                      <div key={type.id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-gray-900">{type.name}</span>
+                            <span className={`px-2 py-0.5 text-xs rounded-full ${
+                              enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {enabled ? 'Active' : 'Off'}
+                            </span>
+                            {hasCustomTemplate && (
+                              <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                                Custom
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1">{type.description}</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => openTemplateEditor(type)}
+                            className="px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 min-h-[44px] flex items-center gap-1"
+                            aria-label={`Edit template for ${type.name}`}
+                          >
+                            <FileText className="w-4 h-4" aria-hidden="true" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => toggleTypeEnabled(type.id, !enabled)}
+                            disabled={isSavingType}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium min-h-[44px] ${
+                              enabled
+                                ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                : 'bg-green-700 text-white hover:bg-green-800'
+                            } disabled:opacity-50`}
+                            aria-label={enabled ? `Disable ${type.name}` : `Enable ${type.name}`}
+                          >
+                            {isSavingType ? <Loader2 className="w-4 h-4 animate-spin" /> : enabled ? 'Disable' : 'Enable'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div className="bg-blue-50 rounded-lg p-4 text-sm text-blue-800">
         <p className="font-medium mb-1">About Workflow Rules</p>
         <p>
@@ -470,6 +716,155 @@ export function WorkflowRulesView() {
           and are applied to new requests. In-progress verifications use the settings that were active when they started.
         </p>
       </div>
+
+      {/* Template Editor Dialog */}
+      {editingType && (
+        <Dialog
+          isOpen={true}
+          onClose={closeTemplateEditor}
+          title={`Edit: ${editingType.name}`}
+          size="xl"
+          footer={
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={closeTemplateEditor}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveTemplate}
+                disabled={saving === 'template'}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+              >
+                {saving === 'template' ? 'Saving...' : 'Save Template'}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => setShowPreview(!showPreview)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-1 ${
+                  showPreview ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPreview ? 'Hide Preview' : 'Preview'}
+              </button>
+              
+              {emailSettings?.typeSettings[editingType.id]?.template && (
+                <button
+                  onClick={() => setConfirmResetTemplate(true)}
+                  className="px-3 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg text-sm font-medium min-h-[44px] flex items-center gap-1"
+                >
+                  <RotateCcw className="w-4 h-4" aria-hidden="true" />
+                  Reset
+                </button>
+              )}
+              
+              {templateDirty && (
+                <span className="text-sm text-amber-700 font-medium flex items-center gap-1">
+                  <AlertTriangle className="w-4 h-4" aria-hidden="true" />
+                  Unsaved changes
+                </span>
+              )}
+            </div>
+
+            <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+              <strong>Available placeholders:</strong>{' '}
+              {editingType.placeholders.map(p => `{{${p}}}`).join(', ')}
+            </div>
+
+            <div className={showPreview ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : ''}>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="templateSubject" className="block text-sm font-medium text-gray-700 mb-1">
+                    Subject Line
+                  </label>
+                  <input
+                    id="templateSubject"
+                    type="text"
+                    value={templateForm.subject}
+                    onChange={(e) => {
+                      setTemplateForm({ ...templateForm, subject: e.target.value });
+                      setTemplateDirty(true);
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="templateHtml" className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Body (HTML)
+                  </label>
+                  <textarea
+                    ref={templateEditorRef}
+                    id="templateHtml"
+                    value={templateForm.bodyHtml}
+                    onChange={(e) => {
+                      setTemplateForm({ ...templateForm, bodyHtml: e.target.value });
+                      setTemplateDirty(true);
+                    }}
+                    rows={12}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+              
+              {showPreview && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-1">Subject Preview</p>
+                    <div className="px-4 py-2 bg-gray-100 rounded-lg text-sm">
+                      {templateForm.subject || '(no subject)'}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-1">Body Preview</p>
+                    <div
+                      className="border border-gray-300 rounded-lg p-4 bg-white text-sm overflow-auto max-h-[400px]"
+                      dangerouslySetInnerHTML={{ __html: templateForm.bodyHtml }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {/* Confirm Reset Dialog */}
+      {confirmResetTemplate && (
+        <Dialog
+          isOpen={true}
+          onClose={() => setConfirmResetTemplate(false)}
+          title="Reset Template?"
+          size="sm"
+          footer={
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmResetTemplate(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={resetTemplate}
+                disabled={saving === 'template'}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 min-h-[44px]"
+              >
+                Reset to Default
+              </button>
+            </div>
+          }
+        >
+          <p className="text-gray-600">
+            This will restore the default template and discard any customizations.
+          </p>
+        </Dialog>
+      )}
     </div>
   );
 }

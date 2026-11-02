@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, Check, X, ChevronRight, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Check, X, ChevronRight, AlertTriangle, Info } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import type { Correction } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -11,6 +12,9 @@ interface CorrectionsQueueProps {
 
 export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
   useDocumentTitle('Approvals');
+  
+  const [searchParams] = useSearchParams();
+  const locationIdFilter = searchParams.get('locationId');
   
   const { getIdToken } = useAuth();
   const [corrections, setCorrections] = useState<Correction[]>([]);
@@ -25,7 +29,9 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
       setLoading(true);
       setError(null);
       const token = await getIdToken();
-      const response = await fetch(`/api/app/corrections?status=${filter}`, {
+      const params = new URLSearchParams({ status: filter });
+      if (locationIdFilter) params.set('locationId', locationIdFilter);
+      const response = await fetch(`/api/app/corrections?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       
@@ -42,7 +48,7 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken, filter]);
+  }, [getIdToken, filter, locationIdFilter]);
 
   useEffect(() => {
     loadCorrections();
@@ -147,6 +153,18 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
             <span>{error}</span>
           </div>
         )}
+        
+        {locationIdFilter && (
+          <div className="bg-blue-50 text-blue-700 px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
+            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <span>Showing corrections for a specific store. <button onClick={() => window.location.href = '/corrections'} className="underline hover:no-underline">Show all</button></span>
+          </div>
+        )}
+        
+        <div className="bg-gray-50 text-gray-600 px-4 py-2 rounded-lg mb-4 text-sm">
+          <Info className="w-4 h-4 inline-block mr-1.5 -mt-0.5" />
+          Corrections submitted before the expiry system was enabled do not have an expiry date and remain pending until reviewed.
+        </div>
 
         {loading ? (
           <div className="text-center py-12">

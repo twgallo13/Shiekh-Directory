@@ -2,6 +2,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createUnifiedMailService, getEmailSettings } from './services/unifiedMail';
 import { getWorkflowRules } from './services/workflowSettings';
+import { getAppBaseUrl } from './routes/emailSettings';
 import type { VerificationRequest, Location } from '../src/types';
 
 export const sendVerificationReminders = onSchedule(
@@ -15,7 +16,14 @@ export const sendVerificationReminders = onSchedule(
     const db = getFirestore();
     const workflowRules = await getWorkflowRules(db);
     const emailSettings = await getEmailSettings(db);
-    const appBaseUrl = emailSettings.appBaseUrl || 'https://directory.shiekh.com';
+    
+    let appBaseUrl: string;
+    try {
+      appBaseUrl = await getAppBaseUrl(db);
+    } catch (error) {
+      console.error('[Reminders] Cannot send emails - appBaseUrl not configured:', error);
+      return;
+    }
     
     const now = new Date();
     const ptFormatter = new Intl.DateTimeFormat('en-US', {

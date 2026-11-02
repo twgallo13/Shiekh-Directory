@@ -5,6 +5,7 @@ import type { UserRole } from '../../src/types';
 import { createUnifiedMailService } from '../services/unifiedMail';
 import { isEmailDomainAllowed, getAllowedDomains } from '../config/auth';
 import { getWorkflowRules } from '../services/workflowSettings';
+import { getAppBaseUrl } from './emailSettings';
 
 export interface Invitation {
   id: string;
@@ -21,26 +22,6 @@ export interface Invitation {
 }
 
 const VALID_ROLES: UserRole[] = ['Admin', 'Steward', 'Leader', 'Viewer'];
-
-function getAppUrl(req: Request): string {
-  if (process.env.APP_URL) {
-    return process.env.APP_URL;
-  }
-  const origin = req.get('origin') || req.get('x-forwarded-host');
-  if (origin) {
-    if (origin.startsWith('http')) {
-      return origin;
-    }
-    const protocol = req.get('x-forwarded-proto') || 'https';
-    return `${protocol}://${origin}`;
-  }
-  const host = req.get('host');
-  if (host) {
-    const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
-    return `${protocol}://${host}`;
-  }
-  return 'https://directory.shiekh.com';
-}
 
 export function createInvitationsRouter(db: Firestore): Router {
   const router = Router();
@@ -192,7 +173,15 @@ export function createInvitationsRouter(db: Firestore): Router {
         version: 1,
       });
 
-      const appUrl = getAppUrl(req);
+      let appUrl: string;
+      try {
+        appUrl = await getAppBaseUrl(db);
+      } catch (error) {
+        console.error('[Invitations] appBaseUrl not configured:', error);
+        return res.status(503).json({
+          error: { code: 'config_error', message: 'Email settings not configured. Set appBaseUrl in Admin > Email Settings.', requestId: res.locals.requestId },
+        });
+      }
       const signInUrl = `${appUrl}/signin`;
 
       const mailService = createUnifiedMailService(db);
@@ -293,7 +282,15 @@ export function createInvitationsRouter(db: Firestore): Router {
         expiresAt: expiresAt.toISOString(),
       });
 
-      const appUrl = getAppUrl(req);
+      let appUrl: string;
+      try {
+        appUrl = await getAppBaseUrl(db);
+      } catch (error) {
+        console.error('[Invitations] appBaseUrl not configured:', error);
+        return res.status(503).json({
+          error: { code: 'config_error', message: 'Email settings not configured. Set appBaseUrl in Admin > Email Settings.', requestId: res.locals.requestId },
+        });
+      }
       const signInUrl = `${appUrl}/signin`;
 
       const mailService = createUnifiedMailService(db);

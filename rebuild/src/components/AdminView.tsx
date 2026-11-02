@@ -95,7 +95,7 @@ export function AdminView() {
           <div className="relative mt-3 -mb-px">
             <div className="flex gap-1 overflow-x-auto scrollbar-hide" role="tablist" aria-label="Admin sections">
               {/* Group 1: Stores */}
-              <span className="hidden sm:flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2">Stores</span>
+              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Stores</span>
               <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle} panelId="panel-data-quality">
                 Data Quality
               </TabButton>
@@ -104,13 +104,13 @@ export function AdminView() {
               </TabButton>
               <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
               {/* Group 2: Workflows */}
-              <span className="hidden sm:flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2">Workflows</span>
+              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Workflows</span>
               <TabButton id="workflow-rules" active={activeTab === 'workflow-rules'} onClick={setActiveTab} icon={Settings} panelId="panel-workflow-rules">
                 Workflow Rules
               </TabButton>
               <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
               {/* Group 3: Email */}
-              <span className="hidden sm:flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2">Email</span>
+              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Email</span>
               <TabButton id="email" active={activeTab === 'email'} onClick={setActiveTab} icon={Mail} panelId="panel-email">
                 Settings
               </TabButton>
@@ -119,7 +119,7 @@ export function AdminView() {
               </TabButton>
               <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
               {/* Group 4: People & Access */}
-              <span className="hidden sm:flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2">Access</span>
+              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Access</span>
               <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users} panelId="panel-users">
                 Users
               </TabButton>
@@ -128,7 +128,7 @@ export function AdminView() {
               </TabButton>
               <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
               {/* Group 5: System */}
-              <span className="hidden sm:flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2">System</span>
+              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">System</span>
               <TabButton id="custom-fields" active={activeTab === 'custom-fields'} onClick={setActiveTab} icon={Settings} panelId="panel-custom-fields">
                 Custom Fields
               </TabButton>

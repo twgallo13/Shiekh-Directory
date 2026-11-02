@@ -11,26 +11,7 @@ import { getStoreTypeLabel } from '../../src/types';
 import { createUnifiedMailService } from '../services/unifiedMail';
 import { generateToken, hashToken } from '../services/tokenAuth';
 import { getWorkflowRules } from '../services/workflowSettings';
-
-function getAppUrl(req: Request): string {
-  if (process.env.APP_URL) {
-    return process.env.APP_URL;
-  }
-  const origin = req.get('origin') || req.get('x-forwarded-host');
-  if (origin) {
-    if (origin.startsWith('http')) {
-      return origin;
-    }
-    const protocol = req.get('x-forwarded-proto') || 'https';
-    return `${protocol}://${origin}`;
-  }
-  const host = req.get('host');
-  if (host) {
-    const protocol = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
-    return `${protocol}://${host}`;
-  }
-  return 'https://directory.shiekh.com';
-}
+import { getAppBaseUrl } from './emailSettings';
 
 export function createVerificationRouter(db: Firestore): Router {
   const router = Router();
@@ -252,7 +233,15 @@ export function createVerificationRouter(db: Firestore): Router {
         createdBy: authUser.uid,
       });
 
-      const appUrl = getAppUrl(req);
+      let appUrl: string;
+      try {
+        appUrl = await getAppBaseUrl(db);
+      } catch (error) {
+        console.error('[Verification] appBaseUrl not configured:', error);
+        return res.status(503).json({
+          error: { code: 'config_error', message: 'Email settings not configured. Set appBaseUrl in Admin > Email Settings.', requestId: res.locals.requestId },
+        });
+      }
       const confirmUrl = `${appUrl}/verify-action?token=${confirmToken}&action=confirm`;
       const updateUrl = `${appUrl}/verify-action?token=${updateToken}&action=update`;
       const confirmUrlRedacted = `${appUrl}/verify-action?token=[REDACTED:${confirmTokenId}]&action=confirm`;
@@ -851,7 +840,15 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      const appUrl = getAppUrl(req);
+      let appUrl: string;
+      try {
+        appUrl = await getAppBaseUrl(db);
+      } catch (error) {
+        console.error('[Verification] appBaseUrl not configured:', error);
+        return res.status(503).json({
+          error: { code: 'config_error', message: 'Email settings not configured. Set appBaseUrl in Admin > Email Settings.', requestId: res.locals.requestId },
+        });
+      }
       const testUrl = `${appUrl}/verify-action?token=${tokenData.token}&action=${tokenData.action}`;
 
       await logAudit(db, {
@@ -972,7 +969,15 @@ export function createVerificationRouter(db: Firestore): Router {
 
       const campaignId = `camp_${randomBytes(8).toString('hex')}`;
       const expiresAt = new Date(now.getTime() + workflowRules.requestExpiryDays * 24 * 60 * 60 * 1000);
-      const appUrl = getAppUrl(req);
+      let appUrl: string;
+      try {
+        appUrl = await getAppBaseUrl(db);
+      } catch (error) {
+        console.error('[Verification] appBaseUrl not configured:', error);
+        return res.status(503).json({
+          error: { code: 'config_error', message: 'Email settings not configured. Set appBaseUrl in Admin > Email Settings.', requestId: res.locals.requestId },
+        });
+      }
       const mailService = createUnifiedMailService(db);
 
       for (const location of locations) {

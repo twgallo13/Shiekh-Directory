@@ -68,5 +68,12 @@ service cloud.firestore {
       allow read: if false;
       allow write: if false;
     }
+    
+    // dmTasks collection - server-only, no client access
+    // DM tasks are managed through the API, not direct client writes
+    match /dmTasks/{taskId} {
+      allow read: if false;
+      allow write: if false;
+    }
   }
 }

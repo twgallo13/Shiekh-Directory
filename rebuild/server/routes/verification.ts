@@ -1862,6 +1862,208 @@ export function createVerificationRouter(db: Firestore): Router {
     }
   });
 
+  // Item #9: Completion rate and aging buckets by region/district
+  router.get('/stats', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      const { groupBy = 'region' } = req.query;
+      const now = new Date();
+      
+      // Get all active stores with their region/district info
+      const locationsSnap = await db.collection('locations')
+        .where('lifecycle', '==', 'active')
+        .where('kind', '==', 'store')
+        .get();
+      
+      // Get all pending verification requests
+      const pendingSnap = await db.collection('verificationRequests')
+        .where('status', 'in', ['pending', 'awaiting_response', 'in_review'])
+        .get();
+      
+      // Get all confirmed requests from last cycle
+      const workflowRules = await getWorkflowRules(db);
+      const cycleStart = new Date(now.getTime() - workflowRules.verificationCycleDays * 24 * 60 * 60 * 1000);
+      const confirmedSnap = await db.collection('verificationRequests')
+        .where('status', '==', 'confirmed')
+        .where('respondedAt', '>=', cycleStart.toISOString())
+        .get();
+      
+      // Build location map
+      const locationMap = new Map<string, { regionId?: string; districtId?: string; regionName?: string; districtName?: string }>();
+      locationsSnap.docs.forEach(doc => {
+        const data = doc.data();
+        locationMap.set(doc.id, {
+          regionId: data.regionId,
+          districtId: data.districtId,
+          regionName: data.regionName,
+          districtName: data.districtName,
+        });
+      });
+      
+      // Calculate aging buckets for pending requests
+      const pendingByLocation = new Map<string, { sentAt: string; status: string }>();
+      pendingSnap.docs.forEach(doc => {
+        const data = doc.data();
+        pendingByLocation.set(data.locationId, {
+          sentAt: data.sentAt,
+          status: data.status,
+        });
+      });
+      
+      // Track confirmed locations in this cycle
+      const confirmedLocationIds = new Set<string>();
+      confirmedSnap.docs.forEach(doc => {
+        confirmedLocationIds.add(doc.data().locationId);
+      });
+      
+      // Group stats by region or district
+      interface GroupStats {
+        id: string;
+        name: string;
+        totalStores: number;
+        confirmedInCycle: number;
+        pendingCount: number;
+        awaitingResponseCount: number;
+        inReviewCount: number;
+        completionRate: number;
+        agingBuckets: {
+          lessThan3Days: number;
+          threeTo7Days: number;
+          sevenTo14Days: number;
+          moreThan14Days: number;
+        };
+      }
+      
+      const groupStatsMap = new Map<string, GroupStats>();
+      
+      locationsSnap.docs.forEach(doc => {
+        const locData = doc.data();
+        const groupId = groupBy === 'district' ? locData.districtId : locData.regionId;
+        const groupName = groupBy === 'district' ? locData.districtName : locData.regionName;
+        
+        if (!groupId) return;
+        
+        if (!groupStatsMap.has(groupId)) {
+          groupStatsMap.set(groupId, {
+            id: groupId,
+            name: groupName || 'Unknown',
+            totalStores: 0,
+            confirmedInCycle: 0,
+            pendingCount: 0,
+            awaitingResponseCount: 0,
+            inReviewCount: 0,
+            completionRate: 0,
+            agingBuckets: {
+              lessThan3Days: 0,
+              threeTo7Days: 0,
+              sevenTo14Days: 0,
+              moreThan14Days: 0,
+            },
+          });
+        }
+        
+        const stats = groupStatsMap.get(groupId)!;
+        stats.totalStores++;
+        
+        if (confirmedLocationIds.has(doc.id)) {
+          stats.confirmedInCycle++;
+        }
+        
+        const pendingData = pendingByLocation.get(doc.id);
+        if (pendingData) {
+          if (pendingData.status === 'awaiting_response') {
+            stats.awaitingResponseCount++;
+          } else if (pendingData.status === 'in_review') {
+            stats.inReviewCount++;
+          } else {
+            stats.pendingCount++;
+          }
+          
+          // Calculate aging
+          const sentDate = new Date(pendingData.sentAt);
+          const daysSinceSent = Math.floor((now.getTime() - sentDate.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (daysSinceSent < 3) {
+            stats.agingBuckets.lessThan3Days++;
+          } else if (daysSinceSent < 7) {
+            stats.agingBuckets.threeTo7Days++;
+          } else if (daysSinceSent < 14) {
+            stats.agingBuckets.sevenTo14Days++;
+          } else {
+            stats.agingBuckets.moreThan14Days++;
+          }
+        }
+      });
+      
+      // Calculate completion rates
+      groupStatsMap.forEach(stats => {
+        stats.completionRate = stats.totalStores > 0
+          ? Math.round((stats.confirmedInCycle / stats.totalStores) * 100)
+          : 0;
+      });
+      
+      // Convert to sorted array
+      const statsArray = Array.from(groupStatsMap.values())
+        .sort((a, b) => a.name.localeCompare(b.name));
+      
+      // Calculate overall totals
+      const totals = statsArray.reduce((acc, s) => ({
+        totalStores: acc.totalStores + s.totalStores,
+        confirmedInCycle: acc.confirmedInCycle + s.confirmedInCycle,
+        pendingCount: acc.pendingCount + s.pendingCount,
+        awaitingResponseCount: acc.awaitingResponseCount + s.awaitingResponseCount,
+        inReviewCount: acc.inReviewCount + s.inReviewCount,
+        agingBuckets: {
+          lessThan3Days: acc.agingBuckets.lessThan3Days + s.agingBuckets.lessThan3Days,
+          threeTo7Days: acc.agingBuckets.threeTo7Days + s.agingBuckets.threeTo7Days,
+          sevenTo14Days: acc.agingBuckets.sevenTo14Days + s.agingBuckets.sevenTo14Days,
+          moreThan14Days: acc.agingBuckets.moreThan14Days + s.agingBuckets.moreThan14Days,
+        },
+      }), {
+        totalStores: 0,
+        confirmedInCycle: 0,
+        pendingCount: 0,
+        awaitingResponseCount: 0,
+        inReviewCount: 0,
+        agingBuckets: {
+          lessThan3Days: 0,
+          threeTo7Days: 0,
+          sevenTo14Days: 0,
+          moreThan14Days: 0,
+        },
+      });
+      
+      const overallCompletionRate = totals.totalStores > 0
+        ? Math.round((totals.confirmedInCycle / totals.totalStores) * 100)
+        : 0;
+
+      res.json({
+        data: {
+          groupBy,
+          cycleDays: workflowRules.verificationCycleDays,
+          cycleStartDate: cycleStart.toISOString(),
+          groups: statsArray,
+          totals: {
+            ...totals,
+            completionRate: overallCompletionRate,
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Verification stats error:', error);
+      res.status(500).json({
+        error: { code: 'stats_error', message: 'Failed to get verification stats', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   return router;
 }
 

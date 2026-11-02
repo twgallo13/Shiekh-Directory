@@ -544,6 +544,87 @@ export function createStoreAuthRouter(db: Firestore): Router {
     }
   });
 
+  // Item #12: Preview endpoint to show current store info before confirming
+  router.post('/one-click-preview', async (req: Request, res: Response) => {
+    try {
+      const { token, action } = req.body;
+
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({
+          error: { code: 'invalid_token', message: 'Token is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (action !== 'confirm' && action !== 'update') {
+        return res.status(400).json({
+          error: { code: 'invalid_action', message: 'Action must be confirm or update', requestId: res.locals.requestId },
+        });
+      }
+
+      const tokenHash = hashToken(token);
+      const tokenDoc = await db.collection('storeAuthTokens').doc(tokenHash).get();
+
+      if (!tokenDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'token_not_found', message: 'Invalid or expired link', requestId: res.locals.requestId },
+        });
+      }
+
+      const tokenData = tokenDoc.data() as Omit<OneClickToken, 'id'>;
+
+      if (tokenData.usedAt) {
+        return res.status(400).json({
+          error: { code: 'token_used', message: 'This link has already been used', requestId: res.locals.requestId },
+        });
+      }
+
+      if (tokenData.action !== action) {
+        return res.status(400).json({
+          error: { code: 'action_mismatch', message: 'Token action does not match', requestId: res.locals.requestId },
+        });
+      }
+
+      if (new Date(tokenData.expiresAt) < new Date()) {
+        return res.status(400).json({
+          error: { code: 'token_expired', message: 'This link has expired', requestId: res.locals.requestId },
+        });
+      }
+
+      const locationDoc = await db.collection('locations').doc(tokenData.locationId).get();
+
+      if (!locationDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'store_not_found', message: 'Store not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
+
+      // Return store info for preview
+      res.json({
+        valid: true,
+        action,
+        storeNumber: location.storeNumber,
+        storeName: location.name,
+        address: location.address?.street,
+        city: location.address?.city,
+        state: location.address?.state,
+        zip: location.address?.zip,
+        mainPhone: location.mainPhone,
+        sharedInboxEmail: location.sharedInboxEmail,
+        standardHours: location.standardHours,
+        wayfindingDirections: location.wayfindingDirections,
+        lastVerifiedAt: location.lastVerifiedAt,
+        email: tokenData.storeEmail,
+      });
+    } catch (error) {
+      console.error('One-click preview error:', error);
+      res.status(500).json({
+        error: { code: 'internal_error', message: 'Failed to load store information', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   router.post('/one-click-action', async (req: Request, res: Response) => {
     try {
       const { token, action } = req.body;

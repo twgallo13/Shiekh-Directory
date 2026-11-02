@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2 } from 'lucide-react';
+import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2, BarChart2, ChevronDown, ChevronUp, Mail, MailX, Eye } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -17,7 +17,7 @@ export function VerificationRequestsView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'pending' | 'confirmed' | 'expired' | 'cancelled'>('pending');
+  const [filter, setFilter] = useState<'pending' | 'awaiting_response' | 'in_review' | 'confirmed' | 'expired' | 'cancelled'>('pending');
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [showNewRequest, setShowNewRequest] = useState(false);
   const [locationFilterName, setLocationFilterName] = useState<string | null>(null);
@@ -226,17 +226,24 @@ export function VerificationRequestsView() {
 
       <div className="max-w-7xl mx-auto px-4 py-4 lg:py-6">
         <div className="flex flex-wrap gap-2 mb-4">
-          {(['pending', 'confirmed', 'expired', 'cancelled'] as const).map(status => (
+          {([
+            { value: 'pending', label: 'Pending' },
+            { value: 'awaiting_response', label: 'Awaiting' },
+            { value: 'in_review', label: 'In Review' },
+            { value: 'confirmed', label: 'Confirmed' },
+            { value: 'expired', label: 'Expired' },
+            { value: 'cancelled', label: 'Cancelled' },
+          ] as const).map(({ value, label }) => (
             <button
-              key={status}
-              onClick={() => setFilter(status)}
-              className={`px-4 py-2 min-h-[44px] rounded-full text-sm font-medium ${
-                filter === status
+              key={value}
+              onClick={() => setFilter(value)}
+              className={`px-3 py-2 min-h-[44px] rounded-full text-sm font-medium ${
+                filter === value
                   ? 'bg-blue-600 text-white'
                   : 'bg-white text-gray-700 border border-gray-300'
               }`}
             >
-              {status.charAt(0).toUpperCase() + status.slice(1)}
+              {label}
             </button>
           ))}
         </div>
@@ -261,6 +268,11 @@ export function VerificationRequestsView() {
           <BulkVerificationSection getIdToken={getIdToken} onCampaignSent={loadRequests} />
         )}
 
+        {/* Item #9: Completion rate and aging stats - Admin/Steward only */}
+        {isAdminOrSteward && (
+          <VerificationStatsSection getIdToken={getIdToken} />
+        )}
+
         {error && (
           <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg mb-4 flex items-start gap-2">
             <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -278,46 +290,90 @@ export function VerificationRequestsView() {
           </div>
         ) : (
           <div className="space-y-3">
-            {requests.map(request => (
-              <div
-                key={request.id}
-                onClick={() => setSelectedId(request.id)}
-                className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-blue-300"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                        request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        request.status === 'confirmed' ? 'bg-green-100 text-green-800' :
-                        request.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {request.status === 'pending' ? <Clock className="w-3 h-3" /> :
-                         request.status === 'confirmed' ? <CheckCircle className="w-3 h-3" /> :
-                         request.status === 'cancelled' ? <Ban className="w-3 h-3" /> :
-                         <X className="w-3 h-3" />}
-                        {request.status}
-                      </span>
-                      <span className="font-medium">#{request.storeNumber} {request.locationName}</span>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">
-                      Sent to {request.sentTo}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-0.5">
-                      Sent {new Date(request.sentAt).toLocaleDateString()}
-                      {request.respondedAt && ` • Responded ${new Date(request.respondedAt).toLocaleDateString()}`}
-                    </p>
-                    {request.proposedChanges && Object.keys(request.proposedChanges).length > 0 && (
-                      <p className="text-xs text-orange-600 mt-1 font-medium">
-                        Has proposed changes
+            {requests.map(request => {
+              const sentDate = new Date(request.sentAt);
+              const daysSinceSent = Math.floor((Date.now() - sentDate.getTime()) / (1000 * 60 * 60 * 24));
+              const isOverdue = daysSinceSent > 7;
+              const statusDisplay = request.status === 'awaiting_response' ? 'Awaiting Response' :
+                                   request.status === 'in_review' ? 'In Review' :
+                                   request.status.charAt(0).toUpperCase() + request.status.slice(1);
+              
+              return (
+                <div
+                  key={request.id}
+                  onClick={() => setSelectedId(request.id)}
+                  className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-blue-300"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          request.status === 'awaiting_response' ? 'bg-orange-100 text-orange-800' :
+                          request.status === 'in_review' ? 'bg-blue-100 text-blue-800' :
+                          request.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                          request.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {request.status === 'pending' ? <Clock className="w-3 h-3" /> :
+                           request.status === 'awaiting_response' ? <Clock className="w-3 h-3" /> :
+                           request.status === 'in_review' ? <Eye className="w-3 h-3" /> :
+                           request.status === 'confirmed' ? <CheckCircle className="w-3 h-3" /> :
+                           request.status === 'cancelled' ? <Ban className="w-3 h-3" /> :
+                           <X className="w-3 h-3" />}
+                          {statusDisplay}
+                        </span>
+                        {/* Item #10: Delivery status indicator */}
+                        {request.emailBounced && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <MailX className="w-3 h-3" />
+                            Bounced
+                          </span>
+                        )}
+                        {request.emailSent === false && !request.emailBounced && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                            <Mail className="w-3 h-3" />
+                            Not Sent
+                          </span>
+                        )}
+                        {/* Item #10: Aging indicator */}
+                        {(request.status === 'pending' || request.status === 'awaiting_response') && daysSinceSent > 0 && (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                            isOverdue ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'
+                          }`}>
+                            {daysSinceSent}d ago
+                          </span>
+                        )}
+                        <span className="font-medium truncate">#{request.storeNumber} {request.locationName}</span>
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1 truncate">
+                        Sent to {request.sentTo}
                       </p>
-                    )}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-600 mt-0.5">
+                        <span>Sent {sentDate.toLocaleDateString()}</span>
+                        {request.respondedAt && (
+                          <span>Responded {new Date(request.respondedAt).toLocaleDateString()}</span>
+                        )}
+                        {request.reminderCount && request.reminderCount > 0 && (
+                          <span className="text-yellow-600">{request.reminderCount} reminder{request.reminderCount > 1 ? 's' : ''}</span>
+                        )}
+                      </div>
+                      {request.proposedChanges && Object.keys(request.proposedChanges).length > 0 && (
+                        <p className="text-xs text-orange-600 mt-1 font-medium">
+                          Has proposed changes
+                        </p>
+                      )}
+                      {request.hoursWrongReported && (
+                        <p className="text-xs text-red-600 mt-1 font-medium">
+                          Hours marked as incorrect
+                        </p>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-gray-600 flex-shrink-0" />
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-600" />
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -1239,5 +1295,253 @@ function VerificationDetailDialog({
         )}
       </div>
     </Dialog>
+  );
+}
+
+// Item #9: Completion rate and aging buckets by region/district
+interface VerificationStats {
+  groupBy: string;
+  cycleDays: number;
+  cycleStartDate: string;
+  groups: Array<{
+    id: string;
+    name: string;
+    totalStores: number;
+    confirmedInCycle: number;
+    pendingCount: number;
+    awaitingResponseCount: number;
+    inReviewCount: number;
+    completionRate: number;
+    agingBuckets: {
+      lessThan3Days: number;
+      threeTo7Days: number;
+      sevenTo14Days: number;
+      moreThan14Days: number;
+    };
+  }>;
+  totals: {
+    totalStores: number;
+    confirmedInCycle: number;
+    pendingCount: number;
+    awaitingResponseCount: number;
+    inReviewCount: number;
+    completionRate: number;
+    agingBuckets: {
+      lessThan3Days: number;
+      threeTo7Days: number;
+      sevenTo14Days: number;
+      moreThan14Days: number;
+    };
+  };
+}
+
+function VerificationStatsSection({ getIdToken }: { getIdToken: () => Promise<string> }) {
+  const [expanded, setExpanded] = useState(false);
+  const [groupBy, setGroupBy] = useState<'region' | 'district'>('region');
+  const [stats, setStats] = useState<VerificationStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+
+  const loadStats = useCallback(async () => {
+    if (!expanded) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/verification/stats?groupBy=${groupBy}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const { data } = await res.json();
+        setStats(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.error?.message || 'Failed to load stats');
+      }
+    } catch (err) {
+      setError('Failed to load verification statistics');
+    } finally {
+      setLoading(false);
+    }
+  }, [getIdToken, groupBy, expanded]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  const getCompletionColor = (rate: number) => {
+    if (rate >= 80) return 'text-green-600 bg-green-100';
+    if (rate >= 50) return 'text-yellow-600 bg-yellow-100';
+    return 'text-red-600 bg-red-100';
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between text-left min-h-[44px]"
+      >
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-purple-100 rounded-lg">
+            <BarChart2 className="w-5 h-5 text-purple-600" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="font-medium text-gray-900 text-base">Completion Statistics</h2>
+            <p className="text-sm text-gray-500">View completion rates and aging by region/district</p>
+          </div>
+        </div>
+        {expanded ? (
+          <ChevronUp className="w-5 h-5 text-gray-600" aria-hidden="true" />
+        ) : (
+          <ChevronDown className="w-5 h-5 text-gray-600" aria-hidden="true" />
+        )}
+      </button>
+
+      {expanded && (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="flex gap-2 mb-4" role="group" aria-label="Group by">
+            <button
+              onClick={() => setGroupBy('region')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium min-h-[44px] ${
+                groupBy === 'region'
+                  ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                  : 'bg-gray-100 text-gray-700 border border-gray-200'
+              }`}
+            >
+              By Region
+            </button>
+            <button
+              onClick={() => setGroupBy('district')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium min-h-[44px] ${
+                groupBy === 'district'
+                  ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                  : 'bg-gray-100 text-gray-700 border border-gray-200'
+              }`}
+            >
+              By District
+            </button>
+          </div>
+
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-600" />
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" aria-hidden="true" />
+              {error}
+            </div>
+          )}
+
+          {stats && !loading && (
+            <div className="space-y-4">
+              {/* Overall summary */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-medium text-gray-900 mb-3">Overall Summary ({stats.cycleDays}-day cycle)</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                  <div>
+                    <div className={`text-2xl font-bold rounded-lg py-2 ${getCompletionColor(stats.totals.completionRate)}`}>
+                      {stats.totals.completionRate}%
+                    </div>
+                    <div className="text-sm text-gray-500 mt-1">Completion Rate</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-gray-900">{stats.totals.confirmedInCycle}</div>
+                    <div className="text-sm text-gray-500">Confirmed</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-yellow-600">
+                      {stats.totals.pendingCount + stats.totals.awaitingResponseCount + stats.totals.inReviewCount}
+                    </div>
+                    <div className="text-sm text-gray-500">Pending</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-gray-600">{stats.totals.totalStores}</div>
+                    <div className="text-sm text-gray-500">Total Stores</div>
+                  </div>
+                </div>
+
+                {/* Aging buckets */}
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Pending Request Aging</h4>
+                  <div className="grid grid-cols-4 gap-2 text-center text-sm">
+                    <div className="bg-green-50 rounded p-2">
+                      <div className="font-bold text-green-700">{stats.totals.agingBuckets.lessThan3Days}</div>
+                      <div className="text-xs text-green-600">&lt; 3 days</div>
+                    </div>
+                    <div className="bg-yellow-50 rounded p-2">
+                      <div className="font-bold text-yellow-700">{stats.totals.agingBuckets.threeTo7Days}</div>
+                      <div className="text-xs text-yellow-600">3-7 days</div>
+                    </div>
+                    <div className="bg-orange-50 rounded p-2">
+                      <div className="font-bold text-orange-700">{stats.totals.agingBuckets.sevenTo14Days}</div>
+                      <div className="text-xs text-orange-600">7-14 days</div>
+                    </div>
+                    <div className="bg-red-50 rounded p-2">
+                      <div className="font-bold text-red-700">{stats.totals.agingBuckets.moreThan14Days}</div>
+                      <div className="text-xs text-red-600">&gt; 14 days</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Group details */}
+              <div>
+                <button
+                  onClick={() => setShowDetails(!showDetails)}
+                  className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                >
+                  {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  {showDetails ? 'Hide' : 'Show'} {groupBy === 'region' ? 'Region' : 'District'} Details
+                </button>
+
+                {showDetails && (
+                  <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium">{groupBy === 'region' ? 'Region' : 'District'}</th>
+                          <th className="text-center px-2 py-2 font-medium">Completion</th>
+                          <th className="text-center px-2 py-2 font-medium">Confirmed</th>
+                          <th className="text-center px-2 py-2 font-medium">Pending</th>
+                          <th className="text-center px-2 py-2 font-medium hidden sm:table-cell">&lt;3d</th>
+                          <th className="text-center px-2 py-2 font-medium hidden sm:table-cell">3-7d</th>
+                          <th className="text-center px-2 py-2 font-medium hidden sm:table-cell">7-14d</th>
+                          <th className="text-center px-2 py-2 font-medium hidden sm:table-cell">&gt;14d</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stats.groups.map(group => {
+                          const totalPending = group.pendingCount + group.awaitingResponseCount + group.inReviewCount;
+                          return (
+                            <tr key={group.id} className="border-t border-gray-100">
+                              <td className="px-3 py-2 font-medium">{group.name}</td>
+                              <td className="text-center px-2 py-2">
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${getCompletionColor(group.completionRate)}`}>
+                                  {group.completionRate}%
+                                </span>
+                              </td>
+                              <td className="text-center px-2 py-2 text-green-600">{group.confirmedInCycle}</td>
+                              <td className="text-center px-2 py-2 text-yellow-600">{totalPending}</td>
+                              <td className="text-center px-2 py-2 text-green-600 hidden sm:table-cell">{group.agingBuckets.lessThan3Days}</td>
+                              <td className="text-center px-2 py-2 text-yellow-600 hidden sm:table-cell">{group.agingBuckets.threeTo7Days}</td>
+                              <td className="text-center px-2 py-2 text-orange-600 hidden sm:table-cell">{group.agingBuckets.sevenTo14Days}</td>
+                              <td className="text-center px-2 py-2 text-red-600 hidden sm:table-cell">{group.agingBuckets.moreThan14Days}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

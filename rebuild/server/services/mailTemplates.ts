@@ -362,6 +362,47 @@ Thank you,
 Shiekh Operations Team`,
   },
 
+  changes_submitted: {
+    subject: 'Changes Submitted - Store {{storeNumber}}',
+    bodyHtml: wrapInEmailHtml('Changes Submitted', `
+      <h2 style="color: #2563EB;">📝 Changes Submitted</h2>
+      <p>Hello,</p>
+      <p>Thank you for submitting corrections for your store. Your changes are now under review.</p>
+      
+      <div class="store-info">
+        <dl>
+          <dt>Store</dt>
+          <dd>{{storeNumber}} - {{storeName}}</dd>
+          <dt>Submitted On</dt>
+          <dd>{{submittedFormatted}}</dd>
+          <dt>Status</dt>
+          <dd>In Review</dd>
+        </dl>
+      </div>
+
+      <p>A member of the operations team will review your submission. You will be notified once the changes have been approved or if additional information is needed.</p>
+
+      <p>If you have questions, please contact your District Manager or the operations team.</p>
+
+      <p>Thank you,<br>Shiekh Operations Team</p>`),
+    bodyText: `SHIEKH Store Directory - Changes Submitted
+
+Hello,
+
+Thank you for submitting corrections for your store. Your changes are now under review.
+
+Store: {{storeNumber}} - {{storeName}}
+Submitted On: {{submittedFormatted}}
+Status: In Review
+
+A member of the operations team will review your submission. You will be notified once the changes have been approved or if additional information is needed.
+
+If you have questions, please contact your District Manager or the operations team.
+
+Thank you,
+Shiekh Operations Team`,
+  },
+
   store_signin: {
     subject: 'Sign in to Shiekh Directory - Store {{storeNumber}}',
     bodyHtml: wrapInEmailHtml('Store Sign-In Link', `

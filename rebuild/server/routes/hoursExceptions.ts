@@ -5,8 +5,10 @@ import type {
   HoursException,
   AuthUser,
   AuditLogEntry,
+  Correction,
 } from '../../src/types';
 import { hasPermission } from '../../src/lib/permissions';
+import { getWorkflowRules } from '../services/workflowSettings';
 
 interface Holiday {
   id: string;
@@ -93,7 +95,17 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
       }
 
       const permission = hasPermission(authUser, 'edit:hours', locationId);
-      if (!permission.allowed) {
+      const workflowRules = await getWorkflowRules(db);
+      
+      // Item #4: Stores can edit holiday hours with approval
+      const isStoreUser = authUser.role === 'Store' && authUser.storeLocationId === locationId;
+      const requiresApproval = isStoreUser && (
+        !permission.allowed || 
+        permission.scope === 'propose-only' || 
+        workflowRules.storeHoursNeedApproval
+      );
+
+      if (!permission.allowed && !isStoreUser) {
         return res.status(403).json({
           error: { code: 'forbidden', message: 'You don\'t have permission to edit hours', requestId: res.locals.requestId },
         });
@@ -106,7 +118,7 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
         });
       }
 
-      const location = locationDoc.data() as Location;
+      const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
 
       if (!label?.trim()) {
         return res.status(400).json({
@@ -120,8 +132,7 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
         });
       }
 
-      const exceptionRef = db.collection(`locations/${locationId}/hoursExceptions`).doc();
-      const exception: Omit<HoursException, 'id'> = {
+      const exceptionData: Omit<HoursException, 'id'> = {
         type: type || 'holiday',
         label: label.trim(),
         startDate,
@@ -131,7 +142,65 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
         source: 'manual',
       };
 
-      await exceptionRef.set(exception);
+      // If store user requires approval, create a correction instead
+      if (requiresApproval) {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + workflowRules.correctionExpiryDays * 24 * 60 * 60 * 1000);
+        
+        const correctionRef = db.collection('corrections').doc();
+        const correction: Omit<Correction, 'id'> = {
+          status: 'pending',
+          type: 'hours',
+          category: 'hours',
+          locationId,
+          locationName: location.name,
+          storeNumber: location.storeNumber,
+          submittedBy: authUser.uid,
+          submittedByEmail: authUser.email,
+          submittedByRole: authUser.role,
+          submittedAt: now.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          proposedChanges: {
+            addHoursException: exceptionData,
+          },
+          proposedNote: `Add ${exceptionData.type} hours for ${exceptionData.label} on ${exceptionData.startDate}${exceptionData.closed ? ' (closed)' : ''}`,
+          currentValues: {},
+          locationVersion: location.version,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          updatedBy: authUser.uid,
+          version: 1,
+        };
+
+        await correctionRef.set(correction);
+
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'create',
+          entityType: 'correction',
+          entityId: correctionRef.id,
+          entityName: `Holiday hours request for ${location.storeNumber}`,
+          locationId,
+          changes: [
+            { field: 'status', newValue: 'pending' },
+            { field: 'type', newValue: 'hours' },
+            { field: 'hoursException', newValue: exceptionData.label },
+          ],
+        });
+
+        return res.json({
+          data: {
+            correctionCreated: true,
+            correctionId: correctionRef.id,
+            message: 'Your holiday hours request has been submitted for approval.',
+          },
+        });
+      }
+
+      const exceptionRef = db.collection(`locations/${locationId}/hoursExceptions`).doc();
+      await exceptionRef.set(exceptionData);
 
       await logAudit(db, {
         userId: authUser.uid,
@@ -148,7 +217,7 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
         ],
       });
 
-      return res.json({ data: { id: exceptionRef.id, ...exception } });
+      return res.json({ data: { id: exceptionRef.id, ...exceptionData } });
     } catch (error) {
       console.error('Create hours exception error:', error);
       return res.status(500).json({

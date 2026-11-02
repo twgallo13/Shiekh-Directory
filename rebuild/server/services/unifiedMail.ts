@@ -479,6 +479,36 @@ export class UnifiedMailService {
     });
   }
 
+  async sendChangesSubmittedAcknowledgment(
+    data: { storeName: string; storeNumber: string; storeEmail: string; submittedAt: string },
+    sentBy?: string,
+    sentByEmail?: string
+  ): Promise<MailResult> {
+    const submittedFormatted = new Date(data.submittedAt).toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    const templateData: Record<string, string> = {
+      storeName: data.storeName,
+      storeNumber: data.storeNumber,
+      storeEmail: data.storeEmail,
+      submittedAt: data.submittedAt,
+      submittedFormatted,
+    };
+
+    return this.send({
+      typeId: 'changes_submitted',
+      to: data.storeEmail,
+      data: templateData,
+      sentBy,
+      sentByEmail,
+    });
+  }
+
   async sendDMVerificationRequest(
     data: DMVerificationEmailData & { to: string },
     sentBy?: string,

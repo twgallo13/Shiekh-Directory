@@ -11,7 +11,8 @@ import { onRequest } from 'firebase-functions/v2/https';
 import app from './index';
 
 export { sendVerificationReminders, expireOldVerificationRequests } from './scheduledReminders';
-export { expirePendingCorrections } from './scheduledCorrections';
+// Item #13: Renamed from expirePendingCorrections to flagOverdueCorrections (old name kept for compat)
+export { expirePendingCorrections, flagOverdueCorrections } from './scheduledCorrections';
 export { escalateToDM } from './scheduledDMEscalation';
 
 export const api = onRequest(

@@ -175,14 +175,47 @@ export function createCorrectionsRouter(db: Firestore): Router {
       }
 
       const batch = db.batch();
+      const auditChanges: { field: string; oldValue?: string | null; newValue: string | null }[] = [];
 
-      const updateData: Record<string, unknown> = {
-        ...correction.proposedChanges,
-        updatedAt: new Date().toISOString(),
-        updatedBy: authUser.uid,
-        version: location.version + 1,
-      };
-      batch.update(locationRef, updateData);
+      // Handle special case: addHoursException (Item #4: Store holiday hours with approval)
+      if (correction.proposedChanges.addHoursException) {
+        const exceptionData = correction.proposedChanges.addHoursException as Record<string, unknown>;
+        const exceptionRef = db.collection(`locations/${correction.locationId}/hoursExceptions`).doc();
+        batch.set(exceptionRef, exceptionData);
+        auditChanges.push({
+          field: 'hoursException',
+          newValue: (exceptionData.label as string) || 'Hours exception added',
+        });
+      }
+
+      // Handle regular location field updates
+      const regularChanges = { ...correction.proposedChanges };
+      delete regularChanges.addHoursException;
+      
+      if (Object.keys(regularChanges).length > 0) {
+        const updateData: Record<string, unknown> = {
+          ...regularChanges,
+          updatedAt: new Date().toISOString(),
+          updatedBy: authUser.uid,
+          version: location.version + 1,
+        };
+        batch.update(locationRef, updateData);
+
+        for (const [field, value] of Object.entries(regularChanges)) {
+          auditChanges.push({
+            field,
+            oldValue: (correction.currentValues[field] as string) ?? null,
+            newValue: value as string,
+          });
+        }
+      } else if (correction.proposedChanges.addHoursException) {
+        // Just update the location version even if only adding an hours exception
+        batch.update(locationRef, {
+          updatedAt: new Date().toISOString(),
+          updatedBy: authUser.uid,
+          version: location.version + 1,
+        });
+      }
 
       batch.update(correctionRef, {
         status: 'approved',
@@ -205,11 +238,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
         entityType: 'correction',
         entityId: id,
         entityName: `Correction for ${correction.storeNumber}`,
-        changes: Object.entries(correction.proposedChanges).map(([field, value]) => ({
-          field,
-          oldValue: correction.currentValues[field] as string,
-          newValue: value as string,
-        })),
+        changes: auditChanges.length > 0 ? auditChanges : [{ field: 'status', newValue: 'approved' }],
       });
 
       return res.json({ data: { success: true, newVersion: location.version + 1 } });

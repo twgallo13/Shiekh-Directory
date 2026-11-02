@@ -535,7 +535,16 @@ export interface AuditChange {
 }
 
 // === Verification ===
-export type VerificationStatus = 'pending' | 'confirmed' | 'expired' | 'cancelled';
+// Status flow: pending -> awaiting_response -> in_review -> confirmed
+// Or: pending -> awaiting_response -> confirmed (if no changes submitted)
+// Or: pending -> expired/cancelled
+export type VerificationStatus = 
+  | 'pending'              // Request created, waiting for any response
+  | 'awaiting_response'    // Email sent, awaiting store response
+  | 'in_review'            // Store submitted changes, awaiting steward/admin review
+  | 'confirmed'            // Verification complete
+  | 'expired'              // Request expired without response
+  | 'cancelled';           // Request cancelled by admin/steward
 
 export interface VerificationRequest extends RecordMetadata {
   id: string;
@@ -550,6 +559,7 @@ export interface VerificationRequest extends RecordMetadata {
   respondedAt?: string; // ISO timestamp
   respondedBy?: string; // User ID (store account)
   hoursConfirmed?: boolean;
+  hoursWrongReported?: boolean; // True if store reported hours wrong without proposing changes
   proposedChanges?: Record<string, unknown>;
   reviewedAt?: string;
   reviewedBy?: string;
@@ -560,6 +570,8 @@ export interface VerificationRequest extends RecordMetadata {
   emailSent?: boolean;
   emailMessageId?: string;
   emailError?: string;
+  emailBounced?: boolean; // True if email bounced
+  emailBouncedAt?: string; // ISO timestamp when bounce was detected
   lastReminderAt?: string;
   reminderCount?: number;
   // Campaign tracking
@@ -636,7 +648,7 @@ export interface Correction extends RecordMetadata {
   submittedByEmail: string;
   submittedByRole: UserRole;
   submittedAt: string;
-  expiresAt: string; // ISO timestamp when correction auto-expires
+  expiresAt: string; // ISO timestamp when correction becomes overdue (does not auto-close)
   // The proposed changes
   proposedChanges: Record<string, unknown>;
   proposedNote?: string; // User's description of the issue
@@ -650,6 +662,9 @@ export interface Correction extends RecordMetadata {
   // Cancellation info
   cancelledAt?: string;
   cancelledBy?: string;
+  // Item #13: Overdue tracking (corrections stay open, flagged after expiry)
+  overdueFlag?: boolean;
+  overdueFlaggedAt?: string;
   // Version of location when submitted (for conflict detection)
   locationVersion: number;
 }

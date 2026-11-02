@@ -29,8 +29,10 @@ export const escalateToDM = onSchedule(
 
     // Query for pending requests that haven't been responded to and are old enough
     // Filter client-side for dmEscalated to include docs where field is missing (treat as not escalated)
+    // Escalate only awaiting_response (or pending for backward compat) with no response
+    const escalatableStatuses = ['pending', 'awaiting_response'];
     const pendingRequestsSnapshot = await db.collection('verificationRequests')
-      .where('status', '==', 'pending')
+      .where('status', 'in', escalatableStatuses)
       .where('respondedAt', '==', null)
       .where('sentAt', '<', escalationThreshold.toISOString())
       .limit(200)

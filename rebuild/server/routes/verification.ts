@@ -150,14 +150,20 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      const pendingRequests = await db.collection('verificationRequests')
+      // Check for any active (non-terminal) verification requests
+      const activeStatuses = ['pending', 'awaiting_response', 'in_review'];
+      const existingRequests = await db.collection('verificationRequests')
         .where('locationId', '==', locationId)
-        .where('status', '==', 'pending')
+        .where('status', 'in', activeStatuses)
         .get();
 
-      if (!pendingRequests.empty) {
+      if (!existingRequests.empty) {
+        const existingStatus = existingRequests.docs[0].data().status;
+        const statusMessage = existingStatus === 'in_review' 
+          ? 'A verification request is in review for this location'
+          : 'A verification request is already pending for this location';
         return res.status(400).json({
-          error: { code: 'pending_exists', message: 'A verification request is already pending for this location', requestId: res.locals.requestId },
+          error: { code: 'pending_exists', message: statusMessage, requestId: res.locals.requestId },
         });
       }
 
@@ -447,9 +453,16 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
-      if (request.status !== 'pending') {
+      // Allow responding only to pending or awaiting_response requests
+      const canRespondStatuses = ['pending', 'awaiting_response'];
+      if (!canRespondStatuses.includes(request.status)) {
+        const statusMessage = request.status === 'in_review' 
+          ? 'This verification request is already in review'
+          : request.status === 'confirmed'
+            ? 'This verification request has already been confirmed'
+            : 'This verification request has already been processed';
         return res.status(400).json({
-          error: { code: 'invalid_status', message: 'This verification request has already been processed', requestId: res.locals.requestId },
+          error: { code: 'invalid_status', message: statusMessage, requestId: res.locals.requestId },
         });
       }
 
@@ -466,13 +479,27 @@ export function createVerificationRouter(db: Firestore): Router {
       }
 
       const hasProposedChanges = proposedChanges && Object.keys(proposedChanges).length > 0;
-      const newStatus = hasProposedChanges ? 'pending' : 'confirmed';
+      const hoursWrongNoChanges = hoursConfirmed === false && !hasProposedChanges;
+      
+      // Determine new status (Item #3: distinct statuses):
+      // - hoursConfirmed === true and no proposed changes => 'confirmed'
+      // - hoursConfirmed === false with no proposed changes => 'awaiting_response' (DM task created, awaiting resolution)
+      // - has proposed changes => 'in_review' (awaiting steward/admin review)
+      let newStatus: 'confirmed' | 'awaiting_response' | 'in_review';
+      if (hoursConfirmed === true && !hasProposedChanges) {
+        newStatus = 'confirmed';
+      } else if (hasProposedChanges) {
+        newStatus = 'in_review';
+      } else {
+        newStatus = 'awaiting_response';
+      }
 
       await db.collection('verificationRequests').doc(id).update({
         status: newStatus,
         respondedAt: now.toISOString(),
         respondedBy: authUser.uid,
         hoursConfirmed: hoursConfirmed === true,
+        hoursWrongReported: hoursWrongNoChanges || undefined,
         proposedChanges: proposedChanges || null,
         updatedAt: now.toISOString(),
         updatedBy: authUser.uid,
@@ -482,13 +509,89 @@ export function createVerificationRouter(db: Firestore): Router {
       const isSelfApproval = authUser.email === request.sentTo || 
         (authUser.role === 'Store' && authUser.storeLocationId === request.locationId);
 
-      if (!hasProposedChanges && hoursConfirmed) {
+      // Get location info for DM task creation
+      const locationDoc = await db.collection('locations').doc(request.locationId).get();
+      const location = locationDoc.exists ? { id: locationDoc.id, ...locationDoc.data() } as Location : null;
+
+      // Item #1: Hours wrong with no proposed changes - create DM task, keep unverified
+      if (hoursWrongNoChanges && location) {
+        const workflowRules = await getWorkflowRules(db);
+        
+        if (workflowRules.hoursWrongDmTaskEnabled) {
+          const taskDueAt = new Date(now.getTime() + workflowRules.hoursWrongDmTaskDueDays * 24 * 60 * 60 * 1000);
+          const taskRef = db.collection('dmTasks').doc();
+          await taskRef.set({
+            id: taskRef.id,
+            locationId: request.locationId,
+            storeNumber: request.storeNumber,
+            storeName: location.name,
+            districtId: location.districtId,
+            taskType: 'hours_wrong',
+            status: 'pending',
+            description: `Store ${request.storeNumber} reported their hours are incorrect (in-app verification response)`,
+            reportedBy: authUser.email,
+            verificationRequestId: id,
+            dueAt: taskDueAt.toISOString(),
+            createdAt: now.toISOString(),
+            createdBy: 'system',
+            updatedAt: now.toISOString(),
+          });
+
+          await logAudit(db, {
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'create',
+            entityType: 'correction',
+            entityId: taskRef.id,
+            entityName: `DM Task: Hours wrong for ${request.storeNumber}`,
+            locationId: request.locationId,
+            changes: [
+              { field: 'taskType', newValue: 'hours_wrong' },
+              { field: 'dueAt', newValue: taskDueAt.toISOString() },
+              { field: 'source', newValue: 'verification_response' },
+            ],
+          });
+        }
+
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'respond',
+          entityType: 'verification',
+          entityId: id,
+          entityName: `${request.storeNumber} reported hours wrong${isSelfApproval ? ' (self)' : ''}`,
+          locationId: request.locationId,
+          changes: [
+            { field: 'hoursConfirmed', newValue: false },
+            { field: 'hoursWrongReported', newValue: true },
+            { field: 'selfApproval', newValue: isSelfApproval },
+          ],
+        });
+      } else if (!hasProposedChanges && hoursConfirmed) {
+        // Hours confirmed, no changes - verify the store
         await db.collection('locations').doc(request.locationId).update({
           lastVerifiedAt: now.toISOString(),
           lastVerifiedBy: authUser.uid,
           updatedAt: now.toISOString(),
           updatedBy: authUser.uid,
         });
+
+        // Item #2: Send verification confirmation email (respects mail-off flag)
+        if (location?.sharedInboxEmail) {
+          const mailService = createUnifiedMailService(db);
+          await mailService.sendVerificationConfirmation(
+            {
+              storeName: location.name,
+              storeNumber: request.storeNumber,
+              storeEmail: location.sharedInboxEmail,
+              verifiedAt: now.toISOString(),
+            },
+            authUser.uid,
+            authUser.email
+          );
+        }
 
         await logAudit(db, {
           userId: authUser.uid,
@@ -508,6 +611,21 @@ export function createVerificationRouter(db: Firestore): Router {
           ],
         });
       } else if (hasProposedChanges) {
+        // Item #2: Send changes submitted acknowledgment email (respects mail-off flag)
+        if (location?.sharedInboxEmail) {
+          const mailService = createUnifiedMailService(db);
+          await mailService.sendChangesSubmittedAcknowledgment(
+            {
+              storeName: location.name,
+              storeNumber: request.storeNumber,
+              storeEmail: location.sharedInboxEmail,
+              submittedAt: now.toISOString(),
+            },
+            authUser.uid,
+            authUser.email
+          );
+        }
+
         await logAudit(db, {
           userId: authUser.uid,
           userEmail: authUser.email,
@@ -532,6 +650,7 @@ export function createVerificationRouter(db: Firestore): Router {
           status: newStatus,
           respondedAt: now.toISOString(),
           hoursConfirmed,
+          hoursWrongReported: hoursWrongNoChanges,
           proposedChanges,
         },
       });
@@ -693,7 +812,9 @@ export function createVerificationRouter(db: Firestore): Router {
 
       const request = { id: requestDoc.id, ...requestDoc.data() } as VerificationRequest;
 
-      if (request.status !== 'pending') {
+      // Can cancel any non-terminal status
+      const cancellableStatuses = ['pending', 'awaiting_response', 'in_review'];
+      if (!cancellableStatuses.includes(request.status)) {
         return res.status(400).json({
           error: { code: 'invalid_status', message: `Cannot cancel a verification request that is ${request.status}`, requestId: res.locals.requestId },
         });
@@ -739,6 +860,106 @@ export function createVerificationRouter(db: Firestore): Router {
     }
   });
 
+  // Item #7: Mark email as bounced, create fix-contact task, stop reminders
+  router.post('/:id/bounce', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+      const { reason } = req.body;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (authUser.role !== 'Admin' && authUser.role !== 'Steward') {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Admin and Steward can mark emails as bounced', requestId: res.locals.requestId },
+        });
+      }
+
+      const requestDoc = await db.collection('verificationRequests').doc(id).get();
+      if (!requestDoc.exists) {
+        return res.status(404).json({
+          error: { code: 'not_found', message: 'Verification request not found', requestId: res.locals.requestId },
+        });
+      }
+
+      const request = { id: requestDoc.id, ...requestDoc.data() } as VerificationRequest;
+      
+      if (request.emailBounced) {
+        return res.status(400).json({
+          error: { code: 'already_bounced', message: 'This request is already marked as bounced', requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date();
+      const locationDoc = await db.collection('locations').doc(request.locationId).get();
+      const location = locationDoc.exists ? { id: locationDoc.id, ...locationDoc.data() } as Location : null;
+
+      // Mark as bounced
+      await db.collection('verificationRequests').doc(id).update({
+        emailBounced: true,
+        emailBouncedAt: now.toISOString(),
+        emailBouncedReason: reason || 'Manual bounce report',
+        updatedAt: now.toISOString(),
+        updatedBy: authUser.uid,
+      });
+
+      // Create fix-contact DM task if location exists
+      if (location) {
+        const workflowRules = await getWorkflowRules(db);
+        const taskDueAt = new Date(now.getTime() + workflowRules.hoursWrongDmTaskDueDays * 24 * 60 * 60 * 1000);
+        const taskRef = db.collection('dmTasks').doc();
+        await taskRef.set({
+          id: taskRef.id,
+          locationId: request.locationId,
+          storeNumber: request.storeNumber,
+          storeName: location.name,
+          districtId: location.districtId,
+          taskType: 'store_issue',
+          status: 'pending',
+          description: `Email bounced for store ${request.storeNumber}. Contact info needs correction: ${request.sentTo}`,
+          reportedBy: authUser.email,
+          verificationRequestId: id,
+          dueAt: taskDueAt.toISOString(),
+          createdAt: now.toISOString(),
+          createdBy: authUser.uid,
+          updatedAt: now.toISOString(),
+        });
+      }
+
+      await logAudit(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'update',
+        entityType: 'verification',
+        entityId: id,
+        entityName: `${request.storeNumber} email bounced`,
+        locationId: request.locationId,
+        changes: [
+          { field: 'emailBounced', newValue: true },
+          { field: 'reason', newValue: reason || 'Manual bounce report' },
+        ],
+      });
+
+      return res.json({
+        data: {
+          id,
+          emailBounced: true,
+          emailBouncedAt: now.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.error('Mark bounce error:', error);
+      return res.status(500).json({
+        error: { code: 'bounce_error', message: 'Failed to mark email as bounced', requestId: res.locals.requestId },
+      });
+    }
+  });
+
   router.get('/pending/for-store', async (_req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
@@ -755,9 +976,11 @@ export function createVerificationRouter(db: Firestore): Router {
         });
       }
 
+      // Get active verification requests (pending or awaiting_response)
+      const respondableStatuses = ['pending', 'awaiting_response'];
       const snapshot = await db.collection('verificationRequests')
         .where('locationId', '==', authUser.storeLocationId)
-        .where('status', '==', 'pending')
+        .where('status', 'in', respondableStatuses)
         .orderBy('sentAt', 'desc')
         .limit(1)
         .get();
@@ -952,6 +1175,7 @@ export function createVerificationRouter(db: Firestore): Router {
         ? new Date(now.getTime() - daysSinceVerification * 24 * 60 * 60 * 1000).toISOString()
         : null;
 
+      // Item #8: Track blocked recipients with names and reasons
       const results = {
         total: locations.length,
         sent: 0,
@@ -962,9 +1186,11 @@ export function createVerificationRouter(db: Firestore): Router {
           noEmail: 0,
           recentlyVerified: 0,
           pendingRequest: 0,
+          emailBounced: 0,
         },
         failedStores: [] as { storeNumber: string; reason: string }[],
         targetStores: [] as { storeNumber: string; name: string; email: string }[],
+        blockedRecipients: [] as { storeNumber: string; name: string; reason: string }[],
       };
 
       const campaignId = `camp_${randomBytes(8).toString('hex')}`;
@@ -981,27 +1207,63 @@ export function createVerificationRouter(db: Firestore): Router {
       const mailService = createUnifiedMailService(db);
 
       for (const location of locations) {
+        // Item #8: Track blocked recipients with reasons
         if (!location.sharedInboxEmail) {
           results.skipped++;
           results.skippedReasons.noEmail++;
+          results.blockedRecipients.push({
+            storeNumber: location.storeNumber,
+            name: location.name,
+            reason: 'No email configured',
+          });
           continue;
         }
 
         if (cutoffDate && location.lastVerifiedAt && location.lastVerifiedAt > cutoffDate) {
           results.skipped++;
           results.skippedReasons.recentlyVerified++;
+          results.blockedRecipients.push({
+            storeNumber: location.storeNumber,
+            name: location.name,
+            reason: 'Recently verified',
+          });
           continue;
         }
 
-        const pendingRequest = await db.collection('verificationRequests')
+        // Check for bounced email on previous requests
+        const bouncedRequest = await db.collection('verificationRequests')
           .where('locationId', '==', location.id)
-          .where('status', '==', 'pending')
+          .where('emailBounced', '==', true)
           .limit(1)
           .get();
 
-        if (!pendingRequest.empty) {
+        if (!bouncedRequest.empty) {
+          results.skipped++;
+          results.skippedReasons.emailBounced++;
+          results.blockedRecipients.push({
+            storeNumber: location.storeNumber,
+            name: location.name,
+            reason: 'Previous email bounced',
+          });
+          continue;
+        }
+
+        // Skip if there's any active (non-terminal) verification request
+        const activeStatuses = ['pending', 'awaiting_response', 'in_review'];
+        const activeRequest = await db.collection('verificationRequests')
+          .where('locationId', '==', location.id)
+          .where('status', 'in', activeStatuses)
+          .limit(1)
+          .get();
+
+        if (!activeRequest.empty) {
           results.skipped++;
           results.skippedReasons.pendingRequest++;
+          results.blockedRecipients.push({
+            storeNumber: location.storeNumber,
+            name: location.name,
+            reason: 'Active request pending',
+          });
           continue;
         }
 
@@ -1156,6 +1418,7 @@ export function createVerificationRouter(db: Firestore): Router {
             skippedReasons: results.skippedReasons,
             failedStores: [],
             targetStores: results.targetStores,
+            blockedRecipients: results.blockedRecipients,  // Item #8: Named list of blocked recipients
           },
         });
         return;
@@ -1267,6 +1530,334 @@ export function createVerificationRouter(db: Firestore): Router {
       console.error('Archive campaign error:', error);
       res.status(500).json({
         error: { code: 'internal_error', message: 'Failed to archive campaign', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // Item #11: Bulk cancel verification requests with required reason
+  router.post('/bulk/cancel', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { ids, reason } = req.body;
+
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      // Require reason for bulk cancel
+      if (!reason || typeof reason !== 'string' || reason.trim().length < 3) {
+        return res.status(400).json({
+          error: { code: 'reason_required', message: 'A reason is required for bulk cancellation (min 3 characters)', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          error: { code: 'ids_required', message: 'Array of verification request IDs is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (ids.length > 100) {
+        return res.status(400).json({
+          error: { code: 'too_many_ids', message: 'Cannot cancel more than 100 requests at once', requestId: res.locals.requestId },
+        });
+      }
+
+      const now = new Date();
+      const cancelled: { id: string; storeNumber: string }[] = [];
+      const skipped: string[] = [];
+
+      for (const id of ids) {
+        const requestDoc = await db.collection('verificationRequests').doc(id).get();
+        
+        if (!requestDoc.exists) {
+          skipped.push(id);
+          continue;
+        }
+
+        const request = requestDoc.data() as VerificationRequest;
+        const cancellableStatuses = ['pending', 'awaiting_response', 'in_review'];
+        
+        if (!cancellableStatuses.includes(request.status)) {
+          skipped.push(id);
+          continue;
+        }
+
+        await requestDoc.ref.update({
+          status: 'cancelled',
+          cancelledAt: now.toISOString(),
+          cancelledBy: authUser.uid,
+          cancelReason: reason.trim(),
+          updatedAt: now.toISOString(),
+          updatedBy: authUser.uid,
+          version: (request.version || 0) + 1,
+        });
+
+        cancelled.push({ id, storeNumber: request.storeNumber });
+
+        // Log each cancellation
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'cancel',
+          entityType: 'verification',
+          entityId: id,
+          entityName: `${request.storeNumber} verification cancelled (bulk)`,
+          locationId: request.locationId,
+          changes: [
+            { field: 'status', oldValue: request.status, newValue: 'cancelled' },
+            { field: 'reason', newValue: reason.trim() },
+          ],
+        });
+      }
+
+      // Log summary
+      if (cancelled.length > 0) {
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'bulk_close',
+          entityType: 'verification',
+          entityId: 'bulk',
+          entityName: `Bulk cancel (${cancelled.length} verification requests)`,
+          changes: [
+            { field: 'cancelled_count', newValue: cancelled.length },
+            { field: 'reason', newValue: reason.trim() },
+          ],
+        });
+      }
+
+      res.json({
+        data: {
+          cancelled: cancelled.length,
+          skipped: skipped.length,
+          cancelledIds: cancelled.map(c => c.id),
+          skippedIds: skipped,
+        },
+      });
+    } catch (error) {
+      console.error('Bulk cancel error:', error);
+      res.status(500).json({
+        error: { code: 'bulk_cancel_error', message: 'Failed to cancel verification requests', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // Item #11: Bulk reissue verification requests with required reason
+  router.post('/bulk/reissue', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const { ids, reason } = req.body;
+
+      if (!authUser || (authUser.role !== 'Admin' && authUser.role !== 'Steward')) {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+
+      // Require reason for bulk reissue
+      if (!reason || typeof reason !== 'string' || reason.trim().length < 3) {
+        return res.status(400).json({
+          error: { code: 'reason_required', message: 'A reason is required for bulk reissue (min 3 characters)', requestId: res.locals.requestId },
+        });
+      }
+
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({
+          error: { code: 'ids_required', message: 'Array of verification request IDs is required', requestId: res.locals.requestId },
+        });
+      }
+
+      if (ids.length > 100) {
+        return res.status(400).json({
+          error: { code: 'too_many_ids', message: 'Cannot reissue more than 100 requests at once', requestId: res.locals.requestId },
+        });
+      }
+
+      const workflowRules = await getWorkflowRules(db);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + workflowRules.requestExpiryDays * 24 * 60 * 60 * 1000);
+      
+      let appUrl: string;
+      try {
+        appUrl = await getAppBaseUrl(db);
+      } catch (error) {
+        console.error('[Verification] appBaseUrl not configured:', error);
+        return res.status(503).json({
+          error: { code: 'config_error', message: 'Email settings not configured', requestId: res.locals.requestId },
+        });
+      }
+
+      const mailService = createUnifiedMailService(db);
+      const reissued: { id: string; storeNumber: string; newRequestId: string }[] = [];
+      const skipped: string[] = [];
+
+      for (const id of ids) {
+        const requestDoc = await db.collection('verificationRequests').doc(id).get();
+        
+        if (!requestDoc.exists) {
+          skipped.push(id);
+          continue;
+        }
+
+        const oldRequest = requestDoc.data() as VerificationRequest;
+        
+        // Can only reissue terminal statuses (expired, cancelled, confirmed)
+        const reissuableStatuses = ['expired', 'cancelled', 'confirmed'];
+        if (!reissuableStatuses.includes(oldRequest.status)) {
+          skipped.push(id);
+          continue;
+        }
+
+        const locationDoc = await db.collection('locations').doc(oldRequest.locationId).get();
+        if (!locationDoc.exists) {
+          skipped.push(id);
+          continue;
+        }
+
+        const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
+        if (!location.sharedInboxEmail) {
+          skipped.push(id);
+          continue;
+        }
+
+        // Check for existing active request
+        const activeStatuses = ['pending', 'awaiting_response', 'in_review'];
+        const existingActive = await db.collection('verificationRequests')
+          .where('locationId', '==', location.id)
+          .where('status', 'in', activeStatuses)
+          .limit(1)
+          .get();
+
+        if (!existingActive.empty) {
+          skipped.push(id);
+          continue;
+        }
+
+        // Create new verification request
+        const newRequestRef = db.collection('verificationRequests').doc();
+        const newRequest: Omit<VerificationRequest, 'id'> = {
+          locationId: location.id,
+          locationName: location.name,
+          storeNumber: location.storeNumber,
+          status: 'pending',
+          sentAt: now.toISOString(),
+          sentTo: location.sharedInboxEmail,
+          sentBy: authUser.uid,
+          expiresAt: expiresAt.toISOString(),
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          updatedBy: authUser.uid,
+          version: 1,
+        };
+
+        await newRequestRef.set(newRequest);
+
+        // Generate tokens
+        const confirmToken = generateToken();
+        const updateToken = generateToken();
+        const confirmTokenId = `tok_${randomBytes(8).toString('hex')}`;
+        const updateTokenId = `tok_${randomBytes(8).toString('hex')}`;
+
+        const baseTokenData = {
+          locationId: location.id,
+          storeNumber: location.storeNumber,
+          storeEmail: location.sharedInboxEmail,
+          verificationRequestId: newRequestRef.id,
+          expiresAt: expiresAt.toISOString(),
+          createdAt: now.toISOString(),
+          createdBy: authUser.uid,
+        };
+
+        await db.collection('storeAuthTokens').doc(hashToken(confirmToken)).set({
+          ...baseTokenData,
+          action: 'confirm',
+          tokenId: confirmTokenId,
+        });
+
+        await db.collection('storeAuthTokens').doc(hashToken(updateToken)).set({
+          ...baseTokenData,
+          action: 'update',
+          tokenId: updateTokenId,
+        });
+
+        const confirmUrl = `${appUrl}/verify-action?token=${confirmToken}&action=confirm`;
+        const updateUrl = `${appUrl}/verify-action?token=${updateToken}&action=update`;
+
+        const emailData = {
+          storeName: location.name,
+          storeNumber: location.storeNumber,
+          storeEmail: location.sharedInboxEmail,
+          storeType: getStoreTypeLabel(location.storeType),
+          verificationUrl: `${appUrl}/verify/${newRequestRef.id}`,
+          expiresAt: expiresAt.toISOString(),
+          confirmUrl,
+          updateUrl,
+          hours: location.standardHours,
+          wayfindingDirections: location.wayfindingDirections,
+        };
+
+        const mailResult = await mailService.sendVerificationRequest(emailData, authUser.uid, authUser.email);
+
+        await newRequestRef.update({
+          emailSent: mailResult.success && !mailResult.blocked,
+          emailMessageId: mailResult.messageId,
+          emailBlocked: mailResult.blocked,
+          emailError: mailResult.error || mailResult.reason,
+        });
+
+        reissued.push({ id, storeNumber: location.storeNumber, newRequestId: newRequestRef.id });
+
+        // Log reissue
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'send',
+          entityType: 'verification',
+          entityId: newRequestRef.id,
+          entityName: `${location.storeNumber} verification reissued`,
+          locationId: location.id,
+          changes: [
+            { field: 'previousRequestId', newValue: id },
+            { field: 'reason', newValue: reason.trim() },
+          ],
+        });
+      }
+
+      // Log summary
+      if (reissued.length > 0) {
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'bulk-send',
+          entityType: 'verification',
+          entityId: 'bulk-reissue',
+          entityName: `Bulk reissue (${reissued.length} verification requests)`,
+          changes: [
+            { field: 'reissued_count', newValue: reissued.length },
+            { field: 'reason', newValue: reason.trim() },
+          ],
+        });
+      }
+
+      res.json({
+        data: {
+          reissued: reissued.length,
+          skipped: skipped.length,
+          reissuedRequests: reissued,
+          skippedIds: skipped,
+        },
+      });
+    } catch (error) {
+      console.error('Bulk reissue error:', error);
+      res.status(500).json({
+        error: { code: 'bulk_reissue_error', message: 'Failed to reissue verification requests', requestId: res.locals.requestId },
       });
     }
   });

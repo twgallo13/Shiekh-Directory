@@ -34,8 +34,8 @@ describe('Scheduled Functions Exports', () => {
       'expireOldVerificationRequests should be exported'
     );
     assert.ok(
-      functionsFile.includes('export { expirePendingCorrections }'),
-      'expirePendingCorrections should be exported (fix 2)'
+      functionsFile.includes('expirePendingCorrections'),
+      'expirePendingCorrections should be exported (fix 2, kept for compat after rename to flagOverdueCorrections)'
     );
     assert.ok(
       functionsFile.includes('export { escalateToDM }'),
@@ -125,15 +125,21 @@ describe('Reminder Job', () => {
     );
   });
 
-  it('scheduledReminders handles maxReminders = 0 (fix 5)', () => {
+  it('scheduledReminders handles maxReminders = 0 as no limit (item 6)', () => {
     const scheduledReminders = readFileSync(
       join(__dirname, '../server/scheduledReminders.ts'),
       'utf-8'
     );
     
+    // Item #6: maxReminders = 0 now means "no limit" (with safety cap)
+    // The check is maxReminders > 0 && currentCount >= maxReminders
     assert.ok(
-      scheduledReminders.includes('maxReminders === 0'),
-      'scheduledReminders should check for maxReminders === 0'
+      scheduledReminders.includes('maxReminders > 0'),
+      'scheduledReminders should check maxReminders > 0 to skip when limit is set'
+    );
+    assert.ok(
+      scheduledReminders.includes('SAFETY_CAP'),
+      'scheduledReminders should have SAFETY_CAP to prevent runaway reminders'
     );
   });
 });

@@ -548,7 +548,8 @@ function BulkVerificationSection({
   const [scope, setScope] = useState<'district' | 'region' | 'all'>('district');
   const [scopeId, setScopeId] = useState('');
   const [skipRecentlyVerified, setSkipRecentlyVerified] = useState(true);
-  const [daysSinceVerification, setDaysSinceVerification] = useState(90);
+  const [daysSinceVerification, setDaysSinceVerification] = useState<number | null>(null);
+  const [defaultDays, setDefaultDays] = useState(90);
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState<CampaignResults | null>(null);
   const [dryRunResults, setDryRunResults] = useState<DryRunResults | null>(null);
@@ -557,6 +558,28 @@ function BulkVerificationSection({
   const [districts, setDistricts] = useState<District[]>([]);
   const [loading, setLoading] = useState(false);
   const [hierarchyLoaded, setHierarchyLoaded] = useState(false);
+
+  // Load workflow settings to get verificationCycleDays
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const token = await getIdToken();
+        const res = await fetch('/api/app/workflow-rules', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const { data } = await res.json();
+          const cycleDays = data?.verificationCycleDays ?? 90;
+          setDefaultDays(cycleDays);
+          setDaysSinceVerification(cycleDays);
+        }
+      } catch (err) {
+        console.error('Failed to load workflow settings:', err);
+        setDaysSinceVerification(90);
+      }
+    };
+    loadSettings();
+  }, [getIdToken]);
 
   const loadHierarchy = useCallback(async () => {
     if (hierarchyLoaded) return;
@@ -955,8 +978,8 @@ function BulkVerificationSection({
             <input
               type="number"
               id="days-since"
-              value={daysSinceVerification}
-              onChange={(e) => setDaysSinceVerification(parseInt(e.target.value) || 90)}
+              value={daysSinceVerification ?? defaultDays}
+              onChange={(e) => setDaysSinceVerification(parseInt(e.target.value) || defaultDays)}
               min={1}
               max={365}
               aria-label="Days since last verification"

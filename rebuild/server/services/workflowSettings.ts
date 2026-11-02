@@ -46,11 +46,14 @@ export const DEFAULT_WORKFLOW_RULES: WorkflowRules = {
   dmEscalationEnabled: true,
 };
 
+// Item #6: maxReminders 0 = no limit with safety cap of 50
+export const MAX_REMINDERS_SAFETY_CAP = 50;
+
 export const WORKFLOW_RULES_RANGES: Record<keyof WorkflowRules, { min?: number; max?: number; type: 'number' | 'boolean' | 'array' | 'time' }> = {
   verificationCycleDays: { min: 30, max: 365, type: 'number' },
   requestExpiryDays: { min: 1, max: 30, type: 'number' },
   reminderLeadDays: { min: 1, max: 14, type: 'array' },
-  maxReminders: { min: 0, max: 10, type: 'number' },
+  maxReminders: { min: 0, max: MAX_REMINDERS_SAFETY_CAP, type: 'number' },  // 0 = no limit (up to safety cap)
   minReminderGapHours: { min: 1, max: 72, type: 'number' },
   dmEscalationDays: { min: 1, max: 60, type: 'number' },
   dmExpiryDays: { min: 1, max: 60, type: 'number' },

@@ -28,10 +28,10 @@ describe('Email Settings', () => {
   });
 
   describe('Email Types', () => {
-    it('should define exactly 7 email types', async () => {
+    it('should define exactly 8 email types', async () => {
       const { EMAIL_TYPES } = await import('../server/routes/emailSettings');
       
-      assert.strictEqual(EMAIL_TYPES.length, 7, 'Should have exactly 7 email types for 7 switches');
+      assert.strictEqual(EMAIL_TYPES.length, 8, 'Should have exactly 8 email types for 8 switches');
     });
 
     it('should define all required email types', async () => {
@@ -45,6 +45,7 @@ describe('Email Settings', () => {
         'invitation',
         'invitation_reminder',
         'store_signin',
+        'changes_submitted',
       ];
       
       const typeIds = EMAIL_TYPES.map(t => t.id) as string[];
@@ -106,7 +107,7 @@ describe('Email Settings', () => {
       
       assert.ok(responseData.data, 'Response should have data property');
       assert.ok(responseData.data.emailTypes, 'data should have emailTypes property');
-      assert.strictEqual(responseData.data.emailTypes.length, 7, 'emailTypes should have 7 items for 7 Edit/Enable buttons');
+      assert.strictEqual(responseData.data.emailTypes.length, 8, 'emailTypes should have 8 items for 8 Edit/Enable buttons');
       
       const audienceByType: Record<string, string[]> = {};
       
@@ -133,7 +134,7 @@ describe('Email Settings', () => {
       for (const audience of Object.keys(audienceByType)) {
         totalButtons += audienceByType[audience].length;
       }
-      assert.strictEqual(totalButtons, 7, 'Should render 7 Edit buttons and 7 Enable/Disable buttons total');
+      assert.strictEqual(totalButtons, 8, 'Should render 8 Edit buttons and 8 Enable/Disable buttons total');
     });
   });
 

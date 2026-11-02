@@ -2557,7 +2557,7 @@ function DataQualityTab() {
       <div className="border border-gray-200 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Stale Stores</h3>
         <p className="text-sm text-gray-700 mb-4">
-          Identify stores with verification older than 90 days or never verified. Leaders see only stores in their district.
+          Identify stores with verification older than the configured threshold or never verified. Leaders see only stores in their district.
         </p>
         <a
           href="/stale-stores"

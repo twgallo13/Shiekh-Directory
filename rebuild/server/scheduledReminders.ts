@@ -73,8 +73,10 @@ export const sendVerificationReminders = onSchedule(
       const targetDateStart = new Date(targetDate.setHours(0, 0, 0, 0)).toISOString();
       const targetDateEnd = new Date(targetDate.setHours(23, 59, 59, 999)).toISOString();
 
+      // Send reminders for awaiting_response requests (or pending for backward compat)
+      const reminderStatuses = ['pending', 'awaiting_response'];
       const pendingRequests = await db.collection('verificationRequests')
-        .where('status', '==', 'pending')
+        .where('status', 'in', reminderStatuses)
         .where('respondedAt', '==', null)
         .where('expiresAt', '>=', targetDateStart)
         .where('expiresAt', '<=', targetDateEnd)
@@ -100,6 +102,12 @@ export const sendVerificationReminders = onSchedule(
           console.log(`[Reminders] No email for location ${request.locationId}`);
           continue;
         }
+        
+        // Item #7: Skip bounced emails - don't send reminders
+        if (request.emailBounced) {
+          console.log(`[Reminders] Skipping ${request.id} - email bounced`);
+          continue;
+        }
 
         const lastReminder = request.lastReminderAt ? new Date(request.lastReminderAt) : null;
         if (lastReminder) {
@@ -110,14 +118,18 @@ export const sendVerificationReminders = onSchedule(
           }
         }
         
-        // maxReminders = 0 means no reminders allowed
-        if (workflowRules.maxReminders === 0) {
-          console.log(`[Reminders] Skipping ${request.id} - reminders disabled (maxReminders=0)`);
+        // Item #6: maxReminders = 0 means no limit, with safety cap of 50
+        const SAFETY_CAP = 50;
+        const currentCount = request.reminderCount || 0;
+        
+        if (workflowRules.maxReminders > 0 && currentCount >= workflowRules.maxReminders) {
+          console.log(`[Reminders] Skipping ${request.id} - max reminders reached (${workflowRules.maxReminders})`);
           continue;
         }
         
-        if ((request.reminderCount || 0) >= workflowRules.maxReminders) {
-          console.log(`[Reminders] Skipping ${request.id} - max reminders reached (${workflowRules.maxReminders})`);
+        // Safety cap to prevent runaway reminders
+        if (currentCount >= SAFETY_CAP) {
+          console.log(`[Reminders] Skipping ${request.id} - safety cap reached (${SAFETY_CAP})`);
           continue;
         }
 
@@ -163,8 +175,10 @@ export const expireOldVerificationRequests = onSchedule(
     const db = getFirestore();
     const now = new Date();
 
+    // Expire any non-terminal requests past their expiry date
+    const expirableStatuses = ['pending', 'awaiting_response', 'in_review'];
     const expiredRequests = await db.collection('verificationRequests')
-      .where('status', '==', 'pending')
+      .where('status', 'in', expirableStatuses)
       .where('expiresAt', '<', now.toISOString())
       .get();
 

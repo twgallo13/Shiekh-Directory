@@ -11,6 +11,7 @@ import type {
 import { isValidStoreTypeCode } from '../../src/types';
 import { hasPermission, canEditLocation } from '../../src/lib/permissions';
 import { normalizePhoneNumber } from '../utils/phone';
+import { getWorkflowRules } from '../services/workflowSettings';
 
 export function createEditRouter(db: Firestore): Router {
   const router = Router();
@@ -94,8 +95,15 @@ export function createEditRouter(db: Firestore): Router {
             }
             break;
 
-          case 'standardHours':
-            if (permissions.hours) {
+          case 'standardHours': {
+            const workflowRules = await getWorkflowRules(db);
+            
+            // Store users always need approval if storeHoursNeedApproval is enabled
+            if (authUser.role === 'Store' && workflowRules.storeHoursNeedApproval) {
+              requiresApproval = true;
+              proposedChanges[field] = value;
+              currentValues[field] = location.standardHours;
+            } else if (permissions.hours) {
               updateData[field] = value;
               auditChanges.push({ field, oldValue: 'hours changed', newValue: 'hours updated' });
             } else if (hasPermission(authUser, 'edit:hours', id).scope === 'propose-only') {
@@ -108,6 +116,7 @@ export function createEditRouter(db: Firestore): Router {
               });
             }
             break;
+          }
 
           case 'name':
           case 'mallOrCenterName':

@@ -707,6 +707,43 @@ export function createStoreAuthRouter(db: Firestore): Router {
         setSessionCookie(res, sessionId, expiresAt);
       }
 
+      // Create DM task if enabled - store reports hours are wrong
+      if (workflowRules.hoursWrongDmTaskEnabled) {
+        const taskDueAt = new Date(now.getTime() + workflowRules.hoursWrongDmTaskDueDays * 24 * 60 * 60 * 1000);
+        const taskRef = db.collection('dmTasks').doc();
+        await taskRef.set({
+          id: taskRef.id,
+          locationId: location.id,
+          storeNumber: location.storeNumber,
+          storeName: location.name,
+          districtId: location.districtId,
+          taskType: 'hours_wrong',
+          status: 'pending',
+          description: `Store ${location.storeNumber} reported their hours are incorrect`,
+          reportedBy: tokenData.storeEmail,
+          verificationRequestId: tokenData.verificationRequestId || null,
+          dueAt: taskDueAt.toISOString(),
+          createdAt: now.toISOString(),
+          createdBy: 'system',
+          updatedAt: now.toISOString(),
+        });
+
+        await logAudit(db, {
+          userId: 'system',
+          userEmail: tokenData.storeEmail,
+          userRole: 'Store',
+          action: 'create',
+          entityType: 'correction',
+          entityId: taskRef.id,
+          entityName: `DM Task: Hours wrong for ${location.storeNumber}`,
+          locationId: location.id,
+          changes: [
+            { field: 'taskType', newValue: 'hours_wrong' },
+            { field: 'dueAt', newValue: taskDueAt.toISOString() },
+          ],
+        });
+      }
+
       await logAudit(db, {
         userId: `store_${location.id}`,
         userEmail: tokenData.storeEmail,

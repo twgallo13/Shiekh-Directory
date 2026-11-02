@@ -176,6 +176,7 @@ export function createVerificationRouter(db: Firestore): Router {
         locationId,
         locationName: location.name,
         storeNumber: location.storeNumber,
+        storeType: location.storeType || undefined, // Item #10: Include store type
         status: 'pending',
         sentAt: now.toISOString(),
         sentTo: location.sharedInboxEmail,
@@ -1296,6 +1297,7 @@ export function createVerificationRouter(db: Firestore): Router {
             locationId: location.id,
             storeNumber: location.storeNumber,
             locationName: location.name,
+            storeType: location.storeType || undefined, // Item #10: Include store type
             status: 'pending',
             sentAt: now.toISOString(),
             sentBy: authUser.uid,
@@ -1757,6 +1759,7 @@ export function createVerificationRouter(db: Firestore): Router {
           locationId: location.id,
           locationName: location.name,
           storeNumber: location.storeNumber,
+          storeType: location.storeType || undefined, // Item #10: Include store type
           status: 'pending',
           sentAt: now.toISOString(),
           sentTo: location.sharedInboxEmail,

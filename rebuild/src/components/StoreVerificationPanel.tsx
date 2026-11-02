@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { CheckCircle, AlertTriangle, Clock, Phone, Mail, Edit2 } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Clock, Phone, Mail, Edit2, MapPin, Calendar } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/api';
 import type { VerificationRequest, LocationDetail } from '../types';
@@ -119,6 +119,18 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
   const [proposedEmail, setProposedEmail] = useState('');
   const [showPhoneEdit, setShowPhoneEdit] = useState(false);
   const [showEmailEdit, setShowEmailEdit] = useState(false);
+  const [showAddressEdit, setShowAddressEdit] = useState(false);
+  const [showHolidayEdit, setShowHolidayEdit] = useState(false);
+  const [proposedStreet, setProposedStreet] = useState('');
+  const [proposedSuite, setProposedSuite] = useState('');
+  const [proposedCity, setProposedCity] = useState('');
+  const [proposedState, setProposedState] = useState('');
+  const [proposedZip, setProposedZip] = useState('');
+  const [holidayDate, setHolidayDate] = useState('');
+  const [holidayLabel, setHolidayLabel] = useState('');
+  const [holidayClosed, setHolidayClosed] = useState(true);
+  const [holidayOpen, setHolidayOpen] = useState('');
+  const [holidayClose, setHolidayClose] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -138,6 +150,40 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
     }
     if (proposedEmail && proposedEmail !== location.sharedInboxEmail) {
       proposedChanges.sharedInboxEmail = proposedEmail;
+    }
+    
+    // Item #4: Address changes
+    if (showAddressEdit) {
+      const addressChanges: Record<string, string> = {};
+      if (proposedStreet && proposedStreet !== location.address?.street) {
+        addressChanges.street = proposedStreet;
+      }
+      if (proposedSuite !== (location.address?.suite || '')) {
+        addressChanges.suite = proposedSuite;
+      }
+      if (proposedCity && proposedCity !== location.address?.city) {
+        addressChanges.city = proposedCity;
+      }
+      if (proposedState && proposedState !== location.address?.state) {
+        addressChanges.state = proposedState;
+      }
+      if (proposedZip && proposedZip !== location.address?.zip) {
+        addressChanges.zip = proposedZip;
+      }
+      if (Object.keys(addressChanges).length > 0) {
+        proposedChanges.address = addressChanges;
+      }
+    }
+    
+    // Item #4: Holiday hours changes
+    if (showHolidayEdit && holidayDate && holidayLabel) {
+      proposedChanges.holidayHours = {
+        date: holidayDate,
+        label: holidayLabel,
+        closed: holidayClosed,
+        open: holidayClosed ? undefined : holidayOpen,
+        close: holidayClosed ? undefined : holidayClose,
+      };
     }
 
     try {
@@ -311,6 +357,182 @@ function VerificationResponseForm({ request, location, onClose, onSubmitted }: V
               </FormField>
             )}
           </div>
+        </div>
+
+        {/* Item #4: Address editing section */}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium text-gray-900 flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-gray-500" aria-hidden="true" />
+              Address
+            </h3>
+            <button
+              onClick={() => {
+                setShowAddressEdit(!showAddressEdit);
+                if (!showAddressEdit) {
+                  setProposedStreet(location.address?.street || '');
+                  setProposedSuite(location.address?.suite || '');
+                  setProposedCity(location.address?.city || '');
+                  setProposedState(location.address?.state || '');
+                  setProposedZip(location.address?.zip || '');
+                }
+              }}
+              className="text-sm text-blue-600 hover:text-blue-800 min-h-[44px] px-2"
+            >
+              {showAddressEdit ? 'Cancel' : 'Request Change'}
+            </button>
+          </div>
+          
+          {!showAddressEdit ? (
+            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700">
+              <p>{location.address?.street}</p>
+              {location.address?.suite && <p>Suite {location.address.suite}</p>}
+              <p>{location.address?.city}, {location.address?.state} {location.address?.zip}</p>
+            </div>
+          ) : (
+            <div className="space-y-3 bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <p className="text-xs text-blue-700 font-medium">
+                Address changes require approval. Fill in the correct information below.
+              </p>
+              <FormField id="verify-street" label="Street address">
+                <input
+                  id="verify-street"
+                  type="text"
+                  value={proposedStreet}
+                  onChange={(e) => setProposedStreet(e.target.value)}
+                  placeholder="Street address"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                />
+              </FormField>
+              <FormField id="verify-suite" label="Suite/Unit (optional)">
+                <input
+                  id="verify-suite"
+                  type="text"
+                  value={proposedSuite}
+                  onChange={(e) => setProposedSuite(e.target.value)}
+                  placeholder="Suite or unit number"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                />
+              </FormField>
+              <div className="grid grid-cols-3 gap-3">
+                <FormField id="verify-city" label="City">
+                  <input
+                    id="verify-city"
+                    type="text"
+                    value={proposedCity}
+                    onChange={(e) => setProposedCity(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                  />
+                </FormField>
+                <FormField id="verify-state" label="State">
+                  <input
+                    id="verify-state"
+                    type="text"
+                    value={proposedState}
+                    onChange={(e) => setProposedState(e.target.value)}
+                    maxLength={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                  />
+                </FormField>
+                <FormField id="verify-zip" label="ZIP">
+                  <input
+                    id="verify-zip"
+                    type="text"
+                    value={proposedZip}
+                    onChange={(e) => setProposedZip(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                  />
+                </FormField>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Item #4: Holiday hours editing section */}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium text-gray-900 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-500" aria-hidden="true" />
+              Holiday Hours
+            </h3>
+            <button
+              onClick={() => setShowHolidayEdit(!showHolidayEdit)}
+              className="text-sm text-blue-600 hover:text-blue-800 min-h-[44px] px-2"
+            >
+              {showHolidayEdit ? 'Cancel' : 'Add Holiday'}
+            </button>
+          </div>
+          
+          {showHolidayEdit && (
+            <div className="space-y-3 bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <p className="text-xs text-blue-700 font-medium">
+                Holiday hours changes require approval.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <FormField id="holiday-date" label="Date">
+                  <input
+                    id="holiday-date"
+                    type="date"
+                    value={holidayDate}
+                    onChange={(e) => setHolidayDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                  />
+                </FormField>
+                <FormField id="holiday-label" label="Holiday name">
+                  <input
+                    id="holiday-label"
+                    type="text"
+                    value={holidayLabel}
+                    onChange={(e) => setHolidayLabel(e.target.value)}
+                    placeholder="e.g., Christmas Day"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                  />
+                </FormField>
+              </div>
+              <div className="flex items-center gap-4 mt-2">
+                <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
+                  <input
+                    type="radio"
+                    checked={holidayClosed}
+                    onChange={() => setHolidayClosed(true)}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">Closed</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer min-h-[44px]">
+                  <input
+                    type="radio"
+                    checked={!holidayClosed}
+                    onChange={() => setHolidayClosed(false)}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm text-gray-700">Modified hours</span>
+                </label>
+              </div>
+              {!holidayClosed && (
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField id="holiday-open" label="Opens at">
+                    <input
+                      id="holiday-open"
+                      type="time"
+                      value={holidayOpen}
+                      onChange={(e) => setHolidayOpen(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                    />
+                  </FormField>
+                  <FormField id="holiday-close" label="Closes at">
+                    <input
+                      id="holiday-close"
+                      type="time"
+                      value={holidayClose}
+                      onChange={(e) => setHolidayClose(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
+                    />
+                  </FormField>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </Dialog>

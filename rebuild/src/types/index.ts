@@ -574,12 +574,17 @@ export interface VerificationRequest extends RecordMetadata {
   emailError?: string;
   emailBounced?: boolean; // True if email bounced
   emailBouncedAt?: string; // ISO timestamp when bounce was detected
+  emailBouncedReason?: string; // Reason for bounce
   lastReminderAt?: string;
   reminderCount?: number;
   // Campaign tracking
   campaignId?: string;
   // Legacy field for hours at send time
   hoursAtSend?: Record<string, unknown>;
+  // Item #10: Store type and assignee tracking
+  storeType?: string; // Store type (copied from location at send time)
+  assigneeId?: string; // User ID of person assigned to review
+  assigneeName?: string; // Display name of assignee
 }
 
 // === DM Verification (District Manager verification cycle) ===

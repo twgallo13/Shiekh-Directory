@@ -82,6 +82,8 @@ interface OutboxEntry {
   reason?: string;
   error?: string;
   isTest?: boolean;
+  verificationRequestId?: string;
+  bounced?: boolean;
 }
 
 type SectionId = 'overview' | 'schedule' | 'sender' | 'outbox';
@@ -121,6 +123,7 @@ export function EmailSettingsView() {
   const [outbox, setOutbox] = useState<OutboxEntry[]>([]);
   const [outboxLoading, setOutboxLoading] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [markingBounce, setMarkingBounce] = useState<string | null>(null);
   
   // Confirmation dialogs
   const [confirmEnableEmail, setConfirmEnableEmail] = useState(false);
@@ -195,6 +198,37 @@ export function EmailSettingsView() {
       setOutboxLoading(false);
     }
   }, [getIdToken]);
+
+  // Item #7: Mark an email as bounced
+  const handleMarkBounced = useCallback(async (entry: OutboxEntry) => {
+    if (!entry.verificationRequestId) {
+      showToast('Cannot mark as bounced: no linked verification request', 'error');
+      return;
+    }
+    try {
+      setMarkingBounce(entry.id);
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/verification/${entry.verificationRequestId}/bounce`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: 'Manually marked as bounced from outbox' }),
+      });
+      if (res.ok) {
+        showToast('Email marked as bounced. DM task created.', 'success');
+        fetchOutbox();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error?.message || 'Failed to mark as bounced', 'error');
+      }
+    } catch {
+      showToast('Failed to mark as bounced', 'error');
+    } finally {
+      setMarkingBounce(null);
+    }
+  }, [getIdToken, fetchOutbox, showToast]);
 
   useEffect(() => {
     fetchSettings();
@@ -1000,6 +1034,7 @@ export function EmailSettingsView() {
                         <th className="px-5 py-3 font-medium">Type</th>
                         <th className="px-5 py-3 font-medium">Status</th>
                         <th className="px-5 py-3 font-medium">When</th>
+                        <th className="px-5 py-3 font-medium">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1050,6 +1085,22 @@ export function EmailSettingsView() {
                             </td>
                             <td className="px-5 py-4 text-sm text-gray-600">
                               {formatTimeAgo(entry.sentAt)}
+                            </td>
+                            <td className="px-5 py-4">
+                              {/* Item #7: Mark bounced button */}
+                              {entry.verificationRequestId && !entry.bounced && entry.success && (
+                                <button
+                                  onClick={() => handleMarkBounced(entry)}
+                                  disabled={markingBounce === entry.id}
+                                  className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100 disabled:opacity-50 min-h-[32px]"
+                                  title="Mark this email as bounced"
+                                >
+                                  {markingBounce === entry.id ? 'Marking...' : 'Mark Bounced'}
+                                </button>
+                              )}
+                              {entry.bounced && (
+                                <span className="text-xs text-red-600">Bounced</span>
+                              )}
                             </td>
                           </tr>
                         );

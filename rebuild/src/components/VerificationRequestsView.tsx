@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2, BarChart2, ChevronDown, ChevronUp, Mail, MailX, Eye } from 'lucide-react';
+import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2, BarChart2, ChevronDown, ChevronUp, Mail, MailX, Eye, Square, CheckSquare } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { Dialog } from './Dialog';
+import { Dialog, FormField } from './Dialog';
 
 export function VerificationRequestsView() {
   useDocumentTitle('Verification');
@@ -21,6 +21,16 @@ export function VerificationRequestsView() {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [showNewRequest, setShowNewRequest] = useState(false);
   const [locationFilterName, setLocationFilterName] = useState<string | null>(null);
+  
+  // Item #10: Bulk selection and operations
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [agingFilter, setAgingFilter] = useState<'all' | '0-3' | '3-7' | '7-14' | '14+'>('all');
+  
+  // Item #11: Bulk cancel/reissue dialogs
+  const [showBulkCancel, setShowBulkCancel] = useState(false);
+  const [showBulkReissue, setShowBulkReissue] = useState(false);
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkProcessing, setBulkProcessing] = useState(false);
 
   const locationIdFilter = searchParams.get('locationId');
 
@@ -181,6 +191,121 @@ export function VerificationRequestsView() {
     }
   };
 
+  // Item #10: Toggle selection
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllSelection = () => {
+    if (selectedIds.size === filteredRequests.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredRequests.map(r => r.id)));
+    }
+  };
+
+  // Item #10: Filter by aging bucket
+  const filteredRequests = requests.filter(r => {
+    if (agingFilter === 'all') return true;
+    const daysSinceSent = Math.floor((Date.now() - new Date(r.sentAt).getTime()) / (1000 * 60 * 60 * 24));
+    switch (agingFilter) {
+      case '0-3': return daysSinceSent < 3;
+      case '3-7': return daysSinceSent >= 3 && daysSinceSent < 7;
+      case '7-14': return daysSinceSent >= 7 && daysSinceSent < 14;
+      case '14+': return daysSinceSent >= 14;
+      default: return true;
+    }
+  });
+
+  // Item #11: Bulk cancel handler
+  const handleBulkCancel = async () => {
+    if (bulkReason.trim().length < 3) {
+      setError('Reason must be at least 3 characters');
+      return;
+    }
+    setBulkProcessing(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/verification/bulk/cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ids: Array.from(selectedIds),
+          reason: bulkReason.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        setError(result.error?.message || 'Failed to cancel');
+        return;
+      }
+
+      setShowBulkCancel(false);
+      setBulkReason('');
+      setSelectedIds(new Set());
+      loadRequests();
+      // Show success message
+      setError(null);
+    } catch {
+      setError('Failed to cancel verification requests');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  // Item #11: Bulk reissue handler
+  const handleBulkReissue = async () => {
+    if (bulkReason.trim().length < 3) {
+      setError('Reason must be at least 3 characters');
+      return;
+    }
+    setBulkProcessing(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/verification/bulk/reissue', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ids: Array.from(selectedIds),
+          reason: bulkReason.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        setError(result.error?.message || 'Failed to reissue');
+        return;
+      }
+
+      setShowBulkReissue(false);
+      setBulkReason('');
+      setSelectedIds(new Set());
+      setFilter('pending');
+      loadRequests();
+    } catch {
+      setError('Failed to reissue verification requests');
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
   const selectedRequest = requests.find(r => r.id === selectedId);
 
   if (!authUser || !hasAccess) {
@@ -225,6 +350,7 @@ export function VerificationRequestsView() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-4 lg:py-6">
+        {/* Status filters */}
         <div className="flex flex-wrap gap-2 mb-4">
           {([
             { value: 'pending', label: 'Pending' },
@@ -236,7 +362,7 @@ export function VerificationRequestsView() {
           ] as const).map(({ value, label }) => (
             <button
               key={value}
-              onClick={() => setFilter(value)}
+              onClick={() => { setFilter(value); setSelectedIds(new Set()); }}
               className={`px-3 py-2 min-h-[44px] rounded-full text-sm font-medium ${
                 filter === value
                   ? 'bg-blue-600 text-white'
@@ -247,6 +373,64 @@ export function VerificationRequestsView() {
             </button>
           ))}
         </div>
+        
+        {/* Item #10: Aging bucket filter - shown for pending/awaiting statuses */}
+        {(filter === 'pending' || filter === 'awaiting_response') && isAdminOrSteward && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <span className="text-sm text-gray-600">Age:</span>
+            {([
+              { value: 'all', label: 'All' },
+              { value: '0-3', label: '< 3 days' },
+              { value: '3-7', label: '3-7 days' },
+              { value: '7-14', label: '7-14 days' },
+              { value: '14+', label: '14+ days' },
+            ] as const).map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setAgingFilter(value)}
+                className={`px-2 py-1 text-xs rounded-full ${
+                  agingFilter === value
+                    ? 'bg-gray-700 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        
+        {/* Item #10 & #11: Bulk action buttons */}
+        {isAdminOrSteward && selectedIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <span className="text-sm font-medium text-blue-800">
+              {selectedIds.size} selected
+            </span>
+            <div className="flex-1" />
+            {(filter === 'pending' || filter === 'awaiting_response' || filter === 'in_review') && (
+              <button
+                onClick={() => setShowBulkCancel(true)}
+                className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 min-h-[36px]"
+              >
+                Bulk Cancel
+              </button>
+            )}
+            {(filter === 'cancelled' || filter === 'expired') && (
+              <button
+                onClick={() => setShowBulkReissue(true)}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[36px]"
+              >
+                Bulk Reissue
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 min-h-[36px]"
+            >
+              Clear
+            </button>
+          </div>
+        )}
 
         {locationIdFilter && (
           <div className="mb-4 flex items-start gap-2 bg-blue-50 text-blue-700 px-4 py-3 rounded-lg">
@@ -284,28 +468,64 @@ export function VerificationRequestsView() {
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
           </div>
-        ) : requests.length === 0 ? (
+        ) : filteredRequests.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
-            No {filter} verification requests
+            No {filter} verification requests{agingFilter !== 'all' ? ` in ${agingFilter} age range` : ''}
           </div>
         ) : (
           <div className="space-y-3">
-            {requests.map(request => {
+            {/* Item #10: Select all checkbox */}
+            {isAdminOrSteward && filteredRequests.length > 0 && (
+              <div className="flex items-center gap-2 px-2">
+                <button
+                  onClick={toggleAllSelection}
+                  className="p-1 hover:bg-gray-100 rounded min-h-[32px] min-w-[32px] flex items-center justify-center"
+                  aria-label={selectedIds.size === filteredRequests.length ? 'Deselect all' : 'Select all'}
+                >
+                  {selectedIds.size === filteredRequests.length ? (
+                    <CheckSquare className="w-5 h-5 text-blue-600" />
+                  ) : (
+                    <Square className="w-5 h-5 text-gray-400" />
+                  )}
+                </button>
+                <span className="text-sm text-gray-600">
+                  {selectedIds.size === filteredRequests.length ? 'Deselect all' : 'Select all'} ({filteredRequests.length})
+                </span>
+              </div>
+            )}
+            
+            {filteredRequests.map(request => {
               const sentDate = new Date(request.sentAt);
               const daysSinceSent = Math.floor((Date.now() - sentDate.getTime()) / (1000 * 60 * 60 * 24));
               const isOverdue = daysSinceSent > 7;
               const statusDisplay = request.status === 'awaiting_response' ? 'Awaiting Response' :
                                    request.status === 'in_review' ? 'In Review' :
                                    request.status.charAt(0).toUpperCase() + request.status.slice(1);
+              const isSelected = selectedIds.has(request.id);
               
               return (
                 <div
                   key={request.id}
-                  onClick={() => setSelectedId(request.id)}
-                  className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-blue-300"
+                  className={`bg-white rounded-lg border p-4 cursor-pointer hover:border-blue-300 ${
+                    isSelected ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
+                  }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
+                  <div className="flex items-start gap-3">
+                    {/* Item #10: Row checkbox */}
+                    {isAdminOrSteward && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleSelection(request.id); }}
+                        className="p-1 hover:bg-gray-100 rounded mt-0.5 min-h-[32px] min-w-[32px] flex items-center justify-center flex-shrink-0"
+                        aria-label={isSelected ? 'Deselect' : 'Select'}
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-5 h-5 text-blue-600" />
+                        ) : (
+                          <Square className="w-5 h-5 text-gray-400" />
+                        )}
+                      </button>
+                    )}
+                    <div className="flex-1 min-w-0" onClick={() => setSelectedId(request.id)}>
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                           request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
@@ -344,10 +564,20 @@ export function VerificationRequestsView() {
                             {daysSinceSent}d ago
                           </span>
                         )}
+                        {/* Item #10: Store type indicator */}
+                        {request.storeType && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700">
+                            {request.storeType}
+                          </span>
+                        )}
                         <span className="font-medium truncate">#{request.storeNumber} {request.locationName}</span>
                       </div>
                       <p className="text-sm text-gray-500 mt-1 truncate">
                         Sent to {request.sentTo}
+                        {/* Item #10: Assignee indicator */}
+                        {request.assigneeName && (
+                          <span className="ml-2 text-gray-400">· Assigned to {request.assigneeName}</span>
+                        )}
                       </p>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-600 mt-0.5">
                         <span>Sent {sentDate.toLocaleDateString()}</span>
@@ -402,6 +632,116 @@ export function VerificationRequestsView() {
           }}
         />
       )}
+
+      {/* Item #11: Bulk Cancel Dialog */}
+      <Dialog
+        isOpen={showBulkCancel}
+        onClose={() => { setShowBulkCancel(false); setBulkReason(''); }}
+        title="Bulk Cancel Verification Requests"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setShowBulkCancel(false); setBulkReason(''); }}
+              disabled={bulkProcessing}
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBulkCancel}
+              disabled={bulkProcessing || bulkReason.trim().length < 3}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+            >
+              {bulkProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  Cancelling...
+                </>
+              ) : (
+                <>
+                  <Ban className="w-4 h-4" aria-hidden="true" />
+                  Cancel {selectedIds.size} Request{selectedIds.size > 1 ? 's' : ''}
+                </>
+              )}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            You are about to cancel <strong>{selectedIds.size}</strong> verification request{selectedIds.size > 1 ? 's' : ''}.
+            This action cannot be undone.
+          </p>
+          <FormField id="bulk-cancel-reason" label="Reason for cancellation (required)">
+            <textarea
+              id="bulk-cancel-reason"
+              value={bulkReason}
+              onChange={(e) => setBulkReason(e.target.value)}
+              placeholder="Enter reason for cancellation..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </FormField>
+          {bulkReason.trim().length > 0 && bulkReason.trim().length < 3 && (
+            <p className="text-sm text-red-600">Reason must be at least 3 characters</p>
+          )}
+        </div>
+      </Dialog>
+
+      {/* Item #11: Bulk Reissue Dialog */}
+      <Dialog
+        isOpen={showBulkReissue}
+        onClose={() => { setShowBulkReissue(false); setBulkReason(''); }}
+        title="Bulk Reissue Verification Requests"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setShowBulkReissue(false); setBulkReason(''); }}
+              disabled={bulkProcessing}
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleBulkReissue}
+              disabled={bulkProcessing || bulkReason.trim().length < 3}
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+            >
+              {bulkProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  Reissuing...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="w-4 h-4" aria-hidden="true" />
+                  Reissue {selectedIds.size} Request{selectedIds.size > 1 ? 's' : ''}
+                </>
+              )}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700">
+            You are about to reissue <strong>{selectedIds.size}</strong> verification request{selectedIds.size > 1 ? 's' : ''}.
+            New emails will be sent to the store contacts.
+          </p>
+          <FormField id="bulk-reissue-reason" label="Reason for reissue (required)">
+            <textarea
+              id="bulk-reissue-reason"
+              value={bulkReason}
+              onChange={(e) => setBulkReason(e.target.value)}
+              placeholder="Enter reason for reissue..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </FormField>
+          {bulkReason.trim().length > 0 && bulkReason.trim().length < 3 && (
+            <p className="text-sm text-red-600">Reason must be at least 3 characters</p>
+          )}
+        </div>
+      </Dialog>
     </div>
   );
 }

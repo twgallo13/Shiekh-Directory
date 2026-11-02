@@ -8,8 +8,7 @@ import type {
   VerificationRequest,
 } from '../../src/types';
 import { getStoreTypeLabel } from '../../src/types';
-import { createMailService } from '../services/mail';
-import { createVerificationRequestEmail } from '../services/mailTemplates';
+import { createUnifiedMailService } from '../services/unifiedMail';
 
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
 
@@ -266,7 +265,7 @@ export function createVerificationRouter(db: Firestore): Router {
       const confirmUrlRedacted = `${appUrl}/verify-action?token=[REDACTED:${confirmTokenId}]&action=confirm`;
       const updateUrlRedacted = `${appUrl}/verify-action?token=[REDACTED:${updateTokenId}]&action=update`;
 
-      const mailService = createMailService(db);
+      const mailService = createUnifiedMailService(db);
       const verificationUrl = `${appUrl}/verify/${requestRef.id}`;
       const emailData = {
         storeName: location.name,
@@ -281,8 +280,7 @@ export function createVerificationRouter(db: Firestore): Router {
         wayfindingDirections: location.wayfindingDirections,
       };
 
-      const email = createVerificationRequestEmail(emailData);
-      const mailResult = await mailService.send(email);
+      const mailResult = await mailService.sendVerificationRequest(emailData, authUser.uid, authUser.email);
 
       if (mailResult.success && !mailResult.blocked) {
         await requestRef.update({
@@ -305,29 +303,24 @@ export function createVerificationRouter(db: Firestore): Router {
         console.error(`[Verification] Email failed for ${location.storeNumber}: ${mailResult.error}`);
       }
 
-      const emailTextRedacted = email.text
-        .replace(confirmUrl, confirmUrlRedacted)
-        .replace(updateUrl, updateUrlRedacted)
-        .replace(new RegExp(verificationUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), `${appUrl}/verify/[REDACTED]`);
-
       await db.collection('mailLog').add({
         to: location.sharedInboxEmail,
         type: 'verification-request',
         verificationRequestId: requestRef.id,
         locationId: location.id,
         storeNumber: location.storeNumber,
-        verificationUrl,
+        verificationUrl: `${appUrl}/verify/[REDACTED]`,
         confirmUrl: confirmUrlRedacted,
         updateUrl: updateUrlRedacted,
         confirmTokenId,
         updateTokenId,
-        emailBody: emailTextRedacted,
         sentAt: now.toISOString(),
         sentBy: authUser.uid,
         sentByEmail: authUser.email,
         success: mailResult.success && !mailResult.blocked,
         blocked: mailResult.blocked,
         reason: mailResult.reason || mailResult.error,
+        logOnly: mailResult.logOnly,
         expiresAt: expiresAt.toISOString(),
       });
 
@@ -985,7 +978,7 @@ export function createVerificationRouter(db: Firestore): Router {
       const campaignId = `camp_${randomBytes(8).toString('hex')}`;
       const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       const appUrl = getAppUrl(req);
-      const mailService = createMailService(db);
+      const mailService = createUnifiedMailService(db);
 
       for (const location of locations) {
         if (!location.sharedInboxEmail) {
@@ -1113,8 +1106,7 @@ export function createVerificationRouter(db: Firestore): Router {
             wayfindingDirections: location.wayfindingDirections,
           };
 
-          const email = createVerificationRequestEmail(emailData);
-          const mailResult = await mailService.send(email);
+          const mailResult = await mailService.sendVerificationRequest(emailData, authUser.uid, authUser.email);
 
           if (mailResult.success && !mailResult.blocked) {
             await requestRef.update({

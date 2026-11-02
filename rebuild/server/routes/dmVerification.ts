@@ -12,8 +12,7 @@ import type {
   District,
   Region,
 } from '../../src/types';
-import { createMailService } from '../services/mail';
-import { createDMVerificationRequestEmail } from '../services/mailTemplates';
+import { createUnifiedMailService } from '../services/unifiedMail';
 
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
 const DEFAULT_DM_OFFSET_DAYS = 14;
@@ -399,21 +398,20 @@ export function createDMVerificationRouter(db: Firestore): Router {
       const appUrl = getAppUrl(req);
       const verificationUrl = `${appUrl}/dm-verify/${requestRef.id}?token=${verifyToken}`;
 
-      const mailService = createMailService(db);
-      const emailData = {
-        recipientName: recipient.personName,
-        recipientType: recipient.recipientType,
-        districtName: district.name,
-        storeCount: stores.length,
-        verificationUrl,
-        expiresAt: expiresAt.toISOString(),
-      };
-
-      const email = createDMVerificationRequestEmail(emailData);
-      const mailResult = await mailService.send({
-        ...email,
-        to: recipient.email,
-      });
+      const mailService = createUnifiedMailService(db);
+      const mailResult = await mailService.sendDMVerificationRequest(
+        {
+          recipientName: recipient.personName,
+          recipientType: recipient.recipientType,
+          districtName: district.name,
+          storeCount: stores.length,
+          verificationUrl,
+          expiresAt: expiresAt.toISOString(),
+          to: recipient.email,
+        },
+        authUser.uid,
+        authUser.email
+      );
 
       if (mailResult.success && !mailResult.blocked) {
         await requestRef.update({

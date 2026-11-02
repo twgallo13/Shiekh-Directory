@@ -1,5 +1,12 @@
-import type { EmailMessage } from './mail';
 import type { StandardHours, DayOfWeek } from '../../src/types';
+
+export interface EmailMessage {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  replyTo?: string;
+}
 
 export interface VerificationEmailData {
   storeName: string;
@@ -447,7 +454,7 @@ const RECIPIENT_TYPE_LABELS: Record<'dm' | 'rm' | 'steward', string> = {
   steward: 'Steward',
 };
 
-export function createDMVerificationRequestEmail(data: DMVerificationEmailData): Omit<import('./mail').EmailMessage, 'to'> {
+export function createDMVerificationRequestEmail(data: DMVerificationEmailData): Omit<EmailMessage, 'to'> {
   const expiresDate = new Date(data.expiresAt);
   const expiresFormatted = expiresDate.toLocaleDateString('en-US', {
     weekday: 'long',

@@ -474,8 +474,13 @@ export class UnifiedMailService {
       });
     }
 
-    const email = createDMVerificationRequestEmail(data);
-    return this.sendRawEmail('dm_verification_request', { ...email, to: data.to }, sentBy, sentByEmail);
+    const emailContent = createDMVerificationRequestEmail(data);
+    return this.sendRawEmail('dm_verification_request', { 
+      to: data.to, 
+      subject: emailContent.subject, 
+      html: emailContent.html, 
+      text: emailContent.text 
+    }, sentBy, sentByEmail);
   }
 
   async sendInvitation(

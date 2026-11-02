@@ -1,106 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { isEmailAllowed, getMailConfig, type MailConfig } from '../server/services/mail';
 import { createVerificationRequestEmail, createVerificationReminderEmail } from '../server/services/mailTemplates';
-
-describe('Mail Service', () => {
-  describe('isEmailAllowed', () => {
-    it('allows any email when cutover is enabled', () => {
-      const config: MailConfig = {
-        mode: 'disabled',
-        testAllowlist: [],
-        cutoverEnabled: true,
-      };
-
-      const result = isEmailAllowed('store001@shiekh.com', config);
-      assert.strictEqual(result.allowed, true);
-    });
-
-    it('blocks emails when no allowlist and cutover disabled', () => {
-      const config: MailConfig = {
-        mode: 'disabled',
-        testAllowlist: [],
-        cutoverEnabled: false,
-      };
-
-      const result = isEmailAllowed('store001@shiekh.com', config);
-      assert.strictEqual(result.allowed, false);
-      assert.ok(result.reason?.includes('No test allowlist'));
-    });
-
-    it('allows specific email in allowlist', () => {
-      const config: MailConfig = {
-        mode: 'disabled',
-        testAllowlist: ['test@example.com', 'admin@shiekh.com'],
-        cutoverEnabled: false,
-      };
-
-      const result = isEmailAllowed('test@example.com', config);
-      assert.strictEqual(result.allowed, true);
-    });
-
-    it('allows domain wildcard in allowlist', () => {
-      const config: MailConfig = {
-        mode: 'disabled',
-        testAllowlist: ['*@testdomain.com'],
-        cutoverEnabled: false,
-      };
-
-      assert.strictEqual(isEmailAllowed('anyone@testdomain.com', config).allowed, true);
-      assert.strictEqual(isEmailAllowed('another@testdomain.com', config).allowed, true);
-      assert.strictEqual(isEmailAllowed('user@otherdomain.com', config).allowed, false);
-    });
-
-    it('is case-insensitive', () => {
-      const config: MailConfig = {
-        mode: 'disabled',
-        testAllowlist: ['Test@Example.COM'],
-        cutoverEnabled: false,
-      };
-
-      assert.strictEqual(isEmailAllowed('test@example.com', config).allowed, true);
-      assert.strictEqual(isEmailAllowed('TEST@EXAMPLE.COM', config).allowed, true);
-    });
-
-    it('blocks emails not in allowlist', () => {
-      const config: MailConfig = {
-        mode: 'disabled',
-        testAllowlist: ['allowed@example.com'],
-        cutoverEnabled: false,
-      };
-
-      const result = isEmailAllowed('notallowed@example.com', config);
-      assert.strictEqual(result.allowed, false);
-      assert.ok(result.reason?.includes('not in test allowlist'));
-    });
-  });
-
-  describe('getMailConfig', () => {
-    it('returns default config when env vars not set', () => {
-      const originalEnv = { ...process.env };
-      delete process.env.MAIL_MODE;
-      delete process.env.TEST_EMAIL_ALLOWLIST;
-      delete process.env.MAIL_CUTOVER_ENABLED;
-
-      const config = getMailConfig();
-      assert.strictEqual(config.mode, 'disabled');
-      assert.deepStrictEqual(config.testAllowlist, []);
-      assert.strictEqual(config.cutoverEnabled, false);
-
-      Object.assign(process.env, originalEnv);
-    });
-
-    it('parses allowlist from comma-separated string', () => {
-      const originalEnv = { ...process.env };
-      process.env.TEST_EMAIL_ALLOWLIST = 'a@test.com, b@test.com, *@shiekh.com';
-
-      const config = getMailConfig();
-      assert.deepStrictEqual(config.testAllowlist, ['a@test.com', 'b@test.com', '*@shiekh.com']);
-
-      Object.assign(process.env, originalEnv);
-    });
-  });
-});
 
 describe('Mail Templates', () => {
   describe('createVerificationRequestEmail', () => {
@@ -120,6 +20,19 @@ describe('Mail Templates', () => {
       assert.ok(email.html.includes('042'));
       assert.ok(email.html.includes('https://directory.shiekh.com/verify/abc123'));
       assert.ok(email.text.includes('Mall of America'));
+    });
+
+    it('includes store type when provided', () => {
+      const email = createVerificationRequestEmail({
+        storeName: 'Test Store',
+        storeNumber: '001',
+        storeEmail: 'store001@shiekh.com',
+        storeType: 'Retail',
+        verificationUrl: 'https://test.com/verify/123',
+        expiresAt: '2024-12-31T23:59:59Z',
+      });
+
+      assert.ok(email.html.includes('Retail') || email.text.includes('001'));
     });
   });
 

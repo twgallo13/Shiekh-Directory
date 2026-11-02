@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { randomBytes } from 'crypto';
 import type { UserRole } from '../../src/types';
-import { createMailService } from '../services/mail';
+import { createUnifiedMailService } from '../services/unifiedMail';
 import { isEmailDomainAllowed, getAllowedDomains } from '../config/auth';
 
 export interface Invitation {
@@ -194,13 +194,19 @@ export function createInvitationsRouter(db: Firestore): Router {
       const appUrl = getAppUrl(req);
       const signInUrl = `${appUrl}/signin`;
 
-      const mailService = createMailService(db);
-      const mailResult = await mailService.send({
-        to: normalizedEmail,
-        subject: `You're invited to Shiekh Directory`,
-        html: createInvitationEmailHtml(authUser.displayName || authUser.email, role, signInUrl, expiresAt, personalMessage),
-        text: createInvitationEmailText(authUser.displayName || authUser.email, role, signInUrl, expiresAt, personalMessage),
-      });
+      const mailService = createUnifiedMailService(db);
+      const mailResult = await mailService.sendInvitation(
+        normalizedEmail,
+        {
+          inviterName: authUser.displayName || authUser.email,
+          role,
+          signInUrl,
+          expiresAt: expiresAt.toISOString(),
+          personalMessage,
+        },
+        authUser.uid,
+        authUser.email
+      );
 
       await db.collection('mailLog').add({
         to: normalizedEmail,
@@ -288,13 +294,18 @@ export function createInvitationsRouter(db: Firestore): Router {
       const appUrl = getAppUrl(req);
       const signInUrl = `${appUrl}/signin`;
 
-      const mailService = createMailService(db);
-      const mailResult = await mailService.send({
-        to: invitation.email,
-        subject: `Reminder: You're invited to Shiekh Directory`,
-        html: createInvitationEmailHtml(authUser.displayName || authUser.email, invitation.role, signInUrl, expiresAt),
-        text: createInvitationEmailText(authUser.displayName || authUser.email, invitation.role, signInUrl, expiresAt),
-      });
+      const mailService = createUnifiedMailService(db);
+      const mailResult = await mailService.sendInvitationReminder(
+        invitation.email,
+        {
+          inviterName: authUser.displayName || authUser.email,
+          role: invitation.role,
+          signInUrl,
+          expiresAt: expiresAt.toISOString(),
+        },
+        authUser.uid,
+        authUser.email
+      );
 
       await db.collection('mailLog').add({
         to: invitation.email,
@@ -408,114 +419,4 @@ export function createInvitationsRouter(db: Firestore): Router {
   });
 
   return router;
-}
-
-function createInvitationEmailHtml(
-  inviterName: string,
-  role: UserRole,
-  signInUrl: string,
-  expiresAt: Date,
-  personalMessage?: string
-): string {
-  const expiresFormatted = expiresAt.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
-  const roleDescriptions: Record<UserRole, string> = {
-    Admin: 'full administrative access to manage users, settings, and all store data',
-    Steward: 'steward access to manage verification requests and store data',
-    Leader: 'leader access to view and manage stores in your assigned district',
-    Viewer: 'view-only access to the store directory',
-    Store: 'store access to manage your store\'s information',
-  };
-
-  const personalMessageHtml = personalMessage 
-    ? `<div style="background-color: #f3f4f6; border-left: 4px solid #3b82f6; padding: 12px 16px; margin: 20px 0; border-radius: 0 4px 4px 0;">
-        <p style="margin: 0; font-style: italic; color: #4b5563;">"${personalMessage}"</p>
-        <p style="margin: 8px 0 0; font-size: 14px; color: #6b7280;">— ${inviterName}</p>
-      </div>`
-    : '';
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>You're Invited to Shiekh Directory</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #374151; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background-color: #1d4ed8; color: white; padding: 24px; text-align: center; }
-    .content { padding: 30px 20px; background-color: #ffffff; }
-    .button { display: inline-block; background-color: #1d4ed8; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; }
-    .footer { padding: 20px; text-align: center; font-size: 12px; color: #6B7280; }
-    .role-badge { display: inline-block; background-color: #dbeafe; color: #1e40af; padding: 4px 12px; border-radius: 12px; font-size: 14px; font-weight: 600; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>SHIEKH Store Directory</h1>
-    </div>
-    <div class="content">
-      <h2>You're Invited!</h2>
-      <p>${inviterName} has invited you to join the Shiekh Store Directory as a <span class="role-badge">${role}</span>.</p>
-      
-      ${personalMessageHtml}
-      
-      <p>As a ${role}, you'll have ${roleDescriptions[role]}.</p>
-      
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${signInUrl}" class="button">Accept Invitation</a>
-      </div>
-      
-      <p style="font-size: 14px; color: #6B7280;">
-        Click the button above to sign in with your company Google account. 
-        Your account will be automatically set up with the appropriate permissions.
-      </p>
-      
-      <p style="font-size: 14px; color: #6B7280;">
-        This invitation expires on ${expiresFormatted}.
-      </p>
-    </div>
-    <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-
-function createInvitationEmailText(
-  inviterName: string,
-  role: UserRole,
-  signInUrl: string,
-  expiresAt: Date,
-  personalMessage?: string
-): string {
-  const personalMessageText = personalMessage 
-    ? `\n"${personalMessage}"\n— ${inviterName}\n`
-    : '';
-
-  return `
-SHIEKH Store Directory - You're Invited!
-
-${inviterName} has invited you to join the Shiekh Store Directory as a ${role}.
-${personalMessageText}
-
-To accept this invitation, click the link below and sign in with your company Google account:
-
-${signInUrl}
-
-Your account will be automatically set up with the appropriate permissions.
-
-This invitation expires on ${expiresAt.toLocaleDateString()}.
-
----
-Shiekh Shoes
-`;
 }

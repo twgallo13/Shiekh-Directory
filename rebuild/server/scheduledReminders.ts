@@ -1,7 +1,6 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
-import { createMailService } from './services/mail';
-import { createVerificationReminderEmail } from './services/mailTemplates';
+import { createUnifiedMailService } from './services/unifiedMail';
 import type { VerificationRequest, Location } from '../src/types';
 
 const APP_URL = process.env.APP_URL || 'https://directory.shiekh.com';
@@ -15,7 +14,7 @@ export const sendVerificationReminders = onSchedule(
   },
   async () => {
     const db = getFirestore();
-    const mailService = createMailService(db);
+    const mailService = createUnifiedMailService(db);
 
     const now = new Date();
     const reminderThresholds = [3, 1];
@@ -74,8 +73,7 @@ export const sendVerificationReminders = onSchedule(
           originalSentAt: request.sentAt,
         };
 
-        const email = createVerificationReminderEmail(emailData);
-        const result = await mailService.send(email);
+        const result = await mailService.sendVerificationReminder(emailData, 'system', 'reminders@system');
 
         if (result.success && !result.blocked) {
           await doc.ref.update({

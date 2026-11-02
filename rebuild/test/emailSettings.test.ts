@@ -13,6 +13,14 @@ describe('Email Settings', () => {
     process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
     app = initializeApp({ projectId: 'test-project' }, `test-app-email-settings-${testRunId}`);
     db = getFirestore(app);
+    
+    // Clean up any existing settings from previous runs
+    try {
+      await db.collection('settings').doc('email').delete();
+      await db.collection('settings').doc('email_smtp_password').delete();
+    } catch {
+      // Ignore if docs don't exist
+    }
   });
 
   after(async () => {
@@ -258,5 +266,494 @@ describe('Email Settings - Unified Mail Service', () => {
 describe('Email Settings - Template Reset', () => {
   it('should use FieldValue.delete for reset', async () => {
     assert.ok(true, 'Reset endpoint uses FieldValue.delete() to remove template');
+  });
+});
+
+describe('UnifiedMailService - Gating Tests', () => {
+  const testRunIdGating = `gating-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let gatingApp: App;
+  let gatingDb: Firestore;
+
+  before(async () => {
+    process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
+    gatingApp = initializeApp({ projectId: 'test-project' }, `gating-test-${testRunIdGating}`);
+    gatingDb = getFirestore(gatingApp);
+  });
+
+  after(async () => {
+    if (gatingApp) await deleteApp(gatingApp);
+  });
+
+  it('should block when master switch is off', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    
+    await gatingDb.collection('settings').doc('email').set({
+      masterEnabled: false,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'America/Los_Angeles', 
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: '20:00',
+        quietHoursEnd: '08:00',
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      },
+      smtp: { configured: true, host: 'smtp.test.com', port: 587, secure: false, user: 'test' },
+      typeSettings: {
+        verification_request: { enabled: true },
+      },
+      appBaseUrl: 'https://test.com',
+    });
+    
+    const mailService = createUnifiedMailService(gatingDb);
+    const result = await mailService.send({
+      typeId: 'verification_request',
+      to: 'test@test.com',
+      data: { storeName: 'Test', storeNumber: '001', verificationUrl: 'https://test.com' },
+    });
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked');
+    assert.ok(result.reason?.includes('master switch'), 'Should mention master switch in reason');
+    assert.strictEqual(result.logOnly, true, 'Should be log-only');
+  });
+
+  it('should block when MAIL_CUTOVER_ENABLED is not set', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    
+    delete process.env.MAIL_CUTOVER_ENABLED;
+    
+    await gatingDb.collection('settings').doc('email').set({
+      masterEnabled: true,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'America/Los_Angeles', 
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: '20:00',
+        quietHoursEnd: '08:00',
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      },
+      smtp: { configured: true, host: 'smtp.test.com', port: 587, secure: false, user: 'test' },
+      typeSettings: {
+        verification_request: { enabled: true },
+      },
+      appBaseUrl: 'https://test.com',
+    });
+    
+    const mailService = createUnifiedMailService(gatingDb);
+    const result = await mailService.send({
+      typeId: 'verification_request',
+      to: 'test@test.com',
+      data: { storeName: 'Test', storeNumber: '001', verificationUrl: 'https://test.com' },
+    });
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked');
+    assert.ok(result.reason?.includes('MAIL_CUTOVER_ENABLED'), 'Should mention cutover in reason');
+    assert.strictEqual(result.logOnly, true, 'Should be log-only');
+  });
+
+  it('should block when per-type toggle is off', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    
+    process.env.MAIL_CUTOVER_ENABLED = 'true';
+    
+    await gatingDb.collection('settings').doc('email').set({
+      masterEnabled: true,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'America/Los_Angeles', 
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: '20:00',
+        quietHoursEnd: '08:00',
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+      },
+      smtp: { configured: true, host: 'smtp.test.com', port: 587, secure: false, user: 'test' },
+      typeSettings: {
+        verification_request: { enabled: false },
+      },
+      appBaseUrl: 'https://test.com',
+    });
+    
+    const mailService = createUnifiedMailService(gatingDb);
+    const result = await mailService.send({
+      typeId: 'verification_request',
+      to: 'test@test.com',
+      data: { storeName: 'Test', storeNumber: '001', verificationUrl: 'https://test.com' },
+    });
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked');
+    assert.ok(result.reason?.includes('disabled'), 'Should mention type disabled in reason');
+    
+    delete process.env.MAIL_CUTOVER_ENABLED;
+  });
+});
+
+describe('UnifiedMailService - Template Tests', () => {
+  const testRunIdTemplate = `template-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let templateApp: App;
+  let templateDb: Firestore;
+
+  before(async () => {
+    process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
+    templateApp = initializeApp({ projectId: 'test-project' }, `template-test-${testRunIdTemplate}`);
+    templateDb = getFirestore(templateApp);
+    
+    // Clean up any existing settings and mail logs from previous runs
+    try {
+      await templateDb.collection('settings').doc('email').delete();
+      await templateDb.collection('settings').doc('email_smtp_password').delete();
+      const mailLogs = await templateDb.collection('mailLog').limit(100).get();
+      const batch = templateDb.batch();
+      mailLogs.docs.forEach(doc => batch.delete(doc.ref));
+      if (!mailLogs.empty) await batch.commit();
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  after(async () => {
+    if (templateApp) await deleteApp(templateApp);
+  });
+
+  it('should use custom template when configured', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    
+    process.env.MAIL_CUTOVER_ENABLED = 'true';
+    
+    const customSubject = 'Custom Subject for {{storeName}}';
+    const customBodyHtml = '<h1>Custom HTML for {{storeNumber}}</h1>';
+    const customBodyText = 'Custom text for {{storeName}}';
+    
+    await templateDb.collection('settings').doc('email').set({
+      masterEnabled: true,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'America/Los_Angeles', 
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: '00:00',
+        quietHoursEnd: '00:00',
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      },
+      smtp: { configured: true, host: 'smtp.test.com', port: 587, secure: false, user: 'test' },
+      typeSettings: {
+        verification_request: { 
+          enabled: true,
+          template: {
+            subject: customSubject,
+            bodyHtml: customBodyHtml,
+            bodyText: customBodyText,
+          },
+        },
+      },
+      appBaseUrl: 'https://test.com',
+    });
+    
+    await templateDb.collection('settings').doc('email_smtp_password').set({
+      encryptedPassword: null,
+      password: 'test-password',
+    });
+    
+    const mailService = createUnifiedMailService(templateDb);
+    const result = await mailService.send({
+      typeId: 'verification_request',
+      to: 'test@test.com',
+      data: { storeName: 'Test Store', storeNumber: '001', verificationUrl: 'https://test.com' },
+    });
+    
+    assert.strictEqual(result.success, false, 'Should fail (no real SMTP)');
+    assert.ok(result.error, 'Should have error (SMTP connection fails in test)');
+    
+    const logs = await templateDb.collection('mailLog').where('type', '==', 'verification_request').get();
+    assert.ok(logs.docs.length > 0, 'Should have logged the send attempt');
+    
+    const logData = logs.docs[0].data();
+    assert.strictEqual(logData.subject, 'Custom Subject for Test Store', 'Should use custom subject with placeholder');
+    
+    delete process.env.MAIL_CUTOVER_ENABLED;
+  });
+
+  it('should use default template when no custom template', async () => {
+    const { createUnifiedMailService, DEFAULT_TEMPLATES } = await import('../server/services/unifiedMail');
+    
+    process.env.MAIL_CUTOVER_ENABLED = 'true';
+    
+    await templateDb.collection('settings').doc('email').set({
+      masterEnabled: true,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'America/Los_Angeles', 
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: '00:00',
+        quietHoursEnd: '00:00',
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      },
+      smtp: { configured: true, host: 'smtp.test.com', port: 587, secure: false, user: 'test' },
+      typeSettings: {
+        invitation: { enabled: true },
+      },
+      appBaseUrl: 'https://test.com',
+    });
+    
+    await templateDb.collection('settings').doc('email_smtp_password').set({
+      password: 'test-password',
+    });
+    
+    const mailService = createUnifiedMailService(templateDb);
+    await mailService.send({
+      typeId: 'invitation',
+      to: 'test@test.com',
+      data: { inviterName: 'John Doe', role: 'Viewer', signInUrl: 'https://test.com', expiresAt: '2024-12-31' },
+    });
+    
+    const logs = await templateDb.collection('mailLog')
+      .where('type', '==', 'invitation')
+      .orderBy('sentAt', 'desc')
+      .limit(1)
+      .get();
+    
+    assert.ok(logs.docs.length > 0, 'Should have logged');
+    const logData = logs.docs[0].data();
+    
+    const defaultTemplate = DEFAULT_TEMPLATES.invitation;
+    const expectedSubject = defaultTemplate.subject;
+    assert.strictEqual(logData.subject, expectedSubject, 'Should use default template subject');
+    
+    delete process.env.MAIL_CUTOVER_ENABLED;
+  });
+});
+
+describe('UnifiedMailService - Schedule Tests', () => {
+  const testRunIdSchedule = `schedule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let scheduleApp: App;
+  let scheduleDb: Firestore;
+
+  before(async () => {
+    process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
+    scheduleApp = initializeApp({ projectId: 'test-project' }, `schedule-test-${testRunIdSchedule}`);
+    scheduleDb = getFirestore(scheduleApp);
+  });
+
+  after(async () => {
+    if (scheduleApp) await deleteApp(scheduleApp);
+  });
+
+  it('should block during quiet hours', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    
+    process.env.MAIL_CUTOVER_ENABLED = 'true';
+    
+    const now = new Date();
+    const currentHour = now.getHours();
+    const quietStart = `${String(currentHour).padStart(2, '0')}:00`;
+    const quietEnd = `${String((currentHour + 2) % 24).padStart(2, '0')}:00`;
+    
+    await scheduleDb.collection('settings').doc('email').set({
+      masterEnabled: true,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'UTC',
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: quietStart,
+        quietHoursEnd: quietEnd,
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      },
+      smtp: { configured: true, host: 'smtp.test.com', port: 587, secure: false, user: 'test' },
+      typeSettings: {
+        verification_request: { enabled: true },
+      },
+      appBaseUrl: 'https://test.com',
+    });
+    
+    const mailService = createUnifiedMailService(scheduleDb);
+    const result = await mailService.send({
+      typeId: 'verification_request',
+      to: 'test@test.com',
+      data: { storeName: 'Test', storeNumber: '001', verificationUrl: 'https://test.com' },
+    });
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked');
+    assert.ok(result.reason?.includes('quiet hours'), 'Should mention quiet hours');
+    
+    delete process.env.MAIL_CUTOVER_ENABLED;
+  });
+
+  it('should allow on send days and outside quiet hours', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    
+    process.env.MAIL_CUTOVER_ENABLED = 'true';
+    
+    await scheduleDb.collection('settings').doc('email').set({
+      masterEnabled: true,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'America/Los_Angeles',
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: '00:00',
+        quietHoursEnd: '00:00',
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      },
+      smtp: { configured: true, host: 'smtp.test.com', port: 587, secure: false, user: 'test' },
+      typeSettings: {
+        verification_request: { enabled: true },
+      },
+      appBaseUrl: 'https://test.com',
+    });
+    
+    await scheduleDb.collection('settings').doc('email_smtp_password').set({
+      password: 'test-password',
+    });
+    
+    const mailService = createUnifiedMailService(scheduleDb);
+    const result = await mailService.send({
+      typeId: 'verification_request',
+      to: 'test@test.com',
+      data: { storeName: 'Test', storeNumber: '001', verificationUrl: 'https://test.com' },
+    });
+    
+    assert.strictEqual(result.blocked, undefined, 'Should not be blocked by schedule');
+    
+    delete process.env.MAIL_CUTOVER_ENABLED;
+  });
+});
+
+describe('UnifiedMailService - Type-Specific Send Methods', () => {
+  const testRunIdMethods = `methods-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let methodsApp: App;
+  let methodsDb: Firestore;
+
+  before(async () => {
+    process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8080';
+    methodsApp = initializeApp({ projectId: 'test-project' }, `methods-test-${testRunIdMethods}`);
+    methodsDb = getFirestore(methodsApp);
+    
+    await methodsDb.collection('settings').doc('email').set({
+      masterEnabled: false,
+      sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
+      schedule: { 
+        timezone: 'America/Los_Angeles',
+        reminderFrequencyDays: 3, 
+        maxReminders: 3,
+        quietHoursStart: '00:00',
+        quietHoursEnd: '00:00',
+        sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+      },
+      smtp: { configured: false, host: '', port: 587, secure: false, user: '' },
+      typeSettings: {},
+      appBaseUrl: 'https://test.com',
+    });
+  });
+
+  after(async () => {
+    if (methodsApp) await deleteApp(methodsApp);
+  });
+
+  it('should have sendVerificationRequest method', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    const mailService = createUnifiedMailService(methodsDb);
+    
+    const result = await mailService.sendVerificationRequest({
+      storeName: 'Test Store',
+      storeNumber: '001',
+      storeEmail: 'store001@test.com',
+      storeType: 'Retail',
+      verificationUrl: 'https://test.com/verify/123',
+      expiresAt: new Date().toISOString(),
+      confirmUrl: 'https://test.com/confirm',
+      updateUrl: 'https://test.com/update',
+    });
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked (master off)');
+    assert.strictEqual(result.logOnly, true, 'Should be log-only');
+  });
+
+  it('should have sendVerificationReminder method', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    const mailService = createUnifiedMailService(methodsDb);
+    
+    const result = await mailService.sendVerificationReminder({
+      storeName: 'Test Store',
+      storeNumber: '001',
+      storeEmail: 'store001@test.com',
+      verificationUrl: 'https://test.com/verify/123',
+      expiresAt: new Date().toISOString(),
+      daysRemaining: 3,
+      originalSentAt: new Date().toISOString(),
+    });
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked (master off)');
+  });
+
+  it('should have sendInvitation method', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    const mailService = createUnifiedMailService(methodsDb);
+    
+    const result = await mailService.sendInvitation(
+      'invite@test.com',
+      {
+        inviterName: 'Admin User',
+        role: 'Viewer',
+        signInUrl: 'https://test.com/signin',
+        expiresAt: new Date().toISOString(),
+        personalMessage: 'Welcome to the team!',
+      }
+    );
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked (master off)');
+  });
+
+  it('should have sendInvitationReminder method', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    const mailService = createUnifiedMailService(methodsDb);
+    
+    const result = await mailService.sendInvitationReminder(
+      'invite@test.com',
+      {
+        inviterName: 'Admin User',
+        role: 'Viewer',
+        signInUrl: 'https://test.com/signin',
+        expiresAt: new Date().toISOString(),
+      }
+    );
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked (master off)');
+  });
+
+  it('should have sendStoreSignIn method', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    const mailService = createUnifiedMailService(methodsDb);
+    
+    const result = await mailService.sendStoreSignIn(
+      'store001@shiekhshoes.com',
+      {
+        storeNumber: '001',
+        storeName: 'Test Store',
+        signInUrl: 'https://test.com/store-signin?token=abc',
+        expiresAt: new Date().toISOString(),
+      }
+    );
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked (master off)');
+  });
+
+  it('should have sendDMVerificationRequest method', async () => {
+    const { createUnifiedMailService } = await import('../server/services/unifiedMail');
+    const mailService = createUnifiedMailService(methodsDb);
+    
+    const result = await mailService.sendDMVerificationRequest({
+      recipientName: 'John DM',
+      recipientType: 'dm',
+      districtName: 'Test District',
+      storeCount: 5,
+      verificationUrl: 'https://test.com/dm-verify/123',
+      expiresAt: new Date().toISOString(),
+      to: 'dm@test.com',
+    });
+    
+    assert.strictEqual(result.blocked, true, 'Should be blocked (master off)');
   });
 });

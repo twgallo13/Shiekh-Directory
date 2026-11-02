@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { randomBytes, createHmac } from 'crypto';
-import { createMailService } from '../services/mail';
+import { createUnifiedMailService } from '../services/unifiedMail';
 import type { Location, AuditLogEntry } from '../../src/types';
 
 const TOKEN_SECRET = process.env.STORE_AUTH_TOKEN_SECRET || 'dev-token-secret-not-for-production';
@@ -196,13 +196,18 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const signInUrl = `${appUrl}/store-signin?token=${token}`;
       const signInUrlRedacted = `${appUrl}/store-signin?token=[REDACTED:${tokenId}]`;
 
-      const mailService = createMailService(db);
-      const mailResult = await mailService.send({
-        to: email.toLowerCase(),
-        subject: `Sign in to Shiekh Directory - Store ${location.storeNumber}`,
-        html: createSignInEmailHtml(location.storeNumber, location.name, signInUrl, expiresAt),
-        text: createSignInEmailText(location.storeNumber, location.name, signInUrl, expiresAt),
-      });
+      const mailService = createUnifiedMailService(db);
+      const mailResult = await mailService.sendStoreSignIn(
+        email.toLowerCase(),
+        {
+          storeNumber: location.storeNumber,
+          storeName: location.name,
+          signInUrl,
+          expiresAt: expiresAt.toISOString(),
+        },
+        'system',
+        email.toLowerCase()
+      );
 
       await db.collection('mailLog').add({
         to: email.toLowerCase(),
@@ -806,74 +811,6 @@ export function createStoreAuthRouter(db: Firestore): Router {
   });
 
   return router;
-}
-
-function createSignInEmailHtml(storeNumber: string, storeName: string, signInUrl: string, expiresAt: Date): string {
-  const expiresFormatted = expiresAt.toLocaleDateString('en-US', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in to Shiekh Directory</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #374151; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background-color: #DC2626; color: white; padding: 20px; text-align: center; }
-    .content { padding: 30px 20px; background-color: #ffffff; }
-    .button { display: inline-block; background-color: #DC2626; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; }
-    .footer { padding: 20px; text-align: center; font-size: 12px; color: #6B7280; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>SHIEKH Store Directory</h1>
-    </div>
-    <div class="content">
-      <h2>Sign in to Store ${storeNumber}</h2>
-      <p>Hello,</p>
-      <p>Click the button below to sign in to the Shiekh Store Directory for <strong>${storeNumber} - ${storeName}</strong>.</p>
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${signInUrl}" class="button">Sign In Now</a>
-      </div>
-      <p style="font-size: 14px; color: #6B7280;">This link expires on ${expiresFormatted}.</p>
-      <p style="font-size: 14px; color: #6B7280;">If you didn't request this sign-in link, you can safely ignore this email.</p>
-    </div>
-    <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-
-function createSignInEmailText(storeNumber: string, storeName: string, signInUrl: string, expiresAt: Date): string {
-  return `
-SHIEKH Store Directory - Sign In
-
-Hello,
-
-Click the link below to sign in to the Shiekh Store Directory for ${storeNumber} - ${storeName}:
-
-${signInUrl}
-
-This link expires on ${expiresAt.toLocaleString()}.
-
-If you didn't request this sign-in link, you can safely ignore this email.
-
----
-Shiekh Shoes
-`;
 }
 
 async function logAudit(

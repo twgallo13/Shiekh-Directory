@@ -30,6 +30,7 @@ import { createStoreAuthRouter } from './routes/storeAuth';
 import { createDMVerificationRouter } from './routes/dmVerification';
 import { createRestoreDrillRouter } from './routes/restoreDrill';
 import { createInvitationsRouter } from './routes/invitations';
+import { createEmailSettingsRouter } from './routes/emailSettings';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -67,6 +68,7 @@ app.use('/api/app/stale-stores', createStaleStoresRouter(db));
 app.use('/api/app/dm-verification', createDMVerificationRouter(db));
 app.use('/api/app/restore-drill', createRestoreDrillRouter(db));
 app.use('/api/app/invitations', createInvitationsRouter(db));
+app.use('/api/app/email-settings', createEmailSettingsRouter(db));
 app.use('/api/store-auth', createOptionalAuthMiddleware(db), createAuthUserMiddleware(db), createStoreAuthRouter(db));
 
 // Legacy API routes (v1/v2/v3)

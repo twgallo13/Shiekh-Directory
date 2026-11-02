@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { HoursTemplatesView } from './HoursTemplatesView';
+import { EmailSettingsView } from './EmailSettingsView';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
 
 interface User {
   id: string;
@@ -107,6 +108,9 @@ export function AdminView() {
             <TabButton id="communications" active={activeTab === 'communications'} onClick={setActiveTab} icon={Mail} panelId="panel-communications">
               Communications
             </TabButton>
+            <TabButton id="email" active={activeTab === 'email'} onClick={setActiveTab} icon={Settings} panelId="panel-email">
+              Email
+            </TabButton>
             <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History} panelId="panel-audit-log">
               Audit Log
             </TabButton>
@@ -141,6 +145,9 @@ export function AdminView() {
         </div>
         <div id="panel-communications" role="tabpanel" aria-labelledby="tab-communications" hidden={activeTab !== 'communications'}>
           {activeTab === 'communications' && <CommunicationsTab getIdToken={getIdToken} />}
+        </div>
+        <div id="panel-email" role="tabpanel" aria-labelledby="tab-email" hidden={activeTab !== 'email'}>
+          {activeTab === 'email' && <EmailSettingsView />}
         </div>
         <div id="panel-audit-log" role="tabpanel" aria-labelledby="tab-audit-log" hidden={activeTab !== 'audit-log'}>
           {activeTab === 'audit-log' && <AuditLogTab getIdToken={getIdToken} />}

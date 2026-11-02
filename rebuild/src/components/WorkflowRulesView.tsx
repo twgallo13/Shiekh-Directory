@@ -73,12 +73,57 @@ interface EmailSettings {
   defaultTemplates: Record<string, EmailTemplate>;
 }
 
-const AUDIENCE_ORDER = ['stores', 'leadership', 'admin'];
+const AUDIENCE_ORDER = ['stores', 'leaders', 'admins'];
 const AUDIENCE_ICONS: Record<string, React.ElementType> = {
   stores: Store,
-  leadership: Building2,
-  admin: User,
+  leaders: Building2,
+  admins: User,
 };
+
+const SAMPLE_PLACEHOLDER_VALUES: Record<string, string> = {
+  storeName: 'Downtown Store',
+  storeNumber: '042',
+  storeEmail: 'store042@shiekh.com',
+  storeType: 'Enclosed Mall',
+  storeTypeHtml: '<dt>Type</dt><dd>Enclosed Mall</dd>',
+  storeTypeText: '\nType: Enclosed Mall',
+  verificationUrl: 'https://example.com/verify/abc123',
+  expiresAt: '2026-12-15T00:00:00Z',
+  expiresFormatted: 'Sunday, December 15, 2026',
+  confirmUrl: 'https://example.com/confirm/abc123',
+  updateUrl: 'https://example.com/update/abc123',
+  hoursHtml: '<table><tr><td>Mon-Sat</td><td>10am-9pm</td></tr><tr><td>Sun</td><td>11am-7pm</td></tr></table>',
+  hoursText: 'Mon-Sat: 10am-9pm\nSun: 11am-7pm',
+  wayfindingHtml: '<p>Near the food court, next to Macy\'s</p>',
+  wayfindingText: 'Near the food court, next to Macy\'s',
+  oneClickButtonsHtml: '<a href="#">Confirm</a> <a href="#">Update</a>',
+  oneClickButtonsText: 'Confirm: https://... | Update: https://...',
+  daysRemaining: '3',
+  daysRemainingLabel: '3 days remaining',
+  originalSentAt: '2026-12-01T00:00:00Z',
+  originalSentFormatted: 'December 1, 2026',
+  urgencyClass: 'warning',
+  urgencyText: 'Reminder: 3 days remaining',
+  verifiedAt: '2026-12-10T14:30:00Z',
+  verifiedFormatted: 'December 10, 2026, 2:30 PM',
+  signInUrl: 'https://example.com/signin?token=abc123',
+  recipientName: 'John Smith',
+  recipientType: 'dm',
+  recipientLabel: 'District Manager',
+  contextNote: 'your district',
+  districtName: 'Southern California',
+  storeCount: '12',
+  inviterName: 'Admin User',
+  role: 'Steward',
+  inviteUrl: 'https://example.com/invite/xyz789',
+  personalMessage: 'Welcome to the team!',
+};
+
+function replacePreviewPlaceholders(html: string): string {
+  return html.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    return SAMPLE_PLACEHOLDER_VALUES[key] ?? `[${key}]`;
+  });
+}
 
 const RULE_DESCRIPTIONS: Record<keyof WorkflowRules, { label: string; description: string; unit?: string }> = {
   verificationCycleDays: {
@@ -637,11 +682,13 @@ export function WorkflowRulesView() {
             </div>
           </div>
           
-          {AUDIENCE_ORDER.map(audience => {
+          {[...AUDIENCE_ORDER, ...Object.keys(typesByAudience).filter(a => !AUDIENCE_ORDER.includes(a))].map(audience => {
             const types = typesByAudience[audience];
             if (!types || types.length === 0) return null;
             const AudienceIcon = AUDIENCE_ICONS[audience] || Users;
-            const audienceLabel = types[0]?.audienceLabel || audience;
+            const audienceLabel = AUDIENCE_ORDER.includes(audience) 
+              ? (types[0]?.audienceLabel || audience)
+              : 'Other';
             
             return (
               <div key={audience} className="border-b border-gray-200 last:border-b-0">
@@ -818,14 +865,14 @@ export function WorkflowRulesView() {
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-1">Subject Preview</p>
                     <div className="px-4 py-2 bg-gray-100 rounded-lg text-sm">
-                      {templateForm.subject || '(no subject)'}
+                      {replacePreviewPlaceholders(templateForm.subject) || '(no subject)'}
                     </div>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-1">Body Preview</p>
                     <div
                       className="border border-gray-300 rounded-lg p-4 bg-white text-sm overflow-auto max-h-[400px]"
-                      dangerouslySetInnerHTML={{ __html: templateForm.bodyHtml }}
+                      dangerouslySetInnerHTML={{ __html: replacePreviewPlaceholders(templateForm.bodyHtml) }}
                     />
                   </div>
                 </div>

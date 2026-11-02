@@ -91,7 +91,7 @@ describe('Email Settings', () => {
   });
 
   describe('API Response Structure', () => {
-    it('should return {data: ...} response with emailTypes array having 7 items', async () => {
+    it('should return {data: ...} response with emailTypes using correct audience values for WorkflowRulesView', async () => {
       const { getEmailSettings, EMAIL_TYPES } = await import('../server/routes/emailSettings');
       
       const settings = await getEmailSettings(db);
@@ -105,14 +105,35 @@ describe('Email Settings', () => {
       
       assert.ok(responseData.data, 'Response should have data property');
       assert.ok(responseData.data.emailTypes, 'data should have emailTypes property');
-      assert.strictEqual(responseData.data.emailTypes.length, 7, 'emailTypes should have 7 items for 7 switches');
+      assert.strictEqual(responseData.data.emailTypes.length, 7, 'emailTypes should have 7 items for 7 Edit/Enable buttons');
+      
+      const EXPECTED_AUDIENCE_ORDER = ['stores', 'leaders', 'admins'];
+      const audienceByType: Record<string, string[]> = {};
       
       for (const type of responseData.data.emailTypes) {
         assert.ok(type.id, 'Each type should have id');
         assert.ok(type.name, 'Each type should have name');
         assert.ok(type.description, 'Each type should have description');
         assert.ok(type.audience, 'Each type should have audience');
+        
+        assert.ok(
+          EXPECTED_AUDIENCE_ORDER.includes(type.audience),
+          `Email type ${type.id} has audience '${type.audience}' which is not in AUDIENCE_ORDER. ` +
+          `Expected one of: ${EXPECTED_AUDIENCE_ORDER.join(', ')}. ` +
+          `WorkflowRulesView would hide this type.`
+        );
+        
+        if (!audienceByType[type.audience]) {
+          audienceByType[type.audience] = [];
+        }
+        audienceByType[type.audience].push(type.id);
       }
+      
+      let totalButtons = 0;
+      for (const audience of Object.keys(audienceByType)) {
+        totalButtons += audienceByType[audience].length;
+      }
+      assert.strictEqual(totalButtons, 7, 'Should render 7 Edit buttons and 7 Enable/Disable buttons total');
     });
   });
 

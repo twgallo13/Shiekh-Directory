@@ -37,6 +37,31 @@ export function VerificationRequestsView() {
     setLocationFilterName(null);
   };
 
+  const fetchLocationName = useCallback(async () => {
+    if (!locationIdFilter) {
+      setLocationFilterName(null);
+      return;
+    }
+    try {
+      const token = await getIdToken();
+      const response = await fetch(`/api/app/locations/${locationIdFilter}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const { data } = await response.json();
+        setLocationFilterName(`#${data.storeNumber} - ${data.name}`);
+      } else {
+        setLocationFilterName(locationIdFilter);
+      }
+    } catch {
+      setLocationFilterName(locationIdFilter);
+    }
+  }, [getIdToken, locationIdFilter]);
+
+  useEffect(() => {
+    fetchLocationName();
+  }, [fetchLocationName]);
+
   const loadRequests = useCallback(async () => {
     try {
       setLoading(true);
@@ -53,11 +78,6 @@ export function VerificationRequestsView() {
       if (response.ok) {
         const { data } = await response.json();
         setRequests(data);
-        if (locationIdFilter && data.length > 0) {
-          setLocationFilterName(data[0].locationName || data[0].storeNumber || locationIdFilter);
-        } else if (locationIdFilter) {
-          setLocationFilterName(locationIdFilter);
-        }
       } else {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error?.message || 'Failed to load requests');

@@ -185,6 +185,7 @@ describe('Firestore Index Validation', () => {
     assert.ok(verificationIndexes.has('locationId:asc,status:asc,sentAt:desc'), 'Should have locationId + status + sentAt index');
     assert.ok(verificationIndexes.has('status:asc,respondedAt:asc,expiresAt:asc'), 'Should have status + respondedAt + expiresAt index');
     assert.ok(verificationIndexes.has('status:asc,expiresAt:asc'), 'Should have status + expiresAt index');
+    assert.ok(verificationIndexes.has('status:asc,respondedAt:asc,sentAt:asc'), 'Should have status + respondedAt + sentAt index (DM escalation query)');
   });
   
   it('auditLog collection has entityType + settingsType + timestamp index', () => {
@@ -199,6 +200,14 @@ describe('Firestore Index Validation', () => {
     assert.ok(dmTasksIndexes, 'dmTasks collection should have indexes');
     
     assert.ok(dmTasksIndexes.has('locationId:asc,status:asc,createdAt:desc'), 'Should have locationId + status + createdAt index');
+    assert.ok(dmTasksIndexes.has('locationId:asc,createdAt:desc'), 'Should have locationId + createdAt index (All tab with locationId)');
+  });
+  
+  it('corrections collection has locationId filter index', () => {
+    const correctionsIndexes = indexMap.get('corrections');
+    assert.ok(correctionsIndexes, 'corrections collection should have indexes');
+    
+    assert.ok(correctionsIndexes.has('locationId:asc,status:asc,submittedAt:desc'), 'Should have locationId + status + submittedAt index');
   });
   
   it('assignments collection has required indexes', () => {

@@ -28,15 +28,26 @@ export function createCorrectionsRouter(db: Firestore): Router {
       const myRequests = req.query.myRequests === 'true';
       const includeArchived = req.query.includeArchived === 'true';
       
-      let query;
+      let query: FirebaseFirestore.Query = db.collection('corrections');
       
       if (myRequests) {
-        query = db.collection('corrections')
+        query = query
           .where('submittedBy', '==', authUser.uid)
           .orderBy('submittedAt', 'desc');
+      } else if (locationId) {
+        // Filter by locationId in query for efficiency
+        const statusFilter = status || 'pending';
+        query = query
+          .where('locationId', '==', locationId)
+          .where('status', '==', statusFilter)
+          .orderBy('submittedAt', 'desc');
+        
+        if (!canApproveCorrections(authUser)) {
+          query = query.where('submittedBy', '==', authUser.uid);
+        }
       } else {
         const statusFilter = status || 'pending';
-        query = db.collection('corrections')
+        query = query
           .where('status', '==', statusFilter)
           .orderBy('submittedAt', 'desc');
         
@@ -51,11 +62,6 @@ export function createCorrectionsRouter(db: Firestore): Router {
         id: doc.id,
         ...doc.data(),
       })) as Correction[];
-
-      // Filter by locationId if specified (done in memory since Firestore has index limitations)
-      if (locationId) {
-        corrections = corrections.filter(c => c.locationId === locationId);
-      }
 
       // Filter by category if specified (done in memory since Firestore has index limitations)
       if (category) {

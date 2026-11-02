@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Settings, RotateCcw, Loader2, Clock, Calendar, Mail, Users, Shield, History, FileText, Eye, EyeOff, AlertTriangle, Store, Building2, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Dialog } from './Dialog';
+import { EMAIL_AUDIENCE_ORDER } from '../constants/emailAudiences';
 
 interface WorkflowRules {
   verificationCycleDays: number;
@@ -73,7 +74,6 @@ interface EmailSettings {
   defaultTemplates: Record<string, EmailTemplate>;
 }
 
-const AUDIENCE_ORDER = ['stores', 'leaders', 'admins'];
 const AUDIENCE_ICONS: Record<string, React.ElementType> = {
   stores: Store,
   leaders: Building2,
@@ -682,11 +682,11 @@ export function WorkflowRulesView() {
             </div>
           </div>
           
-          {[...AUDIENCE_ORDER, ...Object.keys(typesByAudience).filter(a => !AUDIENCE_ORDER.includes(a))].map(audience => {
+          {[...EMAIL_AUDIENCE_ORDER, ...Object.keys(typesByAudience).filter(a => !(EMAIL_AUDIENCE_ORDER as readonly string[]).includes(a))].map(audience => {
             const types = typesByAudience[audience];
             if (!types || types.length === 0) return null;
             const AudienceIcon = AUDIENCE_ICONS[audience] || Users;
-            const audienceLabel = AUDIENCE_ORDER.includes(audience) 
+            const audienceLabel = (EMAIL_AUDIENCE_ORDER as readonly string[]).includes(audience) 
               ? (types[0]?.audienceLabel || audience)
               : 'Other';
             

@@ -93,6 +93,7 @@ describe('Email Settings', () => {
   describe('API Response Structure', () => {
     it('should return {data: ...} response with emailTypes using correct audience values for WorkflowRulesView', async () => {
       const { getEmailSettings, EMAIL_TYPES } = await import('../server/routes/emailSettings');
+      const { EMAIL_AUDIENCE_ORDER } = await import('../server/constants/emailAudiences');
       
       const settings = await getEmailSettings(db);
       
@@ -107,7 +108,6 @@ describe('Email Settings', () => {
       assert.ok(responseData.data.emailTypes, 'data should have emailTypes property');
       assert.strictEqual(responseData.data.emailTypes.length, 7, 'emailTypes should have 7 items for 7 Edit/Enable buttons');
       
-      const EXPECTED_AUDIENCE_ORDER = ['stores', 'leaders', 'admins'];
       const audienceByType: Record<string, string[]> = {};
       
       for (const type of responseData.data.emailTypes) {
@@ -117,9 +117,9 @@ describe('Email Settings', () => {
         assert.ok(type.audience, 'Each type should have audience');
         
         assert.ok(
-          EXPECTED_AUDIENCE_ORDER.includes(type.audience),
-          `Email type ${type.id} has audience '${type.audience}' which is not in AUDIENCE_ORDER. ` +
-          `Expected one of: ${EXPECTED_AUDIENCE_ORDER.join(', ')}. ` +
+          (EMAIL_AUDIENCE_ORDER as readonly string[]).includes(type.audience),
+          `Email type ${type.id} has audience '${type.audience}' which is not in EMAIL_AUDIENCE_ORDER. ` +
+          `Expected one of: ${EMAIL_AUDIENCE_ORDER.join(', ')}. ` +
           `WorkflowRulesView would hide this type.`
         );
         

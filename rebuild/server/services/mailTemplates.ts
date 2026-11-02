@@ -159,7 +159,7 @@ const baseStyles = `
   .header h1 { margin: 0; font-size: 24px; }
   .content { padding: 30px 20px; background-color: #ffffff; }
   .button { display: inline-block; background-color: ${SHIEKH_RED}; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
-  .footer { padding: 20px; text-align: center; font-size: 12px; color: #6B7280; background-color: #F3F4F6; }
+  .footer { padding: 20px; text-align: center; font-size: 12px; color: #4B5563; background-color: #F3F4F6; }
   .store-info { background-color: #F9FAFB; border-radius: 8px; padding: 16px; margin: 16px 0; }
   .store-info dt { font-weight: 600; color: #374151; }
   .store-info dd { margin: 0 0 12px 0; color: #6B7280; }
@@ -188,7 +188,7 @@ ${content}
     <div class="footer">
       ${footerLine}
       <p>&copy; ${new Date().getFullYear()} Shiekh Shoes. All rights reserved.</p>
-      <p style="font-size: 10px; color: #9CA3AF;">This is an automated message. Please do not reply directly to this email.</p>
+      <p style="font-size: 10px; color: #6B7280;">This is an automated message. Please do not reply directly to this email.</p>
     </div>
   </div>
 </body>

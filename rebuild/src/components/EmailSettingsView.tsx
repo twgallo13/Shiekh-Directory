@@ -60,8 +60,6 @@ interface EmailSettings {
     configured: boolean;
   };
   schedule: {
-    reminderFrequencyDays: number;
-    maxReminders: number;
     quietHoursStart: string;
     quietHoursEnd: string;
     timezone: string;
@@ -156,7 +154,6 @@ export function EmailSettingsView() {
   const [smtpDirty, setSmtpDirty] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
-    reminderFrequencyDays: 3, maxReminders: 3,
     quietHoursStart: '20:00', quietHoursEnd: '08:00',
     sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] as string[],
   });
@@ -187,8 +184,6 @@ export function EmailSettingsView() {
       setSettings(data);
       setSenderForm(data.sender);
       setScheduleForm({
-        reminderFrequencyDays: data.schedule.reminderFrequencyDays,
-        maxReminders: data.schedule.maxReminders,
         quietHoursStart: data.schedule.quietHoursStart,
         quietHoursEnd: data.schedule.quietHoursEnd,
         sendDays: data.schedule.sendDays,
@@ -1078,49 +1073,9 @@ Or review all details:
                 </p>
               </div>
 
-              {/* Reminder Settings */}
-              <div className="grid gap-6 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="reminderFrequency" className="block text-sm font-medium text-gray-700 mb-2">
-                    Send reminders every
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="reminderFrequency"
-                      type="number"
-                      min="1"
-                      max="30"
-                      value={scheduleForm.reminderFrequencyDays}
-                      onChange={(e) => {
-                        setScheduleForm({ ...scheduleForm, reminderFrequencyDays: parseInt(e.target.value, 10) || 3 });
-                        setScheduleDirty(true);
-                      }}
-                      className="w-20 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]"
-                    />
-                    <span className="text-gray-700">days</span>
-                  </div>
-                </div>
-                <div>
-                  <label htmlFor="maxReminders" className="block text-sm font-medium text-gray-700 mb-2">
-                    Stop after this many reminders
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="maxReminders"
-                      type="number"
-                      min="0"
-                      max="10"
-                      value={scheduleForm.maxReminders}
-                      onChange={(e) => {
-                        setScheduleForm({ ...scheduleForm, maxReminders: parseInt(e.target.value, 10) || 0 });
-                        setScheduleDirty(true);
-                      }}
-                      className="w-20 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[44px]"
-                    />
-                    <span className="text-gray-500 text-sm">(0 = no limit)</span>
-                  </div>
-                </div>
-              </div>
+              <p className="text-sm text-gray-600 mt-4 p-3 bg-blue-50 rounded-lg">
+                Reminder timing (lead days, max reminders, send time) is managed in Workflow Rules.
+              </p>
 
               <div className="pt-4 border-t border-gray-200">
                 <button

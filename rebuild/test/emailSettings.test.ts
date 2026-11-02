@@ -133,8 +133,6 @@ describe('Email Settings', () => {
       
       const settings = await getEmailSettings(db);
       
-      assert.strictEqual(settings.schedule.reminderFrequencyDays, 3);
-      assert.strictEqual(settings.schedule.maxReminders, 3);
       assert.strictEqual(settings.schedule.quietHoursStart, '20:00');
       assert.strictEqual(settings.schedule.quietHoursEnd, '08:00');
       assert.ok(settings.schedule.sendDays.includes('monday'));
@@ -526,8 +524,6 @@ describe('UnifiedMailService - Gating Tests', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'America/Los_Angeles', 
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: '20:00',
         quietHoursEnd: '08:00',
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
@@ -561,8 +557,6 @@ describe('UnifiedMailService - Gating Tests', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'America/Los_Angeles', 
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: '20:00',
         quietHoursEnd: '08:00',
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
@@ -596,8 +590,6 @@ describe('UnifiedMailService - Gating Tests', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'America/Los_Angeles', 
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: '20:00',
         quietHoursEnd: '08:00',
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
@@ -664,8 +656,6 @@ describe('UnifiedMailService - Template Tests', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'America/Los_Angeles', 
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: '00:00',
         quietHoursEnd: '00:00',
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
@@ -718,8 +708,6 @@ describe('UnifiedMailService - Template Tests', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'America/Los_Angeles', 
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: '00:00',
         quietHoursEnd: '00:00',
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
@@ -789,8 +777,6 @@ describe('UnifiedMailService - Schedule Tests', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'UTC',
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: quietStart,
         quietHoursEnd: quietEnd,
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
@@ -825,8 +811,6 @@ describe('UnifiedMailService - Schedule Tests', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'America/Los_Angeles',
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: '00:00',
         quietHoursEnd: '00:00',
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
@@ -870,8 +854,6 @@ describe('UnifiedMailService - Type-Specific Send Methods', () => {
       sender: { fromName: 'Test', fromAddress: 'test@test.com', replyTo: '', footerText: '' },
       schedule: { 
         timezone: 'America/Los_Angeles',
-        reminderFrequencyDays: 3, 
-        maxReminders: 3,
         quietHoursStart: '00:00',
         quietHoursEnd: '00:00',
         sendDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],

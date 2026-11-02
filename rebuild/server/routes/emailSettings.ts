@@ -148,8 +148,6 @@ export interface EmailSettings {
   };
   
   schedule: {
-    reminderFrequencyDays: number;
-    maxReminders: number;
     quietHoursStart: string;
     quietHoursEnd: string;
     timezone: string;
@@ -191,8 +189,6 @@ const DEFAULT_SETTINGS: EmailSettings = {
   },
   
   schedule: {
-    reminderFrequencyDays: 3,
-    maxReminders: 3,
     quietHoursStart: '20:00',
     quietHoursEnd: '08:00',
     timezone: 'America/Los_Angeles',
@@ -891,18 +887,7 @@ export function createEmailSettingsRouter(db: Firestore): Router {
         });
       }
       
-      const { reminderFrequencyDays, maxReminders, quietHoursStart, quietHoursEnd, sendDays } = req.body;
-      
-      if (typeof reminderFrequencyDays !== 'number' || reminderFrequencyDays < 1 || reminderFrequencyDays > 30) {
-        return res.status(400).json({
-          error: { code: 'invalid_request', message: 'reminderFrequencyDays must be 1-30', requestId: res.locals.requestId },
-        });
-      }
-      if (typeof maxReminders !== 'number' || maxReminders < 0 || maxReminders > 10) {
-        return res.status(400).json({
-          error: { code: 'invalid_request', message: 'maxReminders must be 0-10', requestId: res.locals.requestId },
-        });
-      }
+      const { quietHoursStart, quietHoursEnd, sendDays } = req.body;
       
       const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
       if (!timeRegex.test(quietHoursStart) || !timeRegex.test(quietHoursEnd)) {
@@ -921,8 +906,6 @@ export function createEmailSettingsRouter(db: Firestore): Router {
       const settings = await getSettings();
       const oldSchedule = settings.schedule;
       const newSchedule = {
-        reminderFrequencyDays,
-        maxReminders,
         quietHoursStart,
         quietHoursEnd,
         timezone: 'America/Los_Angeles',
@@ -938,12 +921,6 @@ export function createEmailSettingsRouter(db: Firestore): Router {
       }, { merge: true });
       
       const changes = [];
-      if (oldSchedule.reminderFrequencyDays !== newSchedule.reminderFrequencyDays) {
-        changes.push({ field: 'reminderFrequencyDays', oldValue: oldSchedule.reminderFrequencyDays, newValue: newSchedule.reminderFrequencyDays });
-      }
-      if (oldSchedule.maxReminders !== newSchedule.maxReminders) {
-        changes.push({ field: 'maxReminders', oldValue: oldSchedule.maxReminders, newValue: newSchedule.maxReminders });
-      }
       if (oldSchedule.quietHoursStart !== newSchedule.quietHoursStart) {
         changes.push({ field: 'quietHoursStart', oldValue: oldSchedule.quietHoursStart, newValue: newSchedule.quietHoursStart });
       }

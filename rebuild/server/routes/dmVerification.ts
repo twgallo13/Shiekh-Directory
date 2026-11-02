@@ -217,6 +217,11 @@ export function createDMVerificationRouter(db: Firestore): Router {
         });
       }
 
+      const workflowRules = await getWorkflowRules(db);
+      const oldSettingsDoc = await db.collection('settings').doc('dmVerification').get();
+      const oldSettings = oldSettingsDoc.exists ? oldSettingsDoc.data() : null;
+      const oldDmOffsetDays = oldSettings?.dmOffsetDays ?? workflowRules.dmEscalationDays;
+
       await db.collection('settings').doc('dmVerification').set(
         { dmOffsetDays, updatedAt: new Date().toISOString(), updatedBy: authUser.uid },
         { merge: true }
@@ -230,7 +235,7 @@ export function createDMVerificationRouter(db: Firestore): Router {
         entityType: 'verification',
         entityId: 'dmVerification-settings',
         entityName: 'DM Verification Settings',
-        changes: [{ field: 'dmOffsetDays', newValue: dmOffsetDays }],
+        changes: [{ field: 'dmOffsetDays', oldValue: oldDmOffsetDays, newValue: dmOffsetDays }],
       });
 
       return res.json({ data: { dmOffsetDays } });

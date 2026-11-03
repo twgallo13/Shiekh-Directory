@@ -870,4 +870,255 @@ describe('Design Review Items - Behavior Tests', () => {
   // 1. TypeScript compilation (lint passes)
   // 2. The "Corrections query with overdueFlag works" test above verifies the system functions correctly
   // We don't need a separate source-reading test since behavioral tests cover the functionality.
+
+  // r27 fix #1: People endpoint returns workEmail field
+  describe('r27 fix #1: People API returns workEmail field', () => {
+    it('GET /people returns people with workEmail field', async () => {
+      // Create a test person
+      const personRef = db.collection('people').doc(`person-workemail-${testRunId}`);
+      await personRef.set({
+        id: personRef.id,
+        fullName: 'Test Worker',
+        workEmail: 'testworker@test.com',
+        lifecycle: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'people', id: personRef.id });
+
+      const res = await fetchApi('/api/app/people', 'GET', 'test-token-admin');
+      assert.strictEqual(res.status, 200, 'should return people list');
+      
+      const { data } = await res.json();
+      const testPerson = data.find((p: { id: string }) => p.id === personRef.id);
+      assert.ok(testPerson, 'should find the test person');
+      assert.strictEqual(testPerson.workEmail, 'testworker@test.com', 'should have workEmail field');
+    });
+
+    it('people without workEmail do not crash the list', async () => {
+      // Create a person without workEmail
+      const personRef = db.collection('people').doc(`person-noemail-${testRunId}`);
+      await personRef.set({
+        id: personRef.id,
+        fullName: 'No Email Person',
+        lifecycle: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'people', id: personRef.id });
+
+      const res = await fetchApi('/api/app/people', 'GET', 'test-token-admin');
+      assert.strictEqual(res.status, 200, 'should return people list without crashing');
+      
+      const { data } = await res.json();
+      const testPerson = data.find((p: { id: string }) => p.id === personRef.id);
+      assert.ok(testPerson, 'should find the person without email');
+      assert.strictEqual(testPerson.workEmail, undefined, 'workEmail should be undefined');
+    });
+  });
+
+  // r27 fix #6: Test data deletion
+  describe('r27 fix #6: Test data deletion', () => {
+    let testDataLocationId: string;
+
+    before(async () => {
+      // Create a unique location for test data tests to avoid conflicts with other tests
+      const testDataLocationRef = db.collection('locations').doc(`loc-testdata-${testRunId}`);
+      await testDataLocationRef.set({
+        id: testDataLocationRef.id,
+        storeNumber: 'TESTDATA01',
+        name: 'Test Data Store',
+        kind: 'store',
+        sharedInboxEmail: 'testdata@test.com',
+        districtId,
+        regionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'test',
+        updatedBy: 'test',
+        version: 1,
+      });
+      testDataLocationId = testDataLocationRef.id;
+      docsToCleanup.push({ collection: 'locations', id: testDataLocationRef.id });
+    });
+
+    it('Admin can create verification request with isTest flag', async () => {
+      const res = await fetchApi('/api/app/verification', 'POST', 'test-token-admin', {
+        locationId: testDataLocationId,
+        isTest: true,
+      });
+
+      assert.strictEqual(res.status, 201, 'should create test request');
+      const { data } = await res.json();
+      assert.strictEqual(data.isTest, true, 'should have isTest flag set');
+      
+      // Clean up
+      docsToCleanup.push({ collection: 'verificationRequests', id: data.id });
+    });
+
+    it('Steward cannot set isTest flag (only Admin)', async () => {
+      // Create a unique location for this test too
+      const stewardLocationRef = db.collection('locations').doc(`loc-steward-test-${testRunId}`);
+      await stewardLocationRef.set({
+        id: stewardLocationRef.id,
+        storeNumber: 'STEWARDTEST01',
+        name: 'Steward Test Store',
+        kind: 'store',
+        sharedInboxEmail: 'stewardtest@test.com',
+        districtId,
+        regionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'test',
+        updatedBy: 'test',
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'locations', id: stewardLocationRef.id });
+
+      const res = await fetchApi('/api/app/verification', 'POST', 'test-token-steward', {
+        locationId: stewardLocationRef.id,
+        isTest: true,
+      });
+
+      // Request should succeed but isTest should not be set
+      assert.strictEqual(res.status, 201, 'should create request');
+      const { data } = await res.json();
+      assert.strictEqual(data.isTest, undefined, 'isTest should not be set by Steward');
+      
+      docsToCleanup.push({ collection: 'verificationRequests', id: data.id });
+    });
+
+    it('DELETE /test-data dry run returns preview of items to delete', async () => {
+      // Create a test verification request
+      const testReqRef = db.collection('verificationRequests').doc(`vr-testdata-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId,
+        storeNumber: 'TEST-DEL',
+        locationName: 'Test Delete Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'testdel@test.com',
+        sentBy: 'test',
+        isTest: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'verificationRequests', id: testReqRef.id });
+
+      const res = await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', {
+        dryRun: true,
+      });
+
+      assert.strictEqual(res.status, 200, 'should return preview');
+      const data = await res.json();
+      assert.strictEqual(data.dryRun, true, 'should be a dry run');
+      assert.ok(data.totals, 'should have totals');
+      assert.ok(data.totals.verificationRequests >= 1, 'should find at least 1 test request');
+    });
+
+    it('DELETE /test-data only deletes records with isTest flag', async () => {
+      // Create a test request
+      const testReqRef = db.collection('verificationRequests').doc(`vr-delete-test-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId,
+        storeNumber: 'DEL01',
+        locationName: 'Delete Test Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'del@test.com',
+        sentBy: 'test',
+        isTest: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+
+      // Create a non-test request
+      const normalReqRef = db.collection('verificationRequests').doc(`vr-normal-${testRunId}`);
+      await normalReqRef.set({
+        id: normalReqRef.id,
+        locationId,
+        storeNumber: 'NORM01',
+        locationName: 'Normal Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'normal@test.com',
+        sentBy: 'test',
+        // No isTest flag
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'verificationRequests', id: normalReqRef.id });
+
+      // Delete test data
+      const res = await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', {
+        dryRun: false,
+      });
+
+      assert.strictEqual(res.status, 200, 'should succeed');
+      const data = await res.json();
+      assert.ok(data.success, 'should report success');
+
+      // Verify test request was deleted
+      const testDoc = await testReqRef.get();
+      assert.strictEqual(testDoc.exists, false, 'test request should be deleted');
+
+      // Verify normal request still exists
+      const normalDoc = await normalReqRef.get();
+      assert.strictEqual(normalDoc.exists, true, 'normal request should NOT be deleted');
+    });
+
+    it('DELETE /test-data requires Admin role', async () => {
+      const res = await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-steward', {
+        dryRun: true,
+      });
+
+      assert.strictEqual(res.status, 403, 'should reject non-Admin');
+    });
+
+    it('DELETE /test-data logs to audit', async () => {
+      // Create a test request
+      const testReqRef = db.collection('verificationRequests').doc(`vr-audit-test-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId,
+        storeNumber: 'AUDIT01',
+        locationName: 'Audit Test Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'audit@test.com',
+        sentBy: 'test',
+        isTest: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+
+      await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', {
+        dryRun: false,
+      });
+
+      // Check audit log
+      const auditSnap = await db.collection('auditLog')
+        .where('entityType', '==', 'test-data')
+        .where('action', '==', 'delete')
+        .orderBy('timestamp', 'desc')
+        .limit(1)
+        .get();
+
+      assert.ok(!auditSnap.empty, 'should create audit log entry');
+      const auditEntry = auditSnap.docs[0].data();
+      assert.ok(auditEntry.entityName.includes('Test data cleanup'), 'should have descriptive name');
+    });
+  });
 });

@@ -522,7 +522,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client' | 'workflow-rules' | 'settings' | 'email-settings';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client' | 'workflow-rules' | 'settings' | 'email-settings' | 'test-data';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store
@@ -586,6 +586,8 @@ export interface VerificationRequest extends RecordMetadata {
   storeType?: string; // Store type (copied from location at send time)
   assigneeId?: string; // User ID of person assigned to review
   assigneeName?: string; // Display name of assignee
+  // r27 fix #6: Test data flag (can only be set at creation by admin)
+  isTest?: boolean;
 }
 
 // === DM Verification (District Manager verification cycle) ===

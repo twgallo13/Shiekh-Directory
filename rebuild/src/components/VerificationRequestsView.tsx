@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2, BarChart2, ChevronDown, ChevronUp, Mail, MailX, Eye, Square, CheckSquare } from 'lucide-react';
+import { ArrowLeft, Send, Check, X, ChevronRight, AlertTriangle, Clock, CheckCircle, Ban, RotateCcw, Loader2, MapPin, Building2, BarChart2, ChevronDown, ChevronUp, Mail, MailX, Eye } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -37,7 +37,19 @@ export function VerificationRequestsView() {
   const [showBulkSend, setShowBulkSend] = useState(false);
   const [assigneeSearch, setAssigneeSearch] = useState('');
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
-  const [assignees, setAssignees] = useState<Array<{ id: string; fullName: string; email: string }>>([]);
+  const [assignees, setAssignees] = useState<Array<{ id: string; fullName: string; workEmail?: string }>>([]); // workEmail is optional
+  const [assigneesLoading, setAssigneesLoading] = useState(false); // r27 fix #2: loading state
+  const [mailEnabled, setMailEnabled] = useState<boolean | null>(null); // r27 fix #5: mail state
+  
+  // r27 fix #6: Test data deletion
+  const [showDeleteTestData, setShowDeleteTestData] = useState(false);
+  const [testDataPreview, setTestDataPreview] = useState<{
+    verificationRequests: number;
+    dmTasks: number;
+    mailLogs: number;
+    testTokens: number;
+  } | null>(null);
+  const [deleteTestDataLoading, setDeleteTestDataLoading] = useState(false);;
 
   const locationIdFilter = searchParams.get('locationId');
 
@@ -78,6 +90,29 @@ export function VerificationRequestsView() {
   useEffect(() => {
     fetchLocationName();
   }, [fetchLocationName]);
+
+  // r27 fix #5: check if mail is enabled
+  useEffect(() => {
+    const checkMailEnabled = async () => {
+      try {
+        const token = await getIdToken();
+        const response = await fetch('/api/app/email-settings', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const { data } = await response.json();
+          // Mail is considered "enabled" only if effectiveEnabled is true
+          // (masterEnabled AND envCutoverEnabled)
+          setMailEnabled(data?.effectiveEnabled ?? false);
+        }
+      } catch {
+        setMailEnabled(false);
+      }
+    };
+    if (isAdminOrSteward) {
+      checkMailEnabled();
+    }
+  }, [getIdToken, isAdminOrSteward]);
 
   const loadRequests = useCallback(async () => {
     try {
@@ -315,6 +350,7 @@ export function VerificationRequestsView() {
 
   // Item #10: Load assignees (people) for bulk assign
   const loadAssignees = useCallback(async () => {
+    setAssigneesLoading(true); // r27 fix #2
     try {
       const token = await getIdToken();
       const response = await fetch('/api/app/people', {
@@ -326,6 +362,8 @@ export function VerificationRequestsView() {
       }
     } catch {
       // Ignore - assignees list will be empty
+    } finally {
+      setAssigneesLoading(false); // r27 fix #2
     }
   }, [getIdToken]);
 
@@ -410,6 +448,59 @@ export function VerificationRequestsView() {
       setError('Failed to send reminders');
     } finally {
       setBulkProcessing(false);
+    }
+  };
+
+  // r27 fix #6: Load test data preview
+  const loadTestDataPreview = useCallback(async () => {
+    setDeleteTestDataLoading(true);
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/verification/test-data', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ dryRun: true }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTestDataPreview(data.totals);
+      }
+    } catch {
+      setTestDataPreview(null);
+    } finally {
+      setDeleteTestDataLoading(false);
+    }
+  }, [getIdToken]);
+
+  // r27 fix #6: Delete test data
+  const handleDeleteTestData = async () => {
+    setDeleteTestDataLoading(true);
+    setError(null);
+    try {
+      const token = await getIdToken();
+      const response = await fetch('/api/app/verification/test-data', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ dryRun: false }),
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        setError(result.error?.message || 'Failed to delete test data');
+        return;
+      }
+      setShowDeleteTestData(false);
+      setTestDataPreview(null);
+      loadRequests();
+    } catch {
+      setError('Failed to delete test data');
+    } finally {
+      setDeleteTestDataLoading(false);
     }
   };
 
@@ -524,7 +615,7 @@ export function VerificationRequestsView() {
                 </button>
                 <button
                   onClick={() => setShowBulkSend(true)}
-                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 min-h-[36px]"
+                  className="px-3 py-1.5 text-sm bg-green-700 text-white rounded-lg hover:bg-green-800 min-h-[36px]"
                 >
                   Send Reminders
                 </button>
@@ -575,6 +666,27 @@ export function VerificationRequestsView() {
           <BulkVerificationSection getIdToken={getIdToken} onCampaignSent={loadRequests} />
         )}
 
+        {/* r27 fix #6: Test data deletion - Admin only */}
+        {authUser?.role === 'Admin' && (
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+            <button
+              onClick={() => { loadTestDataPreview(); setShowDeleteTestData(true); }}
+              className="w-full flex items-center justify-between text-left min-h-[44px]"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <AlertTriangle className="w-5 h-5 text-red-600" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="font-medium text-gray-900 text-base">Delete Test Data</h2>
+                  <p className="text-sm text-gray-500">Remove verification requests marked as test data</p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-600" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
         {/* Item #9: Completion rate and aging stats - Admin/Steward only */}
         {isAdminOrSteward && (
           <VerificationStatsSection getIdToken={getIdToken} />
@@ -597,23 +709,21 @@ export function VerificationRequestsView() {
           </div>
         ) : (
           <div className="space-y-3">
-            {/* Item #10: Select all checkbox */}
+            {/* Item #10: Select all checkbox - r27 fix #4: real checkbox */}
             {isAdminOrSteward && filteredRequests.length > 0 && (
               <div className="flex items-center gap-2 px-2">
-                <button
-                  onClick={toggleAllSelection}
-                  className="p-1 hover:bg-gray-100 rounded min-h-[32px] min-w-[32px] flex items-center justify-center"
-                  aria-label={selectedIds.size === filteredRequests.length ? 'Deselect all' : 'Select all'}
-                >
-                  {selectedIds.size === filteredRequests.length ? (
-                    <CheckSquare className="w-5 h-5 text-blue-600" />
-                  ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
-                  )}
-                </button>
-                <span className="text-sm text-gray-600">
-                  {selectedIds.size === filteredRequests.length ? 'Deselect all' : 'Select all'} ({filteredRequests.length})
-                </span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === filteredRequests.length && filteredRequests.length > 0}
+                    onChange={toggleAllSelection}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    aria-label={`Select all ${filteredRequests.length} requests`}
+                  />
+                  <span className="text-sm text-gray-600">
+                    {selectedIds.size === filteredRequests.length ? 'Deselect all' : 'Select all'} ({filteredRequests.length})
+                  </span>
+                </label>
               </div>
             )}
             
@@ -634,19 +744,17 @@ export function VerificationRequestsView() {
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    {/* Item #10: Row checkbox */}
+                    {/* Item #10: Row checkbox - r27 fix #4: real checkbox with accessible name */}
                     {isAdminOrSteward && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleSelection(request.id); }}
-                        className="p-1 hover:bg-gray-100 rounded mt-0.5 min-h-[32px] min-w-[32px] flex items-center justify-center flex-shrink-0"
-                        aria-label={isSelected ? 'Deselect' : 'Select'}
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="w-5 h-5 text-blue-600" />
-                        ) : (
-                          <Square className="w-5 h-5 text-gray-400" />
-                        )}
-                      </button>
+                      <div className="flex-shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelection(request.id)}
+                          className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          aria-label={`Select #${request.storeNumber} ${request.locationName}`}
+                        />
+                      </div>
                     )}
                     <div className="flex-1 min-w-0" onClick={() => setSelectedId(request.id)}>
                       <div className="flex flex-wrap items-center gap-2">
@@ -679,10 +787,10 @@ export function VerificationRequestsView() {
                             Not Sent
                           </span>
                         )}
-                        {/* Item #10: Aging indicator */}
+                        {/* Item #10: Aging indicator - r27 fix #3: improved contrast */}
                         {(request.status === 'pending' || request.status === 'awaiting_response') && daysSinceSent > 0 && (
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                            isOverdue ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-600'
+                            isOverdue ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
                           }`}>
                             {daysSinceSent}d ago
                           </span>
@@ -773,7 +881,7 @@ export function VerificationRequestsView() {
             <button
               onClick={handleBulkCancel}
               disabled={bulkProcessing || bulkReason.trim().length < 3}
-              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
             >
               {bulkProcessing ? (
                 <>
@@ -828,7 +936,7 @@ export function VerificationRequestsView() {
             <button
               onClick={handleBulkReissue}
               disabled={bulkProcessing || bulkReason.trim().length < 3}
-              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
             >
               {bulkProcessing ? (
                 <>
@@ -848,8 +956,19 @@ export function VerificationRequestsView() {
         <div className="space-y-4">
           <p className="text-gray-700">
             You are about to reissue <strong>{selectedIds.size}</strong> verification request{selectedIds.size > 1 ? 's' : ''}.
-            New emails will be sent to the store contacts.
+            {/* r27 fix #5: text reflects mail state */}
+            {mailEnabled === false ? (
+              <> New emails will be <strong>queued</strong> (mail is currently off).</>
+            ) : (
+              <> New emails will be sent to the store contacts.</>
+            )}
           </p>
+          {mailEnabled === false && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+              <p className="font-medium">Mail is currently off</p>
+              <p className="mt-1">Verification requests will be created and logged, but emails will not be delivered until mail is enabled.</p>
+            </div>
+          )}
           <FormField id="bulk-reissue-reason" label="Reason for reissue (required)">
             <textarea
               id="bulk-reissue-reason"
@@ -883,7 +1002,7 @@ export function VerificationRequestsView() {
             <button
               onClick={handleBulkAssign}
               disabled={bulkProcessing || !selectedAssigneeId}
-              className="flex-1 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+              className="flex-1 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
             >
               {bulkProcessing ? (
                 <>
@@ -912,38 +1031,61 @@ export function VerificationRequestsView() {
             />
           </FormField>
           <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg">
-            {assignees
-              .filter(p => 
-                !assigneeSearch ||
-                p.fullName.toLowerCase().includes(assigneeSearch.toLowerCase()) ||
-                p.email.toLowerCase().includes(assigneeSearch.toLowerCase())
-              )
-              .slice(0, 50)
-              .map(person => (
-                <button
-                  key={person.id}
-                  onClick={() => setSelectedAssigneeId(person.id)}
-                  className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 border-b last:border-b-0 min-h-[44px] ${
-                    selectedAssigneeId === person.id ? 'bg-purple-50 border-purple-300' : ''
-                  }`}
-                >
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                    selectedAssigneeId === person.id ? 'border-purple-600 bg-purple-600' : 'border-gray-300'
-                  }`}>
-                    {selectedAssigneeId === person.id && (
-                      <Check className="w-3 h-3 text-white" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{person.fullName}</p>
-                    <p className="text-sm text-gray-500 truncate">{person.email}</p>
-                  </div>
-                </button>
-              ))}
-            {assignees.length === 0 && (
-              <div className="px-4 py-8 text-center text-gray-500">
-                No people found
+            {assigneesLoading ? (
+              /* r27 fix #2: show loading state */
+              <div className="px-4 py-8 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" aria-label="Loading people..." />
               </div>
+            ) : (
+              <>
+                {assignees
+                  .filter(p => {
+                    /* r27 fix #1: guard missing fields */
+                    if (!assigneeSearch) return true;
+                    const searchLower = assigneeSearch.toLowerCase();
+                    const nameMatch = p.fullName?.toLowerCase().includes(searchLower) ?? false;
+                    const emailMatch = p.workEmail?.toLowerCase().includes(searchLower) ?? false;
+                    return nameMatch || emailMatch;
+                  })
+                  .slice(0, 50)
+                  .map(person => (
+                    <button
+                      key={person.id}
+                      onClick={() => setSelectedAssigneeId(person.id)}
+                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 border-b last:border-b-0 min-h-[44px] ${
+                        selectedAssigneeId === person.id ? 'bg-purple-50 border-purple-300' : ''
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                        selectedAssigneeId === person.id ? 'border-purple-600 bg-purple-600' : 'border-gray-300'
+                      }`}>
+                        {selectedAssigneeId === person.id && (
+                          <Check className="w-3 h-3 text-white" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{person.fullName || 'Unknown'}</p>
+                        <p className="text-sm text-gray-500 truncate">{person.workEmail || 'No email'}</p>
+                      </div>
+                    </button>
+                  ))}
+                {/* r27 fix #2: only show after loading finishes */}
+                {assignees.length === 0 && (
+                  <div className="px-4 py-8 text-center text-gray-500">
+                    No people found
+                  </div>
+                )}
+                {assignees.length > 0 && assignees.filter(p => {
+                  if (!assigneeSearch) return true;
+                  const searchLower = assigneeSearch.toLowerCase();
+                  return (p.fullName?.toLowerCase().includes(searchLower) ?? false) ||
+                         (p.workEmail?.toLowerCase().includes(searchLower) ?? false);
+                }).length === 0 && (
+                  <div className="px-4 py-8 text-center text-gray-500">
+                    No people found
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -966,7 +1108,7 @@ export function VerificationRequestsView() {
             <button
               onClick={handleBulkSend}
               disabled={bulkProcessing}
-              className="flex-1 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+              className="flex-1 py-2 bg-green-700 text-white rounded-lg text-sm font-medium hover:bg-green-800 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
             >
               {bulkProcessing ? (
                 <>
@@ -995,6 +1137,84 @@ export function VerificationRequestsView() {
               <li>Email delivery depends on SMTP configuration</li>
             </ul>
           </div>
+        </div>
+      </Dialog>
+
+      {/* r27 fix #6: Delete Test Data Dialog - Admin only */}
+      <Dialog
+        isOpen={showDeleteTestData}
+        onClose={() => { setShowDeleteTestData(false); setTestDataPreview(null); }}
+        title="Delete Test Data"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setShowDeleteTestData(false); setTestDataPreview(null); }}
+              disabled={deleteTestDataLoading}
+              className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteTestData}
+              disabled={deleteTestDataLoading || !testDataPreview || (testDataPreview.verificationRequests === 0)}
+              className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
+            >
+              {deleteTestDataLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  Deleting...
+                </>
+              ) : (
+                <>Delete Test Data</>
+              )}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
+            <p className="font-medium">Warning</p>
+            <p className="mt-1">This will permanently delete all verification requests that were marked as test data, along with their related mail logs and DM tasks.</p>
+          </div>
+          
+          {deleteTestDataLoading && !testDataPreview && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            </div>
+          )}
+          
+          {testDataPreview && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-medium text-gray-900 mb-3">Items to be deleted:</h3>
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-gray-600">Verification Requests</dt>
+                  <dd className="font-medium text-gray-900">{testDataPreview.verificationRequests}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-600">DM Tasks</dt>
+                  <dd className="font-medium text-gray-900">{testDataPreview.dmTasks}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-600">Mail Log Entries</dt>
+                  <dd className="font-medium text-gray-900">{testDataPreview.mailLogs}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-600">Test Tokens</dt>
+                  <dd className="font-medium text-gray-900">{testDataPreview.testTokens}</dd>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-gray-200">
+                  <dt className="font-medium text-gray-700">Total</dt>
+                  <dd className="font-bold text-gray-900">
+                    {testDataPreview.verificationRequests + testDataPreview.dmTasks + testDataPreview.mailLogs + testDataPreview.testTokens}
+                  </dd>
+                </div>
+              </dl>
+              {testDataPreview.verificationRequests === 0 && (
+                <p className="mt-3 text-sm text-gray-500">No test data found. Only verification requests created with the isTest flag can be deleted.</p>
+              )}
+            </div>
+          )}
         </div>
       </Dialog>
     </div>
@@ -1086,7 +1306,7 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
       <button
         onClick={handleSend}
         disabled={!selectedLocationId || sending}
-        className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
+        className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
       >
         <Send className="w-4 h-4" aria-hidden="true" />
         {sending ? 'Sending...' : 'Send Request'}
@@ -1449,7 +1669,7 @@ function BulkVerificationSection({
             <button
               onClick={handleSend}
               disabled={sending || dryRunResults.wouldSend === 0}
-              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+              className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
             >
               {sending ? (
                 <>
@@ -1657,7 +1877,7 @@ function BulkVerificationSection({
           <button
             onClick={handlePreview}
             disabled={sending || !settingsLoaded || ((scope === 'district' || scope === 'region') && !scopeId)}
-            className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 min-h-[44px]"
+            className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[44px]"
           >
             {sending ? (
               <>
@@ -1733,7 +1953,7 @@ function VerificationDetailDialog({
               <button
                 onClick={() => onApprove(request.id, true)}
                 disabled={processing || cancelling === request.id}
-                className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Check className="w-4 h-4" aria-hidden="true" />
                 Approve & Apply Changes
@@ -1741,7 +1961,7 @@ function VerificationDetailDialog({
               <button
                 onClick={() => onApprove(request.id, false)}
                 disabled={processing || cancelling === request.id}
-                className="w-full min-h-[44px] py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full min-h-[44px] py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 Mark Verified (No Changes)
               </button>
@@ -1750,7 +1970,7 @@ function VerificationDetailDialog({
             <button
               onClick={() => onApprove(request.id, false)}
               disabled={processing || cancelling === request.id}
-              className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Check className="w-4 h-4" aria-hidden="true" />
               Mark as Verified
@@ -1759,7 +1979,7 @@ function VerificationDetailDialog({
           <button
             onClick={() => onCancel(request.id)}
             disabled={processing || cancelling === request.id}
-            className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <Ban className="w-4 h-4" aria-hidden="true" />
             {cancelling === request.id ? 'Cancelling...' : 'Cancel Request'}
@@ -1777,7 +1997,7 @@ function VerificationDetailDialog({
           <button
             onClick={() => onCancel(request.id)}
             disabled={cancelling === request.id}
-            className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full min-h-[44px] py-2.5 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <Ban className="w-4 h-4" aria-hidden="true" />
             {cancelling === request.id ? 'Cancelling...' : 'Cancel Request'}
@@ -1799,7 +2019,7 @@ function VerificationDetailDialog({
         <button
           onClick={() => onReissue(request.locationId)}
           disabled={processing}
-          className="w-full min-h-[44px] py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+          className="w-full min-h-[44px] py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <RotateCcw className="w-4 h-4" aria-hidden="true" />
           {processing ? 'Sending...' : 'Reissue Verification Request'}

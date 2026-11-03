@@ -103,7 +103,7 @@ export function createVerificationRouter(db: Firestore): Router {
   router.post('/', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
-      const { locationId } = req.body;
+      const { locationId, isTest } = req.body;
 
       if (!authUser) {
         return res.status(401).json({
@@ -193,6 +193,9 @@ export function createVerificationRouter(db: Firestore): Router {
       }
 
       const requestRef = db.collection('verificationRequests').doc();
+      // r27 fix #6: Only Admin can set isTest flag (Steward cannot mark as test)
+      const testFlag = isTest === true && authUser.role === 'Admin' ? true : undefined;
+      
       const verificationRequest: Omit<VerificationRequest, 'id'> = {
         locationId,
         locationName: location.name,
@@ -209,6 +212,7 @@ export function createVerificationRouter(db: Firestore): Router {
         updatedAt: now.toISOString(),
         updatedBy: authUser.uid,
         version: 1,
+        isTest: testFlag, // r27 fix #6: Only set if Admin explicitly passes isTest: true
       };
 
       await requestRef.set(verificationRequest);
@@ -2382,6 +2386,145 @@ export function createVerificationRouter(db: Firestore): Router {
       console.error('Verification stats error:', error);
       res.status(500).json({
         error: { code: 'stats_error', message: 'Failed to get verification stats', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  // r27 fix #6: Admin-only endpoint to delete test data
+  // Only deletes records with explicit isTest flag, logs every deletion to audit
+  router.delete('/test-data', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+
+      // Admin-only
+      if (!authUser || authUser.role !== 'Admin') {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Admin access required to delete test data', requestId: res.locals.requestId },
+        });
+      }
+
+      const { dryRun = false } = req.body;
+      const now = new Date();
+      const deletedItems: { type: string; id: string; storeNumber?: string }[] = [];
+
+      // Find test verification requests (only those with explicit isTest: true)
+      const testRequestsSnap = await db.collection('verificationRequests')
+        .where('isTest', '==', true)
+        .get();
+
+      // Find related mailLog entries
+      const testRequestIds = testRequestsSnap.docs.map(d => d.id);
+      
+      // Find related dmTasks
+      const testDmTasks: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      for (const requestId of testRequestIds) {
+        const tasksSnap = await db.collection('dmTasks')
+          .where('verificationRequestId', '==', requestId)
+          .get();
+        testDmTasks.push(...tasksSnap.docs);
+      }
+
+      // Find related mailLog entries
+      const testMailLogs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      for (const requestId of testRequestIds) {
+        const logsSnap = await db.collection('mailLog')
+          .where('verificationRequestId', '==', requestId)
+          .get();
+        testMailLogs.push(...logsSnap.docs);
+      }
+
+      // Find related testTokens
+      const testTokens: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      for (const requestId of testRequestIds) {
+        const tokensSnap = await db.collection('testTokens')
+          .where('verificationRequestId', '==', requestId)
+          .get();
+        testTokens.push(...tokensSnap.docs);
+      }
+
+      if (dryRun) {
+        return res.json({
+          dryRun: true,
+          wouldDelete: {
+            verificationRequests: testRequestsSnap.docs.map(d => ({
+              id: d.id,
+              storeNumber: d.data().storeNumber,
+            })),
+            dmTasks: testDmTasks.map(d => ({
+              id: d.id,
+              storeNumber: d.data().storeNumber,
+            })),
+            mailLogs: testMailLogs.map(d => ({ id: d.id })),
+            testTokens: testTokens.map(d => ({ id: d.id })),
+          },
+          totals: {
+            verificationRequests: testRequestsSnap.size,
+            dmTasks: testDmTasks.length,
+            mailLogs: testMailLogs.length,
+            testTokens: testTokens.length,
+          },
+        });
+      }
+
+      // Delete in batches (Firestore batch limit is 500)
+      const BATCH_SIZE = 400;
+      const allDocs = [
+        ...testRequestsSnap.docs.map(d => ({ type: 'verificationRequest', doc: d })),
+        ...testDmTasks.map(d => ({ type: 'dmTask', doc: d })),
+        ...testMailLogs.map(d => ({ type: 'mailLog', doc: d })),
+        ...testTokens.map(d => ({ type: 'testToken', doc: d })),
+      ];
+
+      for (let i = 0; i < allDocs.length; i += BATCH_SIZE) {
+        const batch = db.batch();
+        const chunk = allDocs.slice(i, i + BATCH_SIZE);
+        
+        for (const { type, doc } of chunk) {
+          batch.delete(doc.ref);
+          deletedItems.push({
+            type,
+            id: doc.id,
+            storeNumber: doc.data().storeNumber,
+          });
+        }
+        
+        await batch.commit();
+      }
+
+      // Log the deletion to audit
+      if (deletedItems.length > 0) {
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'delete',
+          entityType: 'test-data',
+          entityId: `test-cleanup-${now.getTime()}`,
+          entityName: `Test data cleanup (${deletedItems.length} items)`,
+          changes: [
+            { field: 'verificationRequests', newValue: testRequestsSnap.size },
+            { field: 'dmTasks', newValue: testDmTasks.length },
+            { field: 'mailLogs', newValue: testMailLogs.length },
+            { field: 'testTokens', newValue: testTokens.length },
+          ],
+        });
+      }
+
+      res.json({
+        success: true,
+        deleted: {
+          verificationRequests: testRequestsSnap.size,
+          dmTasks: testDmTasks.length,
+          mailLogs: testMailLogs.length,
+          testTokens: testTokens.length,
+          total: deletedItems.length,
+        },
+        items: deletedItems,
+      });
+    } catch (error) {
+      console.error('Delete test data error:', error);
+      res.status(500).json({
+        error: { code: 'delete_error', message: 'Failed to delete test data', requestId: res.locals.requestId },
       });
     }
   });

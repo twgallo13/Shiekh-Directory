@@ -820,7 +820,7 @@ export function VerificationRequestsView() {
                         )}
                       </div>
                       {request.proposedChanges && Object.keys(request.proposedChanges).length > 0 && (
-                        <p className="text-xs text-orange-600 mt-1 font-medium">
+                        <p className="text-xs text-orange-800 mt-1 font-medium">
                           Has proposed changes
                         </p>
                       )}
@@ -861,6 +861,7 @@ export function VerificationRequestsView() {
             setShowNewRequest(false);
             loadRequests();
           }}
+          mailEnabled={mailEnabled}
         />
       )}
 
@@ -956,9 +957,11 @@ export function VerificationRequestsView() {
         <div className="space-y-4">
           <p className="text-gray-700">
             You are about to reissue <strong>{selectedIds.size}</strong> verification request{selectedIds.size > 1 ? 's' : ''}.
-            {/* r27 fix #5: text reflects mail state */}
+            {/* r28 fix #5: text reflects mail state - blocked mail is logged only, never sent later */}
             {mailEnabled === false ? (
-              <> New emails will be <strong>queued</strong> (mail is currently off).</>
+              <> <strong>No emails will be sent</strong> while mail is off.</>
+            ) : mailEnabled === null ? (
+              <> New emails will be sent to the store contacts.</>
             ) : (
               <> New emails will be sent to the store contacts.</>
             )}
@@ -966,7 +969,7 @@ export function VerificationRequestsView() {
           {mailEnabled === false && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
               <p className="font-medium">Mail is currently off</p>
-              <p className="mt-1">Verification requests will be created and logged, but emails will not be delivered until mail is enabled.</p>
+              <p className="mt-1">Verification requests will be created but no emails will be sent. Blocked emails are logged only and are not queued for later delivery.</p>
             </div>
           )}
           <FormField id="bulk-reissue-reason" label="Reason for reissue (required)">
@@ -1221,7 +1224,7 @@ export function VerificationRequestsView() {
   );
 }
 
-function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void; onSent: () => void }) {
+function NewVerificationRequestModal({ onClose, onSent, mailEnabled }: { onClose: () => void; onSent: () => void; mailEnabled: boolean | null }) {
   const { getIdToken } = useAuth();
   const [locations, setLocations] = useState<LocationListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1318,8 +1321,20 @@ function NewVerificationRequestModal({ onClose, onSent }: { onClose: () => void;
     <Dialog isOpen={true} onClose={onClose} title="Send Verification Request" footer={footer}>
       <div className="space-y-4">
         <p className="text-sm text-gray-600">
-          Select a store to send a verification request. The request will be sent to the store's shared inbox email.
+          Select a store to send a verification request.
+          {/* r28 fix #5: show mail state in single-store dialog */}
+          {mailEnabled === false ? (
+            <strong> No email will be sent while mail is off.</strong>
+          ) : (
+            <> The request will be sent to the store's shared inbox email.</>
+          )}
         </p>
+        {mailEnabled === false && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+            <p className="font-medium">Mail is currently off</p>
+            <p className="mt-1">The request will be created but no email will be sent. Blocked emails are logged only.</p>
+          </div>
+        )}
 
         <div>
           <label htmlFor="store-search" className="sr-only">Search stores</label>
@@ -1953,7 +1968,7 @@ function VerificationDetailDialog({
               <button
                 onClick={() => onApprove(request.id, true)}
                 disabled={processing || cancelling === request.id}
-                className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full min-h-[44px] py-2.5 bg-green-700 text-white rounded-lg font-medium hover:bg-green-800 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Check className="w-4 h-4" aria-hidden="true" />
                 Approve & Apply Changes
@@ -1970,7 +1985,7 @@ function VerificationDetailDialog({
             <button
               onClick={() => onApprove(request.id, false)}
               disabled={processing || cancelling === request.id}
-              className="w-full min-h-[44px] py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full min-h-[44px] py-2.5 bg-green-700 text-white rounded-lg font-medium hover:bg-green-800 disabled:bg-gray-400 disabled:text-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Check className="w-4 h-4" aria-hidden="true" />
               Mark as Verified
@@ -2297,9 +2312,9 @@ function VerificationStatsSection({ getIdToken }: { getIdToken: () => Promise<st
                       <div className="font-bold text-yellow-700">{stats.totals.agingBuckets.threeTo7Days}</div>
                       <div className="text-xs text-yellow-600">3-7 days</div>
                     </div>
-                    <div className="bg-orange-50 rounded p-2">
-                      <div className="font-bold text-orange-700">{stats.totals.agingBuckets.sevenTo14Days}</div>
-                      <div className="text-xs text-orange-600">7-14 days</div>
+                    <div className="bg-orange-100 rounded p-2">
+                      <div className="font-bold text-orange-800">{stats.totals.agingBuckets.sevenTo14Days}</div>
+                      <div className="text-xs text-orange-700">7-14 days</div>
                     </div>
                     <div className="bg-red-50 rounded p-2">
                       <div className="font-bold text-red-700">{stats.totals.agingBuckets.moreThan14Days}</div>
@@ -2349,7 +2364,7 @@ function VerificationStatsSection({ getIdToken }: { getIdToken: () => Promise<st
                               <td className="text-center px-2 py-2 text-yellow-600">{totalPending}</td>
                               <td className="text-center px-2 py-2 text-green-600 hidden sm:table-cell">{group.agingBuckets.lessThan3Days}</td>
                               <td className="text-center px-2 py-2 text-yellow-600 hidden sm:table-cell">{group.agingBuckets.threeTo7Days}</td>
-                              <td className="text-center px-2 py-2 text-orange-600 hidden sm:table-cell">{group.agingBuckets.sevenTo14Days}</td>
+                              <td className="text-center px-2 py-2 text-orange-700 hidden sm:table-cell">{group.agingBuckets.sevenTo14Days}</td>
                               <td className="text-center px-2 py-2 text-red-600 hidden sm:table-cell">{group.agingBuckets.moreThan14Days}</td>
                             </tr>
                           );

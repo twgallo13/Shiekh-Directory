@@ -1839,6 +1839,8 @@ export function createVerificationRouter(db: Firestore): Router {
           updatedAt: now.toISOString(),
           updatedBy: authUser.uid,
           version: 1,
+          // r28 fix #6a: carry isTest from old request to new request
+          ...(oldRequest.isTest === true ? { isTest: true } : {}),
         };
 
         await newRequestRef.set(newRequest);
@@ -2433,16 +2435,17 @@ export function createVerificationRouter(db: Firestore): Router {
         testMailLogs.push(...logsSnap.docs);
       }
 
-      // Find related testTokens
-      const testTokens: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      // r28 fix #6b: Find related storeAuthTokens (not testTokens)
+      const storeAuthTokens: FirebaseFirestore.QueryDocumentSnapshot[] = [];
       for (const requestId of testRequestIds) {
-        const tokensSnap = await db.collection('testTokens')
+        const tokensSnap = await db.collection('storeAuthTokens')
           .where('verificationRequestId', '==', requestId)
           .get();
-        testTokens.push(...tokensSnap.docs);
+        storeAuthTokens.push(...tokensSnap.docs);
       }
 
       if (dryRun) {
+        // r28 fix #6c: Include record IDs in dry run response
         return res.json({
           dryRun: true,
           wouldDelete: {
@@ -2455,13 +2458,13 @@ export function createVerificationRouter(db: Firestore): Router {
               storeNumber: d.data().storeNumber,
             })),
             mailLogs: testMailLogs.map(d => ({ id: d.id })),
-            testTokens: testTokens.map(d => ({ id: d.id })),
+            storeAuthTokens: storeAuthTokens.map(d => ({ id: d.id })),
           },
           totals: {
             verificationRequests: testRequestsSnap.size,
             dmTasks: testDmTasks.length,
             mailLogs: testMailLogs.length,
-            testTokens: testTokens.length,
+            storeAuthTokens: storeAuthTokens.length,
           },
         });
       }
@@ -2472,7 +2475,7 @@ export function createVerificationRouter(db: Firestore): Router {
         ...testRequestsSnap.docs.map(d => ({ type: 'verificationRequest', doc: d })),
         ...testDmTasks.map(d => ({ type: 'dmTask', doc: d })),
         ...testMailLogs.map(d => ({ type: 'mailLog', doc: d })),
-        ...testTokens.map(d => ({ type: 'testToken', doc: d })),
+        ...storeAuthTokens.map(d => ({ type: 'storeAuthToken', doc: d })),
       ];
 
       for (let i = 0; i < allDocs.length; i += BATCH_SIZE) {
@@ -2491,8 +2494,16 @@ export function createVerificationRouter(db: Firestore): Router {
         await batch.commit();
       }
 
-      // Log the deletion to audit
+      // r28 fix #6c: Log the deletion to audit with record IDs per collection
       if (deletedItems.length > 0) {
+        // Group deleted items by type for audit
+        const deletedByType: Record<string, string[]> = {};
+        for (const item of deletedItems) {
+          if (!deletedByType[item.type]) deletedByType[item.type] = [];
+          deletedByType[item.type].push(item.id);
+        }
+
+        // r28 fix #6c: stringify the IDs for audit (AuditChange only accepts primitives)
         await logAudit(db, {
           userId: authUser.uid,
           userEmail: authUser.email,
@@ -2502,10 +2513,10 @@ export function createVerificationRouter(db: Firestore): Router {
           entityId: `test-cleanup-${now.getTime()}`,
           entityName: `Test data cleanup (${deletedItems.length} items)`,
           changes: [
-            { field: 'verificationRequests', newValue: testRequestsSnap.size },
-            { field: 'dmTasks', newValue: testDmTasks.length },
-            { field: 'mailLogs', newValue: testMailLogs.length },
-            { field: 'testTokens', newValue: testTokens.length },
+            { field: 'verificationRequests', newValue: `${testRequestsSnap.size} deleted: ${(deletedByType['verificationRequest'] || []).join(', ') || 'none'}` },
+            { field: 'dmTasks', newValue: `${testDmTasks.length} deleted: ${(deletedByType['dmTask'] || []).join(', ') || 'none'}` },
+            { field: 'mailLogs', newValue: `${testMailLogs.length} deleted: ${(deletedByType['mailLog'] || []).join(', ') || 'none'}` },
+            { field: 'storeAuthTokens', newValue: `${storeAuthTokens.length} deleted: ${(deletedByType['storeAuthToken'] || []).join(', ') || 'none'}` },
           ],
         });
       }
@@ -2516,7 +2527,7 @@ export function createVerificationRouter(db: Firestore): Router {
           verificationRequests: testRequestsSnap.size,
           dmTasks: testDmTasks.length,
           mailLogs: testMailLogs.length,
-          testTokens: testTokens.length,
+          storeAuthTokens: storeAuthTokens.length,
           total: deletedItems.length,
         },
         items: deletedItems,

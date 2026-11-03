@@ -51,7 +51,7 @@ describe('Design Review Items - Behavior Tests', () => {
 
     const now = new Date().toISOString();
 
-    // Create test location
+    // Create test location with all required fields for v1 API compatibility
     const locationRef = db.collection('locations').doc(`loc-test-${testRunId}`);
     await locationRef.set({
       kind: 'store',
@@ -61,6 +61,8 @@ describe('Design Review Items - Behavior Tests', () => {
       districtId,
       regionId,
       sharedInboxEmail: 'store@test.com',
+      timeZone: 'America/Los_Angeles', // Required for v1 API compatibility
+      address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001' },
       createdAt: now,
       updatedAt: now,
       updatedBy: 'test',
@@ -1119,6 +1121,301 @@ describe('Design Review Items - Behavior Tests', () => {
       assert.ok(!auditSnap.empty, 'should create audit log entry');
       const auditEntry = auditSnap.docs[0].data();
       assert.ok(auditEntry.entityName.includes('Test data cleanup'), 'should have descriptive name');
+    });
+
+    // r28 fix #6d: Test that bulk reissue carries isTest flag
+    it('bulk reissue carries isTest flag to new request', async () => {
+      // Create a unique location for this test
+      const reissueLocationRef = db.collection('locations').doc(`loc-reissue-${testRunId}`);
+      await reissueLocationRef.set({
+        id: reissueLocationRef.id,
+        storeNumber: 'REISSUE01',
+        name: 'Reissue Test Store',
+        kind: 'store',
+        lifecycle: 'active',
+        sharedInboxEmail: 'reissue@test.com',
+        timeZone: 'America/Los_Angeles',
+        districtId,
+        regionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'test',
+        updatedBy: 'test',
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'locations', id: reissueLocationRef.id });
+
+      // Create a test verification request that's expired (reissuable)
+      const testReqRef = db.collection('verificationRequests').doc(`vr-reissue-test-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId: reissueLocationRef.id,
+        storeNumber: 'REISSUE01',
+        locationName: 'Reissue Test Store',
+        status: 'expired', // Terminal status - can be reissued
+        sentAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'reissue@test.com',
+        sentBy: 'test',
+        isTest: true, // This should be carried over
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'verificationRequests', id: testReqRef.id });
+
+      // Bulk reissue
+      const res = await fetchApi('/api/app/verification/bulk/reissue', 'POST', 'test-token-admin', {
+        ids: [testReqRef.id],
+        reason: 'Testing reissue of test request',
+      });
+
+      assert.strictEqual(res.status, 200, 'should reissue successfully');
+      const { data } = await res.json();
+      // Check if skipped and why
+      if (data.skipped > 0) {
+        console.log(`Reissue skipped ${testReqRef.id}: skippedIds = ${JSON.stringify(data.skippedIds)}`);
+      }
+      assert.ok(data.reissuedRequests?.length > 0, `should have reissued requests (skipped: ${data.skipped || 0}, skippedIds: ${data.skippedIds?.join(', ') || 'none'})`);
+
+      // Check the new request has isTest flag
+      const newRequestId = data.reissuedRequests[0].newRequestId;
+      const newRequestDoc = await db.collection('verificationRequests').doc(newRequestId).get();
+      assert.strictEqual(newRequestDoc.data()?.isTest, true, 'new request should have isTest flag');
+
+      docsToCleanup.push({ collection: 'verificationRequests', id: newRequestId });
+    });
+
+    // r28 fix #6d: Test that cleanup deletes storeAuthTokens
+    it('DELETE /test-data also deletes storeAuthTokens', async () => {
+      // Create a unique location for this test
+      const tokenLocationRef = db.collection('locations').doc(`loc-token-${testRunId}`);
+      await tokenLocationRef.set({
+        id: tokenLocationRef.id,
+        storeNumber: 'TOKEN01',
+        name: 'Token Test Store',
+        kind: 'store',
+        lifecycle: 'active',
+        sharedInboxEmail: 'token@test.com',
+        timeZone: 'America/Los_Angeles',
+        districtId,
+        regionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'test',
+        updatedBy: 'test',
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'locations', id: tokenLocationRef.id });
+
+      // Create a test verification request
+      const testReqRef = db.collection('verificationRequests').doc(`vr-token-test-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId: tokenLocationRef.id,
+        storeNumber: 'TOKEN01',
+        locationName: 'Token Test Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'token@test.com',
+        sentBy: 'test',
+        isTest: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'verificationRequests', id: testReqRef.id });
+
+      // Create related storeAuthToken
+      const tokenRef = db.collection('storeAuthTokens').doc(`tok-test-${testRunId}`);
+      await tokenRef.set({
+        verificationRequestId: testReqRef.id,
+        locationId: tokenLocationRef.id,
+        action: 'confirm',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+      docsToCleanup.push({ collection: 'storeAuthTokens', id: tokenRef.id });
+
+      // Delete test data
+      const res = await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', {
+        dryRun: false,
+      });
+
+      assert.strictEqual(res.status, 200, 'should succeed');
+      const data = await res.json();
+      assert.ok(data.deleted.storeAuthTokens >= 1, 'should delete storeAuthTokens');
+
+      // Verify token was deleted
+      const tokenDoc = await tokenRef.get();
+      assert.strictEqual(tokenDoc.exists, false, 'storeAuthToken should be deleted');
+    });
+
+    // r28 fix #6d: Test that cleanup leaves all related collections empty
+    it('DELETE /test-data leaves all related collections empty for test request', async () => {
+      // Create a unique location for this test
+      const completeLocationRef = db.collection('locations').doc(`loc-complete-${testRunId}`);
+      await completeLocationRef.set({
+        id: completeLocationRef.id,
+        storeNumber: 'COMPLETE01',
+        name: 'Complete Test Store',
+        kind: 'store',
+        lifecycle: 'active',
+        sharedInboxEmail: 'complete@test.com',
+        timeZone: 'America/Los_Angeles',
+        districtId,
+        regionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'test',
+        updatedBy: 'test',
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'locations', id: completeLocationRef.id });
+
+      // Create a test verification request
+      const testReqRef = db.collection('verificationRequests').doc(`vr-complete-test-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId: completeLocationRef.id,
+        storeNumber: 'COMPLETE01',
+        locationName: 'Complete Test Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'complete@test.com',
+        sentBy: 'test',
+        isTest: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+
+      // Create related storeAuthTokens
+      const token1Ref = db.collection('storeAuthTokens').doc(`tok-complete1-${testRunId}`);
+      await token1Ref.set({
+        verificationRequestId: testReqRef.id,
+        locationId: completeLocationRef.id,
+        action: 'confirm',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+
+      const token2Ref = db.collection('storeAuthTokens').doc(`tok-complete2-${testRunId}`);
+      await token2Ref.set({
+        verificationRequestId: testReqRef.id,
+        locationId: completeLocationRef.id,
+        action: 'update',
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      });
+
+      // Create related mailLog
+      const mailLogRef = db.collection('mailLog').doc(`ml-complete-${testRunId}`);
+      await mailLogRef.set({
+        verificationRequestId: testReqRef.id,
+        to: 'complete@test.com',
+        subject: 'Test',
+        sentAt: new Date().toISOString(),
+      });
+
+      // Create related dmTask
+      const dmTaskRef = db.collection('dmTasks').doc(`dt-complete-${testRunId}`);
+      await dmTaskRef.set({
+        verificationRequestId: testReqRef.id,
+        locationId: completeLocationRef.id,
+        storeNumber: 'COMPLETE01',
+        taskType: 'hours_wrong',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+
+      // Delete test data
+      const res = await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', {
+        dryRun: false,
+      });
+
+      assert.strictEqual(res.status, 200, 'should succeed');
+
+      // Verify all related items were deleted
+      const verificationDoc = await testReqRef.get();
+      assert.strictEqual(verificationDoc.exists, false, 'verification request should be deleted');
+
+      const token1Doc = await token1Ref.get();
+      assert.strictEqual(token1Doc.exists, false, 'storeAuthToken 1 should be deleted');
+
+      const token2Doc = await token2Ref.get();
+      assert.strictEqual(token2Doc.exists, false, 'storeAuthToken 2 should be deleted');
+
+      const mailLogDoc = await mailLogRef.get();
+      assert.strictEqual(mailLogDoc.exists, false, 'mailLog should be deleted');
+
+      const dmTaskDoc = await dmTaskRef.get();
+      assert.strictEqual(dmTaskDoc.exists, false, 'dmTask should be deleted');
+    });
+
+    // r28 fix #6c: Test that audit entry includes record IDs
+    it('DELETE /test-data audit entry includes record IDs per collection', async () => {
+      // Create a unique location for this test
+      const auditIdLocationRef = db.collection('locations').doc(`loc-auditid-${testRunId}`);
+      await auditIdLocationRef.set({
+        id: auditIdLocationRef.id,
+        storeNumber: 'AUDITID01',
+        name: 'Audit ID Test Store',
+        kind: 'store',
+        lifecycle: 'active',
+        sharedInboxEmail: 'auditid@test.com',
+        timeZone: 'America/Los_Angeles',
+        districtId,
+        regionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'test',
+        updatedBy: 'test',
+        version: 1,
+      });
+      docsToCleanup.push({ collection: 'locations', id: auditIdLocationRef.id });
+
+      // Create a test verification request
+      const testReqRef = db.collection('verificationRequests').doc(`vr-auditid-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId: auditIdLocationRef.id,
+        storeNumber: 'AUDITID01',
+        locationName: 'Audit ID Test Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'auditid@test.com',
+        sentBy: 'test',
+        isTest: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+
+      // Delete test data
+      await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', {
+        dryRun: false,
+      });
+
+      // Check audit log has record IDs
+      const auditSnap = await db.collection('auditLog')
+        .where('entityType', '==', 'test-data')
+        .where('action', '==', 'delete')
+        .orderBy('timestamp', 'desc')
+        .limit(1)
+        .get();
+
+      assert.ok(!auditSnap.empty, 'should create audit log entry');
+      const auditEntry = auditSnap.docs[0].data();
+      
+      // Check that changes include IDs (format: "N deleted: id1, id2, ...")
+      const vrChange = auditEntry.changes?.find((c: { field: string }) => c.field === 'verificationRequests');
+      assert.ok(vrChange, 'should have verificationRequests in changes');
+      assert.ok(typeof vrChange.newValue === 'string', 'should have string value');
+      assert.ok(vrChange.newValue.includes('deleted:'), 'should contain deleted IDs');
     });
   });
 });

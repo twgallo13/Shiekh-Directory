@@ -1854,9 +1854,9 @@ describe('Design Review Items - Behavior Tests', () => {
     });
   });
 
-  // r32 fix #5: Test that new testTokens are stored as hash only
-  describe('testTokens Hash Storage (r32)', () => {
-    it('new testTokens store tokenHash, not plaintext token', async () => {
+  // r32/r33: Test that new testTokens are stored as hash only
+  describe('testTokens Hash Storage (r32/r33)', () => {
+    it('verification testTokens store tokenHash, not plaintext token', async () => {
       // Create a verification request which creates testTokens
       const hashTestLocationRef = db.collection('locations').doc(`loc-hashtest-${testRunId}`);
       await hashTestLocationRef.set(makeTestLocation(
@@ -1902,6 +1902,71 @@ describe('Design Review Items - Behavior Tests', () => {
       // Clean up the verification request
       if (requestId) {
         docsToCleanup.push({ collection: 'verificationRequests', id: requestId });
+      }
+    });
+
+    // r33: Store sign-in testTokens also use hash
+    it('store sign-in testTokens store tokenHash, not plaintext token', async () => {
+      // Create a test location with a valid store number (numeric only)
+      // Email must match pattern: store{number}@shiekhshoes.com
+      const storeNum = String(9900 + Math.floor(Math.random() * 99)); // e.g., "9942"
+      const storeEmail = `store${storeNum}@shiekhshoes.com`;
+      
+      const storeSigninLocRef = db.collection('locations').doc(`loc-storesignin-${testRunId}`);
+      await storeSigninLocRef.set(makeTestLocation(
+        storeSigninLocRef.id,
+        storeNum,
+        'Store Signin Test Store',
+        districtId,
+        regionId,
+        { sharedInboxEmail: storeEmail }
+      ));
+      docsToCleanup.push({ collection: 'locations', id: storeSigninLocRef.id });
+
+      // Call store sign-in endpoint (no auth required for public endpoint)
+      const res = await fetch(`${API_BASE}/api/store-auth/send-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: storeEmail }),
+      });
+
+      const body = await res.json();
+      
+      // Should succeed (200) or return a config error (503 if mail not configured)
+      if (res.status === 200) {
+        // Find the testTokens created by this sign-in
+        // The token is stored with action='signin' and storeEmail matching
+        const testTokensSnap = await db.collection('testTokens')
+          .where('storeEmail', '==', storeEmail)
+          .where('action', '==', 'signin')
+          .get();
+
+        assert.ok(!testTokensSnap.empty, 'should have created testTokens for store sign-in');
+        
+        for (const doc of testTokensSnap.docs) {
+          const data = doc.data();
+          assert.ok(!data.token, 'should NOT have plaintext token field');
+          assert.ok(data.tokenHash, 'should have tokenHash field');
+          assert.ok(typeof data.tokenHash === 'string', 'tokenHash should be a string');
+          assert.ok(data.tokenHash.length > 0, 'tokenHash should not be empty');
+          
+          // Clean up
+          docsToCleanup.push({ collection: 'testTokens', id: doc.id });
+        }
+
+        // Also clean up any storeAuthTokens created
+        const storeAuthTokensSnap = await db.collection('storeAuthTokens')
+          .where('locationId', '==', storeSigninLocRef.id)
+          .get();
+        for (const doc of storeAuthTokensSnap.docs) {
+          docsToCleanup.push({ collection: 'storeAuthTokens', id: doc.id });
+        }
+      } else if (res.status === 503) {
+        // Mail config not set - can't test token storage without actual send
+        console.log(`    Store sign-in returned 503: ${body.error?.code} (mail not configured)`);
+      } else {
+        // Other error - log and fail the test
+        assert.fail(`Store sign-in failed with ${res.status}: ${body.error?.code || 'unknown'}`);
       }
     });
   });

@@ -144,8 +144,9 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const tokenRef = db.collection('storeAuthTokens').doc(tokenHash);
       await tokenRef.set(tokenDoc);
 
+      // r33: Store tokenHash only (not plaintext token) for security
       await db.collection('testTokens').doc(tokenId).set({
-        token,
+        tokenHash: hashToken(token),
         action: 'signin',
         locationId: location.id,
         storeNumber: location.storeNumber,

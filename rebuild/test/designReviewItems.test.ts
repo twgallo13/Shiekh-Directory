@@ -1571,5 +1571,214 @@ describe('Design Review Items - Behavior Tests', () => {
       const res = await fetchApi('/api/app/signin-settings/allow-list', 'GET', 'test-token-steward');
       assert.strictEqual(res.status, 403);
     });
+
+    // r32 fix #3: Setting only 'restrictedUntil' must not turn restriction on
+    it('setting only restrictedUntil does not enable restriction', async () => {
+      // First ensure restriction is off
+      await fetchApi('/api/app/signin-settings/restriction', 'PATCH', 'test-token-admin', {
+        enabled: false,
+        restrictedUntil: null,
+      });
+
+      // Set only restrictedUntil without setting enabled
+      const res = await fetchApi('/api/app/signin-settings/restriction', 'PATCH', 'test-token-admin', {
+        restrictedUntil: '2026-12-31T00:00:00.000Z',
+      });
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      
+      // Should have restrictedUntil but enabled should still be false
+      assert.strictEqual(body.data.restrictedUntil, '2026-12-31T00:00:00.000Z');
+      assert.strictEqual(body.data.enabled, false, 'enabled should remain false when only setting restrictedUntil');
+
+      // Clean up
+      await fetchApi('/api/app/signin-settings/restriction', 'PATCH', 'test-token-admin', {
+        restrictedUntil: null,
+      });
+    });
+
+    // r32 fix #3: Only enabled === true should turn restriction on
+    it('restriction only active when enabled === true', async () => {
+      // Set restrictedUntil but leave enabled false
+      await db.collection('settings').doc('signIn').set({
+        restrictedUntil: '2030-12-31T00:00:00.000Z',
+        enabled: false,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const res = await fetchApi('/api/app/signin-settings/restriction', 'GET', 'test-token-admin');
+      const body = await res.json();
+      assert.strictEqual(body.data.enabled, false);
+      assert.strictEqual(body.data.restrictedUntil, '2030-12-31T00:00:00.000Z');
+
+      // Clean up
+      await db.collection('settings').doc('signIn').delete();
+    });
+  });
+
+  // r32 fix #4: Sign-in behaviour tests
+  describe('Sign-In Behaviour (r32)', () => {
+    // These tests verify the auth config functions directly
+    // since the /me endpoint requires real Firebase auth tokens
+
+    it('isSignInRestricted returns false when enabled is not true', async () => {
+      // Import the function
+      const { isSignInRestricted } = await import('../server/config/auth');
+      
+      // Set up: restrictedUntil in future but enabled = false
+      await db.collection('settings').doc('signIn').set({
+        restrictedUntil: '2030-12-31T00:00:00.000Z',
+        enabled: false,
+      });
+
+      const restricted = await isSignInRestricted(db);
+      assert.strictEqual(restricted, false, 'should not be restricted when enabled is false');
+
+      // Clean up
+      await db.collection('settings').doc('signIn').delete();
+    });
+
+    it('isSignInRestricted returns true only when enabled === true AND restrictedUntil in future', async () => {
+      const { isSignInRestricted } = await import('../server/config/auth');
+      
+      // Set up: both enabled and restrictedUntil in future
+      await db.collection('settings').doc('signIn').set({
+        restrictedUntil: '2030-12-31T00:00:00.000Z',
+        enabled: true,
+      });
+
+      const restricted = await isSignInRestricted(db);
+      assert.strictEqual(restricted, true, 'should be restricted when enabled is true and restrictedUntil in future');
+
+      // Clean up
+      await db.collection('settings').doc('signIn').delete();
+    });
+
+    it('isSignInRestricted returns false when restrictedUntil is in past', async () => {
+      const { isSignInRestricted } = await import('../server/config/auth');
+      
+      // Set up: enabled but restrictedUntil in past
+      await db.collection('settings').doc('signIn').set({
+        restrictedUntil: '2020-01-01T00:00:00.000Z',
+        enabled: true,
+      });
+
+      const restricted = await isSignInRestricted(db);
+      assert.strictEqual(restricted, false, 'should not be restricted when restrictedUntil is in past');
+
+      // Clean up
+      await db.collection('settings').doc('signIn').delete();
+    });
+
+    it('isEmailOnAllowList returns false for non-allowed email', async () => {
+      const { isEmailOnAllowList } = await import('../server/config/auth');
+      
+      // Without being on allow-list or in ADMIN_EMAILS, should be false
+      const testEmail = 'test-not-admin@shiekhshoes.org';
+      const onList = await isEmailOnAllowList(db, testEmail);
+      
+      assert.strictEqual(onList, false, 'should return false for non-allowed email');
+    });
+
+    it('isEmailOnAllowList returns true for emails in signInAllowList collection', async () => {
+      const { isEmailOnAllowList } = await import('../server/config/auth');
+      
+      const testEmail = `allowlist-test-${testRunId}@shiekhshoes.org`;
+      await db.collection('signInAllowList').doc(testEmail.toLowerCase()).set({
+        email: testEmail.toLowerCase(),
+        addedBy: 'test',
+        addedByEmail: 'test@test.com',
+        addedAt: new Date().toISOString(),
+      });
+
+      const onList = await isEmailOnAllowList(db, testEmail);
+      assert.strictEqual(onList, true, 'should return true for allowed email');
+
+      // Clean up
+      await db.collection('signInAllowList').doc(testEmail.toLowerCase()).delete();
+    });
+
+    it('pre-provisioned user record is found by email lookup', async () => {
+      // Simulate a pre-provisioned user (created before first sign-in)
+      const preProvEmail = `preprov-${testRunId}@shiekhshoes.org`;
+      const preProvId = `preprov-placeholder-${testRunId}`;
+      
+      await db.collection('users').doc(preProvId).set({
+        id: preProvId,
+        email: preProvEmail.toLowerCase(),
+        displayName: 'Pre-Provisioned User',
+        role: 'Steward',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'admin-bootstrap',
+        version: 1,
+      });
+
+      // Verify we can find it by email (simulating what /me does)
+      const found = await db.collection('users')
+        .where('email', '==', preProvEmail.toLowerCase())
+        .limit(1)
+        .get();
+
+      assert.ok(!found.empty, 'should find pre-provisioned user by email');
+      const userData = found.docs[0].data();
+      assert.strictEqual(userData.role, 'Steward', 'should have pre-assigned role');
+
+      // Clean up
+      await db.collection('users').doc(preProvId).delete();
+    });
+  });
+
+  // r32 fix #5: Test that new testTokens are stored as hash only
+  describe('testTokens Hash Storage (r32)', () => {
+    it('new testTokens store tokenHash, not plaintext token', async () => {
+      // Create a verification request which creates testTokens
+      const hashTestLocationRef = db.collection('locations').doc(`loc-hashtest-${testRunId}`);
+      await hashTestLocationRef.set(makeTestLocation(
+        hashTestLocationRef.id,
+        'HASHTEST01',
+        'Hash Test Store',
+        districtId,
+        regionId,
+        { sharedInboxEmail: 'hashtest@test.com' }
+      ));
+      docsToCleanup.push({ collection: 'locations', id: hashTestLocationRef.id });
+
+      // Create verification request via API
+      const res = await fetchApi('/api/app/verification', 'POST', 'test-token-admin', {
+        locationId: hashTestLocationRef.id,
+        isTest: true,
+      });
+
+      assert.ok([200, 201].includes(res.status), `should create verification request, got ${res.status}`);
+      const body = await res.json();
+      const requestId = body.data?.id; // Note: response uses 'id', not 'requestId'
+
+      assert.ok(requestId, `should return request ID, got: ${JSON.stringify(body.data)}`);
+
+      // Find the testTokens created for this request
+      const testTokensSnap = await db.collection('testTokens')
+        .where('verificationRequestId', '==', requestId)
+        .get();
+
+      assert.ok(!testTokensSnap.empty, `should have created testTokens for request ${requestId}`);
+      
+      for (const doc of testTokensSnap.docs) {
+        const data = doc.data();
+        assert.ok(!data.token, 'should NOT have plaintext token field');
+        assert.ok(data.tokenHash, 'should have tokenHash field');
+        assert.ok(typeof data.tokenHash === 'string', 'tokenHash should be a string');
+        assert.ok(data.tokenHash.length > 0, 'tokenHash should not be empty');
+        
+        // Clean up
+        docsToCleanup.push({ collection: 'testTokens', id: doc.id });
+      }
+
+      // Clean up the verification request
+      if (requestId) {
+        docsToCleanup.push({ collection: 'verificationRequests', id: requestId });
+      }
+    });
   });
 });

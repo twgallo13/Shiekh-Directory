@@ -44,44 +44,38 @@ export function createUsersRouter(db: Firestore): Router {
       let userDoc = await db.collection('users').doc(firebaseUser.uid).get();
       
       if (!userDoc.exists && isGoogleUser) {
-        // r31: During restricted mode, only allow-listed emails can sign in
-        if (restricted && !onAllowList) {
-          const restriction = await getSignInRestriction(db);
-          const restrictedUntilFormatted = restriction.restrictedUntil 
-            ? new Date(restriction.restrictedUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-            : 'until further notice';
-          return res.status(403).json({
-            error: {
-              code: 'signin_restricted',
-              message: `Sign-in is currently restricted to approved users. This restriction is in effect ${restrictedUntilFormatted}. Please contact your administrator if you need access.`,
-              requestId: res.locals.requestId,
-            },
-          });
-        }
-        
+        // r32 fix #2: Check for pre-provisioned user FIRST (before restriction check)
+        // Pre-provisioned users who have never signed in must be allowed
         const existingByEmail = await db.collection('users')
           .where('email', '==', email.toLowerCase())
           .limit(1)
           .get();
         
-        // r31: During restricted mode, do NOT auto-provision Viewer
-        // Only allow sign-in for pre-existing users, admin emails, or pre-bootstrapped users
+        // Determine role based on: pre-provisioned > admin email > allow-list > unrestricted
         let role: UserRole | null = null;
+        let migratedFromPreProvisioned = false;
         
         if (!existingByEmail.empty) {
+          // Pre-provisioned user - always allow, use their assigned role
           const existingUserData = existingByEmail.docs[0].data() as User;
           role = existingUserData.role;
+          migratedFromPreProvisioned = true;
           
           await existingByEmail.docs[0].ref.delete();
           console.log(`Migrated pre-bootstrapped user record for: ${email}`);
         } else if (isAdminEmail(email)) {
+          // ADMIN_EMAILS user - always Admin
           role = 'Admin';
+        } else if (restricted && onAllowList) {
+          // r32 fix #1: Allow-listed new user during restriction gets Viewer
+          role = 'Viewer';
         } else if (!restricted) {
-          // Only auto-provision Viewer when NOT in restricted mode
+          // Not restricted - auto-provision as Viewer
           role = 'Viewer';
         }
+        // else: restricted, not on allow-list, not pre-provisioned, not admin -> role stays null
         
-        // r31: If no role determined (restricted mode, not admin, not pre-bootstrapped), reject
+        // r31: If no role determined, reject
         if (role === null) {
           const restriction = await getSignInRestriction(db);
           const restrictedUntilFormatted = restriction.restrictedUntil 
@@ -106,18 +100,19 @@ export function createUsersRouter(db: Firestore): Router {
           status: 'active',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          updatedBy: 'auto-provision',
+          updatedBy: migratedFromPreProvisioned ? 'pre-provisioned-migration' : 'auto-provision',
           version: 1,
         };
         
         await db.collection('users').doc(firebaseUser.uid).set(newUser);
-        console.log(`Auto-provisioned Google user: ${email} as ${role}`);
+        console.log(`Auto-provisioned Google user: ${email} as ${role}${migratedFromPreProvisioned ? ' (migrated from pre-provisioned)' : ''}`);
         
         userDoc = await db.collection('users').doc(firebaseUser.uid).get();
       }
       
       if (!userDoc.exists) {
-        // r31: Existing user not found during restricted mode
+        // User not found and not a Google user (or some other edge case)
+        // During restriction, non-allowed users get a specific message
         if (restricted && !onAllowList) {
           const restriction = await getSignInRestriction(db);
           const restrictedUntilFormatted = restriction.restrictedUntil 

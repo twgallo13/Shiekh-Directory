@@ -64,7 +64,8 @@ export async function getSignInRestriction(db: Firestore): Promise<SignInRestric
     const data = doc.data()!;
     return {
       restrictedUntil: data.restrictedUntil || null,
-      enabled: data.enabled !== false,
+      // r32 fix #3: Only enabled === true turns restriction on (default to false)
+      enabled: data.enabled === true,
     };
   } catch {
     return { restrictedUntil: null, enabled: false };

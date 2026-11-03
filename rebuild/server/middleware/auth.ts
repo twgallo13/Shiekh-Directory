@@ -67,9 +67,22 @@ export function createAuthMiddleware(db?: Firestore): Router {
       const isEmulator = process.env.FIREBASE_AUTH_EMULATOR_HOST;
       
       if (isEmulator && token.startsWith('test-token-')) {
+        // Extended format: test-token-{uid}:{email}:{provider}
+        // Examples:
+        //   test-token-admin                          → uid=admin, email=test@example.com
+        //   test-token-newuser:new@shiekhshoes.org    → uid=newuser, email=new@shiekhshoes.org
+        //   test-token-guser:g@shiekhshoes.org:google → uid=guser, email=g@..., google.com provider
+        const tokenValue = token.slice(11); // Remove 'test-token-'
+        const parts = tokenValue.split(':');
+        const uid = parts[0];
+        const email = parts[1] || 'test@example.com';
+        const provider = parts[2]; // 'google' → google.com, undefined → no provider
+        
         res.locals.user = {
-          uid: token.replace('test-token-', ''),
-          email: 'test@example.com',
+          uid,
+          email,
+          name: email.split('@')[0],
+          ...(provider === 'google' && { firebase: { sign_in_provider: 'google.com' } }),
         };
         return next();
       }
@@ -147,9 +160,18 @@ export function createOptionalAuthMiddleware(db?: Firestore): Router {
       const isEmulator = process.env.FIREBASE_AUTH_EMULATOR_HOST;
       
       if (isEmulator && token.startsWith('test-token-')) {
+        // Extended format: test-token-{uid}:{email}:{provider}
+        const tokenValue = token.slice(11);
+        const parts = tokenValue.split(':');
+        const uid = parts[0];
+        const email = parts[1] || 'test@example.com';
+        const provider = parts[2];
+        
         res.locals.user = {
-          uid: token.replace('test-token-', ''),
-          email: 'test@example.com',
+          uid,
+          email,
+          name: email.split('@')[0],
+          ...(provider === 'google' && { firebase: { sign_in_provider: 'google.com' } }),
         };
         return next();
       }

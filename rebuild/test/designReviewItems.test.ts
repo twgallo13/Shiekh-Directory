@@ -1616,117 +1616,241 @@ describe('Design Review Items - Behavior Tests', () => {
     });
   });
 
-  // r32 fix #4: Sign-in behaviour tests
-  describe('Sign-In Behaviour (r32)', () => {
-    // These tests verify the auth config functions directly
-    // since the /me endpoint requires real Firebase auth tokens
+  // r33: /me endpoint tests for sign-in behaviour
+  // Extended test token format: test-token-{uid}:{email}:{provider}
+  // provider='google' sets firebase.sign_in_provider='google.com'
+  describe('/me Endpoint Sign-In Behaviour (r33)', () => {
+    // Helper to call /me with extended test token
+    async function callMe(uid: string, email: string, isGoogle: boolean = true): Promise<Response> {
+      const token = isGoogle 
+        ? `test-token-${uid}:${email}:google`
+        : `test-token-${uid}:${email}`;
+      return fetchApi('/api/app/users/me', 'GET', token);
+    }
 
-    it('isSignInRestricted returns false when enabled is not true', async () => {
-      // Import the function
-      const { isSignInRestricted } = await import('../server/config/auth');
-      
-      // Set up: restrictedUntil in future but enabled = false
-      await db.collection('settings').doc('signIn').set({
-        restrictedUntil: '2030-12-31T00:00:00.000Z',
-        enabled: false,
-      });
+    // Helper to clean up settings and created users after each test
+    async function cleanupSignInTest(userIds: string[], allowListEmails: string[] = []) {
+      for (const uid of userIds) {
+        await db.collection('users').doc(uid).delete().catch(() => {});
+      }
+      for (const email of allowListEmails) {
+        await db.collection('signInAllowList').doc(email.toLowerCase()).delete().catch(() => {});
+      }
+      await db.collection('settings').doc('signIn').delete().catch(() => {});
+    }
 
-      const restricted = await isSignInRestricted(db);
-      assert.strictEqual(restricted, false, 'should not be restricted when enabled is false');
-
-      // Clean up
-      await db.collection('settings').doc('signIn').delete();
+    it('restriction off: new Google user gets Viewer', async () => {
+      const uid = `newuser-off-${testRunId}`;
+      try {
+        // Ensure restriction is off
+        await db.collection('settings').doc('signIn').set({ enabled: false });
+        
+        const res = await callMe(uid, `newoff-${testRunId}@shiekhshoes.org`);
+        assert.strictEqual(res.status, 200, 'should allow sign-in when restriction off');
+        
+        const body = await res.json();
+        assert.strictEqual(body.data.role, 'Viewer', 'new user should get Viewer role');
+      } finally {
+        await cleanupSignInTest([uid]);
+      }
     });
 
-    it('isSignInRestricted returns true only when enabled === true AND restrictedUntil in future', async () => {
-      const { isSignInRestricted } = await import('../server/config/auth');
-      
-      // Set up: both enabled and restrictedUntil in future
-      await db.collection('settings').doc('signIn').set({
-        restrictedUntil: '2030-12-31T00:00:00.000Z',
-        enabled: true,
-      });
-
-      const restricted = await isSignInRestricted(db);
-      assert.strictEqual(restricted, true, 'should be restricted when enabled is true and restrictedUntil in future');
-
-      // Clean up
-      await db.collection('settings').doc('signIn').delete();
+    it('only restrictedUntil set: new Google user gets Viewer (enabled defaults to false)', async () => {
+      const uid = `newuser-only-until-${testRunId}`;
+      try {
+        // Set restrictedUntil but no enabled field
+        await db.collection('settings').doc('signIn').set({ 
+          restrictedUntil: '2030-12-31T00:00:00.000Z' 
+        });
+        
+        const res = await callMe(uid, `onlyuntil-${testRunId}@shiekhshoes.org`);
+        assert.strictEqual(res.status, 200, 'should allow sign-in when enabled not set');
+        
+        const body = await res.json();
+        assert.strictEqual(body.data.role, 'Viewer', 'new user should get Viewer role');
+      } finally {
+        await cleanupSignInTest([uid]);
+      }
     });
 
-    it('isSignInRestricted returns false when restrictedUntil is in past', async () => {
-      const { isSignInRestricted } = await import('../server/config/auth');
-      
-      // Set up: enabled but restrictedUntil in past
-      await db.collection('settings').doc('signIn').set({
-        restrictedUntil: '2020-01-01T00:00:00.000Z',
-        enabled: true,
-      });
+    it('restriction on + allow-listed new user: gets Viewer', async () => {
+      const email = `allowlisted-${testRunId}@shiekhshoes.org`;
+      const uid = `newuser-allowed-${testRunId}`;
+      try {
+        // Enable restriction
+        await db.collection('settings').doc('signIn').set({
+          restrictedUntil: '2030-12-31T00:00:00.000Z',
+          enabled: true,
+        });
 
-      const restricted = await isSignInRestricted(db);
-      assert.strictEqual(restricted, false, 'should not be restricted when restrictedUntil is in past');
-
-      // Clean up
-      await db.collection('settings').doc('signIn').delete();
+        // Add to allow-list
+        await db.collection('signInAllowList').doc(email.toLowerCase()).set({
+          email: email.toLowerCase(),
+          addedBy: 'test',
+          addedByEmail: 'test@test.com',
+          addedAt: new Date().toISOString(),
+        });
+        
+        const res = await callMe(uid, email);
+        assert.strictEqual(res.status, 200, 'allow-listed user should be able to sign in');
+        
+        const body = await res.json();
+        assert.strictEqual(body.data.role, 'Viewer', 'allow-listed new user should get Viewer role');
+      } finally {
+        await cleanupSignInTest([uid], [email]);
+      }
     });
 
-    it('isEmailOnAllowList returns false for non-allowed email', async () => {
-      const { isEmailOnAllowList } = await import('../server/config/auth');
-      
-      // Without being on allow-list or in ADMIN_EMAILS, should be false
-      const testEmail = 'test-not-admin@shiekhshoes.org';
-      const onList = await isEmailOnAllowList(db, testEmail);
-      
-      assert.strictEqual(onList, false, 'should return false for non-allowed email');
+    it('restriction on + non-listed new user: 403 signin_restricted', async () => {
+      const uid = `newuser-blocked-${testRunId}`;
+      try {
+        // Enable restriction
+        await db.collection('settings').doc('signIn').set({
+          restrictedUntil: '2030-12-31T00:00:00.000Z',
+          enabled: true,
+        });
+        
+        const res = await callMe(uid, `blocked-${testRunId}@shiekhshoes.org`);
+        assert.strictEqual(res.status, 403, 'non-listed user should be blocked during restriction');
+        
+        const body = await res.json();
+        assert.strictEqual(body.error.code, 'signin_restricted', 'error code should be signin_restricted');
+        assert.ok(body.error.message.includes('restricted to approved users'), 'error message should mention restriction');
+      } finally {
+        // No user created, just clean up settings
+        await cleanupSignInTest([]);
+      }
     });
 
-    it('isEmailOnAllowList returns true for emails in signInAllowList collection', async () => {
-      const { isEmailOnAllowList } = await import('../server/config/auth');
+    it('ADMIN_EMAILS user: always gets Admin (even during restriction)', async () => {
+      // This test requires ADMIN_EMAILS env var to be set
+      const adminEmails = process.env.ADMIN_EMAILS;
+      if (!adminEmails) {
+        // Skip test - ADMIN_EMAILS not configured
+        console.log('    Skipping ADMIN_EMAILS test - env var not set');
+        return;
+      }
       
-      const testEmail = `allowlist-test-${testRunId}@shiekhshoes.org`;
-      await db.collection('signInAllowList').doc(testEmail.toLowerCase()).set({
-        email: testEmail.toLowerCase(),
-        addedBy: 'test',
-        addedByEmail: 'test@test.com',
-        addedAt: new Date().toISOString(),
-      });
+      const adminEmail = adminEmails.split(',')[0].trim();
+      const uid = `admin-test-${testRunId}`;
+      try {
+        // Enable restriction
+        await db.collection('settings').doc('signIn').set({
+          restrictedUntil: '2030-12-31T00:00:00.000Z',
+          enabled: true,
+        });
 
-      const onList = await isEmailOnAllowList(db, testEmail);
-      assert.strictEqual(onList, true, 'should return true for allowed email');
-
-      // Clean up
-      await db.collection('signInAllowList').doc(testEmail.toLowerCase()).delete();
+        const res = await callMe(uid, adminEmail);
+        assert.strictEqual(res.status, 200, 'ADMIN_EMAILS user should be able to sign in');
+        
+        const body = await res.json();
+        assert.strictEqual(body.data.role, 'Admin', 'ADMIN_EMAILS user should get Admin role');
+      } finally {
+        await cleanupSignInTest([uid]);
+      }
     });
 
-    it('pre-provisioned user record is found by email lookup', async () => {
-      // Simulate a pre-provisioned user (created before first sign-in)
-      const preProvEmail = `preprov-${testRunId}@shiekhshoes.org`;
+    it('pre-provisioned Steward keeps their role (via endpoint)', async () => {
+      const email = `preprov-steward-${testRunId}@shiekhshoes.org`;
       const preProvId = `preprov-placeholder-${testRunId}`;
-      
-      await db.collection('users').doc(preProvId).set({
-        id: preProvId,
-        email: preProvEmail.toLowerCase(),
-        displayName: 'Pre-Provisioned User',
-        role: 'Steward',
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        updatedBy: 'admin-bootstrap',
-        version: 1,
-      });
+      const actualUid = `preprov-actual-${testRunId}`;
+      try {
+        // Enable restriction to prove pre-provisioned users bypass it
+        await db.collection('settings').doc('signIn').set({
+          restrictedUntil: '2030-12-31T00:00:00.000Z',
+          enabled: true,
+        });
+        
+        // Create pre-provisioned user record (placeholder doc with email but no Firebase UID match)
+        await db.collection('users').doc(preProvId).set({
+          id: preProvId,
+          email: email.toLowerCase(),
+          displayName: 'Pre-Provisioned Steward',
+          role: 'Steward',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'admin-bootstrap',
+          version: 1,
+        });
+        
+        const res = await callMe(actualUid, email);
+        assert.strictEqual(res.status, 200, 'pre-provisioned user should be able to sign in');
+        
+        const body = await res.json();
+        assert.strictEqual(body.data.role, 'Steward', 'pre-provisioned user should keep their Steward role');
+        assert.strictEqual(body.data.uid, actualUid, 'user should have the new Firebase UID');
 
-      // Verify we can find it by email (simulating what /me does)
-      const found = await db.collection('users')
-        .where('email', '==', preProvEmail.toLowerCase())
-        .limit(1)
-        .get();
+        // Verify the placeholder was deleted
+        const placeholderDoc = await db.collection('users').doc(preProvId).get();
+        assert.ok(!placeholderDoc.exists, 'pre-provisioned placeholder should be deleted after migration');
+      } finally {
+        // actualUid is the new doc, preProvId should be deleted by /me
+        await cleanupSignInTest([actualUid, preProvId]);
+      }
+    });
 
-      assert.ok(!found.empty, 'should find pre-provisioned user by email');
-      const userData = found.docs[0].data();
-      assert.strictEqual(userData.role, 'Steward', 'should have pre-assigned role');
+    it('repeat sign-ins: existing user returns same data', async () => {
+      const uid = `repeat-${testRunId}`;
+      const email = `repeat-${testRunId}@shiekhshoes.org`;
+      try {
+        // Ensure restriction is off
+        await db.collection('settings').doc('signIn').set({ enabled: false });
+        
+        // First sign-in
+        const res1 = await callMe(uid, email);
+        assert.strictEqual(res1.status, 200);
+        const body1 = await res1.json();
+        assert.strictEqual(body1.data.role, 'Viewer');
 
-      // Clean up
-      await db.collection('users').doc(preProvId).delete();
+        // Second sign-in
+        const res2 = await callMe(uid, email);
+        assert.strictEqual(res2.status, 200);
+        const body2 = await res2.json();
+        assert.strictEqual(body2.data.role, 'Viewer', 'repeat sign-in should return same role');
+        assert.strictEqual(body2.data.uid, uid, 'repeat sign-in should return same uid');
+
+        // Verify only one user doc exists
+        const userDoc = await db.collection('users').doc(uid).get();
+        assert.ok(userDoc.exists, 'user doc should exist');
+      } finally {
+        await cleanupSignInTest([uid]);
+      }
+    });
+
+    it('expired restriction date: treated as no restriction (new user gets Viewer)', async () => {
+      const uid = `newuser-expired-${testRunId}`;
+      try {
+        // Set restriction with past date but enabled=true
+        await db.collection('settings').doc('signIn').set({
+          restrictedUntil: '2020-01-01T00:00:00.000Z', // Past date
+          enabled: true,
+        });
+        
+        const res = await callMe(uid, `expired-${testRunId}@shiekhshoes.org`);
+        assert.strictEqual(res.status, 200, 'should allow sign-in when restriction date is expired');
+        
+        const body = await res.json();
+        assert.strictEqual(body.data.role, 'Viewer', 'new user should get Viewer role with expired restriction');
+      } finally {
+        await cleanupSignInTest([uid]);
+      }
+    });
+
+    it('gmail.com address: 403 domain_not_allowed', async () => {
+      const uid = `gmail-user-${testRunId}`;
+      try {
+        const res = await callMe(uid, 'someone@gmail.com');
+        assert.strictEqual(res.status, 403, 'gmail.com domain should be rejected');
+        
+        const body = await res.json();
+        assert.strictEqual(body.error.code, 'domain_not_allowed', 'error code should be domain_not_allowed');
+        assert.ok(body.error.message.includes('gmail.com'), 'error message should mention the domain');
+        assert.ok(body.error.message.includes('shiekhshoes.org'), 'error message should mention allowed domain');
+      } finally {
+        // No user created, just clean up settings
+        await cleanupSignInTest([]);
+      }
     });
   });
 

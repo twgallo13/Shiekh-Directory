@@ -1,8 +1,27 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { User, AuthUser, Assignment, UserRole } from '../../src/types';
-import { isEmailDomainAllowed, isAdminEmail, getEmailDomain, getAllowedDomains, isSignInRestricted, isEmailOnAllowList, getSignInRestriction } from '../config/auth';
+import { isEmailDomainAllowed, isAdminEmail, getEmailDomain, getAllowedDomains, isSignInRestricted, isEmailOnAllowList, getSignInRestriction, type SignInRestriction } from '../config/auth';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
+
+function formatSignInRestrictedResponse(
+  restriction: SignInRestriction,
+  requestId: string
+): { status: 403; body: { error: { code: string; message: string; requestId: string } } } {
+  const restrictedUntilFormatted = restriction.restrictedUntil
+    ? new Date(restriction.restrictedUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : 'until further notice';
+  return {
+    status: 403,
+    body: {
+      error: {
+        code: 'signin_restricted',
+        message: `Sign-in is currently restricted to approved users. This restriction is in effect ${restrictedUntilFormatted}. Please contact your administrator if you need access.`,
+        requestId,
+      },
+    },
+  };
+}
 
 export function createUsersRouter(db: Firestore): Router {
   const router = Router();
@@ -75,19 +94,11 @@ export function createUsersRouter(db: Firestore): Router {
         }
         // else: restricted, not on allow-list, not pre-provisioned, not admin -> role stays null
         
-        // r31: If no role determined, reject
+        // r31/r33: If no role determined (restricted, not on allow-list, not pre-provisioned, not admin), reject
         if (role === null) {
           const restriction = await getSignInRestriction(db);
-          const restrictedUntilFormatted = restriction.restrictedUntil 
-            ? new Date(restriction.restrictedUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-            : 'until further notice';
-          return res.status(403).json({
-            error: {
-              code: 'signin_restricted',
-              message: `Sign-in is currently restricted to approved users. This restriction is in effect ${restrictedUntilFormatted}. Please contact your administrator if you need access.`,
-              requestId: res.locals.requestId,
-            },
-          });
+          const { status, body } = formatSignInRestrictedResponse(restriction, res.locals.requestId);
+          return res.status(status).json(body);
         }
         
         const displayName = firebaseUser.name || email.split('@')[0];
@@ -112,19 +123,11 @@ export function createUsersRouter(db: Firestore): Router {
       
       if (!userDoc.exists) {
         // User not found and not a Google user (or some other edge case)
-        // During restriction, non-allowed users get a specific message
+        // r33: reuse formatSignInRestrictedResponse for consistency
         if (restricted && !onAllowList) {
           const restriction = await getSignInRestriction(db);
-          const restrictedUntilFormatted = restriction.restrictedUntil 
-            ? new Date(restriction.restrictedUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-            : 'until further notice';
-          return res.status(403).json({
-            error: {
-              code: 'signin_restricted',
-              message: `Sign-in is currently restricted to approved users. This restriction is in effect ${restrictedUntilFormatted}. Please contact your administrator if you need access.`,
-              requestId: res.locals.requestId,
-            },
-          });
+          const { status, body } = formatSignInRestrictedResponse(restriction, res.locals.requestId);
+          return res.status(status).json(body);
         }
         return res.status(404).json({
           error: { code: 'user_not_found', message: 'User profile not found', requestId: res.locals.requestId },

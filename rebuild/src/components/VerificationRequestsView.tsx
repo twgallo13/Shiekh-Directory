@@ -957,11 +957,11 @@ export function VerificationRequestsView() {
         <div className="space-y-4">
           <p className="text-gray-700">
             You are about to reissue <strong>{selectedIds.size}</strong> verification request{selectedIds.size > 1 ? 's' : ''}.
-            {/* r28 fix #5: text reflects mail state - blocked mail is logged only, never sent later */}
+            {/* r29 fix: neutral text when mail state unknown, no false "will be sent" */}
             {mailEnabled === false ? (
               <> <strong>No emails will be sent</strong> while mail is off.</>
             ) : mailEnabled === null ? (
-              <> New emails will be sent to the store contacts.</>
+              <> Email delivery depends on current mail settings.</>
             ) : (
               <> New emails will be sent to the store contacts.</>
             )}
@@ -970,6 +970,11 @@ export function VerificationRequestsView() {
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
               <p className="font-medium">Mail is currently off</p>
               <p className="mt-1">Verification requests will be created but no emails will be sent. Blocked emails are logged only and are not queued for later delivery.</p>
+            </div>
+          )}
+          {mailEnabled === null && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-600">
+              <p>Unable to determine mail status. Emails may or may not be sent depending on current settings.</p>
             </div>
           )}
           <FormField id="bulk-reissue-reason" label="Reason for reissue (required)">
@@ -1322,9 +1327,11 @@ function NewVerificationRequestModal({ onClose, onSent, mailEnabled }: { onClose
       <div className="space-y-4">
         <p className="text-sm text-gray-600">
           Select a store to send a verification request.
-          {/* r28 fix #5: show mail state in single-store dialog */}
+          {/* r29 fix: neutral text when mail state unknown */}
           {mailEnabled === false ? (
             <strong> No email will be sent while mail is off.</strong>
+          ) : mailEnabled === null ? (
+            <> Email delivery depends on current mail settings.</>
           ) : (
             <> The request will be sent to the store's shared inbox email.</>
           )}
@@ -1333,6 +1340,11 @@ function NewVerificationRequestModal({ onClose, onSent, mailEnabled }: { onClose
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
             <p className="font-medium">Mail is currently off</p>
             <p className="mt-1">The request will be created but no email will be sent. Blocked emails are logged only.</p>
+          </div>
+        )}
+        {mailEnabled === null && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-600">
+            <p>Unable to determine mail status.</p>
           </div>
         )}
 

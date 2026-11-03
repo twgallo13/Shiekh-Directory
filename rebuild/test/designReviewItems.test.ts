@@ -15,6 +15,37 @@ const testRunId = `design-review-${Date.now()}-${Math.random().toString(36).slic
 // Track documents to clean up
 const docsToCleanup: { collection: string; id: string }[] = [];
 
+// r29 fix: Helper to create a test location with ALL required fields for v1 API compatibility
+// This prevents flaky tests where legacy-api.test.ts reads these before cleanup
+function makeTestLocation(
+  id: string,
+  storeNumber: string,
+  name: string,
+  districtId: string,
+  regionId: string,
+  overrides: Record<string, unknown> = {}
+) {
+  const now = new Date().toISOString();
+  return {
+    id,
+    storeNumber,
+    name,
+    kind: 'store',
+    lifecycle: 'active',
+    districtId,
+    regionId,
+    timeZone: 'America/Los_Angeles',
+    address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001' },
+    sharedInboxEmail: `${storeNumber.toLowerCase()}@test.com`,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'test',
+    updatedBy: 'test',
+    version: 1,
+    ...overrides,
+  };
+}
+
 async function fetchApi(
   path: string,
   method: string,
@@ -162,16 +193,14 @@ describe('Design Review Items - Behavior Tests', () => {
     it('lastVerifiedAt remains unchanged when hours wrong', async () => {
       const originalVerifiedAt = '2026-01-01T00:00:00Z';
       const locationRef = db.collection('locations').doc(`loc-unchanged-${testRunId}`);
-      await locationRef.set({
-        id: locationRef.id,
-        name: 'Test Store Unchanged',
-        storeNumber: 'TEST02',
-        lifecycle: 'active',
-        kind: 'store',
-        lastVerifiedAt: originalVerifiedAt,
+      await locationRef.set(makeTestLocation(
+        locationRef.id,
+        'TEST02',
+        'Test Store Unchanged',
         districtId,
         regionId,
-      });
+        { lastVerifiedAt: originalVerifiedAt }
+      ));
 
       const now = new Date();
       const requestRef = db.collection('verificationRequests').doc(`vr-unchanged-${testRunId}`);
@@ -252,16 +281,14 @@ describe('Design Review Items - Behavior Tests', () => {
 
     it('hoursConfirmed=true with no changes confirms and logs mail', async () => {
       const locationRef = db.collection('locations').doc(`loc-confirm-${testRunId}`);
-      await locationRef.set({
-        id: locationRef.id,
-        name: 'Test Store Confirm',
-        storeNumber: 'TEST04',
-        lifecycle: 'active',
-        kind: 'store',
-        sharedInboxEmail: 'store-confirm@test.com',
+      await locationRef.set(makeTestLocation(
+        locationRef.id,
+        'TEST04',
+        'Test Store Confirm',
         districtId,
         regionId,
-      });
+        { sharedInboxEmail: 'store-confirm@test.com' }
+      ));
 
       const now = new Date();
       const requestRef = db.collection('verificationRequests').doc(`vr-confirm-${testRunId}`);
@@ -295,27 +322,24 @@ describe('Design Review Items - Behavior Tests', () => {
     it('approving address change preserves unchanged fields (city, state, zip, geo)', async () => {
       // Create a location with full address including city, state, zip, geo
       const fullAddressLocRef = db.collection('locations').doc(`loc-addr-merge-${testRunId}`);
-      await fullAddressLocRef.set({
-        id: fullAddressLocRef.id,
-        name: 'Full Address Store',
-        storeNumber: 'ADDR01',
-        lifecycle: 'active',
-        kind: 'store',
+      await fullAddressLocRef.set(makeTestLocation(
+        fullAddressLocRef.id,
+        'ADDR01',
+        'Full Address Store',
         districtId,
         regionId,
-        sharedInboxEmail: 'addr@test.com',
-        address: {
-          street: '100 Original St',
-          suite: 'Suite 100',
-          city: 'Los Angeles',
-          state: 'CA',
-          zip: '90001',
-          geo: { lat: 34.0522, lng: -118.2437 },
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        version: 1,
-      });
+        {
+          sharedInboxEmail: 'addr@test.com',
+          address: {
+            street: '100 Original St',
+            suite: 'Suite 100',
+            city: 'Los Angeles',
+            state: 'CA',
+            zip: '90001',
+            geo: { lat: 34.0522, lng: -118.2437 },
+          },
+        }
+      ));
       docsToCleanup.push({ collection: 'locations', id: fullAddressLocRef.id });
 
       const now = new Date();
@@ -366,19 +390,14 @@ describe('Design Review Items - Behavior Tests', () => {
     it('approving holidayHours creates hours exception', async () => {
       // Create a location for holiday hours test
       const holidayLocRef = db.collection('locations').doc(`loc-holiday-${testRunId}`);
-      await holidayLocRef.set({
-        id: holidayLocRef.id,
-        name: 'Holiday Test Store',
-        storeNumber: 'HOL01',
-        lifecycle: 'active',
-        kind: 'store',
+      await holidayLocRef.set(makeTestLocation(
+        holidayLocRef.id,
+        'HOL01',
+        'Holiday Test Store',
         districtId,
         regionId,
-        sharedInboxEmail: 'holiday@test.com',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        version: 1,
-      });
+        { sharedInboxEmail: 'holiday@test.com' }
+      ));
       docsToCleanup.push({ collection: 'locations', id: holidayLocRef.id });
 
       const now = new Date();
@@ -462,16 +481,14 @@ describe('Design Review Items - Behavior Tests', () => {
   describe('#7: Bounce endpoint creates fix_contact task', () => {
     it('POST /:id/bounce marks request and creates dmTask', async () => {
       const locationRef = db.collection('locations').doc(`loc-bounce-${testRunId}`);
-      await locationRef.set({
-        id: locationRef.id,
-        name: 'Test Store Bounce',
-        storeNumber: 'TEST06',
-        lifecycle: 'active',
-        kind: 'store',
+      await locationRef.set(makeTestLocation(
+        locationRef.id,
+        'TEST06',
+        'Test Store Bounce',
         districtId,
         regionId,
-        sharedInboxEmail: 'bounce@test.com',
-      });
+        { sharedInboxEmail: 'bounce@test.com' }
+      ));
 
       const now = new Date();
       const requestRef = db.collection('verificationRequests').doc(`vr-bounce-${testRunId}`);
@@ -512,18 +529,16 @@ describe('Design Review Items - Behavior Tests', () => {
 
   describe('#8: DryRun returns skipped info', () => {
     it('dryRun returns skipped stores with reasons', async () => {
-      // Create a store without email
+      // Create a store without email (intentionally missing for skip test)
       const locationRef = db.collection('locations').doc(`loc-no-email-${testRunId}`);
-      await locationRef.set({
-        id: locationRef.id,
-        name: 'Store No Email',
-        storeNumber: 'TEST07',
-        lifecycle: 'active',
-        kind: 'store',
+      await locationRef.set(makeTestLocation(
+        locationRef.id,
+        'TEST07',
+        'Store No Email',
         districtId,
         regionId,
-        // No sharedInboxEmail
-      });
+        { sharedInboxEmail: undefined } // Intentionally no email to test skip behavior
+      ));
 
       const res = await fetchApi('/api/app/verification/campaigns', 'POST', 'test-token-admin', {
         scope: 'district',
@@ -768,16 +783,14 @@ describe('Design Review Items - Behavior Tests', () => {
       
       // Create a location with email
       const bulkSendLocRef = db.collection('locations').doc(`loc-bulk-send-${testRunId}`);
-      await bulkSendLocRef.set({
-        id: bulkSendLocRef.id,
-        name: 'Bulk Send Store',
-        storeNumber: 'BULK-S1',
-        lifecycle: 'active',
-        kind: 'store',
+      await bulkSendLocRef.set(makeTestLocation(
+        bulkSendLocRef.id,
+        'BULK-S1',
+        'Bulk Send Store',
         districtId,
         regionId,
-        sharedInboxEmail: 'bulksend@test.com',
-      });
+        { sharedInboxEmail: 'bulksend@test.com' }
+      ));
       docsToCleanup.push({ collection: 'locations', id: bulkSendLocRef.id });
 
       const reqRef = db.collection('verificationRequests').doc(`vr-bulk-send-${testRunId}`);
@@ -928,20 +941,14 @@ describe('Design Review Items - Behavior Tests', () => {
     before(async () => {
       // Create a unique location for test data tests to avoid conflicts with other tests
       const testDataLocationRef = db.collection('locations').doc(`loc-testdata-${testRunId}`);
-      await testDataLocationRef.set({
-        id: testDataLocationRef.id,
-        storeNumber: 'TESTDATA01',
-        name: 'Test Data Store',
-        kind: 'store',
-        sharedInboxEmail: 'testdata@test.com',
+      await testDataLocationRef.set(makeTestLocation(
+        testDataLocationRef.id,
+        'TESTDATA01',
+        'Test Data Store',
         districtId,
         regionId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: 'test',
-        updatedBy: 'test',
-        version: 1,
-      });
+        { sharedInboxEmail: 'testdata@test.com' }
+      ));
       testDataLocationId = testDataLocationRef.id;
       docsToCleanup.push({ collection: 'locations', id: testDataLocationRef.id });
     });
@@ -963,20 +970,14 @@ describe('Design Review Items - Behavior Tests', () => {
     it('Steward cannot set isTest flag (only Admin)', async () => {
       // Create a unique location for this test too
       const stewardLocationRef = db.collection('locations').doc(`loc-steward-test-${testRunId}`);
-      await stewardLocationRef.set({
-        id: stewardLocationRef.id,
-        storeNumber: 'STEWARDTEST01',
-        name: 'Steward Test Store',
-        kind: 'store',
-        sharedInboxEmail: 'stewardtest@test.com',
+      await stewardLocationRef.set(makeTestLocation(
+        stewardLocationRef.id,
+        'STEWARDTEST01',
+        'Steward Test Store',
         districtId,
         regionId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: 'test',
-        updatedBy: 'test',
-        version: 1,
-      });
+        { sharedInboxEmail: 'stewardtest@test.com' }
+      ));
       docsToCleanup.push({ collection: 'locations', id: stewardLocationRef.id });
 
       const res = await fetchApi('/api/app/verification', 'POST', 'test-token-steward', {
@@ -1127,22 +1128,14 @@ describe('Design Review Items - Behavior Tests', () => {
     it('bulk reissue carries isTest flag to new request', async () => {
       // Create a unique location for this test
       const reissueLocationRef = db.collection('locations').doc(`loc-reissue-${testRunId}`);
-      await reissueLocationRef.set({
-        id: reissueLocationRef.id,
-        storeNumber: 'REISSUE01',
-        name: 'Reissue Test Store',
-        kind: 'store',
-        lifecycle: 'active',
-        sharedInboxEmail: 'reissue@test.com',
-        timeZone: 'America/Los_Angeles',
+      await reissueLocationRef.set(makeTestLocation(
+        reissueLocationRef.id,
+        'REISSUE01',
+        'Reissue Test Store',
         districtId,
         regionId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: 'test',
-        updatedBy: 'test',
-        version: 1,
-      });
+        { sharedInboxEmail: 'reissue@test.com' }
+      ));
       docsToCleanup.push({ collection: 'locations', id: reissueLocationRef.id });
 
       // Create a test verification request that's expired (reissuable)
@@ -1190,22 +1183,14 @@ describe('Design Review Items - Behavior Tests', () => {
     it('DELETE /test-data also deletes storeAuthTokens', async () => {
       // Create a unique location for this test
       const tokenLocationRef = db.collection('locations').doc(`loc-token-${testRunId}`);
-      await tokenLocationRef.set({
-        id: tokenLocationRef.id,
-        storeNumber: 'TOKEN01',
-        name: 'Token Test Store',
-        kind: 'store',
-        lifecycle: 'active',
-        sharedInboxEmail: 'token@test.com',
-        timeZone: 'America/Los_Angeles',
+      await tokenLocationRef.set(makeTestLocation(
+        tokenLocationRef.id,
+        'TOKEN01',
+        'Token Test Store',
         districtId,
         regionId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: 'test',
-        updatedBy: 'test',
-        version: 1,
-      });
+        { sharedInboxEmail: 'token@test.com' }
+      ));
       docsToCleanup.push({ collection: 'locations', id: tokenLocationRef.id });
 
       // Create a test verification request
@@ -1256,22 +1241,14 @@ describe('Design Review Items - Behavior Tests', () => {
     it('DELETE /test-data leaves all related collections empty for test request', async () => {
       // Create a unique location for this test
       const completeLocationRef = db.collection('locations').doc(`loc-complete-${testRunId}`);
-      await completeLocationRef.set({
-        id: completeLocationRef.id,
-        storeNumber: 'COMPLETE01',
-        name: 'Complete Test Store',
-        kind: 'store',
-        lifecycle: 'active',
-        sharedInboxEmail: 'complete@test.com',
-        timeZone: 'America/Los_Angeles',
+      await completeLocationRef.set(makeTestLocation(
+        completeLocationRef.id,
+        'COMPLETE01',
+        'Complete Test Store',
         districtId,
         regionId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: 'test',
-        updatedBy: 'test',
-        version: 1,
-      });
+        { sharedInboxEmail: 'complete@test.com' }
+      ));
       docsToCleanup.push({ collection: 'locations', id: completeLocationRef.id });
 
       // Create a test verification request
@@ -1359,22 +1336,14 @@ describe('Design Review Items - Behavior Tests', () => {
     it('DELETE /test-data audit entry includes record IDs per collection', async () => {
       // Create a unique location for this test
       const auditIdLocationRef = db.collection('locations').doc(`loc-auditid-${testRunId}`);
-      await auditIdLocationRef.set({
-        id: auditIdLocationRef.id,
-        storeNumber: 'AUDITID01',
-        name: 'Audit ID Test Store',
-        kind: 'store',
-        lifecycle: 'active',
-        sharedInboxEmail: 'auditid@test.com',
-        timeZone: 'America/Los_Angeles',
+      await auditIdLocationRef.set(makeTestLocation(
+        auditIdLocationRef.id,
+        'AUDITID01',
+        'Audit ID Test Store',
         districtId,
         regionId,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: 'test',
-        updatedBy: 'test',
-        version: 1,
-      });
+        { sharedInboxEmail: 'auditid@test.com' }
+      ));
       docsToCleanup.push({ collection: 'locations', id: auditIdLocationRef.id });
 
       // Create a test verification request

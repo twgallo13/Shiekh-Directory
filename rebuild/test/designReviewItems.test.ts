@@ -476,6 +476,29 @@ describe('Design Review Items - Behavior Tests', () => {
       assert.ok(typeof data.verificationCycleDays === 'number', 'should have verificationCycleDays');
       assert.ok(data.verificationCycleDays > 0, 'verificationCycleDays should be positive');
     });
+
+    // r29 fix: Steward gets read-only access to workflow rules (needed for Verification page)
+    it('GET /workflow-rules allows Steward read-only access', async () => {
+      const res = await fetchApi('/api/app/workflow-rules', 'GET', 'test-token-steward');
+
+      assert.strictEqual(res.status, 200, 'Steward should be able to read workflow rules');
+      const { data } = await res.json();
+      assert.ok(typeof data.verificationCycleDays === 'number', 'should have verificationCycleDays');
+    });
+
+    it('PATCH /workflow-rules rejects Steward (Admin-only)', async () => {
+      const res = await fetchApi('/api/app/workflow-rules/verificationCycleDays', 'PATCH', 'test-token-steward', {
+        value: 60,
+      });
+
+      assert.strictEqual(res.status, 403, 'Steward should not be able to modify workflow rules');
+    });
+
+    it('GET /workflow-rules rejects Viewer', async () => {
+      const res = await fetchApi('/api/app/workflow-rules', 'GET', 'test-token-viewer');
+
+      assert.strictEqual(res.status, 403, 'Viewer should not access workflow rules');
+    });
   });
 
   describe('#7: Bounce endpoint creates fix_contact task', () => {

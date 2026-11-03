@@ -14,7 +14,19 @@ import {
 export function createWorkflowRulesRouter(db: Firestore): Router {
   const router = Router();
 
-  router.use((_req: Request, res: Response, next) => {
+  // r29 fix: Allow Stewards read-only access to workflow rules (needed for Verification page)
+  // Write operations (PATCH, DELETE) remain Admin-only
+  const requireAuth = (_req: Request, res: Response, next: () => void) => {
+    const authUser = res.locals.authUser as AuthUser | undefined;
+    if (!authUser) {
+      return res.status(401).json({
+        error: { code: 'unauthorized', message: 'Authentication required', requestId: res.locals.requestId },
+      });
+    }
+    next();
+  };
+
+  const requireAdmin = (_req: Request, res: Response, next: () => void) => {
     const authUser = res.locals.authUser as AuthUser | undefined;
     if (!authUser || authUser.role !== 'Admin') {
       return res.status(403).json({
@@ -22,10 +34,19 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
       });
     }
     next();
-  });
+  };
 
-  router.get('/', async (_req: Request, res: Response) => {
+  // GET: Allow Admin and Steward (read-only access)
+  router.get('/', requireAuth, async (_req: Request, res: Response) => {
     try {
+      const authUser = res.locals.authUser as AuthUser;
+      // Stewards and Admins can read workflow rules
+      if (authUser.role !== 'Admin' && authUser.role !== 'Steward') {
+        return res.status(403).json({
+          error: { code: 'access_denied', message: 'Admin or Steward access required', requestId: res.locals.requestId },
+        });
+      }
+      
       const rules = await getWorkflowRules(db);
       res.json({ 
         data: rules,
@@ -40,7 +61,8 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
     }
   });
 
-  router.patch('/:field', async (req: Request, res: Response) => {
+  // PATCH: Admin-only
+  router.patch('/:field', requireAdmin, async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
       const { field } = req.params;
@@ -81,7 +103,8 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
     }
   });
 
-  router.delete('/:field', async (req: Request, res: Response) => {
+  // DELETE (reset): Admin-only
+  router.delete('/:field', requireAdmin, async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;
       const { field } = req.params;
@@ -120,7 +143,8 @@ export function createWorkflowRulesRouter(db: Firestore): Router {
     }
   });
 
-  router.get('/history', async (req: Request, res: Response) => {
+  // History: Admin-only (contains audit data)
+  router.get('/history', requireAdmin, async (req: Request, res: Response) => {
     try {
       const { limit = '50' } = req.query;
       const history = await getSettingsChangeHistory(

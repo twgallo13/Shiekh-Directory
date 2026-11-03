@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { User, AuthUser, Assignment, UserRole } from '../../src/types';
-import { isEmailDomainAllowed, isAdminEmail, getEmailDomain, getAllowedDomains } from '../config/auth';
+import { isEmailDomainAllowed, isAdminEmail, getEmailDomain, getAllowedDomains, isSignInRestricted, isEmailOnAllowList, getSignInRestriction } from '../config/auth';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 
 export function createUsersRouter(db: Firestore): Router {
@@ -37,15 +37,36 @@ export function createUsersRouter(db: Firestore): Router {
         });
       }
 
+      // r31: Check if sign-in is restricted to allow-list only (soft-launch mode)
+      const restricted = await isSignInRestricted(db);
+      const onAllowList = restricted ? await isEmailOnAllowList(db, email) : true;
+      
       let userDoc = await db.collection('users').doc(firebaseUser.uid).get();
       
       if (!userDoc.exists && isGoogleUser) {
+        // r31: During restricted mode, only allow-listed emails can sign in
+        if (restricted && !onAllowList) {
+          const restriction = await getSignInRestriction(db);
+          const restrictedUntilFormatted = restriction.restrictedUntil 
+            ? new Date(restriction.restrictedUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+            : 'until further notice';
+          return res.status(403).json({
+            error: {
+              code: 'signin_restricted',
+              message: `Sign-in is currently restricted to approved users. This restriction is in effect ${restrictedUntilFormatted}. Please contact your administrator if you need access.`,
+              requestId: res.locals.requestId,
+            },
+          });
+        }
+        
         const existingByEmail = await db.collection('users')
           .where('email', '==', email.toLowerCase())
           .limit(1)
           .get();
         
-        let role: UserRole = 'Viewer';
+        // r31: During restricted mode, do NOT auto-provision Viewer
+        // Only allow sign-in for pre-existing users, admin emails, or pre-bootstrapped users
+        let role: UserRole | null = null;
         
         if (!existingByEmail.empty) {
           const existingUserData = existingByEmail.docs[0].data() as User;
@@ -55,6 +76,24 @@ export function createUsersRouter(db: Firestore): Router {
           console.log(`Migrated pre-bootstrapped user record for: ${email}`);
         } else if (isAdminEmail(email)) {
           role = 'Admin';
+        } else if (!restricted) {
+          // Only auto-provision Viewer when NOT in restricted mode
+          role = 'Viewer';
+        }
+        
+        // r31: If no role determined (restricted mode, not admin, not pre-bootstrapped), reject
+        if (role === null) {
+          const restriction = await getSignInRestriction(db);
+          const restrictedUntilFormatted = restriction.restrictedUntil 
+            ? new Date(restriction.restrictedUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+            : 'until further notice';
+          return res.status(403).json({
+            error: {
+              code: 'signin_restricted',
+              message: `Sign-in is currently restricted to approved users. This restriction is in effect ${restrictedUntilFormatted}. Please contact your administrator if you need access.`,
+              requestId: res.locals.requestId,
+            },
+          });
         }
         
         const displayName = firebaseUser.name || email.split('@')[0];
@@ -78,6 +117,20 @@ export function createUsersRouter(db: Firestore): Router {
       }
       
       if (!userDoc.exists) {
+        // r31: Existing user not found during restricted mode
+        if (restricted && !onAllowList) {
+          const restriction = await getSignInRestriction(db);
+          const restrictedUntilFormatted = restriction.restrictedUntil 
+            ? new Date(restriction.restrictedUntil).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+            : 'until further notice';
+          return res.status(403).json({
+            error: {
+              code: 'signin_restricted',
+              message: `Sign-in is currently restricted to approved users. This restriction is in effect ${restrictedUntilFormatted}. Please contact your administrator if you need access.`,
+              requestId: res.locals.requestId,
+            },
+          });
+        }
         return res.status(404).json({
           error: { code: 'user_not_found', message: 'User profile not found', requestId: res.locals.requestId },
         });

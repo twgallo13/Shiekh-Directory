@@ -244,9 +244,10 @@ export function createVerificationRouter(db: Firestore): Router {
         tokenId: updateTokenId,
       });
 
-      // Store tokens for test link retrieval (only accessible when MAIL_CUTOVER_ENABLED is unset)
+      // r31 #3: Store token hash (not plain text) for security
+      // Test link retrieval now uses storeAuthTokens via hash lookup
       await db.collection('testTokens').doc(confirmTokenId).set({
-        token: confirmToken,
+        tokenHash: hashToken(confirmToken),
         action: 'confirm',
         verificationRequestId: requestRef.id,
         locationId: location.id,
@@ -257,7 +258,7 @@ export function createVerificationRouter(db: Firestore): Router {
       });
 
       await db.collection('testTokens').doc(updateTokenId).set({
-        token: updateToken,
+        tokenHash: hashToken(updateToken),
         action: 'update',
         verificationRequestId: requestRef.id,
         locationId: location.id,
@@ -1130,6 +1131,35 @@ export function createVerificationRouter(db: Firestore): Router {
 
       const tokenData = tokenDoc.data()!;
 
+      // r31 #3: Tokens are now stored as hashes for security
+      // Test URL retrieval is no longer possible - return metadata only
+      if (!tokenData.token && tokenData.tokenHash) {
+        if (new Date(tokenData.expiresAt) < new Date()) {
+          return res.status(400).json({
+            error: { code: 'expired', message: 'Token has expired', requestId: res.locals.requestId },
+          });
+        }
+
+        const authTokenDoc = await db.collection('storeAuthTokens').doc(tokenData.tokenHash).get();
+        
+        if (authTokenDoc.exists && authTokenDoc.data()?.usedAt) {
+          return res.status(400).json({
+            error: { code: 'used', message: 'Token has already been used', requestId: res.locals.requestId },
+          });
+        }
+
+        return res.json({ 
+          data: { 
+            message: 'Test URL retrieval is disabled for security. Use the email sent to the store.',
+            action: tokenData.action,
+            storeNumber: tokenData.storeNumber,
+            expiresAt: tokenData.expiresAt,
+            used: authTokenDoc.exists && !!authTokenDoc.data()?.usedAt,
+          } 
+        });
+      }
+
+      // Legacy support for tokens created before r31
       if (new Date(tokenData.expiresAt) < new Date()) {
         return res.status(400).json({
           error: { code: 'expired', message: 'Token has expired', requestId: res.locals.requestId },
@@ -1410,8 +1440,9 @@ export function createVerificationRouter(db: Firestore): Router {
             tokenId: updateTokenId,
           });
 
+          // r31 #3: Store token hash (not plain text) for security
           await db.collection('testTokens').doc(confirmTokenId).set({
-            token: confirmToken,
+            tokenHash: hashToken(confirmToken),
             action: 'confirm',
             verificationRequestId: requestRef.id,
             locationId: location.id,
@@ -1423,7 +1454,7 @@ export function createVerificationRouter(db: Firestore): Router {
           });
 
           await db.collection('testTokens').doc(updateTokenId).set({
-            token: updateToken,
+            tokenHash: hashToken(updateToken),
             action: 'update',
             verificationRequestId: requestRef.id,
             locationId: location.id,
@@ -2435,13 +2466,22 @@ export function createVerificationRouter(db: Firestore): Router {
         testMailLogs.push(...logsSnap.docs);
       }
 
-      // r28 fix #6b: Find related storeAuthTokens (not testTokens)
+      // r28 fix #6b: Find related storeAuthTokens
       const storeAuthTokens: FirebaseFirestore.QueryDocumentSnapshot[] = [];
       for (const requestId of testRequestIds) {
         const tokensSnap = await db.collection('storeAuthTokens')
           .where('verificationRequestId', '==', requestId)
           .get();
         storeAuthTokens.push(...tokensSnap.docs);
+      }
+
+      // r31 #2: Find related testTokens (store test link tokens for retrieval)
+      const testTokenDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      for (const requestId of testRequestIds) {
+        const tokensSnap = await db.collection('testTokens')
+          .where('verificationRequestId', '==', requestId)
+          .get();
+        testTokenDocs.push(...tokensSnap.docs);
       }
 
       if (dryRun) {
@@ -2459,12 +2499,14 @@ export function createVerificationRouter(db: Firestore): Router {
             })),
             mailLogs: testMailLogs.map(d => ({ id: d.id })),
             storeAuthTokens: storeAuthTokens.map(d => ({ id: d.id })),
+            testTokens: testTokenDocs.map(d => ({ id: d.id })),
           },
           totals: {
             verificationRequests: testRequestsSnap.size,
             dmTasks: testDmTasks.length,
             mailLogs: testMailLogs.length,
             storeAuthTokens: storeAuthTokens.length,
+            testTokens: testTokenDocs.length,
           },
         });
       }
@@ -2476,6 +2518,7 @@ export function createVerificationRouter(db: Firestore): Router {
         ...testDmTasks.map(d => ({ type: 'dmTask', doc: d })),
         ...testMailLogs.map(d => ({ type: 'mailLog', doc: d })),
         ...storeAuthTokens.map(d => ({ type: 'storeAuthToken', doc: d })),
+        ...testTokenDocs.map(d => ({ type: 'testToken', doc: d })),
       ];
 
       for (let i = 0; i < allDocs.length; i += BATCH_SIZE) {
@@ -2517,6 +2560,7 @@ export function createVerificationRouter(db: Firestore): Router {
             { field: 'dmTasks', newValue: `${testDmTasks.length} deleted: ${(deletedByType['dmTask'] || []).join(', ') || 'none'}` },
             { field: 'mailLogs', newValue: `${testMailLogs.length} deleted: ${(deletedByType['mailLog'] || []).join(', ') || 'none'}` },
             { field: 'storeAuthTokens', newValue: `${storeAuthTokens.length} deleted: ${(deletedByType['storeAuthToken'] || []).join(', ') || 'none'}` },
+            { field: 'testTokens', newValue: `${testTokenDocs.length} deleted: ${(deletedByType['testToken'] || []).join(', ') || 'none'}` },
           ],
         });
       }
@@ -2528,6 +2572,7 @@ export function createVerificationRouter(db: Firestore): Router {
           dmTasks: testDmTasks.length,
           mailLogs: testMailLogs.length,
           storeAuthTokens: storeAuthTokens.length,
+          testTokens: testTokenDocs.length,
           total: deletedItems.length,
         },
         items: deletedItems,

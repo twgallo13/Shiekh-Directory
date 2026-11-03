@@ -1409,5 +1409,167 @@ describe('Design Review Items - Behavior Tests', () => {
       assert.ok(typeof vrChange.newValue === 'string', 'should have string value');
       assert.ok(vrChange.newValue.includes('deleted:'), 'should contain deleted IDs');
     });
+
+    // r31 #2: Test cleanup includes testTokens
+    it('DELETE /test-data also removes testTokens', async () => {
+      const testTokenLocationRef = db.collection('locations').doc(`loc-testtok-${testRunId}`);
+      await testTokenLocationRef.set(makeTestLocation(
+        testTokenLocationRef.id,
+        'TESTTOK01',
+        'Test Token Store',
+        districtId,
+        regionId,
+        { sharedInboxEmail: 'testtok@test.com' }
+      ));
+      docsToCleanup.push({ collection: 'locations', id: testTokenLocationRef.id });
+
+      const testReqRef = db.collection('verificationRequests').doc(`vr-testtok-${testRunId}`);
+      await testReqRef.set({
+        id: testReqRef.id,
+        locationId: testTokenLocationRef.id,
+        storeNumber: 'TESTTOK01',
+        locationName: 'Test Token Store',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        sentTo: 'testtok@test.com',
+        sentBy: 'test',
+        isTest: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        version: 1,
+      });
+
+      // Create testTokens (r31: these should now be deleted by test cleanup)
+      const testToken1Ref = db.collection('testTokens').doc(`tok_testtok1-${testRunId}`);
+      await testToken1Ref.set({
+        tokenHash: 'abc123hash',
+        verificationRequestId: testReqRef.id,
+        locationId: testTokenLocationRef.id,
+        storeNumber: 'TESTTOK01',
+        action: 'confirm',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+
+      const testToken2Ref = db.collection('testTokens').doc(`tok_testtok2-${testRunId}`);
+      await testToken2Ref.set({
+        tokenHash: 'def456hash',
+        verificationRequestId: testReqRef.id,
+        locationId: testTokenLocationRef.id,
+        storeNumber: 'TESTTOK01',
+        action: 'update',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+
+      // Delete test data
+      const res = await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', {
+        dryRun: false,
+      });
+
+      assert.strictEqual(res.status, 200, 'should succeed');
+      const body = await res.json();
+      assert.ok(body.deleted.testTokens >= 2, 'should report testTokens deleted');
+
+      // Verify testTokens were deleted
+      const token1Doc = await testToken1Ref.get();
+      assert.strictEqual(token1Doc.exists, false, 'testToken 1 should be deleted');
+
+      const token2Doc = await testToken2Ref.get();
+      assert.strictEqual(token2Doc.exists, false, 'testToken 2 should be deleted');
+    });
+  });
+
+  // r31 #1: Sign-in allow-list tests
+  describe('Sign-In Allow-List (r31)', () => {
+    it('GET /signin-settings/restriction returns restriction settings', async () => {
+      const res = await fetchApi('/api/app/signin-settings/restriction', 'GET', 'test-token-admin');
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.ok('data' in body);
+      assert.ok('enabled' in body.data);
+    });
+
+    it('PATCH /signin-settings/restriction updates restriction', async () => {
+      const res = await fetchApi('/api/app/signin-settings/restriction', 'PATCH', 'test-token-admin', {
+        restrictedUntil: '2026-11-11T00:00:00.000Z',
+        enabled: true,
+      });
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.strictEqual(body.success, true);
+      assert.strictEqual(body.data.enabled, true);
+
+      // Clean up: disable restriction
+      await fetchApi('/api/app/signin-settings/restriction', 'PATCH', 'test-token-admin', {
+        enabled: false,
+      });
+    });
+
+    it('GET /signin-settings/allow-list returns empty list initially', async () => {
+      const res = await fetchApi('/api/app/signin-settings/allow-list', 'GET', 'test-token-admin');
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.ok(Array.isArray(body.data));
+    });
+
+    it('POST /signin-settings/allow-list adds email to allow-list', async () => {
+      const testEmail = `test-${testRunId}@shiekhshoes.org`;
+      const res = await fetchApi('/api/app/signin-settings/allow-list', 'POST', 'test-token-admin', {
+        email: testEmail,
+        notes: 'Test entry',
+      });
+      assert.strictEqual(res.status, 201);
+      const body = await res.json();
+      assert.strictEqual(body.success, true);
+      assert.strictEqual(body.data.email, testEmail.toLowerCase());
+
+      // Clean up
+      await db.collection('signInAllowList').doc(testEmail.toLowerCase()).delete();
+    });
+
+    it('POST /signin-settings/allow-list/bulk adds multiple emails', async () => {
+      const testEmails = [
+        `bulk1-${testRunId}@shiekhshoes.org`,
+        `bulk2-${testRunId}@shiekhshoes.org`,
+      ];
+      const res = await fetchApi('/api/app/signin-settings/allow-list/bulk', 'POST', 'test-token-admin', {
+        emails: testEmails,
+      });
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.strictEqual(body.added, 2);
+
+      // Clean up
+      for (const email of testEmails) {
+        await db.collection('signInAllowList').doc(email.toLowerCase()).delete();
+      }
+    });
+
+    it('DELETE /signin-settings/allow-list/:email removes from list', async () => {
+      const testEmail = `delete-${testRunId}@shiekhshoes.org`;
+      await db.collection('signInAllowList').doc(testEmail.toLowerCase()).set({
+        email: testEmail.toLowerCase(),
+        addedBy: 'test',
+        addedByEmail: 'test@test.com',
+        addedAt: new Date().toISOString(),
+      });
+
+      const res = await fetchApi(
+        `/api/app/signin-settings/allow-list/${encodeURIComponent(testEmail)}`,
+        'DELETE',
+        'test-token-admin'
+      );
+      assert.strictEqual(res.status, 200);
+
+      const doc = await db.collection('signInAllowList').doc(testEmail.toLowerCase()).get();
+      assert.strictEqual(doc.exists, false);
+    });
+
+    it('rejects non-Admin access to allow-list', async () => {
+      const res = await fetchApi('/api/app/signin-settings/allow-list', 'GET', 'test-token-steward');
+      assert.strictEqual(res.status, 403);
+    });
   });
 });

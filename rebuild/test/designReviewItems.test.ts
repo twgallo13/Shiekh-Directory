@@ -1479,6 +1479,39 @@ describe('Design Review Items - Behavior Tests', () => {
       const token2Doc = await testToken2Ref.get();
       assert.strictEqual(token2Doc.exists, false, 'testToken 2 should be deleted');
     });
+
+    it('r31 #4: DELETE /test-data keeps existing audit log entries and adds one', async () => {
+      const keepRef = db.collection('auditLog').doc(`keep-audit-${testRunId}`);
+      await keepRef.set({ timestamp: new Date().toISOString(), action: 'update', entityType: 'test-data', entityId: 'x', userId: 'test' });
+      const vr = db.collection('verificationRequests').doc(`vr-audit-${testRunId}`);
+      await vr.set({ id: vr.id, storeNumber: 'AUD1', status: 'pending', isTest: true, createdAt: new Date().toISOString() });
+      const before = (await db.collection('auditLog').count().get()).data().count;
+      const res = await fetchApi('/api/app/verification/test-data', 'DELETE', 'test-token-admin', { dryRun: false });
+      assert.strictEqual(res.status, 200);
+      assert.ok((await keepRef.get()).exists, 'existing audit entry kept');
+      const after = (await db.collection('auditLog').count().get()).data().count;
+      assert.ok(after >= before + 1, 'cleanup itself is audited');
+    });
+
+    it('purge-plaintext-test-tokens removes only plaintext docs; dry run by default; admin only', async () => {
+      const plainRef = db.collection('testTokens').doc(`tok_plain-${testRunId}`);
+      const hashRef = db.collection('testTokens').doc(`tok_hash-${testRunId}`);
+      await plainRef.set({ token: 'plaintext-secret-value', action: 'confirm' });
+      await hashRef.set({ tokenHash: 'h', action: 'confirm' });
+      const path = '/api/app/admin/maintenance/purge-plaintext-test-tokens';
+      assert.strictEqual((await fetchApi(path, 'POST', 'test-token-viewer', {})).status, 403);
+      const dry = await (await fetchApi(path, 'POST', 'test-token-admin', {})).json();
+      assert.strictEqual(dry.dryRun, true);
+      assert.ok(dry.ids.includes(plainRef.id) && !dry.ids.includes(hashRef.id));
+      assert.ok((await plainRef.get()).exists, 'dry run deletes nothing');
+      const real = await (await fetchApi(path, 'POST', 'test-token-admin', { dryRun: false })).json();
+      assert.ok(real.plaintext >= 1);
+      assert.strictEqual((await plainRef.get()).exists, false);
+      assert.ok((await hashRef.get()).exists, 'hashed doc kept');
+      const audits = await db.collection('auditLog').where('entityType', '==', 'test-data').get();
+      assert.ok(!audits.docs.some(d => JSON.stringify(d.data()).includes('plaintext-secret-value')), 'token value never logged');
+      await hashRef.delete();
+    });
   });
 
   // r31 #1: Sign-in allow-list tests

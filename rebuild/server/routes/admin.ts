@@ -419,6 +419,41 @@ export function createAdminRouter(db: Firestore): Router {
 
   // D3: Admin-only copyable sign-in/reset link while mail is off.
   // Uses a Firebase password-reset link (expires in 1 hour). Only a SHA-256 hash is stored.
+  // 2026-11-04 (Theo-approved): one-time cleanup of pre-r31 testTokens docs that hold a plaintext `token`.
+  // Only docs with a string `token` field are removed; hashed docs are untouched. Audit records IDs only.
+  router.post('/maintenance/purge-plaintext-test-tokens', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      const dryRun = req.body?.dryRun !== false;
+      const snap = await db.collection('testTokens').get();
+      const plain = snap.docs.filter(d => typeof d.data().token === 'string' && d.data().token.length > 0);
+      if (!dryRun) {
+        for (let i = 0; i < plain.length; i += 400) {
+          const batch = db.batch();
+          plain.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+          await batch.commit();
+        }
+        if (plain.length > 0) {
+          await db.collection('auditLog').add({
+            timestamp: new Date().toISOString(),
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'delete',
+            entityType: 'test-data',
+            entityId: `plaintext-testtokens-purge-${Date.now()}`,
+            entityName: `Removed ${plain.length} plaintext test token records`,
+            changes: [{ field: 'testTokens', newValue: `${plain.length} deleted: ${plain.map(d => d.id).join(', ')}` }],
+          });
+        }
+      }
+      res.json({ dryRun, scanned: snap.size, plaintext: plain.length, ids: plain.map(d => d.id) });
+    } catch (error) {
+      console.error('Purge plaintext test tokens error:', error);
+      res.status(500).json({ error: { code: 'internal_error', message: 'Cleanup failed', requestId: res.locals.requestId } });
+    }
+  });
+
   router.post('/users/:id/signin-link', async (req: Request, res: Response) => {
     try {
       const authUser = res.locals.authUser as AuthUser;

@@ -89,6 +89,14 @@ describe('D1 role linking (/users/me)', () => {
     assert.strictEqual(res.status, 403);
   });
 
+  it('existing password user with own record keeps working regardless of domain', async () => {
+    const uid = `uid12-${rid}`; const email = `qa-${rid}@shiekh.test`;
+    await db.collection('users').doc(uid).set({ id: uid, email, displayName: 'QA', role: 'Viewer', status: 'active', createdAt: 'x', updatedAt: 'x', version: 1 });
+    const res = await me(uid, email, 'password', false);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).data.role, 'Viewer');
+  });
+
   it('Google user still links to Admin-added record and keeps role', async () => {
     const email = `g-${rid}@shiekhshoes.org`; const uid = `uid8-${rid}`;
     await seedPre(`user-pre8-${rid}`, email, 'Steward');

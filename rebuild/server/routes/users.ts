@@ -48,7 +48,11 @@ export function createUsersRouter(db: Firestore): Router {
       const isPasswordUser = provider === 'password' || provider === 'emailLink';
       const normalizedEmail = String(email).trim().toLowerCase();
 
-      if ((isGoogleUser || isPasswordUser) && !isEmailDomainAllowed(normalizedEmail)) {
+      let userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+
+      // Domain rule: Google always; password users only when they would be linked/created
+      // (existing password accounts with their own record, e.g. QA test accounts, keep working).
+      if ((isGoogleUser || (isPasswordUser && !userDoc.exists)) && !isEmailDomainAllowed(normalizedEmail)) {
         const allowedDomains = getAllowedDomains();
         const domain = getEmailDomain(normalizedEmail);
         return res.status(403).json({
@@ -63,8 +67,6 @@ export function createUsersRouter(db: Firestore): Router {
       // r31/D4: approved-list mode
       const restricted = await isSignInRestricted(db);
       const onAllowList = await isEmailOnAllowList(db, normalizedEmail);
-
-      let userDoc = await db.collection('users').doc(firebaseUser.uid).get();
 
       if (!userDoc.exists && (isGoogleUser || isPasswordUser)) {
         const emailVerified = isGoogleUser || firebaseUser.email_verified === true;

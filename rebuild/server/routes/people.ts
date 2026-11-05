@@ -54,34 +54,130 @@ export function createPeopleRouter(db: Firestore): Router {
       }
 
       const snapshot = await query.get();
-      const people: PersonListItem[] = [];
-
-      for (const doc of snapshot.docs) {
-        const person = { id: doc.id, ...doc.data() } as Person;
-
-        if (search) {
-          const searchLower = (search as string).toLowerCase();
+      
+      // Filter by search in memory first (before batched lookups)
+      let filteredDocs = snapshot.docs;
+      if (search) {
+        const searchLower = (search as string).toLowerCase();
+        filteredDocs = snapshot.docs.filter(doc => {
+          const person = doc.data() as Person;
           const nameMatch = person.fullName.toLowerCase().includes(searchLower);
           const emailMatch = person.workEmail?.toLowerCase().includes(searchLower);
-          if (!nameMatch && !emailMatch) continue;
-        }
+          return nameMatch || emailMatch;
+        });
+      }
 
-        const assignmentSnap = await db.collection('assignments')
-          .where('personId', '==', doc.id)
-          .limit(1)
+      if (filteredDocs.length === 0) {
+        return res.json({ data: [] });
+      }
+
+      const personIds = filteredDocs.map(doc => doc.id);
+      const localDate = getLocalDate();
+
+      // Batch load assignments for all people (Firestore IN limit is 30)
+      const assignmentMap = new Map<string, Assignment>();
+      const BATCH_SIZE = 30;
+      for (let i = 0; i < personIds.length; i += BATCH_SIZE) {
+        const batch = personIds.slice(i, i + BATCH_SIZE);
+        const assignmentsSnap = await db.collection('assignments')
+          .where('personId', 'in', batch)
           .get();
+        
+        for (const doc of assignmentsSnap.docs) {
+          const assignment = doc.data() as Assignment;
+          if (isAssignmentActive(assignment, localDate)) {
+            // Keep first active assignment per person (matches original limit(1) behavior)
+            if (!assignmentMap.has(assignment.personId)) {
+              assignmentMap.set(assignment.personId, assignment);
+            }
+          }
+        }
+      }
 
+      // Collect unique scope IDs by type for batched scope name lookup
+      const locationIds = new Set<string>();
+      const districtIds = new Set<string>();
+      const regionIds = new Set<string>();
+      
+      for (const assignment of assignmentMap.values()) {
+        if (assignment.scopeType === 'location') locationIds.add(assignment.scopeId);
+        else if (assignment.scopeType === 'district') districtIds.add(assignment.scopeId);
+        else if (assignment.scopeType === 'region') regionIds.add(assignment.scopeId);
+      }
+
+      // Batch load scope names in parallel
+      const scopeNameMap = new Map<string, string>();
+      
+      const scopePromises: Promise<void>[] = [];
+      
+      // Locations (skip if none)
+      const locationIdArr = [...locationIds];
+      if (locationIdArr.length > 0) {
+        for (let i = 0; i < locationIdArr.length; i += BATCH_SIZE) {
+          const batch = locationIdArr.slice(i, i + BATCH_SIZE);
+          scopePromises.push(
+            db.getAll(...batch.map(id => db.collection('locations').doc(id))).then(docs => {
+              for (const doc of docs) {
+                if (doc.exists) {
+                  const loc = doc.data() as Location;
+                  scopeNameMap.set(doc.id, `#${loc.storeNumber} ${loc.name}`);
+                }
+              }
+            })
+          );
+        }
+      }
+      
+      // Districts (skip if none)
+      const districtIdArr = [...districtIds];
+      if (districtIdArr.length > 0) {
+        for (let i = 0; i < districtIdArr.length; i += BATCH_SIZE) {
+          const batch = districtIdArr.slice(i, i + BATCH_SIZE);
+          scopePromises.push(
+            db.getAll(...batch.map(id => db.collection('districts').doc(id))).then(docs => {
+              for (const doc of docs) {
+                if (doc.exists) {
+                  scopeNameMap.set(doc.id, (doc.data() as District).name);
+                }
+              }
+            })
+          );
+        }
+      }
+      
+      // Regions (skip if none)
+      const regionIdArr = [...regionIds];
+      if (regionIdArr.length > 0) {
+        for (let i = 0; i < regionIdArr.length; i += BATCH_SIZE) {
+          const batch = regionIdArr.slice(i, i + BATCH_SIZE);
+          scopePromises.push(
+            db.getAll(...batch.map(id => db.collection('regions').doc(id))).then(docs => {
+              for (const doc of docs) {
+                if (doc.exists) {
+                  scopeNameMap.set(doc.id, (doc.data() as Region).name);
+                }
+              }
+            })
+          );
+        }
+      }
+      
+      if (scopePromises.length > 0) {
+        await Promise.all(scopePromises);
+      }
+
+      // Build response
+      const people: PersonListItem[] = [];
+      for (const doc of filteredDocs) {
+        const person = { id: doc.id, ...doc.data() } as Person;
+        const assignment = assignmentMap.get(doc.id);
+        
         let primaryRole: string | undefined;
         let primaryScopeName: string | undefined;
-
-        if (!assignmentSnap.empty) {
-          const assignment = assignmentSnap.docs[0].data() as Assignment;
-          const localDate = getLocalDate();
-          
-          if (isAssignmentActive(assignment, localDate)) {
-            primaryRole = assignment.role;
-            primaryScopeName = await getScopeName(db, assignment.scopeType, assignment.scopeId);
-          }
+        
+        if (assignment) {
+          primaryRole = assignment.role;
+          primaryScopeName = scopeNameMap.get(assignment.scopeId) || assignment.scopeId;
         }
 
         people.push({

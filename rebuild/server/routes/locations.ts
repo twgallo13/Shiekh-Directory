@@ -76,48 +76,133 @@ export function createLocationsRouter(db: Firestore): Router {
       }
       
       const locationsSnap = await query.get();
+      
+      if (locationsSnap.empty) {
+        return res.json({ data: [] });
+      }
+
+      const locationDocs = locationsSnap.docs;
+      const locationIds = locationDocs.map(doc => doc.id);
+      const BATCH_SIZE = 30;
+      const CONCURRENCY = 50; // Limit concurrent subcollection queries
+
+      // Batch load closures and exceptions with concurrency control
+      const closuresMap = new Map<string, Closure[]>();
+      const exceptionsMap = new Map<string, HoursException[]>();
+      
+      // Process subcollection queries in batches to avoid overwhelming connections
+      for (let i = 0; i < locationIds.length; i += CONCURRENCY) {
+        const batch = locationIds.slice(i, i + CONCURRENCY);
+        const batchPromises: Promise<void>[] = [];
+        
+        for (const locId of batch) {
+          batchPromises.push(
+            db.collection(`locations/${locId}/closures`)
+              .where('status', '==', 'active')
+              .get()
+              .then(snap => {
+                closuresMap.set(locId, snap.docs.map(d => ({ id: d.id, ...d.data() })) as Closure[]);
+              })
+          );
+          batchPromises.push(
+            db.collection(`locations/${locId}/hoursExceptions`)
+              .get()
+              .then(snap => {
+                exceptionsMap.set(locId, snap.docs.map(d => ({ id: d.id, ...d.data() })) as HoursException[]);
+              })
+          );
+        }
+        await Promise.all(batchPromises);
+      }
+
+      // Batch load SM assignments for all locations
+      // Firestore has a 100 filter limit: with 4 WHERE clauses, max ~20 IDs per batch
+      const smAssignmentMap = new Map<string, Assignment>();
+      const SM_BATCH_SIZE = 20;
+      
+      for (let i = 0; i < locationIds.length; i += SM_BATCH_SIZE) {
+        const batch = locationIds.slice(i, i + SM_BATCH_SIZE);
+        const snap = await db.collection('assignments')
+          .where('scopeType', '==', 'location')
+          .where('scopeId', 'in', batch)
+          .where('role', '==', 'SM')
+          .where('slot', '==', 'primary')
+          .get();
+        for (const doc of snap.docs) {
+          const assignment = doc.data() as Assignment;
+          smAssignmentMap.set(assignment.scopeId, assignment);
+        }
+      }
+
+      // Collect unique district IDs for batched lookup
+      const districtIds = new Set<string>();
+      for (const doc of locationDocs) {
+        const location = doc.data() as Location;
+        if (location.districtId) {
+          districtIds.add(location.districtId);
+        }
+      }
+
+      // Batch load districts
+      const districtNameMap = new Map<string, string>();
+      const districtIdArr = [...districtIds];
+      if (districtIdArr.length > 0) {
+        const districtPromises: Promise<void>[] = [];
+        for (let i = 0; i < districtIdArr.length; i += BATCH_SIZE) {
+          const batch = districtIdArr.slice(i, i + BATCH_SIZE);
+          districtPromises.push(
+            db.getAll(...batch.map(id => db.collection('districts').doc(id))).then(docs => {
+              for (const doc of docs) {
+                if (doc.exists) {
+                  districtNameMap.set(doc.id, (doc.data() as District).name);
+                }
+              }
+            })
+          );
+        }
+        await Promise.all(districtPromises);
+      }
+
+      // Collect unique person IDs from SM assignments for batched lookup
+      const personIds = new Set<string>();
+      for (const assignment of smAssignmentMap.values()) {
+        personIds.add(assignment.personId);
+      }
+
+      // Batch load people (SM names)
+      const personNameMap = new Map<string, string>();
+      const personIdArr = [...personIds];
+      if (personIdArr.length > 0) {
+        const personPromises: Promise<void>[] = [];
+        for (let i = 0; i < personIdArr.length; i += BATCH_SIZE) {
+          const batch = personIdArr.slice(i, i + BATCH_SIZE);
+          personPromises.push(
+            db.getAll(...batch.map(id => db.collection('people').doc(id))).then(docs => {
+              for (const doc of docs) {
+                if (doc.exists) {
+                  personNameMap.set(doc.id, (doc.data() as Person).fullName);
+                }
+              }
+            })
+          );
+        }
+        await Promise.all(personPromises);
+      }
+
+      // Build response
       const locations: LocationListItem[] = [];
       
-      for (const doc of locationsSnap.docs) {
+      for (const doc of locationDocs) {
         const location = { id: doc.id, ...doc.data() } as Location;
-        
-        const closuresSnap = await db.collection(`locations/${doc.id}/closures`)
-          .where('status', '==', 'active')
-          .get();
-        const closures = closuresSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Closure[];
-        
-        const exceptionsSnap = await db.collection(`locations/${doc.id}/hoursExceptions`).get();
-        const exceptions = exceptionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as HoursException[];
+        const closures = closuresMap.get(doc.id) || [];
+        const exceptions = exceptionsMap.get(doc.id) || [];
         
         const statusNow = resolveOperatingStatus(location, closures, exceptions);
         
-        const smAssignment = await db.collection('assignments')
-          .where('scopeType', '==', 'location')
-          .where('scopeId', '==', location.id)
-          .where('role', '==', 'SM')
-          .where('slot', '==', 'primary')
-          .limit(1)
-          .get();
+        const smAssignment = smAssignmentMap.get(location.id);
+        const smName = smAssignment ? personNameMap.get(smAssignment.personId) : undefined;
         
-        let smName: string | undefined;
-        if (!smAssignment.empty) {
-          const assignment = smAssignment.docs[0].data() as Assignment;
-          const personDoc = await db.collection('people').doc(assignment.personId).get();
-          if (personDoc.exists) {
-            smName = (personDoc.data() as Person).fullName;
-          }
-        }
-        
-        // Get district name if available
-        let districtName: string | undefined;
-        if (location.districtId) {
-          const districtDoc = await db.collection('districts').doc(location.districtId).get();
-          if (districtDoc.exists) {
-            districtName = (districtDoc.data() as District).name;
-          }
-        }
-
-        // Get active closure if any
+        const districtName = location.districtId ? districtNameMap.get(location.districtId) : undefined;
         const activeClosure = closures.length > 0 ? closures[0] : undefined;
 
         const addr = location.address || {};

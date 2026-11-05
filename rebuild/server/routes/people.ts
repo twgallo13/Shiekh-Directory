@@ -74,8 +74,12 @@ export function createPeopleRouter(db: Firestore): Router {
       const personIds = filteredDocs.map(doc => doc.id);
       const localDate = getLocalDate();
 
-      // Batch load assignments for all people (Firestore IN limit is 30)
-      const assignmentMap = new Map<string, Assignment>();
+      // Batch load first assignment for each person (Firestore IN limit is 30)
+      // SEMANTICS: Original used limit(1) per person, then checked if active.
+      // If first assignment is inactive/expired/future, no primaryRole/Scope returned.
+      // We batch query all assignments, then per person take FIRST in Firestore order
+      // and check that single doc only.
+      const firstAssignmentMap = new Map<string, Assignment>();
       const BATCH_SIZE = 30;
       for (let i = 0; i < personIds.length; i += BATCH_SIZE) {
         const batch = personIds.slice(i, i + BATCH_SIZE);
@@ -85,32 +89,40 @@ export function createPeopleRouter(db: Firestore): Router {
         
         for (const doc of assignmentsSnap.docs) {
           const assignment = doc.data() as Assignment;
-          if (isAssignmentActive(assignment, localDate)) {
-            // Keep first active assignment per person (matches original limit(1) behavior)
-            if (!assignmentMap.has(assignment.personId)) {
-              assignmentMap.set(assignment.personId, assignment);
-            }
+          // Keep FIRST assignment per person (Firestore doc order), regardless of active status
+          if (!firstAssignmentMap.has(assignment.personId)) {
+            firstAssignmentMap.set(assignment.personId, assignment);
           }
         }
       }
 
-      // Collect unique scope IDs by type for batched scope name lookup
+      // Now filter to only active assignments (matches original: get first, check active)
+      const activeAssignmentMap = new Map<string, Assignment>();
+      for (const [personId, assignment] of firstAssignmentMap) {
+        if (isAssignmentActive(assignment, localDate)) {
+          activeAssignmentMap.set(personId, assignment);
+        }
+      }
+
+      // Collect unique scope IDs by type for batched scope name lookup (separate maps to avoid collision)
       const locationIds = new Set<string>();
       const districtIds = new Set<string>();
       const regionIds = new Set<string>();
       
-      for (const assignment of assignmentMap.values()) {
+      for (const assignment of activeAssignmentMap.values()) {
         if (assignment.scopeType === 'location') locationIds.add(assignment.scopeId);
         else if (assignment.scopeType === 'district') districtIds.add(assignment.scopeId);
         else if (assignment.scopeType === 'region') regionIds.add(assignment.scopeId);
       }
 
-      // Batch load scope names in parallel
-      const scopeNameMap = new Map<string, string>();
+      // Batch load scope names with SEPARATE maps per type (no key collision)
+      const locationNameMap = new Map<string, string>();
+      const districtNameMap = new Map<string, string>();
+      const regionNameMap = new Map<string, string>();
       
       const scopePromises: Promise<void>[] = [];
       
-      // Locations (skip if none)
+      // Locations
       const locationIdArr = [...locationIds];
       if (locationIdArr.length > 0) {
         for (let i = 0; i < locationIdArr.length; i += BATCH_SIZE) {
@@ -120,7 +132,7 @@ export function createPeopleRouter(db: Firestore): Router {
               for (const doc of docs) {
                 if (doc.exists) {
                   const loc = doc.data() as Location;
-                  scopeNameMap.set(doc.id, `#${loc.storeNumber} ${loc.name}`);
+                  locationNameMap.set(doc.id, `#${loc.storeNumber} ${loc.name}`);
                 }
               }
             })
@@ -128,7 +140,7 @@ export function createPeopleRouter(db: Firestore): Router {
         }
       }
       
-      // Districts (skip if none)
+      // Districts
       const districtIdArr = [...districtIds];
       if (districtIdArr.length > 0) {
         for (let i = 0; i < districtIdArr.length; i += BATCH_SIZE) {
@@ -137,7 +149,7 @@ export function createPeopleRouter(db: Firestore): Router {
             db.getAll(...batch.map(id => db.collection('districts').doc(id))).then(docs => {
               for (const doc of docs) {
                 if (doc.exists) {
-                  scopeNameMap.set(doc.id, (doc.data() as District).name);
+                  districtNameMap.set(doc.id, (doc.data() as District).name);
                 }
               }
             })
@@ -145,7 +157,7 @@ export function createPeopleRouter(db: Firestore): Router {
         }
       }
       
-      // Regions (skip if none)
+      // Regions
       const regionIdArr = [...regionIds];
       if (regionIdArr.length > 0) {
         for (let i = 0; i < regionIdArr.length; i += BATCH_SIZE) {
@@ -154,7 +166,7 @@ export function createPeopleRouter(db: Firestore): Router {
             db.getAll(...batch.map(id => db.collection('regions').doc(id))).then(docs => {
               for (const doc of docs) {
                 if (doc.exists) {
-                  scopeNameMap.set(doc.id, (doc.data() as Region).name);
+                  regionNameMap.set(doc.id, (doc.data() as Region).name);
                 }
               }
             })
@@ -166,18 +178,33 @@ export function createPeopleRouter(db: Firestore): Router {
         await Promise.all(scopePromises);
       }
 
-      // Build response
+      // Build response using typed scope name lookup (matches original getScopeName behavior)
       const people: PersonListItem[] = [];
       for (const doc of filteredDocs) {
         const person = { id: doc.id, ...doc.data() } as Person;
-        const assignment = assignmentMap.get(doc.id);
+        const assignment = activeAssignmentMap.get(doc.id);
         
         let primaryRole: string | undefined;
         let primaryScopeName: string | undefined;
         
         if (assignment) {
           primaryRole = assignment.role;
-          primaryScopeName = scopeNameMap.get(assignment.scopeId) || assignment.scopeId;
+          // Match original getScopeName: lookup by type, fallback to scopeId (not || which changes empty string)
+          if (assignment.scopeType === 'location') {
+            primaryScopeName = locationNameMap.has(assignment.scopeId)
+              ? locationNameMap.get(assignment.scopeId)
+              : assignment.scopeId;
+          } else if (assignment.scopeType === 'district') {
+            primaryScopeName = districtNameMap.has(assignment.scopeId)
+              ? districtNameMap.get(assignment.scopeId)
+              : assignment.scopeId;
+          } else if (assignment.scopeType === 'region') {
+            primaryScopeName = regionNameMap.has(assignment.scopeId)
+              ? regionNameMap.get(assignment.scopeId)
+              : assignment.scopeId;
+          } else {
+            primaryScopeName = assignment.scopeId;
+          }
         }
 
         people.push({

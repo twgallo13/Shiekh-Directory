@@ -84,15 +84,18 @@ export function createLocationsRouter(db: Firestore): Router {
       const locationDocs = locationsSnap.docs;
       const locationIds = locationDocs.map(doc => doc.id);
       const BATCH_SIZE = 30;
-      const CONCURRENCY = 50; // Limit concurrent subcollection queries
+      
+      // Bounded concurrency: max 25 TOTAL outstanding reads (50 queries at concurrency80 = unsafe)
+      // Each location needs 2 subcollection queries, so process 12-13 locations at a time
+      const MAX_OUTSTANDING = 25;
+      const SUBCOLL_BATCH = Math.floor(MAX_OUTSTANDING / 2);
 
-      // Batch load closures and exceptions with concurrency control
+      // Batch load closures and exceptions with bounded outstanding reads
       const closuresMap = new Map<string, Closure[]>();
       const exceptionsMap = new Map<string, HoursException[]>();
       
-      // Process subcollection queries in batches to avoid overwhelming connections
-      for (let i = 0; i < locationIds.length; i += CONCURRENCY) {
-        const batch = locationIds.slice(i, i + CONCURRENCY);
+      for (let i = 0; i < locationIds.length; i += SUBCOLL_BATCH) {
+        const batch = locationIds.slice(i, i + SUBCOLL_BATCH);
         const batchPromises: Promise<void>[] = [];
         
         for (const locId of batch) {
@@ -116,7 +119,9 @@ export function createLocationsRouter(db: Firestore): Router {
       }
 
       // Batch load SM assignments for all locations
-      // Firestore has a 100 filter limit: with 4 WHERE clauses, max ~20 IDs per batch
+      // Firestore has 100 filter limit: with 4 WHERE clauses, max ~20 IDs per batch
+      // SEMANTICS: Original used limit(1) per location, returning FIRST in Firestore order.
+      // Keep FIRST returned per scopeId only.
       const smAssignmentMap = new Map<string, Assignment>();
       const SM_BATCH_SIZE = 20;
       
@@ -130,7 +135,10 @@ export function createLocationsRouter(db: Firestore): Router {
           .get();
         for (const doc of snap.docs) {
           const assignment = doc.data() as Assignment;
-          smAssignmentMap.set(assignment.scopeId, assignment);
+          // Keep FIRST only (matches original limit(1) semantics)
+          if (!smAssignmentMap.has(assignment.scopeId)) {
+            smAssignmentMap.set(assignment.scopeId, assignment);
+          }
         }
       }
 
@@ -143,24 +151,17 @@ export function createLocationsRouter(db: Firestore): Router {
         }
       }
 
-      // Batch load districts
+      // Batch load districts (bounded: one getAll per chunk, sequential)
       const districtNameMap = new Map<string, string>();
       const districtIdArr = [...districtIds];
-      if (districtIdArr.length > 0) {
-        const districtPromises: Promise<void>[] = [];
-        for (let i = 0; i < districtIdArr.length; i += BATCH_SIZE) {
-          const batch = districtIdArr.slice(i, i + BATCH_SIZE);
-          districtPromises.push(
-            db.getAll(...batch.map(id => db.collection('districts').doc(id))).then(docs => {
-              for (const doc of docs) {
-                if (doc.exists) {
-                  districtNameMap.set(doc.id, (doc.data() as District).name);
-                }
-              }
-            })
-          );
+      for (let i = 0; i < districtIdArr.length; i += BATCH_SIZE) {
+        const batch = districtIdArr.slice(i, i + BATCH_SIZE);
+        const docs = await db.getAll(...batch.map(id => db.collection('districts').doc(id)));
+        for (const doc of docs) {
+          if (doc.exists) {
+            districtNameMap.set(doc.id, (doc.data() as District).name);
+          }
         }
-        await Promise.all(districtPromises);
       }
 
       // Collect unique person IDs from SM assignments for batched lookup
@@ -169,24 +170,17 @@ export function createLocationsRouter(db: Firestore): Router {
         personIds.add(assignment.personId);
       }
 
-      // Batch load people (SM names)
+      // Batch load people (bounded: one getAll per chunk, sequential)
       const personNameMap = new Map<string, string>();
       const personIdArr = [...personIds];
-      if (personIdArr.length > 0) {
-        const personPromises: Promise<void>[] = [];
-        for (let i = 0; i < personIdArr.length; i += BATCH_SIZE) {
-          const batch = personIdArr.slice(i, i + BATCH_SIZE);
-          personPromises.push(
-            db.getAll(...batch.map(id => db.collection('people').doc(id))).then(docs => {
-              for (const doc of docs) {
-                if (doc.exists) {
-                  personNameMap.set(doc.id, (doc.data() as Person).fullName);
-                }
-              }
-            })
-          );
+      for (let i = 0; i < personIdArr.length; i += BATCH_SIZE) {
+        const batch = personIdArr.slice(i, i + BATCH_SIZE);
+        const docs = await db.getAll(...batch.map(id => db.collection('people').doc(id)));
+        for (const doc of docs) {
+          if (doc.exists) {
+            personNameMap.set(doc.id, (doc.data() as Person).fullName);
+          }
         }
-        await Promise.all(personPromises);
       }
 
       // Build response

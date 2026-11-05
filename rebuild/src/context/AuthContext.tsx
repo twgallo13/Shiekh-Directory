@@ -8,6 +8,8 @@ import {
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
   connectAuthEmulator,
   type Auth,
   type User,
@@ -73,6 +75,9 @@ interface AuthContextType {
   refreshAuthUser: () => Promise<void>;
   refreshStoreSession: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  /** Passwordless email-link sign-in (Admin-issued link). */
+  isEmailSignInLink: (href: string) => boolean;
+  completeEmailLinkSignIn: (email: string, href: string) => Promise<void>;
 }
 
 export interface AuthProfileError {
@@ -292,6 +297,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await sendPasswordResetEmail(auth, email);
   };
   
+  const isEmailSignInLink = (href: string) => !!auth && isSignInWithEmailLink(auth, href);
+  const completeEmailLinkSignIn = async (email: string, href: string) => {
+    if (!auth) throw new Error('Auth not initialized');
+    await signInWithEmailLink(auth, email.trim().toLowerCase(), href);
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -307,7 +318,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getStoreSessionHeader,
       refreshAuthUser,
       refreshStoreSession,
-      sendPasswordReset 
+      sendPasswordReset,
+      isEmailSignInLink,
+      completeEmailLinkSignIn,
     }}>
       {children}
     </AuthContext.Provider>

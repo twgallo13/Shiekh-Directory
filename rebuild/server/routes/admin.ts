@@ -473,6 +473,34 @@ export function createAdminRouter(db: Firestore): Router {
         return res.status(400).json({ error: { code: 'invalid_email', message: 'User has no valid email' } });
       }
       const auth = getAuth();
+      // Passwordless email-link (default for staff) or set-password link
+      const method: 'emailLink' | 'password' = req.body?.method === 'password' ? 'password' : 'emailLink';
+      if (method === 'emailLink') {
+        const origin = String(req.get('origin') || '').match(/^https:\/\/[a-z0-9.-]+$/i)
+          ? String(req.get('origin'))
+          : `https://${process.env.GCLOUD_PROJECT || 'shiekh-directory-v2'}.web.app`;
+        let link: string;
+        try {
+          link = await auth.generateSignInWithEmailLink(email, { url: `${origin}/finish-sign-in`, handleCodeInApp: true });
+        } catch (e: unknown) {
+          const code = (e as { code?: string })?.code || '';
+          if (/operation-not-allowed|configuration|not-enabled/i.test(code + String((e as Error)?.message))) {
+            return res.status(409).json({ error: { code: 'email_link_disabled', message: 'Passwordless email-link sign-in is not turned on for this project. Turn on Email link in Firebase Authentication.' } });
+          }
+          throw e;
+        }
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+        const ref = db.collection('adminSignInLinks').doc();
+        await ref.set({ id: ref.id, linkHash: createHash('sha256').update(link).digest('hex'), method, userId: userData.id, email,
+          createdBy: authUser.uid, createdByEmail: authUser.email, createdAt: now.toISOString(), expiresAt, createdAuthAccount: false });
+        await addAuditEntry(db, {
+          userId: authUser.uid, userEmail: authUser.email, userRole: authUser.role, action: 'create', entityType: 'user',
+          entityId: userData.id, entityName: email,
+          changes: [{ field: 'signInLink', newValue: `issued passwordless (expires ${expiresAt}; ref ${ref.id})` }],
+        } as Omit<AuditLogEntry, 'id' | 'timestamp'>);
+        return res.status(201).json({ link, expiresAt, method, createdAuthAccount: false });
+      }
       let createdAuthAccount = false;
       try {
         await auth.getUserByEmail(email);
@@ -496,6 +524,7 @@ export function createAdminRouter(db: Firestore): Router {
         createdAt: now.toISOString(),
         expiresAt,
         createdAuthAccount,
+        method,
       });
       await addAuditEntry(db, {
         userId: authUser.uid,
@@ -507,7 +536,7 @@ export function createAdminRouter(db: Firestore): Router {
         entityName: email,
         changes: [{ field: 'signInLink', newValue: `issued (expires ${expiresAt}; ref ${ref.id})` }],
       } as Omit<AuditLogEntry, 'id' | 'timestamp'>);
-      res.status(201).json({ link, expiresAt, createdAuthAccount });
+      res.status(201).json({ link, expiresAt, method, createdAuthAccount });
     } catch (error) {
       console.error('Create sign-in link error:', error);
       res.status(500).json({ error: { code: 'internal_error', message: 'Failed to create sign-in link' } });

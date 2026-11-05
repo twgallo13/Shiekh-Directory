@@ -52,7 +52,10 @@ export function createUsersRouter(db: Firestore): Router {
 
       // Domain rule: Google always; password users only when they would be linked/created
       // (existing password accounts with their own record, e.g. QA test accounts, keep working).
-      if ((isGoogleUser || (isPasswordUser && !userDoc.exists)) && !isEmailDomainAllowed(normalizedEmail)) {
+      // Email-link/password users outside the company domain (e.g. @shiekhshoes.com) are allowed
+      // only when an Admin explicitly put them on the approved list.
+      const passwordNeedsDomain = isPasswordUser && !userDoc.exists && !(await isEmailOnAllowList(db, normalizedEmail));
+      if ((isGoogleUser || passwordNeedsDomain) && !isEmailDomainAllowed(normalizedEmail)) {
         const allowedDomains = getAllowedDomains();
         const domain = getEmailDomain(normalizedEmail);
         return res.status(403).json({

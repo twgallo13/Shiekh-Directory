@@ -129,6 +129,27 @@ describe('D4 permanent approved list', () => {
     }
   });
 
+  it('Edward case: email-link sign-in (.com, verified) with permanent restriction ON links to Steward', async () => {
+    await db.collection('settings').doc('signIn').set({ enabled: true, restrictedUntil: null });
+    try {
+      const email = `edward-${rid}@shiekhshoes.com`; const uid = `uid13-${rid}`;
+      await seedPre(`user-pre13-${rid}`, email, 'Steward');
+      await db.collection('signInAllowList').doc(email).set({ email, addedBy: 't', addedByEmail: 't', addedAt: 'x' });
+      // Firebase email-link ID tokens carry sign_in_provider 'password' and email_verified true
+      const res = await me(uid, email, 'password', true);
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual((await res.json()).data.role, 'Steward');
+      // a non-listed email-link user with no record is refused (no Viewer fallback)
+      const no = await me(`uid14-${rid}`, `stranger-${rid}@shiekhshoes.com`, 'password', true);
+      assert.strictEqual(no.status, 403);
+      // same .com address via Google is still refused by the domain rule
+      const g = await me(`uid15-${rid}`, email, 'google');
+      assert.strictEqual(g.status, 403);
+    } finally {
+      await db.collection('settings').doc('signIn').delete();
+    }
+  });
+
   it('Admin Add User also adds the email to the approved list', async () => {
     const email = `added-${rid}@shiekhshoes.org`;
     const res = await fetch(`${API}/api/app/admin/users`, {
@@ -146,10 +167,24 @@ describe('D3 admin sign-in link', () => {
     assert.strictEqual(res.status, 403);
   });
 
+  it('default link is passwordless email-link to /finish-sign-in; hash only, audited', async () => {
+    const id = `user-elink-${rid}`; const email = `elink-${rid}@shiekhshoes.com`;
+    await seedPre(id, email, 'Steward');
+    const res = await fetch(`${API}/api/app/admin/users/${id}/signin-link`, { method: 'POST', headers: { Authorization: 'Bearer test-token-admin', 'Content-Type': 'application/json' }, body: '{}' });
+    assert.strictEqual(res.status, 201, await res.clone().text());
+    const body = await res.json();
+    assert.strictEqual(body.method, 'emailLink');
+    assert.ok(/mode=signIn/.test(body.link), 'is an email sign-in link');
+    assert.ok(decodeURIComponent(body.link).includes('/finish-sign-in'));
+    const snap = await db.collection('adminSignInLinks').where('userId', '==', id).get();
+    assert.strictEqual(snap.docs[0].data().linkHash, createHash('sha256').update(body.link).digest('hex'));
+    assert.ok(!JSON.stringify(snap.docs[0].data()).includes(body.link));
+  });
+
   it('admin gets a link; only its hash is stored, with expiry <= 24h, and it is audited', async () => {
     const id = `user-link-${rid}`; const email = `link-${rid}@shiekhshoes.org`;
     await seedPre(id, email, 'Viewer');
-    const res = await fetch(`${API}/api/app/admin/users/${id}/signin-link`, { method: 'POST', headers: { Authorization: 'Bearer test-token-admin' } });
+    const res = await fetch(`${API}/api/app/admin/users/${id}/signin-link`, { method: 'POST', headers: { Authorization: 'Bearer test-token-admin', 'Content-Type': 'application/json' }, body: JSON.stringify({ method: 'password' }) });
     assert.strictEqual(res.status, 201, await res.clone().text());
     const body = await res.json();
     assert.ok(typeof body.link === 'string' && body.link.length > 20);

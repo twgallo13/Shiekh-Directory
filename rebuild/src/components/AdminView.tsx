@@ -442,7 +442,7 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
   const [linkLoading, setLinkLoading] = useState(false);
 
   // D3: Admin-only copyable sign-in link while mail is off (expires in 1 hour)
-  const handleSignInLink = async () => {
+  const handleSignInLink = async (method: 'emailLink' | 'password') => {
     if (!user) return;
     try {
       setLinkLoading(true);
@@ -450,7 +450,8 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
       const token = await getIdToken();
       const res = await fetch(`/api/app/admin/users/${user.id}/signin-link`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || 'Failed to create sign-in link');
@@ -649,8 +650,8 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
           <div className="border-t border-gray-200 pt-4">
             <p className="text-sm font-medium text-gray-900">Sign-in link</p>
             <p className="text-xs text-gray-600 mt-1">
-              Email is off, so password emails are not sent. Create a one-time link that lets this person set a password,
-              then pass it to them yourself. It expires in 1 hour and is logged.
+              Email is off, so nothing is emailed. Create a one-time link and pass it to the person yourself.
+              The passwordless link signs them in directly (they confirm their work email). It is logged and should be used within 1 hour.
             </p>
             {signInLink ? (
               <>
@@ -658,14 +659,24 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
                 <p className="text-xs text-gray-500 mt-1">Expires {new Date(signInLink.expiresAt).toLocaleString()}</p>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={handleSignInLink}
-                disabled={linkLoading}
-                className="mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px] disabled:opacity-50"
-              >
-                {linkLoading ? 'Creating...' : 'Create sign-in link'}
-              </button>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSignInLink('emailLink')}
+                  disabled={linkLoading}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px] disabled:opacity-50"
+                >
+                  {linkLoading ? 'Creating...' : 'Create passwordless sign-in link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSignInLink('password')}
+                  disabled={linkLoading}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px] disabled:opacity-50"
+                >
+                  Create set-password link
+                </button>
+              </div>
             )}
           </div>
         )}

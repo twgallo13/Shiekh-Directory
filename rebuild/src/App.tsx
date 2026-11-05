@@ -19,6 +19,7 @@ const HierarchyView = lazy(() => import('./components/HierarchyView').then(m => 
 const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
 const ClosuresBoardPage = lazy(() => import('./components/ClosuresBoardPage').then(m => ({ default: m.ClosuresBoardPage })));
 const StaleStoresView = lazy(() => import('./components/StaleStoresView').then(m => ({ default: m.StaleStoresView })));
+const FinishSignInView = lazy(() => import('./components/FinishSignInView').then(m => ({ default: m.FinishSignInView })));
 const StoreSignInView = lazy(() => import('./components/StoreSignInView').then(m => ({ default: m.StoreSignInView })));
 const VerifyActionView = lazy(() => import('./components/VerifyActionView').then(m => ({ default: m.VerifyActionView })));
 const DMVerifyView = lazy(() => import('./components/DMVerifyView').then(m => ({ default: m.DMVerifyView })));
@@ -169,6 +170,7 @@ function AppRoutes() {
     <Suspense fallback={<PageSkeleton />}>
       <Routes>
         <Route path="/signin" element={<SignInView />} />
+        <Route path="/finish-sign-in" element={<FinishSignInView />} />
         <Route path="/store-signin" element={<StoreSignInView />} />
         <Route path="/verify-action" element={<VerifyActionView />} />
         <Route path="/store-hours-change" element={<StoreHoursChangeView />} />

@@ -42,11 +42,15 @@ export function createUsersRouter(db: Firestore): Router {
         });
       }
 
-      const isGoogleUser = firebaseUser.firebase?.sign_in_provider === 'google.com';
-      
-      if (isGoogleUser && !isEmailDomainAllowed(email)) {
+      const provider: string | undefined = firebaseUser.firebase?.sign_in_provider;
+      const isGoogleUser = provider === 'google.com';
+      // D1 (2026-11-04): email/password and email-link users can also be linked
+      const isPasswordUser = provider === 'password' || provider === 'emailLink';
+      const normalizedEmail = String(email).trim().toLowerCase();
+
+      if ((isGoogleUser || isPasswordUser) && !isEmailDomainAllowed(normalizedEmail)) {
         const allowedDomains = getAllowedDomains();
-        const domain = getEmailDomain(email);
+        const domain = getEmailDomain(normalizedEmail);
         return res.status(403).json({
           error: {
             code: 'domain_not_allowed',
@@ -56,81 +60,82 @@ export function createUsersRouter(db: Firestore): Router {
         });
       }
 
-      // r31: Check if sign-in is restricted to allow-list only (soft-launch mode)
+      // r31/D4: approved-list mode
       const restricted = await isSignInRestricted(db);
-      const onAllowList = restricted ? await isEmailOnAllowList(db, email) : true;
-      
+      const onAllowList = await isEmailOnAllowList(db, normalizedEmail);
+
       let userDoc = await db.collection('users').doc(firebaseUser.uid).get();
-      
-      if (!userDoc.exists && isGoogleUser) {
-        // r32 fix #2: Check for pre-provisioned user FIRST (before restriction check)
-        // Pre-provisioned users who have never signed in must be allowed
+
+      if (!userDoc.exists && (isGoogleUser || isPasswordUser)) {
+        const emailVerified = isGoogleUser || firebaseUser.email_verified === true;
         const existingByEmail = await db.collection('users')
-          .where('email', '==', email.toLowerCase())
-          .limit(1)
+          .where('email', '==', normalizedEmail)
+          .limit(2)
           .get();
-        
-        // Determine role based on: pre-provisioned > admin email > allow-list > unrestricted
-        let role: UserRole | null = null;
-        let migratedFromPreProvisioned = false;
-        
-        if (!existingByEmail.empty) {
-          // Pre-provisioned user - always allow, use their assigned role
-          const existingUserData = existingByEmail.docs[0].data() as User;
-          role = existingUserData.role;
-          migratedFromPreProvisioned = true;
-          
-          await existingByEmail.docs[0].ref.delete();
-          console.log(`Migrated pre-bootstrapped user record for: ${email}`);
-        } else if (isAdminEmail(email)) {
-          // ADMIN_EMAILS user - always Admin
-          role = 'Admin';
-        } else if (restricted && onAllowList) {
-          // r32 fix #1: Allow-listed new user during restriction gets Viewer
-          role = 'Viewer';
-        } else if (!restricted) {
-          // Not restricted - auto-provision as Viewer
-          role = 'Viewer';
+        const candidates = existingByEmail.docs.filter(d => d.id !== firebaseUser.uid);
+
+        if (candidates.length > 1) {
+          console.error(`[me] ambiguous: ${candidates.length} user records share email ${normalizedEmail}; not linking`);
+          return res.status(409).json({
+            error: { code: 'ambiguous_account', message: 'More than one account uses this email. Please contact an Admin.', requestId: res.locals.requestId },
+          });
         }
-        // else: restricted, not on allow-list, not pre-provisioned, not admin -> role stays null
-        
-        // r31/r33: If no role determined (restricted, not on allow-list, not pre-provisioned, not admin), reject
-        if (role === null) {
-          const restriction = await getSignInRestriction(db);
-          const { status, body } = formatSignInRestrictedResponse(restriction, res.locals.requestId);
-          return res.status(status).json(body);
+
+        if (candidates.length === 1) {
+          // Admin-added record exists. Password users need a verified email or an approved-list entry.
+          if (!emailVerified && !onAllowList) {
+            console.warn(`[me] not linking ${normalizedEmail}: email not verified and not on approved list`);
+            return res.status(403).json({
+              error: { code: 'email_not_verified', message: 'Your email address has not been verified, so your account could not be linked. Please contact an Admin.', requestId: res.locals.requestId },
+            });
+          }
+          const linked = await linkPreProvisionedUser(db, candidates[0].id, firebaseUser.uid, normalizedEmail, provider || 'unknown');
+          if (!linked) {
+            return res.status(409).json({
+              error: { code: 'link_conflict', message: 'Your account could not be linked. Please retry or contact an Admin.', requestId: res.locals.requestId },
+            });
+          }
+          userDoc = await db.collection('users').doc(firebaseUser.uid).get();
+        } else if (isGoogleUser) {
+          let role: UserRole | null = null;
+          if (isAdminEmail(normalizedEmail)) {
+            role = 'Admin';
+          } else if (restricted && onAllowList) {
+            role = 'Viewer';
+          } else if (!restricted) {
+            role = 'Viewer';
+          }
+          if (role === null) {
+            const restriction = await getSignInRestriction(db);
+            const { status, body } = formatSignInRestrictedResponse(restriction, res.locals.requestId);
+            return res.status(status).json(body);
+          }
+          const now = new Date().toISOString();
+          const newUser: User = {
+            id: firebaseUser.uid,
+            email: normalizedEmail,
+            displayName: firebaseUser.name || normalizedEmail.split('@')[0],
+            role,
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+            updatedBy: 'auto-provision',
+            version: 1,
+          };
+          await db.collection('users').doc(firebaseUser.uid).set(newUser);
+          console.log(`Auto-provisioned Google user: ${normalizedEmail} as ${role}`);
+          userDoc = await db.collection('users').doc(firebaseUser.uid).get();
         }
-        
-        const displayName = firebaseUser.name || email.split('@')[0];
-        
-        const newUser: User = {
-          id: firebaseUser.uid,
-          email,
-          displayName,
-          role,
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          updatedBy: migratedFromPreProvisioned ? 'pre-provisioned-migration' : 'auto-provision',
-          version: 1,
-        };
-        
-        await db.collection('users').doc(firebaseUser.uid).set(newUser);
-        console.log(`Auto-provisioned Google user: ${email} as ${role}${migratedFromPreProvisioned ? ' (migrated from pre-provisioned)' : ''}`);
-        
-        userDoc = await db.collection('users').doc(firebaseUser.uid).get();
       }
-      
+
       if (!userDoc.exists) {
-        // User not found and not a Google user (or some other edge case)
-        // r33: reuse formatSignInRestrictedResponse for consistency
         if (restricted && !onAllowList) {
           const restriction = await getSignInRestriction(db);
           const { status, body } = formatSignInRestrictedResponse(restriction, res.locals.requestId);
           return res.status(status).json(body);
         }
         return res.status(404).json({
-          error: { code: 'user_not_found', message: 'User profile not found', requestId: res.locals.requestId },
+          error: { code: 'user_not_found', message: "Your account isn't set up yet. Please contact an Admin.", requestId: res.locals.requestId },
         });
       }
 
@@ -158,6 +163,60 @@ export function createUsersRouter(db: Firestore): Router {
   });
 
   return router;
+}
+
+/**
+ * D1: Link an Admin-added (pre-provisioned) users record to a signed-in Firebase UID.
+ * Runs in a transaction. Keeps all of the old record's data (role, name, store, person link),
+ * writes it under the UID, and moves the placeholder to usersArchive (not lost) before
+ * removing it from users so there is never a duplicate active record.
+ */
+export async function linkPreProvisionedUser(
+  db: Firestore,
+  oldId: string,
+  uid: string,
+  email: string,
+  provider: string
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  const oldRef = db.collection('users').doc(oldId);
+  const newRef = db.collection('users').doc(uid);
+  const archiveRef = db.collection('usersArchive').doc(oldId);
+  const ok = await db.runTransaction(async (tx) => {
+    const [oldSnap, newSnap] = await Promise.all([tx.get(oldRef), tx.get(newRef)]);
+    if (newSnap.exists) return true; // already linked by a concurrent request
+    if (!oldSnap.exists) return false;
+    const old = oldSnap.data() as User & Record<string, unknown>;
+    if (String(old.email || '').trim().toLowerCase() !== email) return false; // exact match only
+    tx.set(newRef, {
+      ...old,
+      id: uid,
+      email,
+      linkedFromUserId: oldId,
+      linkedAt: now,
+      linkedVia: provider,
+      updatedAt: now,
+      updatedBy: 'pre-provisioned-link',
+      version: (typeof old.version === 'number' ? old.version : 0) + 1,
+    });
+    tx.set(archiveRef, { ...old, archivedAt: now, archivedReason: 'linked-to-auth-uid', linkedToUid: uid });
+    tx.delete(oldRef);
+    return true;
+  });
+  if (ok) {
+    console.log(`[me] linked pre-provisioned user ${oldId} -> ${uid} (${email}, ${provider})`);
+    await db.collection('auditLog').add({
+      timestamp: now,
+      userId: uid,
+      userEmail: email,
+      action: 'update',
+      entityType: 'user',
+      entityId: uid,
+      entityName: email,
+      changes: [{ field: 'linkedFromUserId', newValue: oldId }, { field: 'linkedVia', newValue: provider }],
+    }).catch((e) => console.error('[me] audit write failed', e));
+  }
+  return ok;
 }
 
 async function computeLeaderScope(

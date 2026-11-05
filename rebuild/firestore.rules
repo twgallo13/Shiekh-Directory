@@ -75,5 +75,13 @@ service cloud.firestore {
       allow read: if false;
       allow write: if false;
     }
+  
+    // D1/D3: server-only collections
+    match /usersArchive/{docId} {
+      allow read, write: if false;
+    }
+    match /adminSignInLinks/{docId} {
+      allow read, write: if false;
+    }
   }
 }

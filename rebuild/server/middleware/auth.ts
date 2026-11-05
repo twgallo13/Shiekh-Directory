@@ -82,7 +82,8 @@ export function createAuthMiddleware(db?: Firestore): Router {
           uid,
           email,
           name: email.split('@')[0],
-          ...(provider === 'google' && { firebase: { sign_in_provider: 'google.com' } }),
+          ...(provider === 'google' && { firebase: { sign_in_provider: 'google.com' }, email_verified: true }),
+          ...(provider === 'password' && { firebase: { sign_in_provider: 'password' }, email_verified: parts[3] === 'verified' }),
         };
         return next();
       }
@@ -93,6 +94,7 @@ export function createAuthMiddleware(db?: Firestore): Router {
         uid: decodedToken.uid,
         email: decodedToken.email,
         name: decodedToken.name,
+        email_verified: decodedToken.email_verified === true,
         firebase: decodedToken.firebase,
       };
       next();
@@ -171,7 +173,8 @@ export function createOptionalAuthMiddleware(db?: Firestore): Router {
           uid,
           email,
           name: email.split('@')[0],
-          ...(provider === 'google' && { firebase: { sign_in_provider: 'google.com' } }),
+          ...(provider === 'google' && { firebase: { sign_in_provider: 'google.com' }, email_verified: true }),
+          ...(provider === 'password' && { firebase: { sign_in_provider: 'password' }, email_verified: parts[3] === 'verified' }),
         };
         return next();
       }
@@ -182,6 +185,7 @@ export function createOptionalAuthMiddleware(db?: Firestore): Router {
         uid: decodedToken.uid,
         email: decodedToken.email,
         name: decodedToken.name,
+        email_verified: decodedToken.email_verified === true,
         firebase: decodedToken.firebase,
       };
       next();

@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout } from './components/AppLayout';
@@ -51,7 +51,7 @@ function ProtectedRoute({
   withLayout?: boolean;
   storeAllowed?: boolean;
 }) {
-  const { user, loading, isStoreSession, storeSession } = useAuth();
+  const { user, loading, isStoreSession, storeSession, authError } = useAuth();
   const isAuthenticated = !!user || isStoreSession;
   
   if (loading) {
@@ -68,6 +68,10 @@ function ProtectedRoute({
   if (!isAuthenticated) {
     return <Navigate to="/signin" replace />;
   }
+
+  if (user && !isStoreSession && authError) {
+    return <AccountErrorScreen />;
+  }
   
   if (isStoreSession && storeSession?.locationId && !storeAllowed) {
     const storeLocationId = storeSession.locationId;
@@ -82,7 +86,7 @@ function ProtectedRoute({
 }
 
 function StoreLocationRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, isStoreSession, storeSession } = useAuth();
+  const { user, loading, isStoreSession, storeSession, authError } = useAuth();
   const { id } = useParams<{ id: string }>();
   const isAuthenticated = !!user || isStoreSession;
   
@@ -100,12 +104,43 @@ function StoreLocationRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated) {
     return <Navigate to="/signin" replace />;
   }
+
+  if (user && !isStoreSession && authError) {
+    return <AccountErrorScreen />;
+  }
   
   if (isStoreSession && storeSession?.locationId && id !== storeSession.locationId) {
     return <Navigate to={`/location/${storeSession.locationId}`} replace />;
   }
   
   return <AppLayout>{children}</AppLayout>;
+}
+
+// D1: clear error instead of silently treating the user as Viewer
+function AccountErrorScreen() {
+  const { authError, refreshAuthUser, signOut, user } = useAuth();
+  const [retrying, setRetrying] = useState(false);
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div role="alert" className="max-w-md w-full bg-white rounded-lg shadow p-6 text-center">
+        <h1 className="text-lg font-semibold text-gray-900">We couldn't open your account</h1>
+        <p className="mt-3 text-sm text-gray-700">{authError?.message}</p>
+        {user?.email && <p className="mt-2 text-xs text-gray-500">Signed in as {user.email}</p>}
+        <div className="mt-6 flex justify-center gap-3">
+          <button
+            onClick={async () => { setRetrying(true); try { await refreshAuthUser(); } finally { setRetrying(false); } }}
+            disabled={retrying}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm min-h-[44px] disabled:opacity-50"
+          >
+            {retrying ? 'Trying again...' : 'Try again'}
+          </button>
+          <button onClick={() => { void signOut(); }} className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg text-sm min-h-[44px]">
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function OptionalAuthLayout({ children }: { children: React.ReactNode }) {

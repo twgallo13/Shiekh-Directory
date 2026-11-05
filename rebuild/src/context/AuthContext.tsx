@@ -60,6 +60,8 @@ interface StoreSessionData {
 interface AuthContextType {
   user: User | null;
   authUser: AuthUser | null;
+  /** D1: set when the profile (/users/me) could not be loaded; authUser is then null. */
+  authError: AuthProfileError | null;
   storeSession: StoreSessionData | null;
   loading: boolean;
   isStoreSession: boolean;
@@ -73,11 +75,31 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<void>;
 }
 
+export interface AuthProfileError {
+  code: string;
+  status: number;
+  message: string;
+}
+
+export function describeProfileError(status: number, code: string, serverMessage?: string): string {
+  if (code === 'signin_restricted' || code === 'email_not_verified' || code === 'ambiguous_account' || code === 'link_conflict') {
+    return serverMessage || "We couldn't open your account. Please contact an Admin.";
+  }
+  if (status === 404 || code === 'user_not_found') {
+    return "Your account isn't set up yet. Please contact an Admin and ask them to add you in Admin > Users.";
+  }
+  if (status === 0) {
+    return "We couldn't reach the server to load your account. Check your connection and try again.";
+  }
+  return "Something went wrong loading your account. Please try again, or contact an Admin if it keeps happening.";
+}
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authError, setAuthError] = useState<AuthProfileError | null>(null);
   const [storeSession, setStoreSession] = useState<StoreSessionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [storeSessionChecked, setStoreSessionChecked] = useState(false);
@@ -160,6 +182,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadAuthUser = useCallback(async () => {
     if (!user) {
       setAuthUser(null);
+      setAuthError(null);
       return;
     }
     
@@ -172,39 +195,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const { data } = await response.json();
         setAuthUser(data);
-      } else if (response.status === 403) {
-        const errorData = await response.json();
-        if (errorData.error?.code === 'domain_not_allowed') {
-          console.error('Domain not allowed:', errorData.error.message);
-          await firebaseSignOut(auth);
-          setAuthUser(null);
-          throw new Error(errorData.error.message);
-        }
-        setAuthUser({
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.email?.split('@')[0] || 'Unknown',
-          role: 'Viewer',
-        });
-      } else {
-        setAuthUser({
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.email?.split('@')[0] || 'Unknown',
-          role: 'Viewer',
-        });
+        setAuthError(null);
+        return;
       }
+      let errorBody: { error?: { code?: string; message?: string } } = {};
+      try { errorBody = await response.json(); } catch { /* non-JSON */ }
+      const code = errorBody.error?.code || `http_${response.status}`;
+      const message = errorBody.error?.message;
+      if (response.status === 403 && code === 'domain_not_allowed') {
+        console.error('Domain not allowed:', message);
+        await firebaseSignOut(auth);
+        setAuthUser(null);
+        throw new Error(message || 'domain not allowed');
+      }
+      // D1: never silently fall back to Viewer. Show a clear error state instead.
+      setAuthUser(null);
+      setAuthError({ code, status: response.status, message: describeProfileError(response.status, code, message) });
     } catch (error) {
       console.error('Failed to load user profile:', error);
       if (error instanceof Error && error.message.includes('domain')) {
         throw error;
       }
-      setAuthUser({
-        uid: user.uid,
-        email: user.email || '',
-        displayName: user.email?.split('@')[0] || 'Unknown',
-        role: 'Viewer',
-      });
+      setAuthUser(null);
+      setAuthError({ code: 'network_error', status: 0, message: describeProfileError(0, 'network_error') });
     }
   }, [user, getIdToken]);
   
@@ -263,6 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStoreSession({ authenticated: false });
     }
     
+    setAuthError(null);
     if (auth) {
       setAuthUser(null);
       await firebaseSignOut(auth);
@@ -282,6 +296,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{ 
       user, 
       authUser, 
+      authError,
       storeSession,
       loading,
       isStoreSession,

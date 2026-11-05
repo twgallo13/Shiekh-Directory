@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { createHash } from 'crypto';
 import type { User, AuthUser, UserRole, Location, HoursTemplate, StandardHours, StoreTypeCode, DayOfWeek, AuditLogEntry } from '../../src/types';
 import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
 
@@ -140,6 +141,15 @@ export function createAdminRouter(db: Firestore): Router {
       };
 
       await db.collection('users').doc(userId).set(newUser);
+
+      // D4: an Admin adding a user approves that email for sign-in (approved list)
+      await db.collection('signInAllowList').doc(email.toLowerCase()).set({
+        email: email.toLowerCase(),
+        addedBy: authUser.uid,
+        addedByEmail: authUser.email,
+        addedAt: now,
+        notes: 'Added via Admin > Users',
+      }, { merge: true });
 
       await db.collection('auditLog').add({
         timestamp: now,
@@ -404,6 +414,68 @@ export function createAdminRouter(db: Firestore): Router {
     } catch (error) {
       console.error('Delete user error:', error);
       res.status(500).json({ error: { code: 'internal_error', message: 'Failed to delete user' } });
+    }
+  });
+
+  // D3: Admin-only copyable sign-in/reset link while mail is off.
+  // Uses a Firebase password-reset link (expires in 1 hour). Only a SHA-256 hash is stored.
+  router.post('/users/:id/signin-link', async (req: Request, res: Response) => {
+    try {
+      const authUser = res.locals.authUser as AuthUser;
+      if (process.env.MAIL_CUTOVER_ENABLED === 'true') {
+        return res.status(409).json({ error: { code: 'mail_on', message: 'Mail is on. Use the normal password reset email instead.' } });
+      }
+      const userDoc = await db.collection('users').doc(req.params.id).get();
+      if (!userDoc.exists) {
+        return res.status(404).json({ error: { code: 'not_found', message: 'User not found' } });
+      }
+      const userData = userDoc.data() as User;
+      if (userData.role === 'Store' || String(userData.id).startsWith('store_')) {
+        return res.status(400).json({ error: { code: 'store_account', message: 'Store accounts use store sign-in, not this link.' } });
+      }
+      const email = String(userData.email || '').trim().toLowerCase();
+      if (!email.includes('@')) {
+        return res.status(400).json({ error: { code: 'invalid_email', message: 'User has no valid email' } });
+      }
+      const auth = getAuth();
+      let createdAuthAccount = false;
+      try {
+        await auth.getUserByEmail(email);
+      } catch (e: unknown) {
+        if ((e as { code?: string })?.code !== 'auth/user-not-found') throw e;
+        await auth.createUser({ email, emailVerified: false, displayName: userData.displayName });
+        createdAuthAccount = true;
+      }
+      const link = await auth.generatePasswordResetLink(email);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+      const linkHash = createHash('sha256').update(link).digest('hex');
+      const ref = db.collection('adminSignInLinks').doc();
+      await ref.set({
+        id: ref.id,
+        linkHash,
+        userId: userData.id,
+        email,
+        createdBy: authUser.uid,
+        createdByEmail: authUser.email,
+        createdAt: now.toISOString(),
+        expiresAt,
+        createdAuthAccount,
+      });
+      await addAuditEntry(db, {
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: 'create',
+        entityType: 'user',
+        entityId: userData.id,
+        entityName: email,
+        changes: [{ field: 'signInLink', newValue: `issued (expires ${expiresAt}; ref ${ref.id})` }],
+      } as Omit<AuditLogEntry, 'id' | 'timestamp'>);
+      res.status(201).json({ link, expiresAt, createdAuthAccount });
+    } catch (error) {
+      console.error('Create sign-in link error:', error);
+      res.status(500).json({ error: { code: 'internal_error', message: 'Failed to create sign-in link' } });
     }
   });
 

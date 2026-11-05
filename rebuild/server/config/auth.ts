@@ -74,10 +74,15 @@ export async function getSignInRestriction(db: Firestore): Promise<SignInRestric
 
 export async function isSignInRestricted(db: Firestore): Promise<boolean> {
   const restriction = await getSignInRestriction(db);
-  if (!restriction.enabled || !restriction.restrictedUntil) {
+  if (!restriction.enabled) {
     return false;
   }
+  // D4 (2026-11-04): enabled with no end date = permanent approved-list mode.
+  if (!restriction.restrictedUntil) {
+    return true;
+  }
   const restrictedUntil = new Date(restriction.restrictedUntil);
+  if (isNaN(restrictedUntil.getTime())) return true;
   return new Date() < restrictedUntil;
 }
 

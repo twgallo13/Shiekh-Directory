@@ -20,6 +20,9 @@ export const api = onRequest(
     region: 'us-central1',
     memory: '256MiB',
     timeoutSeconds: 60,
+    // D2 (approved by Theo 2026-11-04, budget <= $75/mo): keep one instance warm.
+    // Est. ~$2.74/mo idle (0.167 vCPU + 0.25 GiB at Cloud Run idle min-instance rates, us-central1).
+    minInstances: 1,
   },
   app
 );

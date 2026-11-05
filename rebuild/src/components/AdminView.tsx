@@ -438,6 +438,29 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [error, setError] = useState('');
+  const [signInLink, setSignInLink] = useState<{ link: string; expiresAt: string } | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
+
+  // D3: Admin-only copyable sign-in link while mail is off (expires in 1 hour)
+  const handleSignInLink = async () => {
+    if (!user) return;
+    try {
+      setLinkLoading(true);
+      setError('');
+      const token = await getIdToken();
+      const res = await fetch(`/api/app/admin/users/${user.id}/signin-link`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Failed to create sign-in link');
+      setSignInLink({ link: data.link, expiresAt: data.expiresAt });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create sign-in link');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     try {
@@ -621,6 +644,30 @@ function UserModal({ user, stores, getIdToken, onClose, onSaved }: {
               ))}
             </select>
           </FormField>
+        )}
+        {user && user.role !== 'Store' && (
+          <div className="border-t border-gray-200 pt-4">
+            <p className="text-sm font-medium text-gray-900">Sign-in link</p>
+            <p className="text-xs text-gray-600 mt-1">
+              Email is off, so password emails are not sent. Create a one-time link that lets this person set a password,
+              then pass it to them yourself. It expires in 1 hour and is logged.
+            </p>
+            {signInLink ? (
+              <>
+                <TokenDisplay token={signInLink.link} />
+                <p className="text-xs text-gray-500 mt-1">Expires {new Date(signInLink.expiresAt).toLocaleString()}</p>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSignInLink}
+                disabled={linkLoading}
+                className="mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm min-h-[44px] disabled:opacity-50"
+              >
+                {linkLoading ? 'Creating...' : 'Create sign-in link'}
+              </button>
+            )}
+          </div>
         )}
         {user && (
           <FormField id="user-status" label="Status">

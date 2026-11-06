@@ -7,6 +7,12 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
   process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
 }
+if (!process.env.STORE_AUTH_TOKEN_SECRET) {
+  process.env.STORE_AUTH_TOKEN_SECRET = 'test-token-secret-for-testing-only-not-production-use-minimum-32-chars';
+}
+if (!process.env.STORE_SESSION_SECRET) {
+  process.env.STORE_SESSION_SECRET = 'test-session-secret-for-testing-only-not-production-use-min-32-chars';
+}
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT || 'shiekh-directory-rebuild-placeholder';
 

@@ -9,6 +9,7 @@ import { PeopleListView } from '../src/components/PeopleListView';
 import { StaleStoresView } from '../src/components/StaleStoresView';
 import { MyRequestsView } from '../src/components/MyRequestsView';
 import { ClosuresBoard } from '../src/components/ClosuresBoard';
+import { CorrectionsQueue } from '../src/components/CorrectionsQueue';
 import { canAccessBackups } from '../src/lib/permissions';
 import type { AuthUser } from '../src/types';
 
@@ -47,13 +48,16 @@ it('phone drawer keeps sign out outside the scrolling nav', () => {
   fireEvent.click(screen.getByRole('button',{name:'Open menu'}));
   expect(container.querySelector('.overflow-y-auto + div.shrink-0')?.textContent).toContain('Sign Out');
 });
-it('People pagination, role cell and inactive checkbox use real rendered data', async () => {
-  const people = Array.from({length:51},(_,i)=>({id:String(i),fullName:`Person ${i}`,workEmail:`p${i}@test.invalid`,primaryRole:'DM',primaryScopeName:'Central',lifecycle:'active'}));
+it('People pagination, role cell shows role NOT email, inactive checkbox larger', async () => {
+  const people = Array.from({length:51},(_,i)=>({id:String(i),fullName:`Person ${i}`,workEmail:`p${i}@notshownhere.invalid`,primaryRole:'DM',primaryScopeName:'Central',lifecycle:'active'}));
   vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({data:people}),{status:200,headers:{'Content-Type':'application/json'}}));
   renderNow(<PeopleListView />);
   await waitFor(() => expect(screen.getByText('Page 1 of 2')).toBeTruthy());
   expect(screen.getByLabelText('Show inactive').className).toContain('w-5 h-5');
-  expect(screen.getAllByText('DM - Central')[0]).toBeTruthy();
+  const roleCell = screen.getAllByText('DM - Central')[0];
+  expect(roleCell).toBeTruthy();
+  expect(roleCell.textContent).not.toContain('@');
+  expect(roleCell.textContent).not.toContain('notshownhere');
 });
 it('Stale Stores labels overdue values and action buttons', async () => {
   vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ staleStores:[{id:'x',storeNumber:'2',name:'Test',daysSinceVerification:null}],thresholdDays:90,totalCount:1,districts:[] }),{status:200,headers:{'Content-Type':'application/json'}}));
@@ -67,6 +71,13 @@ it('My Requests has a New request link',async()=>{ renderNow(<MyRequestsView/>);
 it('Closures board shows skeleton on load', () => {
   renderNow(<ClosuresBoard />);
   expect(screen.getByLabelText('Loading closures')).toBeTruthy();
+});
+it('Approvals queue shows submitter identification in rendered row', async () => {
+  const corrections = [{id:'c1',locationId:'loc1',storeNumber:'42',locationName:'Test Store',status:'pending',correctionType:'hours',submittedByEmail:'submitter@test.invalid',submittedAt:new Date().toISOString()}];
+  vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({data:corrections}),{status:200,headers:{'Content-Type':'application/json'}}));
+  renderNow(<CorrectionsQueue onBack={() => {}} />);
+  await waitFor(() => expect(screen.getByText(/Submitted by/)).toBeTruthy());
+  expect(screen.getByText(/submitter@test.invalid/)).toBeTruthy();
 });
 
 beforeEach(() => {

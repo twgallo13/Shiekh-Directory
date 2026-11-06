@@ -386,11 +386,11 @@ export function HierarchyView() {
                     {canManage && (
                       <div className="flex flex-wrap items-center justify-end gap-y-1">
                         <button onClick={() => openAssignRM(region.id)} aria-label="Assign regional manager" title="Assign regional manager" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg">
-                          <UserPlus className="w-4 h-4" aria-hidden="true" /><span className="hidden lg:inline">Assign</span></button>
+                          <UserPlus className="w-4 h-4" aria-hidden="true" />Assign</button>
                         <button onClick={() => openEditRegion(region)} aria-label="Edit region" title="Edit region" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-                          <Edit2 className="w-4 h-4" aria-hidden="true" /><span className="hidden lg:inline">Edit</span></button>
+                          <Edit2 className="w-4 h-4" aria-hidden="true" />Edit</button>
                         <button onClick={() => handleRetire('region', region.id)} aria-label="Delete region" title="Delete region" className="min-h-[44px] px-2 ml-2 border-l border-gray-200 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                          <Trash2 className="w-4 h-4" aria-hidden="true" /><span className="hidden lg:inline">Delete</span></button>
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />Delete</button>
                       </div>
                     )}
                   </div>
@@ -439,13 +439,13 @@ export function HierarchyView() {
                               {canManage && (
                                 <div className="flex">
                                   <button onClick={() => openAssignDM(district.id)} aria-label="Assign district manager" title="Assign district manager" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
-                                    <UserPlus className="w-4 h-4" /><span className="hidden lg:inline">Assign</span>                    </button>
+                                    <UserPlus className="w-4 h-4" />Assign</button>
                                   <button onClick={() => openMoveDistrict(district)} aria-label="Move district to another region" title="Move district to another region" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-                                    <Move className="w-4 h-4" /><span className="hidden lg:inline">Move</span>                    </button>
+                                    <Move className="w-4 h-4" />Move</button>
                                   <button onClick={() => openEditDistrict(district)} aria-label="Edit district" title="Edit district" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-                                    <Edit2 className="w-4 h-4" /><span className="hidden lg:inline">Edit</span>                    </button>
+                                    <Edit2 className="w-4 h-4" />Edit</button>
                                   <button onClick={() => handleRetire('district', district.id)} aria-label="Delete district" title="Delete district" className="min-h-[44px] px-2 ml-2 border-l border-gray-200 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                                    <Trash2 className="w-4 h-4" /><span className="hidden lg:inline">Delete</span>                    </button>
+                                    <Trash2 className="w-4 h-4" />Delete</button>
                                 </div>
                               )}
                             </div>
@@ -482,9 +482,9 @@ export function HierarchyView() {
                                     {canManage && (
                                       <div className="ml-auto flex items-center" onClick={(e) => e.stopPropagation()}>
                                         <button onClick={() => openMoveLocation(location)} aria-label="Move location to another district" title="Move location to another district" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
-                                          <Move className="w-4 h-4" /><span className="hidden lg:inline">Move</span>                                </button>
+                                          <Move className="w-4 h-4" />Move</button>
                                         <button onClick={() => handleRetire('location', location.id)} aria-label="Delete location" title="Delete location" className="min-h-[44px] px-2 ml-2 border-l border-gray-200 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                                          <Trash2 className="w-4 h-4" /><span className="hidden lg:inline">Delete</span>                                </button>
+                                          <Trash2 className="w-4 h-4" />Delete</button>
                                       </div>
                                     )}
                                   </div>

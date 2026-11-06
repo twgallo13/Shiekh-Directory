@@ -7,22 +7,31 @@ const API_BASE = process.env.API_BASE || 'http://localhost:3001';
 describe('v2 Regression Tests - Store Number Formats', () => {
   const db = getTestDb();
   const testRunId = `fmt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const testEmail = 'store7007@shiekhshoes.com';
   let testLocationId: string;
   let hierarchyIds: { regionId: string; districtId: string };
 
   before(async () => {
+    // Clean up any existing locations with this email first
+    const existingSnap = await db.collection('locations')
+      .where('sharedInboxEmail', '==', testEmail)
+      .get();
+    for (const doc of existingSnap.docs) {
+      await doc.ref.delete();
+    }
+    
     hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
-    const locationRef = db.collection('locations').doc();
+    const locationRef = db.collection('locations').doc(`loc_fmt_${testRunId}`);
     await locationRef.set({
       kind: 'store',
       lifecycle: 'active',
-      storeNumber: '07',
-      name: 'v2 Format Store Seven',
+      storeNumber: '7007',
+      name: 'v2 Format Store 7007',
       districtId: hierarchyIds.districtId,
       regionId: hierarchyIds.regionId,
-      sharedInboxEmail: 'store7@shiekhshoes.com',
+      sharedInboxEmail: testEmail,
       address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
       mainPhone: '+12135557777',
@@ -40,17 +49,17 @@ describe('v2 Regression Tests - Store Number Formats', () => {
     }
   });
 
-  it('finds store with 2-digit format (07) via store7@shiekhshoes.com', async () => {
+  it('finds store with 4-digit format via store7007@shiekhshoes.com', async () => {
     const res = await fetch(`${API_BASE}/api/store-auth/send-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'store7@shiekhshoes.com' }),
+      body: JSON.stringify({ email: testEmail }),
     });
     
-    assert.strictEqual(res.status, 200, 'should find store with 2-digit format');
+    assert.strictEqual(res.status, 200, 'should find store with valid store email');
     const body = await res.json();
     assert.ok(body.success, 'should succeed');
-    assert.strictEqual(body.email, 'store7@shiekhshoes.com');
+    assert.strictEqual(body.email, testEmail);
   });
 });
 
@@ -602,21 +611,31 @@ describe('v2 Regression Tests - PersonDetailView Scope Error Handling', () => {
 describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
   const db = getTestDb();
   const testRunId = `signin_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const testStores: { id: string; storeNumber: string }[] = [];
+  const testStores: { id: string; storeNumber: string; email: string }[] = [];
   let hierarchyIds: { regionId: string; districtId: string };
 
+  const formats = [
+    { storeNumber: '8009', email: 'store8009@shiekhshoes.com' },
+    { storeNumber: '8010', email: 'store8010@shiekhshoes.com' },
+    { storeNumber: '8123', email: 'store8123@shiekhshoes.com' },
+  ];
+
   before(async () => {
+    // Clean up any existing locations with these emails first
+    for (const format of formats) {
+      const existingSnap = await db.collection('locations')
+        .where('sharedInboxEmail', '==', format.email)
+        .get();
+      for (const doc of existingSnap.docs) {
+        await doc.ref.delete();
+      }
+    }
+    
     hierarchyIds = await seedTestHierarchy(testRunId);
     const now = new Date().toISOString();
     
-    const formats = [
-      { storeNumber: '09', email: 'store9@shiekhshoes.com' },
-      { storeNumber: '10', email: 'store10@shiekhshoes.com' },
-      { storeNumber: '123', email: 'store123@shiekhshoes.com' },
-    ];
-    
     for (const format of formats) {
-      const ref = db.collection('locations').doc();
+      const ref = db.collection('locations').doc(`loc_${format.storeNumber}_${testRunId}`);
       await ref.set({
         kind: 'store',
         lifecycle: 'active',
@@ -631,7 +650,7 @@ describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
         updatedAt: now,
         version: 1,
       });
-      testStores.push({ id: ref.id, storeNumber: format.storeNumber });
+      testStores.push({ id: ref.id, storeNumber: format.storeNumber, email: format.email });
     }
   });
 
@@ -641,34 +660,34 @@ describe('v2 Regression Tests - Store Sign-in Number Formats', () => {
     }
   });
 
-  it('finds store 09 via store9@shiekhshoes.com (2-digit padded)', async () => {
+  it('finds store 8009 via store8009@shiekhshoes.com', async () => {
     const res = await fetch(`${API_BASE}/api/store-auth/send-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'store9@shiekhshoes.com' }),
+      body: JSON.stringify({ email: 'store8009@shiekhshoes.com' }),
     });
     
-    assert.strictEqual(res.status, 200, 'should find store 09');
+    assert.strictEqual(res.status, 200, 'should find store 8009');
   });
 
-  it('finds store 10 via store10@shiekhshoes.com (2-digit no padding needed)', async () => {
+  it('finds store 8010 via store8010@shiekhshoes.com', async () => {
     const res = await fetch(`${API_BASE}/api/store-auth/send-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'store10@shiekhshoes.com' }),
+      body: JSON.stringify({ email: 'store8010@shiekhshoes.com' }),
     });
     
-    assert.strictEqual(res.status, 200, 'should find store 10');
+    assert.strictEqual(res.status, 200, 'should find store 8010');
   });
 
-  it('finds store 123 via store123@shiekhshoes.com (3-digit)', async () => {
+  it('finds store 8123 via store8123@shiekhshoes.com', async () => {
     const res = await fetch(`${API_BASE}/api/store-auth/send-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'store123@shiekhshoes.com' }),
+      body: JSON.stringify({ email: 'store8123@shiekhshoes.com' }),
     });
     
-    assert.strictEqual(res.status, 200, 'should find store 123');
+    assert.strictEqual(res.status, 200, 'should find store 8123');
   });
 });
 

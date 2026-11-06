@@ -97,7 +97,8 @@ export function HierarchyView() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     fetchHierarchy();
@@ -306,14 +307,6 @@ export function HierarchyView() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="bg-gray-50 min-h-[calc(100vh-56px)] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
-
   return (
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
       <header className="bg-white border-b border-gray-200 sticky top-14 z-10">
@@ -323,7 +316,7 @@ export function HierarchyView() {
               <ArrowLeft className="w-6 h-6" />
             </button>
             <h1 className="text-xl font-bold text-gray-900">Organizational Hierarchy</h1>
-            {canManage && (
+            {canManage && !loading && (
               <button
                 onClick={openCreateRegion}
                 className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"

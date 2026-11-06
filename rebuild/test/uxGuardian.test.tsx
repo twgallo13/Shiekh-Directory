@@ -10,6 +10,7 @@ import { StaleStoresView } from '../src/components/StaleStoresView';
 import { MyRequestsView } from '../src/components/MyRequestsView';
 import { ClosuresBoard } from '../src/components/ClosuresBoard';
 import { CorrectionsQueue } from '../src/components/CorrectionsQueue';
+import { HierarchyView } from '../src/components/HierarchyView';
 import { canAccessBackups } from '../src/lib/permissions';
 import type { AuthUser } from '../src/types';
 
@@ -78,6 +79,20 @@ it('Approvals queue shows submitter identification in rendered row', async () =>
   renderNow(<CorrectionsQueue onBack={() => {}} />);
   await waitFor(() => expect(screen.getByText(/Submitted by/)).toBeTruthy());
   expect(screen.getByText(/submitter@test.invalid/)).toBeTruthy();
+});
+it('HierarchyView shows skeleton loading then content after fetch', async () => {
+  const hierarchyData = {data:{regions:[{id:'r1',code:'WEST',name:'West Region',lifecycle:'active'}],districts:[]}};
+  let fetchCount = 0;
+  vi.mocked(fetch).mockImplementation(async () => {
+    fetchCount++;
+    return new Response(JSON.stringify(hierarchyData),{status:200,headers:{'Content-Type':'application/json'}});
+  });
+  const { container } = renderNow(<HierarchyView />);
+  expect(screen.getByLabelText('Loading hierarchy')).toBeTruthy();
+  expect(container.querySelectorAll('.animate-pulse').length).toBe(3);
+  await waitFor(() => expect(screen.queryByLabelText('Loading hierarchy')).toBeNull(), { timeout: 2000 });
+  expect(screen.getByText('West Region')).toBeTruthy();
+  expect(fetchCount).toBeGreaterThan(0);
 });
 
 beforeEach(() => {

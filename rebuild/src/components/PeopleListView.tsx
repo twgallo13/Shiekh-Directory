@@ -131,12 +131,12 @@ export function PeopleListView() {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-600">
+          <label className="flex items-center gap-3 text-base text-gray-700 min-h-[44px]">
             <input
               type="checkbox"
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-gray-300"
+              className="w-5 h-5 rounded border-gray-300"
             />
             Show inactive
           </label>

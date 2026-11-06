@@ -54,7 +54,7 @@ const US_STATES = [
 ];
 
 export function BulkHolidayManager() {
-  useDocumentTitle('Holidays');
+  useDocumentTitle('Manage Holidays');
   
   const navigate = useNavigate();
   const { getIdToken, authUser } = useAuth();
@@ -224,7 +224,7 @@ export function BulkHolidayManager() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-semibold">Bulk Holiday Manager</h1>
+          <h1 className="text-xl font-semibold">Manage Holidays</h1>
         </div>
       </header>
 

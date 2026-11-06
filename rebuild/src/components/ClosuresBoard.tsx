@@ -199,8 +199,8 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
 
   if (loading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
-        Loading closures...
+      <div aria-label="Loading closures" style={{ display: 'grid', gap: '0.75rem' }}>
+        {[1, 2, 3].map(i => <div key={i} className="h-24 bg-gray-100 border border-gray-200 rounded-lg animate-pulse" />)}
       </div>
     );
   }
@@ -236,7 +236,6 @@ export function ClosuresBoard({ districtFilter }: ClosuresBoardProps) {
         flexWrap: 'wrap',
         gap: '1rem',
       }}>
-        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>Closures Board</h2>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           {!districtFilter && (
             <select

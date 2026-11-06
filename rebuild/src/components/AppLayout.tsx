@@ -6,7 +6,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { canApproveCorrections } from '../lib/permissions';
+import { canApproveCorrections, canAccessBackups } from '../lib/permissions';
 import { OfflineBanner } from './OfflineBanner';
 import { HeaderSearch } from './HeaderSearch';
 
@@ -31,6 +31,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isLeaderOrAbove = authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isStewardOrAdmin = authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isAdmin = authUser?.role === 'Admin';
+  const showBackups = canAccessBackups(authUser);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -206,7 +207,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                         Stale Stores
                       </DropdownItem>
                     )}
-                    {isStewardOrAdmin && (
+                    {showBackups && (
                       <DropdownItem
                         icon={Database}
                         onClick={() => handleNavigation('/admin?tab=backups')}
@@ -282,9 +283,9 @@ export function AppLayout({ children }: AppLayoutProps) {
             />
             <div
               ref={mobileMenuRef}
-              className="fixed right-0 top-14 w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100vh-56px)] overflow-y-auto xl:hidden"
+              className="fixed right-0 top-14 w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100dvh-56px)] flex flex-col xl:hidden"
             >
-              <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-gray-50">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                     <User className="w-5 h-5 text-blue-600" />
@@ -303,7 +304,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
               </div>
 
-              <nav className="py-2">
+              <nav className="py-2 overflow-y-auto">
                 <MobileMenuItem
                   icon={Home}
                   label="Directory"
@@ -352,7 +353,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   </>
                 )}
 
-                {isStewardOrAdmin && (
+                {showBackups && (
                   <MobileMenuItem
                     icon={Database}
                     label="Backups"
@@ -405,7 +406,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                   </>
                 )}
 
-                <div className="border-t border-gray-100 my-2" />
+              </nav>
+              <div className="shrink-0 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)]">
                 <MobileMenuItem
                   icon={Settings}
                   label="Settings"
@@ -420,7 +422,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     setMobileMenuOpen(false);
                   }}
                 />
-              </nav>
+              </div>
             </div>
           </>
         )}

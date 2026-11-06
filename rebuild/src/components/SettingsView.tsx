@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom';
-import { User, FileText, ChevronRight } from 'lucide-react';
+import { User, FileText, ChevronRight, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 export function SettingsView() {
   useDocumentTitle('Settings');
   
-  const { authUser } = useAuth();
+  const { authUser, signOut } = useAuth();
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
@@ -41,6 +41,14 @@ export function SettingsView() {
         </div>
         <ChevronRight className="w-5 h-5 text-gray-600" />
       </Link>
+      <button
+        type="button"
+        onClick={() => { void signOut(); }}
+        className="w-full min-h-[44px] px-4 py-3 flex items-center justify-center gap-2 bg-white border border-gray-300 rounded-lg text-red-700 font-medium hover:bg-red-50"
+      >
+        <LogOut className="w-5 h-5" aria-hidden="true" />
+        Sign Out
+      </button>
     </div>
   );
 }

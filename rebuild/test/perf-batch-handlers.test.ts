@@ -45,7 +45,6 @@ describe('Performance Batch Handler Regression Tests', () => {
     before(async () => {
       const now = new Date().toISOString();
       const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
       const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
 
       const locationRef = db.collection('locations').doc(`loc_item1_${testSuffix}`);

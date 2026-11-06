@@ -163,3 +163,8 @@ export function getRoleDisplayName(role: UserRole): string {
     default: return role;
   }
 }
+
+/** Admin/system gate shared by backup screens and API access checks. */
+export function canAccessBackups(user: AuthUser | null | undefined): boolean {
+  return !!user && hasPermission(user, 'admin:system').allowed;
+}

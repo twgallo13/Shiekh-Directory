@@ -202,7 +202,7 @@ export function StaleStoresView() {
                   onChange={(e) => setMinDaysOverdue(e.target.value)}
                   className="w-20 text-sm border border-gray-300 rounded px-2 py-1 min-h-[44px]"
                 />
-                <span className="text-gray-400">–</span>
+                <span className="text-sm text-gray-500">to</span>
                 <input
                   id="max-overdue"
                   type="number"
@@ -260,7 +260,7 @@ export function StaleStoresView() {
                         {store.districtName && <span>{store.districtName}</span>}
                         {store.regionName && <span>{store.regionName}</span>}
                       </div>
-                      <div className="mt-1 text-sm flex items-center gap-4">
+                      <div className="mt-2 text-sm grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1"><span className="text-xs uppercase tracking-wide text-gray-500">Last verified</span><span className="text-xs uppercase tracking-wide text-gray-500">Days overdue</span>
                         <span className="flex items-center gap-1.5">
                           <Calendar className="h-3.5 w-3.5 text-gray-400" />
                           {store.daysSinceVerification === null ? (
@@ -278,7 +278,7 @@ export function StaleStoresView() {
                               ? 'text-amber-600' 
                               : 'text-amber-500'
                         }`}>
-                          {daysOverdue === null ? 'Never verified' : `${daysOverdue} days overdue`}
+                          {daysOverdue === null ? 'Not set' : `${daysOverdue} days overdue`}
                         </span>
                       </div>
                     </div>
@@ -290,8 +290,7 @@ export function StaleStoresView() {
                           aria-label={`Send verification to ${store.name}`}
                         >
                           <RefreshCw className="h-4 w-4" />
-                          <span className="hidden sm:inline">Send Verification</span>
-                          <span className="sm:hidden">Verify</span>
+                          <span>Send Verification</span>
                         </button>
                         <button
                           onClick={() => navigate(`/location/${store.id}`)}
@@ -305,30 +304,30 @@ export function StaleStoresView() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => navigate(`/verification?locationId=${store.id}`)}
-                          className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 min-h-[32px]"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 min-h-[44px]"
                           aria-label={`View verification requests for ${store.name}`}
                           title="Verification Requests"
                         >
                           <FileCheck className="h-3.5 w-3.5" />
-                          <span className="hidden lg:inline">Requests</span>
+                          <span>Requests</span>
                         </button>
                         <button
                           onClick={() => navigate(`/corrections?locationId=${store.id}`)}
-                          className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 min-h-[32px]"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 min-h-[44px]"
                           aria-label={`View corrections for ${store.name}`}
                           title="Corrections"
                         >
                           <ClipboardList className="h-3.5 w-3.5" />
-                          <span className="hidden lg:inline">Corrections</span>
+                          <span>Corrections</span>
                         </button>
                         <button
                           onClick={() => navigate(`/dm-tasks?locationId=${store.id}`)}
-                          className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 min-h-[32px]"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 min-h-[44px]"
                           aria-label={`View DM tasks for ${store.name}`}
                           title="DM Tasks"
                         >
                           <CheckSquare className="h-3.5 w-3.5" />
-                          <span className="hidden lg:inline">DM Tasks</span>
+                          <span>DM Tasks</span>
                         </button>
                       </div>
                     </div>

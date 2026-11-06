@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import { gzipSync } from 'zlib';
 import type { AuthUser, AuditLogEntry } from '../../src/types';
+import { canAccessBackups } from '../../src/lib/permissions';
 
 interface BackupRecord {
   id: string;
@@ -24,7 +25,7 @@ export function createBackupRouter(db: Firestore): Router {
 
   router.use((_req: Request, res: Response, next) => {
     const authUser = res.locals.authUser as AuthUser | undefined;
-    if (!authUser || authUser.role !== 'Admin') {
+    if (!canAccessBackups(authUser)) {
       return res.status(403).json({
         error: { code: 'access_denied', message: 'Admin access required', requestId: res.locals.requestId },
       });

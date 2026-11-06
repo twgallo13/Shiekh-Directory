@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import type { Correction, CorrectionCategory } from '../types';
 import { apiGet, apiPost } from '../lib/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -127,7 +128,7 @@ export function MyRequestsView() {
   }
 
   return (
-    <div>
+    <div className="px-4 sm:px-6 py-6 max-w-7xl mx-auto">
       <h1 className="sr-only">My Requests</h1>
       <div style={{ 
         display: 'flex', 
@@ -181,6 +182,11 @@ export function MyRequestsView() {
           {requests.length === 0 
             ? 'You haven\'t submitted any correction requests yet.' 
             : 'No requests match the selected filter.'}
+          {requests.length === 0 && (
+          <Link to="/" className="inline-flex items-center justify-center mt-5 px-4 py-2 bg-blue-600 text-white rounded-lg min-h-[44px] font-medium">
+            New request
+          </Link>
+          )}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

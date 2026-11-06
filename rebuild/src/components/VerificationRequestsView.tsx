@@ -734,6 +734,13 @@ export function VerificationRequestsView() {
               const statusDisplay = request.status === 'awaiting_response' ? 'Awaiting Response' :
                                    request.status === 'in_review' ? 'In Review' :
                                    request.status.charAt(0).toUpperCase() + request.status.slice(1);
+              const statusExplanation: Record<string, string> = {
+                pending: 'A response is still needed.',
+                awaiting_response: 'The recipient has not responded yet.',
+                in_review: 'A response was received and needs staff review.',
+                confirmed: 'The information was verified.',
+                cancelled: 'No further action is needed.',
+              };
               const isSelected = selectedIds.has(request.id);
               
               return (
@@ -758,7 +765,7 @@ export function VerificationRequestsView() {
                     )}
                     <div className="flex-1 min-w-0" onClick={() => setSelectedId(request.id)}>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        <span title={statusExplanation[request.status] || request.status} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                           request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                           request.status === 'awaiting_response' ? 'bg-orange-100 text-orange-800' :
                           request.status === 'in_review' ? 'bg-blue-100 text-blue-800' :
@@ -774,6 +781,7 @@ export function VerificationRequestsView() {
                            <X className="w-3 h-3" />}
                           {statusDisplay}
                         </span>
+                        <span className="text-xs text-gray-500">{statusExplanation[request.status] || 'Current request status'}</span>
                         {/* Item #10: Delivery status indicator */}
                         {request.emailBounced && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
@@ -789,7 +797,7 @@ export function VerificationRequestsView() {
                         )}
                         {/* Item #10: Aging indicator - r27 fix #3: improved contrast */}
                         {(request.status === 'pending' || request.status === 'awaiting_response') && daysSinceSent > 0 && (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium min-h-[32px] ${
                             isOverdue ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
                           }`}>
                             {daysSinceSent}d ago

@@ -59,7 +59,7 @@ describe('Performance Batch Handler Regression Tests', () => {
 
       personWithInactiveFirst = `person_inactive_first_${testSuffix}`;
       await db.collection('people').doc(personWithInactiveFirst).set({
-        fullName: 'Inactive First Person',
+        fullName: `Inactive First Person ${testSuffix}`,
         workEmail: `inactive_first_${testSuffix}@test.com`,
         lifecycle: 'active',
         createdAt: now,
@@ -93,7 +93,7 @@ describe('Performance Batch Handler Regression Tests', () => {
 
       personWithActiveFirst = `person_active_first_${testSuffix}`;
       await db.collection('people').doc(personWithActiveFirst).set({
-        fullName: 'Active First Person',
+        fullName: `Active First Person ${testSuffix}`,
         workEmail: `active_first_${testSuffix}@test.com`,
         lifecycle: 'active',
         createdAt: now,
@@ -118,8 +118,8 @@ describe('Performance Batch Handler Regression Tests', () => {
       assert.strictEqual(response.status, 200);
       const { data } = await response.json();
 
-      const person = data.find((p: { fullName: string }) => p.fullName === 'Inactive First Person');
-      assert.ok(person, 'Should find Inactive First Person');
+      const person = data.find((p: { fullName: string }) => p.fullName === `Inactive First Person ${testSuffix}`);
+      assert.ok(person, `Should find Inactive First Person ${testSuffix}`);
       assert.strictEqual(person.primaryRole, undefined, 'primaryRole should be undefined when first assignment is inactive');
       assert.strictEqual(person.primaryScopeName, undefined, 'primaryScopeName should be undefined when first assignment is inactive');
     });
@@ -129,8 +129,8 @@ describe('Performance Batch Handler Regression Tests', () => {
       assert.strictEqual(response.status, 200);
       const { data } = await response.json();
 
-      const person = data.find((p: { fullName: string }) => p.fullName === 'Active First Person');
-      assert.ok(person, 'Should find Active First Person');
+      const person = data.find((p: { fullName: string }) => p.fullName === `Active First Person ${testSuffix}`);
+      assert.ok(person, `Should find Active First Person ${testSuffix}`);
       assert.strictEqual(person.primaryRole, 'Leader', 'primaryRole should be Leader');
       assert.ok(person.primaryScopeName, 'primaryScopeName should be set');
     });
@@ -244,7 +244,7 @@ describe('Performance Batch Handler Regression Tests', () => {
 
       const locPersonRef = db.collection('people').doc(`loc_person_${testSuffix}`);
       await locPersonRef.set({
-        fullName: 'Location Scope Person',
+        fullName: `Location Scope Person ${testSuffix}`,
         workEmail: `loc_person_${testSuffix}@test.com`,
         lifecycle: 'active',
         createdAt: now,
@@ -253,7 +253,7 @@ describe('Performance Batch Handler Regression Tests', () => {
 
       const distPersonRef = db.collection('people').doc(`dist_person_${testSuffix}`);
       await distPersonRef.set({
-        fullName: 'District Scope Person',
+        fullName: `District Scope Person ${testSuffix}`,
         workEmail: `dist_person_${testSuffix}@test.com`,
         lifecycle: 'active',
         createdAt: now,
@@ -262,7 +262,7 @@ describe('Performance Batch Handler Regression Tests', () => {
 
       const regPersonRef = db.collection('people').doc(`reg_person_${testSuffix}`);
       await regPersonRef.set({
-        fullName: 'Region Scope Person',
+        fullName: `Region Scope Person ${testSuffix}`,
         workEmail: `reg_person_${testSuffix}@test.com`,
         lifecycle: 'active',
         createdAt: now,
@@ -311,8 +311,8 @@ describe('Performance Batch Handler Regression Tests', () => {
       assert.strictEqual(response.status, 200);
       const { data } = await response.json();
 
-      const person = data.find((p: { fullName: string }) => p.fullName === 'Location Scope Person');
-      assert.ok(person, 'Should find Location Scope Person');
+      const person = data.find((p: { fullName: string }) => p.fullName === `Location Scope Person ${testSuffix}`);
+      assert.ok(person, `Should find Location Scope Person ${testSuffix}`);
       assert.strictEqual(person.primaryScopeName, '#903 Collision Location', 'Should show location format');
     });
 
@@ -321,8 +321,8 @@ describe('Performance Batch Handler Regression Tests', () => {
       assert.strictEqual(response.status, 200);
       const { data } = await response.json();
 
-      const person = data.find((p: { fullName: string }) => p.fullName === 'District Scope Person');
-      assert.ok(person, 'Should find District Scope Person');
+      const person = data.find((p: { fullName: string }) => p.fullName === `District Scope Person ${testSuffix}`);
+      assert.ok(person, `Should find District Scope Person ${testSuffix}`);
       assert.strictEqual(person.primaryScopeName, 'Collision District', 'Should show district name');
     });
 
@@ -331,8 +331,8 @@ describe('Performance Batch Handler Regression Tests', () => {
       assert.strictEqual(response.status, 200);
       const { data } = await response.json();
 
-      const person = data.find((p: { fullName: string }) => p.fullName === 'Region Scope Person');
-      assert.ok(person, 'Should find Region Scope Person');
+      const person = data.find((p: { fullName: string }) => p.fullName === `Region Scope Person ${testSuffix}`);
+      assert.ok(person, `Should find Region Scope Person ${testSuffix}`);
       assert.strictEqual(person.primaryScopeName, 'Collision Region', 'Should show region name');
     });
   });
@@ -345,7 +345,7 @@ describe('Performance Batch Handler Regression Tests', () => {
 
       const missingPersonRef = db.collection('people').doc(`missing_scope_person_${testSuffix}`);
       await missingPersonRef.set({
-        fullName: 'Missing Scope Person',
+        fullName: `Missing Scope Person ${testSuffix}`,
         workEmail: `missing_scope_${testSuffix}@test.com`,
         lifecycle: 'active',
         createdAt: now,
@@ -374,7 +374,7 @@ describe('Performance Batch Handler Regression Tests', () => {
 
       const emptyPersonRef = db.collection('people').doc(`empty_name_person_${testSuffix}`);
       await emptyPersonRef.set({
-        fullName: 'Empty Name Scope Person',
+        fullName: `Empty Name Scope Person ${testSuffix}`,
         workEmail: `empty_name_${testSuffix}@test.com`,
         lifecycle: 'active',
         createdAt: now,
@@ -399,8 +399,8 @@ describe('Performance Batch Handler Regression Tests', () => {
       assert.strictEqual(response.status, 200);
       const { data } = await response.json();
 
-      const person = data.find((p: { fullName: string }) => p.fullName === 'Missing Scope Person');
-      assert.ok(person, 'Should find Missing Scope Person');
+      const person = data.find((p: { fullName: string }) => p.fullName === `Missing Scope Person ${testSuffix}`);
+      assert.ok(person, `Should find Missing Scope Person ${testSuffix}`);
       assert.strictEqual(person.primaryScopeName, `nonexistent_${testSuffix}`, 'Should fall back to scopeId');
     });
 
@@ -409,8 +409,8 @@ describe('Performance Batch Handler Regression Tests', () => {
       assert.strictEqual(response.status, 200);
       const { data } = await response.json();
 
-      const person = data.find((p: { fullName: string }) => p.fullName === 'Empty Name Scope Person');
-      assert.ok(person, 'Should find Empty Name Scope Person');
+      const person = data.find((p: { fullName: string }) => p.fullName === `Empty Name Scope Person ${testSuffix}`);
+      assert.ok(person, `Should find Empty Name Scope Person ${testSuffix}`);
       assert.strictEqual(person.primaryScopeName, '', 'Should preserve empty string, not fall back to scopeId');
     });
   });

@@ -8,6 +8,7 @@ import { SettingsView } from '../src/components/SettingsView';
 import { PeopleListView } from '../src/components/PeopleListView';
 import { StaleStoresView } from '../src/components/StaleStoresView';
 import { MyRequestsView } from '../src/components/MyRequestsView';
+import { ClosuresBoard } from '../src/components/ClosuresBoard';
 import { canAccessBackups } from '../src/lib/permissions';
 import type { AuthUser } from '../src/types';
 
@@ -63,6 +64,10 @@ it('Stale Stores labels overdue values and action buttons', async () => {
   expect(screen.getByText('Requests')).toBeTruthy();
 });
 it('My Requests has a New request link',async()=>{ renderNow(<MyRequestsView/>); await waitFor(()=>expect(screen.getByText('New request')).toBeTruthy()); });
+it('Closures board shows skeleton on load', () => {
+  renderNow(<ClosuresBoard />);
+  expect(screen.getByLabelText('Loading closures')).toBeTruthy();
+});
 
 beforeEach(() => {
   cleanup();

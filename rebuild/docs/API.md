@@ -74,7 +74,7 @@ All errors return a JSON object with an `error` field:
 | 400 | `invalid_limit` | Limit must be 1-100 |
 | 400 | `invalid_id` | Invalid document ID format |
 | 401 | `invalid_token` | Missing or invalid API token |
-| 403 | `access_denied` | Token lacks required scope |
+| 403 | `insufficient_scope` | Token lacks required scope |
 | 404 | `record_not_found` | Document not found |
 | 409 | `snapshot_expired` | Snapshot expired; restart full sync |
 | 429 | `rate_limit_exceeded` | Too many requests |
@@ -467,7 +467,7 @@ Returns all districts with their assigned district managers.
         "personId": "person_001",
         "fullName": "Jane Doe",
         "lifecycle": "active",
-        "workEmail": "jane.doe@example.com",
+        "workEmail": "jdoe.example@shiekhshoes.com",
         "workEmailStatus": "available"
       },
       "issues": []
@@ -514,7 +514,7 @@ Returns leadership information for a single district by canonical district ID.
       "personId": "person_001",
       "fullName": "Jane Doe",
       "lifecycle": "active",
-      "workEmail": "jane.doe@example.com",
+      "workEmail": "jdoe.example@shiekhshoes.com",
       "workEmailStatus": "available"
     }
   },

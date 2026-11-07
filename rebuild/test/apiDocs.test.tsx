@@ -28,6 +28,20 @@ describe('apiDocsData shared source', () => {
     expect(API_BASE_URL).not.toContain('directory.shiekh.com');
   });
 
+  it('example emails use approved domains (not @example.com)', () => {
+    for (const version of API_VERSIONS) {
+      for (const endpoint of version.endpoints) {
+        if (endpoint.responseExample.includes('workEmail')) {
+          expect(endpoint.responseExample).not.toContain('@example.com');
+          expect(
+            endpoint.responseExample.includes('@shiekhshoes.com') ||
+            endpoint.responseExample.includes('@shiekhshoes.org')
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
   it('v2 snapshot uses GET method (not POST)', () => {
     const v2 = API_VERSIONS.find(v => v.version === 'v2');
     expect(v2).toBeDefined();
@@ -191,8 +205,9 @@ describe('ApiDocsView component', () => {
 });
 
 describe('API documentation matches actual routes', () => {
-  // These tests verify documented endpoints match the actual route files
-  // by checking the data structure - actual route verification happens at integration level
+  // Structural verification - actual route behavior tested in test/legacy-api.test.ts (71 tests)
+  // covering: GET methods, scope requirements (including staffing-only), error codes
+  // (invalid_token, insufficient_scope, snapshot_expired, record_not_found), and rate limiting
 
   it('v1 has all expected endpoint paths', () => {
     const v1 = API_VERSIONS.find(v => v.version === 'v1');

@@ -13,10 +13,13 @@
  * Authentication types:
  * - Consumer API (v1/v2/v3): Bearer token with shk_ prefix, scope-based access
  * - Staff API (/api/app/*): Firebase Auth JWT (internal users only)
- * - Store Sessions (/api/store-auth/*): Passwordless store sign-in (internal)
+ * - Store Sessions (/api/store-auth/*): Passwordless store sign-in; can access
+ *   their assigned location page and /my-requests route in the web app
  * 
- * Last updated: 2026-11-07
- * Contract baseline: b7727f6
+ * API Contract Baseline: b7727f6 (deployed 2026-11-06)
+ * Documentation Commit: see git log (docs updates staged, not yet deployed)
+ * 
+ * NOTE: All response examples contain SYNTHETIC EXAMPLE DATA, not real store information.
  */
 
 export const API_BASE_URL = 'https://shiekh-directory-v2.web.app';
@@ -142,7 +145,7 @@ export const API_VERSIONS: ApiVersion[] = [
           'Use `customFieldsVersion` and `hierarchyVersion` to detect schema changes mid-sync.',
           'The watermark should be saved and used as `updatedSince` for delta syncs.',
           'Cursor is only valid within the same snapshot window (15 minutes).',
-          'Multi-interval hours (e.g., split shifts) return only the FIRST interval. This is a known limitation.',
+          'Multi-interval hours (e.g., split shifts 9-12 and 2-6) currently return only the FIRST interval.',
         ],
       },
       {
@@ -374,7 +377,7 @@ export const API_VERSIONS: ApiVersion[] = [
         "personId": "person_001",
         "fullName": "Jane Doe",
         "lifecycle": "active",
-        "workEmail": "jane.doe@example.com",
+        "workEmail": "jdoe.example@shiekhshoes.com",
         "workEmailStatus": "available"
       },
       "issues": []
@@ -415,7 +418,7 @@ export const API_VERSIONS: ApiVersion[] = [
       "personId": "person_001",
       "fullName": "Jane Doe",
       "lifecycle": "active",
-      "workEmail": "jane.doe@example.com",
+      "workEmail": "jdoe.example@shiekhshoes.com",
       "workEmailStatus": "available"
     }
   },

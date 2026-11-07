@@ -1,337 +1,65 @@
 # Shiekh Directory API Documentation
 
+> **Canonical Source:** `src/lib/apiDocsData.ts`  
+> **Contract Baseline:** b7727f6  
+> **Last Updated:** 2026-11-07
+
 ## Overview
 
-The Shiekh Directory API provides programmatic access to store locations, personnel, staffing assignments, and district leadership data. The API supports three versions:
+The Shiekh Directory provides two API categories:
 
-- **v1**: Simple token-based authentication for read-only location data
-- **v2**: Snapshot-first workflow for personnel and staffing data
-- **v3**: Snapshot-first workflow for district leadership and location-district mappings
+| Category | Authentication | Audience |
+|----------|---------------|----------|
+| **Consumer API (v1/v2/v3)** | Bearer token (`shk_` prefix) | LP, Claude, external integrations |
+| **Internal Staff API** | Firebase Auth JWT | Admin UI, internal tools |
+
+This document focuses on the **Consumer API**. Internal staff endpoints are listed in the [Appendix](#internal-staff-api-appendix).
+
+---
+
+## Base URL
+
+```
+https://shiekh-directory-v2.web.app
+```
+
+---
 
 ## Authentication
 
-All API requests require Bearer token authentication:
+All consumer API requests require Bearer token authentication:
 
+```bash
+curl -H "Authorization: Bearer shk_your_api_token" \
+     https://shiekh-directory-v2.web.app/api/v1/locations
 ```
-Authorization: Bearer sk-xxxx...
-```
+
+**Token Format:** Tokens begin with the `shk_` prefix followed by 32 random bytes (base64url encoded).
 
 API tokens are managed through the Admin UI. Each token is granted specific scopes that determine which endpoints are accessible.
 
 ### Available Scopes
 
-| Scope | Description |
-|-------|-------------|
-| `locations:read` | Access v1 location endpoints |
-| `personnel:read` | Access v2 personnel endpoint |
-| `staffing:read` | Access v2 location-staffing endpoint |
-| `district-leadership:read` | Access v3 district-leadership and location-districts endpoints |
-| `district-leadership:contacts:read` | Include work email addresses in district-leadership responses |
+| Scope | Description | API Version |
+|-------|-------------|-------------|
+| `locations:read` | Access v1 location endpoints | v1 |
+| `personnel:read` | Access v2 personnel endpoints | v2 |
+| `staffing:read` | Access v2 location-staffing endpoints | v2 |
+| `district-leadership:read` | Access v3 district-leadership and location-districts endpoints | v3 |
+| `district-leadership:contacts:read` | Include DM work email addresses in v3 responses | v3 |
 
 ---
 
-## v2 API: Personnel & Staffing (Snapshot-First)
+## Error Response Format
 
-The v2 API uses a **snapshot-first workflow** to ensure data consistency across paginated requests. All clients must obtain a snapshot token before fetching data.
-
-### Workflow
-
-```
-1. POST /api/v2/snapshot  →  { snapshot, snapshotAt, expiresAt }
-2. GET /api/v2/personnel?snapshot={token}&limit=50  →  { data, pagination, sync }
-3. GET /api/v2/personnel?snapshot={token}&cursor={nextCursor}&limit=50  →  ...
-   (repeat until nextCursor is null)
-```
-
-### Step 1: Create Snapshot
-
-```
-GET /api/v2/snapshot
-```
-
-**Response:**
-```json
-{
-  "snapshot": "eyJhbGciOiJIUzI1NiIs...",
-  "snapshotAt": "2026-10-31T12:00:00.000Z",
-  "expiresAt": "2026-10-31T12:15:00.000Z",
-  "contractVersion": "personnel-staffing-v2.1"
-}
-```
-
-- Snapshots expire after 15 minutes
-- The same snapshot must be used for all pages of a dataset
-- If the snapshot expires mid-sync, restart from step 1
-
-### Step 2: Fetch Personnel
-
-```
-GET /api/v2/personnel?snapshot={token}&limit=50
-```
-
-**Query Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `snapshot` | Yes | The snapshot token from step 1 |
-| `limit` | No | Page size (1-100, default 50) |
-| `cursor` | No | Pagination cursor from previous response |
-
-**Response:**
-```json
-{
-  "data": [
-    {
-      "personId": "per-abc123",
-      "fullName": "John Smith",
-      "lifecycle": "active",
-      "primaryAssignment": {
-        "role": "SM",
-        "locationId": "loc-007",
-        "storeNumber": "007"
-      }
-    }
-  ],
-  "pagination": {
-    "limit": 50,
-    "nextCursor": "eyJhZnRlciI6InBlci..."
-  },
-  "sync": {
-    "mode": "full",
-    "snapshotAt": "2026-10-31T12:00:00.000Z",
-    "contractVersion": "personnel-staffing-v2.1"
-  }
-}
-```
-
-### Step 3: Fetch Location Staffing
-
-```
-GET /api/v2/location-staffing?snapshot={token}&limit=50&kind=store
-```
-
-**Query Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `snapshot` | Yes | The snapshot token from step 1 |
-| `limit` | No | Page size (1-100, default 50) |
-| `cursor` | No | Pagination cursor from previous response |
-| `kind` | No | Location kind filter: `store`, `warehouse`, `office` (default: `store`) |
-
-**Response:**
-```json
-{
-  "data": [
-    {
-      "locationId": "loc-007",
-      "storeNumber": "007",
-      "storeName": "Downtown Mall",
-      "recordStatus": "active",
-      "regionId": "reg-west",
-      "districtId": "dist-la",
-      "staffing": {
-        "storeManager": {
-          "personId": "per-sm1",
-          "fullName": "Jane Doe",
-          "slot": "primary",
-          "startDate": "2024-01-15"
-        },
-        "assistantManagers": [...],
-        "keyHolders": [...]
-      },
-      "positionStatus": {
-        "sm": { 
-          "status": "filled", 
-          "holders": [
-            { "personId": "per-sm1", "fullName": "Jane Doe", "capacity": "primary", "slot": "primary" }
-          ]
-        },
-        "asm": { "status": "vacant", "holders": [] },
-        "kh": { "status": "filled", "holders": [...] },
-        "dm": { "status": "filled", "holders": [...] },
-        "rm": { "status": "vacant", "holders": [] }
-      }
-    }
-  ],
-  "pagination": { "limit": 50, "nextCursor": null },
-  "sync": {
-    "mode": "full",
-    "snapshotAt": "2026-10-31T12:00:00.000Z",
-    "contractVersion": "personnel-staffing-v2.1"
-  }
-}
-```
-
-### Position Status Fields
-
-The `positionStatus` object provides structured vacancy information for each position type:
-
-| Field | Description |
-|-------|-------------|
-| `status` | `"filled"` if at least one holder exists, `"vacant"` otherwise |
-| `holders` | Array of current holders with their capacity and slot |
-
-### Holder Capacity Values
-
-| Capacity | Description |
-|----------|-------------|
-| `primary` | Fully trained and in full capacity (default) |
-| `training` | Person is in training for this role |
-| `acting` | Person is acting/temporary in this role |
-
----
-
-## v3 API: District Leadership (Snapshot-First)
-
-The v3 API follows the same snapshot-first workflow as v2, but provides district leadership and location-district hierarchy data.
-
-### Workflow
-
-```
-1. GET /api/v3/snapshot  →  { snapshot, snapshotAt, expiresAt }
-2. GET /api/v3/district-leadership?snapshot={token}&limit=50  →  { data, pagination, sync }
-3. GET /api/v3/location-districts?snapshot={token}&limit=50&kind=store  →  { data, pagination, sync }
-```
-
-### Step 1: Create Snapshot
-
-```
-GET /api/v3/snapshot
-```
-
-**Response:**
-```json
-{
-  "snapshot": "eyJhbGciOiJIUzI1NiIs...",
-  "snapshotAt": "2026-10-31T12:00:00.000Z",
-  "expiresAt": "2026-10-31T12:15:00.000Z",
-  "contractVersion": "district-leadership-v3.1"
-}
-```
-
-### Step 2: Fetch District Leadership
-
-```
-GET /api/v3/district-leadership?snapshot={token}&limit=50
-```
-
-**Query Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `snapshot` | Yes | The snapshot token from step 1 |
-| `limit` | No | Page size (1-100, default 50) |
-| `cursor` | No | Pagination cursor from previous response |
-
-**Response:**
-```json
-{
-  "data": [
-    {
-      "districtId": "dist-la",
-      "districtName": "Los Angeles",
-      "recordStatus": "active",
-      "regionId": "reg-west",
-      "regionName": "West Region",
-      "regionStatus": "active",
-      "assignmentState": "assigned",
-      "districtManager": {
-        "personId": "per-dm1",
-        "fullName": "Alex Johnson",
-        "lifecycle": "active",
-        "workEmail": "alex.johnson@shiekhshoes.com",
-        "workEmailStatus": "available",
-        "issues": []
-      },
-      "issues": []
-    }
-  ],
-  "pagination": { "limit": 50, "nextCursor": null },
-  "sync": {
-    "mode": "full",
-    "snapshotAt": "2026-10-31T12:00:00.000Z",
-    "contractVersion": "district-leadership-v3.1",
-    "contactAccess": "work-email"
-  }
-}
-```
-
-**Contact Access:**
-The `sync.contactAccess` field indicates the level of contact information access:
-- `work-email`: Client has `district-leadership:contacts:read` scope; work emails included when available
-- `none`: Client does not have contacts scope; work emails are not included
-
-**Work Email Status Values:**
-| Status | Description |
-|--------|-------------|
-| `available` | Work email present and from approved domain |
-| `not_granted` | Client lacks `district-leadership:contacts:read` scope |
-| `withheld_inactive` | Person is inactive; email withheld |
-| `withheld_unknown_lifecycle` | Person lifecycle unknown; email withheld |
-| `missing` | Person has no work email on file |
-| `unapproved_domain` | Work email is not from @shiekhshoes.com or @shiekhshoes.org |
-| `unresolved_person` | Person record not found |
-
-### Step 3: Fetch Location-Districts
-
-```
-GET /api/v3/location-districts?snapshot={token}&limit=50&kind=store
-```
-
-**Query Parameters:**
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `snapshot` | Yes | The snapshot token from step 1 |
-| `limit` | No | Page size (1-100, default 50) |
-| `cursor` | No | Pagination cursor from previous response |
-| `kind` | No | Location kind filter: `store`, `warehouse`, `office`, or comma-separated (default: `store`) |
-
-**Response:**
-```json
-{
-  "data": [
-    {
-      "locationId": "loc-007",
-      "storeNumber": "007",
-      "recordStatus": "active",
-      "locationType": "enclosed-mall",
-      "hierarchyApplicability": "Applicable",
-      "regionId": "reg-west",
-      "districtId": "dist-la",
-      "issues": []
-    }
-  ],
-  "pagination": { "limit": 50, "nextCursor": null },
-  "sync": {
-    "mode": "full",
-    "snapshotAt": "2026-10-31T12:00:00.000Z",
-    "contractVersion": "district-leadership-v3.1",
-    "contactAccess": "work-email"
-  }
-}
-```
-
-**Location Type Values:**
-| Type | Description |
-|------|-------------|
-| `enclosed-mall` | Mall or enclosed shopping center |
-| `strip-center` | Strip mall or shopping center |
-| `street-standalone` | Street-level standalone location |
-| `outlet` | Outlet location |
-| `warehouse` | Warehouse facility |
-| `office` | Corporate office |
-| `unclassified` | Store type not recognized |
-
----
-
-## Error Handling
-
-### Error Response Format
+All errors return a JSON object with an `error` field:
 
 ```json
 {
   "error": {
-    "code": "error_code",
-    "message": "Human-readable description",
-    "requestId": "req-abc123"
+    "code": "invalid_token",
+    "message": "A valid Bearer token is required.",
+    "requestId": "req_abc123"
   }
 }
 ```
@@ -345,11 +73,516 @@ GET /api/v3/location-districts?snapshot={token}&limit=50&kind=store
 | 400 | `invalid_cursor` | Cursor doesn't match snapshot/dataset/limit |
 | 400 | `invalid_limit` | Limit must be 1-100 |
 | 400 | `invalid_id` | Invalid document ID format |
-| 401 | `unauthorized` | Missing or invalid API token |
+| 401 | `invalid_token` | Missing or invalid API token |
 | 403 | `access_denied` | Token lacks required scope |
-| 404 | `record_not_found` | Document not found at snapshot |
+| 404 | `record_not_found` | Document not found |
 | 409 | `snapshot_expired` | Snapshot expired; restart full sync |
-| 503 | `snapshot_unavailable` | Database read failed; do not reconcile partial results |
+| 429 | `rate_limit_exceeded` | Too many requests |
+| 503 | `snapshot_unavailable` | Database read failed |
+
+---
+
+## Rate Limiting
+
+API requests are rate-limited per client. Check the response headers:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Requests allowed per minute |
+| `X-RateLimit-Remaining` | Requests remaining in window |
+| `X-RateLimit-Reset` | Unix timestamp when window resets |
+
+If you exceed the limit, you'll receive a `429 Too Many Requests` response with a `Retry-After` header.
+
+---
+
+## v1 API: Location Directory
+
+The v1 API provides read-only access to store location data.
+
+**Required Scope:** `locations:read`
+
+### GET /api/v1/location-fields
+
+Returns all custom field definitions used across locations.
+
+**Response:**
+```json
+{
+  "version": "abc123...",
+  "fields": [
+    {
+      "id": "cf_001",
+      "name": "Mall Contact",
+      "type": "text",
+      "required": false,
+      "description": "Mall management contact info"
+    }
+  ]
+}
+```
+
+### GET /api/v1/locations
+
+Returns paginated list of active store locations with full details including hours and closures.
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `limit` | No | Page size (1-100, default 50) |
+| `cursor` | No | Pagination cursor from previous response |
+| `updatedSince` | No | ISO 8601 timestamp; filter to locations updated after this time |
+| `kind` | No | Location types (comma-separated: `store`, `warehouse`, `office`) |
+| `customFieldsVersion` | No | Validates custom field schema hasn't changed |
+| `hierarchyVersion` | No | Validates region/district hierarchy hasn't changed |
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "loc_abc123",
+      "storeNumber": "07",
+      "name": "Glendale Galleria",
+      "address": "100 W Broadway",
+      "city": "Glendale",
+      "state": "CA",
+      "zipCode": "91210",
+      "timeZone": "America/Los_Angeles",
+      "regionId": "reg_001",
+      "regionName": "West",
+      "districtId": "dist_001",
+      "districtName": "LA Metro",
+      "operationalStatus": "Active",
+      "standardHours": {
+        "monday": { "isClosed": false, "open": "10:00", "close": "21:00" }
+      },
+      "updatedAt": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "sync": {
+    "watermark": "2024-01-15T12:00:00.000Z",
+    "mode": "full",
+    "customFieldsVersion": "abc...",
+    "hierarchyVersion": "def..."
+  },
+  "pagination": { "limit": 50, "nextCursor": "..." }
+}
+```
+
+**Notes:**
+- Use `customFieldsVersion` and `hierarchyVersion` to detect schema changes mid-sync.
+- The watermark should be saved and used as `updatedSince` for delta syncs.
+- Cursor is only valid within the same snapshot window (15 minutes).
+
+> **Known Limitation:** Multi-interval hours (e.g., split shifts like 9-12 and 2-6) return only the FIRST interval. If a store has `intervals: [{open: "09:00", close: "12:00"}, {open: "14:00", close: "18:00"}]`, only `{open: "09:00", close: "12:00"}` is returned. See `server/routes/legacyV1.ts:434-437`.
+
+### GET /api/v1/locations/:storeNumber
+
+Returns a single location by its store number.
+
+**Path Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `storeNumber` | Yes | Store number (e.g., "07" or "125") |
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "loc_abc123",
+    "storeNumber": "07",
+    "name": "Glendale Galleria",
+    "address": "100 W Broadway",
+    "city": "Glendale",
+    "state": "CA",
+    "zipCode": "91210",
+    "timeZone": "America/Los_Angeles"
+  },
+  "customFieldsVersion": "abc...",
+  "hierarchyVersion": "def..."
+}
+```
+
+### GET /api/v1/locations/:storeNumber/operating-state
+
+Returns the current open/closed state based on hours, closures, and exceptions.
+
+**Path Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `storeNumber` | Yes | Store number |
+
+**Response:**
+```json
+{
+  "contract": "location-operating-state-v1",
+  "data": {
+    "locationId": "loc_abc123",
+    "storeNumber": "07",
+    "state": "Open",
+    "reason": "Open until 21:00",
+    "scheduleSource": "standard",
+    "hours": { "open": "10:00", "close": "21:00", "isClosed": false },
+    "localDate": "2024-01-15",
+    "timeZone": "America/Los_Angeles",
+    "evaluatedAt": "2024-01-15T18:30:00Z",
+    "nextTransitionAt": null,
+    "temporaryClosure": null,
+    "issues": []
+  }
+}
+```
+
+**Notes:**
+- This endpoint evaluates the current time against the schedule.
+- For bulk operations, use the list endpoint and compute state locally.
+
+---
+
+## v2 API: Personnel & Staffing (Snapshot-First)
+
+The v2 API uses a **snapshot-first workflow** to ensure data consistency across paginated requests.
+
+**Required Scopes:** `personnel:read` and/or `staffing:read`
+
+### Workflow
+
+```
+1. GET /api/v2/snapshot  →  { snapshot, snapshotAt, expiresAt }
+2. GET /api/v2/personnel?snapshot={token}&limit=50  →  { data, pagination, sync }
+3. GET /api/v2/personnel?snapshot={token}&cursor={nextCursor}&limit=50  →  ...
+   (repeat until nextCursor is null)
+```
+
+### GET /api/v2/snapshot
+
+Creates a point-in-time snapshot token required for personnel and staffing queries.
+
+**Required Scope:** `personnel:read` or `staffing:read`
+
+**Response:**
+```json
+{
+  "snapshot": "eyJ2ZXJzaW9u...",
+  "snapshotAt": "2024-01-15T12:00:00.000Z",
+  "expiresAt": "2024-01-15T12:15:00.000Z",
+  "contractVersion": "personnel-staffing-v2.1"
+}
+```
+
+**Notes:**
+- Snapshots expire after **15 minutes**.
+- All queries must include a valid snapshot token.
+- If a snapshot expires mid-sync, restart from the beginning.
+
+### GET /api/v2/personnel
+
+Returns paginated list of active personnel with their location assignments.
+
+**Required Scope:** `personnel:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `snapshot` | Yes | Snapshot token from /snapshot endpoint |
+| `limit` | No | Page size (1-100, default 50) |
+| `cursor` | No | Pagination cursor |
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "person_abc123",
+      "fullName": "John Smith",
+      "lifecycle": "active",
+      "primaryLocationId": "loc_001",
+      "supportedLocationIds": ["loc_002", "loc_003"],
+      "issues": []
+    }
+  ],
+  "pagination": { "limit": 50, "nextCursor": "..." },
+  "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "personnel-staffing-v2.1" }
+}
+```
+
+### GET /api/v2/personnel/:id
+
+Returns a single personnel record by canonical ID.
+
+**Required Scope:** `personnel:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Personnel canonical ID (path parameter) |
+| `snapshot` | Yes | Snapshot token |
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "person_abc123",
+    "fullName": "John Smith",
+    "lifecycle": "active",
+    "primaryLocationId": "loc_001",
+    "supportedLocationIds": ["loc_002", "loc_003"]
+  },
+  "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "personnel-staffing-v2.1" }
+}
+```
+
+### GET /api/v2/location-staffing
+
+Returns staffing assignments for each location including SM, ASM, DM, and key holders.
+
+**Required Scope:** `staffing:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `snapshot` | Yes | Snapshot token |
+| `limit` | No | Page size (1-100, default 50) |
+| `cursor` | No | Pagination cursor |
+| `kind` | No | Location types (store, warehouse, office) |
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "locationId": "loc_abc123",
+      "storeNumber": "07",
+      "recordStatus": "active",
+      "storeManagerId": "person_001",
+      "districtManagerId": "person_002",
+      "assistantStoreManagerIds": ["person_003"],
+      "keyHolderIds": ["person_004", "person_005"],
+      "positionStatus": {
+        "sm": { "status": "filled", "holders": ["person_001"] },
+        "dm": { "status": "filled", "holders": ["person_002"] }
+      },
+      "issues": []
+    }
+  ],
+  "pagination": { "limit": 50, "nextCursor": "..." },
+  "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "personnel-staffing-v2.1" }
+}
+```
+
+### GET /api/v2/location-staffing/:id
+
+Returns staffing assignments for a single location by canonical location ID.
+
+**Required Scope:** `staffing:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Location canonical ID (path parameter) |
+| `snapshot` | Yes | Snapshot token |
+
+**Response:**
+```json
+{
+  "data": {
+    "locationId": "loc_abc123",
+    "storeNumber": "07",
+    "recordStatus": "active",
+    "storeManagerId": "person_001",
+    "districtManagerId": "person_002",
+    "assistantStoreManagerIds": ["person_003"],
+    "keyHolderIds": ["person_004", "person_005"]
+  },
+  "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "personnel-staffing-v2.1" }
+}
+```
+
+---
+
+## v3 API: District Leadership (Snapshot-First)
+
+The v3 API follows the same snapshot-first workflow as v2, but provides district leadership and location-district hierarchy data.
+
+**Required Scope:** `district-leadership:read`
+
+### Workflow
+
+```
+1. GET /api/v3/snapshot  →  { snapshot, snapshotAt, expiresAt }
+2. GET /api/v3/district-leadership?snapshot={token}&limit=50  →  { data, pagination, sync }
+3. GET /api/v3/location-districts?snapshot={token}&limit=50&kind=store  →  { data, pagination, sync }
+```
+
+### GET /api/v3/snapshot
+
+Creates a point-in-time snapshot token for district leadership queries.
+
+**Required Scope:** `district-leadership:read`
+
+**Response:**
+```json
+{
+  "snapshot": "eyJ2ZXJzaW9u...",
+  "snapshotAt": "2024-01-15T12:00:00.000Z",
+  "expiresAt": "2024-01-15T12:15:00.000Z",
+  "contractVersion": "district-leadership-v3.1"
+}
+```
+
+### GET /api/v3/district-leadership
+
+Returns all districts with their assigned district managers.
+
+**Required Scope:** `district-leadership:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `snapshot` | Yes | Snapshot token |
+| `limit` | No | Page size (1-100, default 50) |
+| `cursor` | No | Pagination cursor |
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "districtId": "dist_001",
+      "districtName": "LA Metro",
+      "recordStatus": "active",
+      "regionId": "reg_001",
+      "regionName": "West",
+      "assignmentState": "assigned",
+      "districtManager": {
+        "personId": "person_001",
+        "fullName": "Jane Doe",
+        "lifecycle": "active",
+        "workEmail": "jane.doe@example.com",
+        "workEmailStatus": "available"
+      },
+      "issues": []
+    }
+  ],
+  "pagination": { "limit": 50, "nextCursor": "..." },
+  "sync": { 
+    "mode": "full", 
+    "snapshotAt": "...", 
+    "contractVersion": "district-leadership-v3.1",
+    "contactAccess": "work-email"
+  }
+}
+```
+
+**Notes:**
+- Work email is only included if your token has the `district-leadership:contacts:read` scope.
+- Without the contacts scope, `workEmailStatus` will be `"not_granted"`.
+
+### GET /api/v3/district-leadership/:id
+
+Returns leadership information for a single district by canonical district ID.
+
+**Required Scope:** `district-leadership:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | District canonical ID (path parameter) |
+| `snapshot` | Yes | Snapshot token |
+
+**Response:**
+```json
+{
+  "data": {
+    "districtId": "dist_001",
+    "districtName": "LA Metro",
+    "recordStatus": "active",
+    "regionId": "reg_001",
+    "regionName": "West",
+    "assignmentState": "assigned",
+    "districtManager": {
+      "personId": "person_001",
+      "fullName": "Jane Doe",
+      "lifecycle": "active",
+      "workEmail": "jane.doe@example.com",
+      "workEmailStatus": "available"
+    }
+  },
+  "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "district-leadership-v3.1" }
+}
+```
+
+### GET /api/v3/location-districts
+
+Returns region/district assignments for each location.
+
+**Required Scope:** `district-leadership:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `snapshot` | Yes | Snapshot token |
+| `limit` | No | Page size (1-100, default 50) |
+| `cursor` | No | Pagination cursor |
+| `kind` | No | Location types (store, warehouse, office) |
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "locationId": "loc_abc123",
+      "storeNumber": "07",
+      "recordStatus": "active",
+      "locationType": "enclosed-mall",
+      "regionId": "reg_001",
+      "districtId": "dist_001",
+      "issues": []
+    }
+  ],
+  "pagination": { "limit": 50, "nextCursor": "..." },
+  "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "district-leadership-v3.1" }
+}
+```
+
+### GET /api/v3/location-districts/:id
+
+Returns region/district assignment for a single location by canonical location ID.
+
+**Required Scope:** `district-leadership:read`
+
+**Query Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `id` | Yes | Location canonical ID (path parameter) |
+| `snapshot` | Yes | Snapshot token |
+
+**Response:**
+```json
+{
+  "data": {
+    "locationId": "loc_abc123",
+    "storeNumber": "07",
+    "recordStatus": "active",
+    "locationType": "enclosed-mall",
+    "regionId": "reg_001",
+    "districtId": "dist_001"
+  },
+  "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "district-leadership-v3.1" }
+}
+```
 
 ---
 
@@ -373,241 +606,50 @@ GET /api/v3/location-districts?snapshot={token}&limit=50&kind=store
 2. **Check sync.mode** - Currently always `full`; future versions may support incremental sync
 3. **Validate contractVersion** - Log warnings if version changes unexpectedly
 
----
+### Canonical ID Joins
 
-## Internal App API
+All IDs (locationId, personId, districtId, regionId) are canonical Firestore document IDs. Use these to join data across API versions:
 
-The following endpoints are used by the internal web application and require user authentication via Firebase Auth.
-
-### Hours Templates
-
-Hours templates allow admins to create named weekly schedules that can be applied to multiple stores.
-
-#### List Templates
-
-```
-GET /api/app/hours-templates
-GET /api/app/hours-templates?includeArchived=true
-```
-
-Returns all active templates, or includes archived if `includeArchived=true`.
-
-#### Create Template
-
-```
-POST /api/app/hours-templates
-```
-
-**Body:**
-```json
-{
-  "name": "Standard Store Hours",
-  "description": "Default hours for mall stores",
-  "hours": {
-    "monday": { "closed": false, "intervals": [{ "open": "09:00", "close": "21:00" }] },
-    ...
-  }
-}
-```
-
-Requires Steward or Admin role.
-
-#### Update Template
-
-```
-PATCH /api/app/hours-templates/:id
-```
-
-Updates name, description, or hours. Hours changes increment the template version.
-
-#### Apply Template
-
-```
-POST /api/app/hours-templates/:id/apply
-```
-
-**Body:**
-```json
-{
-  "locationId": "loc-007"
-}
-```
-
-Applies template hours to a single location (copy-on-apply - location stores a copy, not a reference).
-
-#### Bulk Apply Template
-
-```
-POST /api/app/hours-templates/:id/bulk-apply
-```
-
-**Body:**
-```json
-{
-  "filters": {
-    "districtId": "dist-01",
-    "regionId": "reg-west",
-    "kind": "store"
-  },
-  "preview": true
-}
-```
-
-With `preview: true`, returns what would change without making changes. With `preview: false`, applies to all matching locations.
+- v1 `data[].id` = v2 `locationId` = v3 `locationId`
+- v2 `personId` = v3 `districtManager.personId`
+- v2 `regionId`/`districtId` = v3 `regionId`/`districtId`
 
 ---
 
-### Closures
+## Internal Staff API Appendix
 
-#### Create Closure
+The following endpoints are used by the internal web application and require Firebase Auth JWT authentication. They are **not accessible** with consumer API tokens.
 
-```
-POST /api/app/edit/locations/:id/closures
-```
+### Route Prefix: `/api/app/*`
 
-**Body:**
-```json
-{
-  "reason": "Water damage repair",
-  "type": "same_day",
-  "reasonCode": "maintenance",
-  "reasonNote": "Internal detail",
-  "publicExplanation": "Closed for repairs"
-}
-```
+| Category | Endpoints | Permission |
+|----------|-----------|------------|
+| Locations | GET/PATCH locations, closures, notices | Varies by action |
+| People | GET/POST/PATCH people, assignments | Leader+ |
+| Corrections | GET/POST corrections, approve/reject | Steward+ |
+| Verification | GET/POST verification requests | Admin |
+| Hours Templates | GET/POST/PATCH templates, apply | Steward+ |
+| Email Settings | GET/PUT email config, SMTP, templates | Admin |
+| Workflow Rules | GET/PATCH/DELETE rules | Admin |
+| API Clients | GET/POST/DELETE client tokens | Admin |
+| Backups | GET/POST/DELETE snapshots | Admin |
+| Admin | User management, imports | Admin |
 
-**Closure Types:**
-| Type | Description |
-|------|-------------|
-| `same_day` | Expires at local midnight, can be renewed |
-| `multi_day` | Has explicit end date |
-| `unknown_end` | Requires owner and next review date |
+See route files in `server/routes/` for complete endpoint documentation:
+- `locations.ts`, `people.ts`, `corrections.ts`
+- `verification.ts`, `hoursTemplates.ts`
+- `emailSettings.ts`, `workflowRules.ts`
+- `apiClients.ts`, `backup.ts`, `admin.ts`
 
-**Reason Codes:**
-| Code | Label |
-|------|-------|
-| `ac_hvac` | AC/HVAC Issue |
-| `power` | Power/Utility |
-| `mall_landlord` | Mall/Landlord Issue |
-| `safety` | Safety/Security |
-| `weather` | Weather |
-| `staffing` | Staffing |
-| `maintenance` | Maintenance |
-| `remodel` | Remodel |
-| `relocation` | Relocation |
-| `other` | Other (requires note) |
+### Store Sessions: `/api/store-auth/*`
 
-#### Renew Same-Day Closure
-
-```
-POST /api/app/edit/locations/:locationId/closures/:closureId/renew
-```
-
-Extends a same-day closure to the next local midnight. Tracks renewal count.
-
-#### End Closure
-
-```
-POST /api/app/edit/locations/:locationId/closures/:closureId/end
-```
-
-Ends an active closure immediately.
+Passwordless sign-in for store employees. Used by store portal, not consumer integrations.
 
 ---
 
-### Notices
+## Changelog
 
-Store notices communicate information without closing the store.
-
-#### List Notices
-
-```
-GET /api/app/locations/:locationId/notices
-GET /api/app/locations/:locationId/notices?status=active
-```
-
-#### Create Notice
-
-```
-POST /api/app/locations/:locationId/notices
-```
-
-**Body:**
-```json
-{
-  "text": "Entrance temporarily moved to west side",
-  "audience": "public",
-  "effectiveFrom": "2026-10-31T00:00:00Z",
-  "effectiveUntil": "2026-11-15T00:00:00Z",
-  "expectedResolution": "After construction"
-}
-```
-
-**Audience Values:**
-| Value | Description |
-|-------|-------------|
-| `internal` | Only visible to internal users |
-| `public` | May be shown externally |
-
-#### Update Notice
-
-```
-PATCH /api/app/locations/:locationId/notices/:noticeId
-```
-
-Can update text, audience, status, and timing fields.
-
----
-
-### Correction Requests
-
-Correction requests allow any signed-in user to report problems with store information.
-
-#### Create Correction Request
-
-```
-POST /api/app/corrections
-```
-
-**Body:**
-```json
-{
-  "locationId": "loc-007",
-  "category": "phone",
-  "proposedNote": "The phone number shown is for the old location"
-}
-```
-
-**Categories:**
-| Category | Description |
-|----------|-------------|
-| `address` | Address is wrong |
-| `suite` | Suite/unit number is wrong |
-| `directions` | Wayfinding directions need update |
-| `phone` | Phone number is incorrect |
-| `hours` | Hours are incorrect |
-| `manager` | Manager info is wrong |
-| `other` | Other issue |
-
-#### List My Requests
-
-```
-GET /api/app/corrections?myRequests=true
-GET /api/app/corrections?status=pending&category=phone
-```
-
-#### Cancel Request
-
-```
-POST /api/app/corrections/:id/cancel
-```
-
-Only the submitter can cancel their own pending requests.
-
----
-
-## Rate Limits
-
-- **1000 requests per minute** per API client
-- Snapshot creation: **10 per minute** per API client
-- Rate limit responses return HTTP 429 with `Retry-After` header
+| Date | Change |
+|------|--------|
+| 2026-11-07 | Fixed v2 snapshot method (GET not POST), added missing single-item endpoints, documented multi-interval hours limitation |
+| 2026-10-31 | Initial v2 deployment documentation |

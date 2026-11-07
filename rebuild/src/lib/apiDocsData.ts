@@ -16,8 +16,8 @@
  * - Store Sessions (/api/store-auth/*): Passwordless store sign-in; can access
  *   their assigned location page and /my-requests route in the web app
  * 
- * API Contract Baseline: b7727f6 (deployed 2026-11-06)
- * Documentation Commit: see git log (docs updates staged, not yet deployed)
+ * API Contract Baseline: b7727f6 (backend deployed 2026-11-06)
+ * Documentation Updates: Included in this build
  * 
  * NOTE: All response examples contain SYNTHETIC EXAMPLE DATA, not real store information.
  */

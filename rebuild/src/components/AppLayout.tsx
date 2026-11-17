@@ -5,7 +5,7 @@ import {
   FileCheck, AlertTriangle, Clock, X, Home, FileText, ChevronDown, CheckSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { canApproveCorrections } from '../lib/permissions';
+import { canApproveCorrections, getRoleDisplayName } from '../lib/permissions';
 import { OfflineBanner } from './OfflineBanner';
 import { HeaderSearch } from './HeaderSearch';
 
@@ -396,7 +396,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     <span className="text-sm font-medium block truncate">{displayName}</span>
                     <span className="text-xs text-gray-500 block truncate">{displayEmail}</span>
                     {authUser && (
-                      <span className="text-xs text-gray-500">{authUser.role}</span>
+                      <span className="text-xs text-gray-500">{getRoleDisplayName(authUser.role)}</span>
                     )}
                     {authUser?.role === 'Store' && storeSession?.storeNumber && (
                       <span className="text-xs text-blue-600 ml-2">Store #{storeSession.storeNumber}</span>

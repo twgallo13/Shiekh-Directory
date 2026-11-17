@@ -15,6 +15,7 @@ interface CloseStoreDialogProps {
   storeName: string;
   isAdmin: boolean;
   onClosed: () => void;
+  onAlreadyRetired?: () => void;
 }
 
 export function CloseStoreDialog({
@@ -25,6 +26,7 @@ export function CloseStoreDialog({
   storeName,
   isAdmin,
   onClosed,
+  onAlreadyRetired,
 }: CloseStoreDialogProps) {
   const [confirmText, setConfirmText] = useState('');
   const [loadingStaff, setLoadingStaff] = useState(false);
@@ -86,6 +88,7 @@ export function CloseStoreDialog({
       const errorData = await response.json().catch(() => ({}));
       if (errorData.error?.code === 'already_retired') {
         setCloseError('This store was already permanently closed.');
+        onAlreadyRetired?.();
       } else {
         setCloseError("Couldn't close the store. Nothing was changed. Try again.");
       }
@@ -174,7 +177,7 @@ export function CloseStoreDialog({
         <p className="text-sm text-gray-600">
           {isAdmin
             ? 'You can restore it later from the Directory.'
-            : 'Only an Admin can undo this. People taken off won\'t be put back automatically.'}
+            : 'Only an Admin can undo this.'}
         </p>
 
         <div>

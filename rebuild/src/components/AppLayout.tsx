@@ -327,7 +327,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     <div className="text-sm font-medium truncate max-w-32">
                       {displayName}
                     </div>
-                    <div className="text-xs text-blue-200">
+                    <div className="text-xs text-blue-200 truncate max-w-32 whitespace-nowrap">
                       {authUser ? getRoleDisplayName(authUser.role) : ''}
                       {authUser?.role === 'Store' && storeSession?.storeNumber && ` • Store #${storeSession.storeNumber}`}
                     </div>
@@ -558,7 +558,7 @@ function NavLink({ onClick, isActive, children }: { onClick: () => void; isActiv
     <button
       onClick={onClick}
       aria-current={isActive ? 'page' : undefined}
-      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors min-h-[44px] ${
+      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors min-h-[44px] whitespace-nowrap ${
         isActive
           ? 'bg-blue-600 text-white'
           : 'text-blue-100 hover:bg-blue-600/50 hover:text-white'

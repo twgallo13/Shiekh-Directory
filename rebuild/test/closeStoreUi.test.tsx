@@ -75,6 +75,7 @@ function locationFixture(overrides: Record<string, unknown> = {}) {
 
 const activePeople = [
   { personName: 'John Smith', role: 'SM', isActive: true, endDate: null },
+  { personName: 'Future Lead', role: 'ASM', isActive: true, endDate: '2026-12-31' },
   { personName: 'Former Lead', role: 'ASM', isActive: false, endDate: '2026-01-01' },
 ];
 
@@ -95,7 +96,7 @@ function mockLocationApis(location = locationFixture(), assignments: unknown[] |
       }
       return { ok: true, status: 200, json: async () => ({ data: assignments }) };
     }
-    return { ok: true, status: 200, json: async () => ({ data: [] }) };
+    return { ok: false, status: 404, json: async () => ({ error: { code: 'not_found' } }) };
   });
   api.apiPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: { success: true } }) });
   return {
@@ -154,7 +155,8 @@ describe('CloseStoreDialog', () => {
       expect(api.apiGet).toHaveBeenCalledWith('/api/app/assignments/location/loc-1');
     });
     expect(await screen.findByText(/John Smith/)).toBeTruthy();
-    expect(screen.getByText(/1 person will be taken off/)).toBeTruthy();
+    expect(screen.getByText(/Future Lead/)).toBeTruthy();
+    expect(screen.getByText(/2 people will be taken off/)).toBeTruthy();
     expect(screen.queryByText(/Former Lead/)).toBeNull();
     expect(screen.getByText(/removed from the directory, search, exports and the consumer API/)).toBeTruthy();
     expect(screen.getByText(/Open checks, temporary closures and DM tasks/)).toBeTruthy();
@@ -182,8 +184,9 @@ describe('LocationDetailView close and restore', () => {
       expect(api.apiGet).toHaveBeenCalledWith('/api/app/assignments/location/loc-1');
     });
     expect(screen.getByText(/John Smith/)).toBeTruthy();
+    expect(screen.getByText(/Future Lead/)).toBeTruthy();
     expect(screen.queryByText(/Former Lead/)).toBeNull();
-    expect(screen.getByText(/1 person will be taken off/)).toBeTruthy();
+    expect(screen.getByText(/2 people will be taken off/)).toBeTruthy();
   });
 
   it('shows the empty state when nobody is active', async () => {
@@ -225,6 +228,7 @@ describe('LocationDetailView close and restore', () => {
     await openCloseDialog();
     expect(await screen.findByText(/Only an Admin can undo this/)).toBeTruthy();
     expect(screen.queryByText(/You can restore it later from the Directory/)).toBeNull();
+    expect(screen.getAllByText(/People taken off won't be put back automatically/)).toHaveLength(1);
   });
 
   it('shows Admin wording', async () => {
@@ -249,13 +253,69 @@ describe('LocationDetailView close and restore', () => {
     expect(await screen.findByText(/Couldn't close the store. Nothing was changed. Try again./)).toBeTruthy();
   });
 
+  it('posts to the retire route and shows the success toast', async () => {
+    mockLocationApis(locationFixture(), []);
+    renderStore();
+    await openCloseDialog();
+    await screen.findByText(/No one is assigned to this store/);
+    fireEvent.change(screen.getByPlaceholderText('1234'), { target: { value: '1234' } });
+    fireEvent.click(screen.getByRole('button', { name: /Close store #1234/i }));
+    await waitFor(() => {
+      expect(api.apiPost).toHaveBeenCalledWith('/api/app/hierarchy/locations/loc-1/retire');
+    });
+    expect(await screen.findByText('Store #1234 is now permanently closed')).toBeTruthy();
+  });
+
+  it('refreshes the store page when the store was already closed', async () => {
+    mockLocationApis(locationFixture(), []);
+    api.apiPost.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'already_retired' } }),
+    });
+    renderStore();
+    await openCloseDialog();
+    await screen.findByText(/No one is assigned to this store/);
+    const before = api.apiGet.mock.calls.filter((call) => call[0] === '/api/app/locations/loc-1').length;
+    fireEvent.change(screen.getByPlaceholderText('1234'), { target: { value: '1234' } });
+    fireEvent.click(screen.getByRole('button', { name: /Close store #1234/i }));
+    expect(await screen.findByText(/This store was already permanently closed/)).toBeTruthy();
+    await waitFor(() => {
+      const after = api.apiGet.mock.calls.filter((call) => call[0] === '/api/app/locations/loc-1').length;
+      expect(after).toBeGreaterThan(before);
+    });
+  });
+
+  it('posts to the reactivate route and shows the success toast', async () => {
+    mockLocationApis(locationFixture({ lifecycle: 'retired' }), []);
+    renderStore();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Restore store$/i })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Restore store$/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(Array.from(dialog.querySelectorAll('button')).find((button) => button.textContent === 'Restore store')!);
+    await waitFor(() => {
+      expect(api.apiPost).toHaveBeenCalledWith('/api/app/hierarchy/locations/loc-1/reactivate');
+    });
+    expect(await screen.findByText('Store restored')).toBeTruthy();
+  });
+
+  it('does not show Close to a Leader', async () => {
+    authMock.role = 'Leader';
+    mockLocationApis();
+    renderStore();
+    expect((await screen.findAllByText('#1234 Test Store')).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /Close store permanently/i })).toBeNull();
+  });
+
   it('shows inline restore errors for each conflict code', async () => {
     const retired = locationFixture({ id: 'loc-retired', lifecycle: 'retired' });
     mockLocationApis(retired, []);
     const cases = [
       ['duplicate_store_number', /Store #1234 is already used by an open store/],
-      ['district_retired', /set the district up again in Hierarchy/],
-      ['region_retired', /set the region up again in Hierarchy/],
+      ['district_retired', /can't be restored because its district was removed/],
+      ['region_retired', /can't be restored because its region was removed/],
     ] as const;
 
     for (const [code, pattern] of cases) {
@@ -288,26 +348,66 @@ describe('LocationDetailView close and restore', () => {
     expect(screen.queryByRole('button', { name: /^Restore store$/i })).toBeNull();
   });
 
-  it('shows the permanently closed banner and drops the old retired line', async () => {
+  it('shows the permanently closed banner from the newest close audit entry', async () => {
+    mockLocationApis(locationFixture({
+      lifecycle: 'retired',
+      statusNow: { state: 'Closed', reason: 'Location retired', localDate: '2026-03-04' },
+    }), []);
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/api/app/audit/location/loc-1')) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: [
+              {
+                id: 'older',
+                timestamp: '2026-01-01T12:00:00.000Z',
+                userEmail: 'old@shiekhshoes.com',
+                changes: [{ field: 'lifecycle', newValue: 'retired' }],
+              },
+              {
+                id: 'newer',
+                timestamp: '2026-03-01T12:00:00.000Z',
+                userEmail: 'closer@shiekhshoes.com',
+                changes: [{ field: 'lifecycle', oldValue: 'active', newValue: 'retired' }],
+              },
+            ],
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ data: [] }) };
+    }));
+    renderStore();
+    const expectedDate = new Date('2026-03-01T12:00:00.000Z').toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const banner = await screen.findByText(`Permanently closed on ${expectedDate} by closer@shiekhshoes.com`);
+    expect(banner.textContent).not.toContain('a directory admin');
+    expect(banner.textContent).not.toContain('old@shiekhshoes.com');
+    expect(screen.queryByText('Location retired')).toBeNull();
+  });
+
+  it('omits the closer when the close audit entry is unavailable', async () => {
     mockLocationApis(locationFixture({
       lifecycle: 'retired',
       statusNow: { state: 'Closed', reason: 'Location retired', localDate: '2026-03-04' },
     }), []);
     renderStore();
-    const banner = await screen.findByRole('status');
     const expectedDate = new Date('2026-03-04T15:00:00.000Z').toLocaleDateString('en-US', {
       month: 'long',
       day: 'numeric',
       year: 'numeric',
     });
-    expect(banner.textContent).toContain(`Permanently closed on ${expectedDate} by Test Admin`);
-    expect(screen.queryByText('Location retired')).toBeNull();
+    const banner = await screen.findByText(`Permanently closed on ${expectedDate}`);
+    expect(banner.textContent).not.toMatch(/ by /);
+    expect(banner.textContent).not.toContain('a directory admin');
   });
 });
 
 describe('HierarchyView close dialog', () => {
-  it('uses the same close dialog and the real assignments route', async () => {
-    mockLocationApis();
+  function hierarchyFetch() {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).includes('/api/app/hierarchy/tree')) {
         return {
@@ -330,6 +430,12 @@ describe('HierarchyView close dialog', () => {
       }
       return { ok: true, json: async () => ({ data: [] }) };
     }));
+  }
+
+  it('uses the same close dialog and the real assignments route as Steward', async () => {
+    authMock.role = 'Steward';
+    mockLocationApis();
+    hierarchyFetch();
 
     render(
       <MemoryRouter>
@@ -346,5 +452,30 @@ describe('HierarchyView close dialog', () => {
       expect(api.apiGet).toHaveBeenCalledWith('/api/app/assignments/location/loc-1');
     });
     expect(screen.getByText(/John Smith/)).toBeTruthy();
+    expect(screen.getByText(/Future Lead/)).toBeTruthy();
+    expect(screen.getByText(/Only an Admin can undo this/)).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText('5678'), { target: { value: '5678' } });
+    fireEvent.click(screen.getByRole('button', { name: /Close store #5678/i }));
+    await waitFor(() => {
+      expect(api.apiPost).toHaveBeenCalledWith('/api/app/hierarchy/locations/loc-1/retire');
+    });
+    expect(await screen.findByText('Store #5678 is now permanently closed')).toBeTruthy();
+    await waitFor(() => {
+      const treeCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter((call) => String(call[0]).includes('/api/app/hierarchy/tree'));
+      expect(treeCalls.length).toBeGreaterThan(1);
+    });
+  });
+
+  it('does not show Close to a Leader', async () => {
+    authMock.role = 'Leader';
+    hierarchyFetch();
+    render(
+      <MemoryRouter>
+        <HierarchyView />
+      </MemoryRouter>
+    );
+    expect(await screen.findByText(/don't have access|do not have access|Access denied/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Close store permanently/i })).toBeNull();
   });
 });

@@ -502,7 +502,7 @@ function parseAndValidateRows(
     seenNormalizedNumbers.add(normalizedNum);
 
     const retiredMatch = existing.retiredByNormalizedNum.get(normalizedNum);
-    if (retiredMatch && !(row.locationId || '').trim()) {
+    if (retiredMatch) {
       results.push({
         row: rowNum,
         action: 'error',

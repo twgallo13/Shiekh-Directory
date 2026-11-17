@@ -36,6 +36,7 @@ export function LocationDetailView() {
   const focusClosedBanner = useRef(false);
   const focusPageHeading = useRef(false);
   const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [closedBy, setClosedBy] = useState<{ who: string; at: string } | null>(null);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [assignments, setAssignments] = useState<{
@@ -48,7 +49,7 @@ export function LocationDetailView() {
     isActive: boolean;
   }[]>([]);
   
-  const { authUser } = useAuth();
+  const { authUser, getIdToken } = useAuth();
   const navigate = useNavigate();
   
   useDocumentTitle(location ? `Store #${location.storeNumber}` : 'Loading...');
@@ -57,11 +58,11 @@ export function LocationDetailView() {
     ? canEditLocation(authUser, location.id)
     : { closure: false, hours: false, contactInfo: false, directions: false, assignments: false };
   
-  const fetchLocation = useCallback(async () => {
+  const fetchLocation = useCallback(async (silent = false) => {
     if (!id) return;
     
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       
       const response = await apiGet(`/api/app/locations/${id}`);
@@ -119,6 +120,48 @@ export function LocationDetailView() {
   const [restoreError, setRestoreError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!location || location.lifecycle !== 'retired') {
+      setClosedBy(null);
+      return;
+    }
+    const canLoadCloseAudit = authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin';
+    if (!canLoadCloseAudit) {
+      setClosedBy(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getIdToken();
+        const response = await fetch(`/api/app/audit/location/${location.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          if (!cancelled) setClosedBy(null);
+          return;
+        }
+        const body = await response.json();
+        const entries = Array.isArray(body.data) ? body.data : [];
+        const closes = entries.filter((entry: { timestamp?: string; userEmail?: string; changes?: { field?: string; newValue?: string }[] }) =>
+          (entry.changes || []).some((change) => change.field === 'lifecycle' && change.newValue === 'retired')
+        );
+        closes.sort((a: { timestamp?: string }, b: { timestamp?: string }) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+        const newest = closes[0];
+        if (!cancelled) {
+          setClosedBy(newest?.timestamp ? { who: (newest.userEmail || '').trim(), at: newest.timestamp } : null);
+        }
+      } catch {
+        if (!cancelled) setClosedBy(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // getIdToken is stable in AuthContext; the test mock builds a new function each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location, authUser?.role]);
+
+  useEffect(() => {
     if (focusClosedBanner.current && location?.lifecycle === 'retired') {
       focusClosedBanner.current = false;
       document.getElementById('permanently-closed-banner')?.focus();
@@ -146,9 +189,9 @@ export function LocationDetailView() {
         const errorData = await response.json();
         const code = errorData.error?.code;
         if (code === 'district_retired') {
-          setRestoreError("This store's district was removed. Ask an Admin to set the district up again in Hierarchy, then try again.");
+          setRestoreError("This store can't be restored because its district was removed. To bring it back, add it as a new store in an active district from Hierarchy.");
         } else if (code === 'region_retired') {
-          setRestoreError("This store's region was removed. Ask an Admin to set the region up again in Hierarchy, then try again.");
+          setRestoreError("This store can't be restored because its region was removed. To bring it back, add it as a new store in an active region from Hierarchy.");
         } else if (code === 'duplicate_store_number') {
           setRestoreError(`Store #${location.storeNumber} is already used by an open store.`);
         } else {
@@ -246,11 +289,11 @@ export function LocationDetailView() {
             role="status"
             className="bg-gray-100 border border-gray-300 text-gray-800 rounded-lg px-4 py-3 outline-none"
           >
-            Permanently closed on {new Date(location.updatedAt).toLocaleDateString('en-US', {
+            Permanently closed on {new Date(closedBy?.at || location.updatedAt).toLocaleDateString('en-US', {
               month: 'long',
               day: 'numeric',
               year: 'numeric',
-            })} by {authUser && location.updatedBy === authUser.uid ? authUser.displayName : 'a directory admin'}
+            })}{closedBy?.who ? ` by ${closedBy.who}` : ''}
           </div>
         )}
         {/* Store Verification for Store accounts */}
@@ -978,6 +1021,9 @@ export function LocationDetailView() {
         storeNumber={location.storeNumber}
         storeName={location.name}
         isAdmin={!!isAdmin}
+        onAlreadyRetired={() => {
+          void fetchLocation(true);
+        }}
         onClosed={() => {
           setShowCloseDialog(false);
           setSuccessToast(`Store #${location.storeNumber} is now permanently closed`);

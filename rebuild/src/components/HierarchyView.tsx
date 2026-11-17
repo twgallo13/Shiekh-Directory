@@ -84,6 +84,7 @@ export function HierarchyView() {
   const [removeLoading, setRemoveLoading] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [closeStore, setCloseStore] = useState<{ id: string; storeNumber: string; name: string } | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
   
   const isStewardOrAdmin = authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const canManage = isStewardOrAdmin;
@@ -593,10 +594,19 @@ export function HierarchyView() {
           storeName={closeStore.name}
           isAdmin={authUser?.role === 'Admin'}
           onClosed={() => {
+            const storeNumber = closeStore.storeNumber;
             setCloseStore(null);
+            setSuccessToast(`Store #${storeNumber} is now permanently closed`);
+            setTimeout(() => setSuccessToast(null), 3000);
             void fetchHierarchy();
           }}
         />
+      )}
+
+      {successToast && (
+        <div role="status" aria-live="polite" className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-50">
+          {successToast}
+        </div>
       )}
     </div>
   );

@@ -344,4 +344,45 @@ describe('Import Route - Store Manager Phone', () => {
   });
 });
 
+describe('Import - Closed store number', () => {
+  before(async () => {
+    await seedTestUsers();
+  });
+
+  it('rejects a closed store number even when the row includes a Location ID', async () => {
+    const storeNumber = String(9700 + (Date.now() % 200));
+    const db = getTestDb();
+    const now = new Date().toISOString();
+    const retiredRef = await db.collection('locations').add({
+      storeNumber,
+      name: 'Closed import store',
+      lifecycle: 'retired',
+      kind: 'store',
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+      version: 1,
+    });
+
+    const csv = [
+      'storeNumber,name,locationId',
+      `${storeNumber},"Closed import store","not-${retiredRef.id}"`,
+    ].join('\n');
+
+    const previewRes = await fetchApi('/api/app/import/legacy/preview', {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    });
+    assert.strictEqual(previewRes.status, 200, 'preview should succeed');
+    const previewBody = await previewRes.json();
+    const row = previewBody.preview.rows.find((entry: { storeNumber: string }) => entry.storeNumber === storeNumber);
+    assert.ok(row, 'preview should include the closed store row');
+    assert.strictEqual(row.action, 'error');
+    assert.match(String(row.message), new RegExp(`Store #${storeNumber} is permanently closed`));
+    assert.strictEqual(row.restoreLocationId, retiredRef.id);
+    assert.strictEqual(previewBody.preview.toCreate, 0);
+    assert.strictEqual(previewBody.preview.valid, false);
+  });
+});
+
 console.log('Import tests loaded');

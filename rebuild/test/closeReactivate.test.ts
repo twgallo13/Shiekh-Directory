@@ -266,7 +266,7 @@ describe('Store Close (Retire) Tests', () => {
 
     assert.strictEqual(res.status, 200, 'Admin should succeed');
     const body = await res.json();
-    assert.strictEqual(body.data.reactivated, true);
+    assert.strictEqual(body.data.lifecycle, 'active', 'response should include lifecycle: active');
 
     const afterDoc = await db.collection('locations').doc(locationId).get();
     const afterData = afterDoc.data()!;
@@ -433,7 +433,7 @@ describe('Reactivate Conflict Tests', () => {
 
     assert.strictEqual(res.status, 409, 'should get 409 for duplicate number');
     const body = await res.json();
-    assert.strictEqual(body.error.code, 'store_number_in_use');
+    assert.strictEqual(body.error.code, 'duplicate_store_number');
   });
 
   it('7b. Duplicate check uses trimmed comparison', async () => {

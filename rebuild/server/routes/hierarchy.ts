@@ -1068,7 +1068,7 @@ export function createHierarchyRouter(db: Firestore): Router {
             const district = districtDoc.data() as District;
             if (district.lifecycle === 'retired') {
               return {
-                error: 'invalid_district',
+                error: 'district_retired',
                 status: 409,
                 message: 'Cannot reactivate: the district is retired. Move the store first.',
               };
@@ -1082,7 +1082,7 @@ export function createHierarchyRouter(db: Firestore): Router {
             const region = regionDoc.data() as Region;
             if (region.lifecycle === 'retired') {
               return {
-                error: 'invalid_region',
+                error: 'region_retired',
                 status: 409,
                 message: 'Cannot reactivate: the region is retired. Move the store first.',
               };

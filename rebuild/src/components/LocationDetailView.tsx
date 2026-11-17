@@ -217,7 +217,7 @@ export function LocationDetailView() {
           setRestoreError('Its district was removed. Restore the district first, or move this store to an active district.');
         } else if (code === 'region_retired') {
           setRestoreError('Its region was removed. Restore the region first.');
-        } else if (code === 'store_number_in_use') {
+        } else if (code === 'duplicate_store_number') {
           setRestoreError('This store number is already in use by another active store.');
         } else {
           setRestoreError(errorData.error?.message || 'Failed to restore store. Try again.');

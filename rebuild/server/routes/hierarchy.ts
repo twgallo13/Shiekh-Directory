@@ -870,30 +870,123 @@ export function createHierarchyRouter(db: Firestore): Router {
       }
 
       const now = new Date();
-      const todayStr = now.toISOString().slice(0, 10);
+      const nowStr = now.toISOString();
+      const todayStr = nowStr.slice(0, 10);
+      const closeNote = 'Store permanently closed';
 
-      const activeAssignments = await db.collection('assignments')
+      const assignmentsSnap = await db.collection('assignments')
         .where('scopeType', '==', 'location')
         .where('scopeId', '==', id)
         .get();
 
       const batch = db.batch();
+      let assignmentsEnded = 0;
 
-      for (const doc of activeAssignments.docs) {
+      for (const doc of assignmentsSnap.docs) {
         const assignment = doc.data() as Assignment;
         if (isAssignmentActive(assignment, todayStr)) {
           batch.update(doc.ref, {
             endDate: todayStr,
-            endedAt: now.toISOString(),
-            updatedAt: now.toISOString(),
+            endedAt: nowStr,
+            updatedAt: nowStr,
             updatedBy: authUser.uid,
           });
+          assignmentsEnded++;
         }
+      }
+
+      const verificationsSnap = await db.collection('verificationRequests')
+        .where('locationId', '==', id)
+        .where('status', 'in', ['pending', 'awaiting_response', 'in_review'])
+        .get();
+      let verificationsCancelled = 0;
+      for (const doc of verificationsSnap.docs) {
+        batch.update(doc.ref, {
+          status: 'cancelled',
+          cancelledAt: nowStr,
+          cancelledBy: authUser.uid,
+          cancelledReason: closeNote,
+        });
+        verificationsCancelled++;
+      }
+
+      const correctionsSnap = await db.collection('corrections')
+        .where('locationId', '==', id)
+        .where('status', '==', 'pending')
+        .get();
+      let correctionsCancelled = 0;
+      for (const doc of correctionsSnap.docs) {
+        batch.update(doc.ref, {
+          status: 'cancelled',
+          cancelledAt: nowStr,
+          cancelledBy: authUser.uid,
+          cancelReason: closeNote,
+        });
+        correctionsCancelled++;
+      }
+
+      const dmTasksSnap = await db.collection('dmTasks')
+        .where('locationId', '==', id)
+        .where('status', 'in', ['pending', 'in_progress'])
+        .get();
+      let dmTasksCancelled = 0;
+      for (const doc of dmTasksSnap.docs) {
+        batch.update(doc.ref, {
+          status: 'cancelled',
+          closedAt: nowStr,
+          closedBy: authUser.uid,
+          closedReason: closeNote,
+        });
+        dmTasksCancelled++;
+      }
+
+      const dmVerificationsSnap = await db.collection('dmVerificationRequests')
+        .where('locationId', '==', id)
+        .where('status', 'in', ['pending', 'in_progress'])
+        .get();
+      let dmVerificationsCancelled = 0;
+      for (const doc of dmVerificationsSnap.docs) {
+        batch.update(doc.ref, {
+          status: 'cancelled',
+          cancelledAt: nowStr,
+          cancelledBy: authUser.uid,
+        });
+        dmVerificationsCancelled++;
+      }
+
+      const closuresSnap = await db.collection('locations').doc(id)
+        .collection('closures')
+        .where('status', '==', 'active')
+        .get();
+      let closuresEnded = 0;
+      for (const doc of closuresSnap.docs) {
+        batch.update(doc.ref, {
+          status: 'ended',
+          endsAt: nowStr,
+          endedBy: authUser.uid,
+          endedAt: nowStr,
+          endedReason: closeNote,
+        });
+        closuresEnded++;
+      }
+
+      const sessionsSnap = await db.collection('storeSessions')
+        .where('locationId', '==', id)
+        .where('revoked', '==', false)
+        .get();
+      let sessionsRevoked = 0;
+      for (const doc of sessionsSnap.docs) {
+        batch.update(doc.ref, {
+          revoked: true,
+          revokedAt: nowStr,
+          revokedBy: authUser.uid,
+        });
+        sessionsRevoked++;
       }
 
       batch.update(locationDoc.ref, {
         lifecycle: 'retired',
-        updatedAt: now.toISOString(),
+        updatedAt: nowStr,
         updatedBy: authUser.uid,
         version: (currentLocation.version || 0) + 1,
       });
@@ -910,17 +1003,154 @@ export function createHierarchyRouter(db: Firestore): Router {
         entityName: `#${currentLocation.storeNumber} ${currentLocation.name}`,
         locationId: id,
         changes: [
-          { field: 'lifecycle', oldValue: 'active', newValue: 'retired' },
+          { field: 'lifecycle', oldValue: currentLocation.lifecycle || 'active', newValue: 'retired' },
         ],
       });
 
       return res.json({
-        data: { id, retired: true, assignmentsEnded: activeAssignments.size },
+        data: {
+          id,
+          retired: true,
+          assignmentsEnded,
+          verificationsCancelled,
+          correctionsCancelled,
+          dmTasksCancelled,
+          dmVerificationsCancelled,
+          closuresEnded,
+          sessionsRevoked,
+        },
       });
     } catch (error) {
       console.error('Retire location error:', error);
       return res.status(500).json({
         error: { code: 'retire_error', message: 'Failed to retire location', requestId: res.locals.requestId },
+      });
+    }
+  });
+
+  router.post('/locations/:id/reactivate', async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const authUser = res.locals.authUser as AuthUser;
+
+      if (!authUser) {
+        return res.status(401).json({
+          error: { code: 'unauthorized', message: 'Not authenticated', requestId: res.locals.requestId },
+        });
+      }
+
+      if (authUser.role !== 'Admin') {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Admin can reactivate locations', requestId: res.locals.requestId },
+        });
+      }
+
+      const result = await db.runTransaction(async (transaction) => {
+        const locationDoc = await transaction.get(db.collection('locations').doc(id));
+        if (!locationDoc.exists) {
+          return { error: 'not_found', status: 404, message: 'Location not found' };
+        }
+
+        const location = locationDoc.data() as Location;
+
+        if (location.lifecycle !== 'retired') {
+          return { error: 'not_retired', status: 409, message: 'Location is not retired' };
+        }
+
+        const duplicateSnap = await transaction.get(
+          db.collection('locations')
+            .where('storeNumber', '==', location.storeNumber.trim())
+            .where('lifecycle', 'in', ['active', 'planned'])
+        );
+
+        for (const doc of duplicateSnap.docs) {
+          if (doc.id !== id) {
+            return {
+              error: 'duplicate_store_number',
+              status: 409,
+              message: `Store number ${location.storeNumber} is already in use by another active store`,
+            };
+          }
+        }
+
+        if (location.districtId) {
+          const districtDoc = await transaction.get(db.collection('districts').doc(location.districtId));
+          if (districtDoc.exists) {
+            const district = districtDoc.data() as District;
+            if (district.lifecycle === 'retired') {
+              return {
+                error: 'invalid_district',
+                status: 409,
+                message: 'Cannot reactivate: the district is retired. Move the store first.',
+              };
+            }
+          }
+        }
+
+        if (location.regionId) {
+          const regionDoc = await transaction.get(db.collection('regions').doc(location.regionId));
+          if (regionDoc.exists) {
+            const region = regionDoc.data() as Region;
+            if (region.lifecycle === 'retired') {
+              return {
+                error: 'invalid_region',
+                status: 409,
+                message: 'Cannot reactivate: the region is retired. Move the store first.',
+              };
+            }
+          }
+        }
+
+        const now = new Date().toISOString();
+        const newVersion = (location.version || 0) + 1;
+
+        transaction.update(locationDoc.ref, {
+          lifecycle: 'active',
+          updatedAt: now,
+          updatedBy: authUser.uid,
+          version: newVersion,
+        });
+
+        const auditRef = db.collection('auditLog').doc();
+        transaction.set(auditRef, {
+          id: auditRef.id,
+          timestamp: now,
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'update',
+          entityType: 'location',
+          entityId: id,
+          entityName: `#${location.storeNumber} ${location.name}`,
+          locationId: id,
+          changes: [
+            { field: 'lifecycle', oldValue: 'retired', newValue: 'active' },
+          ],
+        });
+
+        return {
+          success: true,
+          data: {
+            id,
+            storeNumber: location.storeNumber,
+            name: location.name,
+            lifecycle: 'active',
+            version: newVersion,
+          },
+        };
+      });
+
+      if ('error' in result && result.error) {
+        return res.status(result.status!).json({
+          error: { code: result.error, message: result.message, requestId: res.locals.requestId },
+        });
+      }
+
+      return res.json({ data: result.data });
+    } catch (error) {
+      console.error('Reactivate location error:', error);
+      return res.status(500).json({
+        error: { code: 'reactivate_error', message: 'Failed to reactivate location', requestId: res.locals.requestId },
       });
     }
   });

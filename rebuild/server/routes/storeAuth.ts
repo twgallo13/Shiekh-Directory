@@ -101,21 +101,32 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const uniqueFormats = [...new Set(storeNumberFormats)];
 
       let locationDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+      let foundRetiredStore = false;
       
       for (const format of uniqueFormats) {
         const query = await db.collection('locations')
           .where('storeNumber', '==', format)
-          .where('lifecycle', '==', 'active')
           .limit(1)
           .get();
         
         if (!query.empty) {
-          locationDoc = query.docs[0];
-          break;
+          const doc = query.docs[0];
+          const loc = doc.data();
+          if (loc.lifecycle === 'active') {
+            locationDoc = doc;
+            break;
+          } else if (loc.lifecycle === 'retired') {
+            foundRetiredStore = true;
+          }
         }
       }
 
       if (!locationDoc) {
+        if (foundRetiredStore) {
+          return res.status(400).json({
+            error: { code: 'store_permanently_closed', message: 'This store is permanently closed', requestId: res.locals.requestId },
+          });
+        }
         return res.status(404).json({
           error: { code: 'store_not_found', message: 'No active store found for this email', requestId: res.locals.requestId },
         });

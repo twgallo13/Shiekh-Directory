@@ -31,6 +31,11 @@ export function LocationDetailView() {
   const [confirmReopen, setConfirmReopen] = useState(false);
   const [undoToast, setUndoToast] = useState<{ message: string; action: 'reopen' | 'renew'; closureId: string } | null>(null);
   const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [closeConfirmText, setCloseConfirmText] = useState('');
+  const [closeLoading, setCloseLoading] = useState(false);
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
   const [assignments, setAssignments] = useState<{
     id: string;
     personId: string;
@@ -46,7 +51,7 @@ export function LocationDetailView() {
   
   useDocumentTitle(location ? `Store #${location.storeNumber}` : 'Loading...');
   
-  const editPermissions = authUser && location
+  const editPermissions = authUser && location && location.lifecycle !== 'retired'
     ? canEditLocation(authUser, location.id)
     : { closure: false, hours: false, contactInfo: false, directions: false, assignments: false };
   
@@ -109,6 +114,47 @@ export function LocationDetailView() {
     }
   };
   
+  const handleCloseStore = async () => {
+    if (!location || closeConfirmText !== location.storeNumber) return;
+    setCloseLoading(true);
+    try {
+      const response = await apiPost(`/api/app/hierarchy/locations/${location.id}/retire`);
+      if (response.ok) {
+        setShowCloseDialog(false);
+        setCloseConfirmText('');
+        setSuccessToast('Store permanently closed');
+        setTimeout(() => setSuccessToast(null), 3000);
+        fetchLocation();
+      }
+    } finally {
+      setCloseLoading(false);
+    }
+  };
+  
+  const handleRestoreStore = async () => {
+    if (!location) return;
+    setRestoreLoading(true);
+    try {
+      const response = await apiPost(`/api/app/hierarchy/locations/${location.id}/reactivate`);
+      if (response.ok) {
+        setShowRestoreDialog(false);
+        setSuccessToast('Store restored');
+        setTimeout(() => setSuccessToast(null), 3000);
+        fetchLocation();
+      } else {
+        const errorData = await response.json();
+        setShowRestoreDialog(false);
+        setError(errorData.error?.message || 'Failed to restore store');
+      }
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+  
+  const isRetired = location?.lifecycle === 'retired';
+  const canManageHierarchy = authUser && ['Steward', 'Admin'].includes(authUser.role);
+  const isAdmin = authUser?.role === 'Admin';
+  
   if (loading) {
     return (
       <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
@@ -169,7 +215,13 @@ export function LocationDetailView() {
               </p>
             </div>
             <div className="hidden lg:block ml-auto">
-              <StatusBadge status={location.statusNow.state} large />
+              {isRetired ? (
+                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700">
+                  Permanently closed
+                </span>
+              ) : (
+                <StatusBadge status={location.statusNow.state} large />
+              )}
             </div>
           </div>
         </div>
@@ -197,11 +249,17 @@ export function LocationDetailView() {
                   {location.districtName} • {location.regionName}
                 </p>
               </div>
-              <StatusBadge status={location.statusNow.state} large />
+              {isRetired ? (
+                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-700">
+                  Permanently closed
+                </span>
+              ) : (
+                <StatusBadge status={location.statusNow.state} large />
+              )}
             </div>
           
           {/* Closure Alert */}
-          {location.activeClosure && (
+          {!isRetired && location.activeClosure && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -702,7 +760,7 @@ export function LocationDetailView() {
         <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900">Store Information</h3>
-            {authUser && (authUser.role === 'Admin' || authUser.role === 'Steward') && (
+            {!isRetired && authUser && (authUser.role === 'Admin' || authUser.role === 'Steward') && (
               <button
                 onClick={() => setEditingField('storeType')}
                 className="min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg -m-2"
@@ -736,6 +794,28 @@ export function LocationDetailView() {
               </div>
             )}
           </dl>
+          
+          {/* Close/Restore buttons */}
+          {isRetired && isAdmin && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowRestoreDialog(true)}
+                className="w-full py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors min-h-[44px]"
+              >
+                Restore store
+              </button>
+            </div>
+          )}
+          {!isRetired && canManageHierarchy && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowCloseDialog(true)}
+                className="w-full py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors min-h-[44px]"
+              >
+                Close store permanently…
+              </button>
+            </div>
+          )}
         </div>
         
         {/* Report a Problem - available to all signed-in users */}
@@ -859,6 +939,89 @@ export function LocationDetailView() {
       >
         <p className="text-gray-600">
           Are you sure you want to end the closure and reopen the store? This will immediately mark the store as open.
+        </p>
+      </Dialog>
+      
+      {/* Close Store Permanently Dialog */}
+      <Dialog
+        isOpen={showCloseDialog}
+        onClose={() => {
+          setShowCloseDialog(false);
+          setCloseConfirmText('');
+        }}
+        title="Close Store Permanently"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setShowCloseDialog(false);
+                setCloseConfirmText('');
+              }}
+              className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCloseStore}
+              disabled={closeConfirmText !== location?.storeNumber || closeLoading}
+              className="flex-1 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+            >
+              {closeLoading ? 'Closing...' : 'Close Permanently'}
+            </button>
+          </div>
+        }
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">
+            This will permanently close <strong>Store #{location?.storeNumber}</strong>. All open requests, corrections, and verifications will be cancelled. Store sessions will be revoked.
+          </p>
+          <p className="text-gray-600 text-sm">
+            Only an Admin can undo this action.
+          </p>
+          <div>
+            <label htmlFor="close-confirm" className="block text-sm font-medium text-gray-700 mb-1">
+              Type <span className="font-mono bg-gray-100 px-1 rounded">{location?.storeNumber}</span> to confirm
+            </label>
+            <input
+              id="close-confirm"
+              type="text"
+              value={closeConfirmText}
+              onChange={(e) => setCloseConfirmText(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              placeholder={location?.storeNumber}
+              autoComplete="off"
+            />
+          </div>
+        </div>
+      </Dialog>
+      
+      {/* Restore Store Dialog */}
+      <Dialog
+        isOpen={showRestoreDialog}
+        onClose={() => setShowRestoreDialog(false)}
+        title="Restore Store"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowRestoreDialog(false)}
+              className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleRestoreStore}
+              disabled={restoreLoading}
+              className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 min-h-[44px]"
+            >
+              {restoreLoading ? 'Restoring...' : 'Restore Store'}
+            </button>
+          </div>
+        }
+        size="sm"
+      >
+        <p className="text-gray-600">
+          This will restore <strong>Store #{location?.storeNumber}</strong> to active status. The store will appear in the directory and can receive new requests.
         </p>
       </Dialog>
       

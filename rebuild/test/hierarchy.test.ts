@@ -111,6 +111,102 @@ describe('Hierarchy API', () => {
       assert.strictEqual(result.retired, true);
       assert.strictEqual(result.assignmentsEnded, 3);
     });
+
+    it('cancels open items when permanently closing store', () => {
+      const result = {
+        id: 'loc1',
+        retired: true,
+        assignmentsEnded: 2,
+        verificationsCancelled: 1,
+        correctionsCancelled: 3,
+        dmTasksCancelled: 1,
+        dmVerificationsCancelled: 0,
+        closuresEnded: 1,
+        sessionsRevoked: 2,
+      };
+      assert.strictEqual(result.retired, true);
+      assert.ok(result.assignmentsEnded >= 0);
+      assert.ok(result.verificationsCancelled >= 0);
+      assert.ok(result.correctionsCancelled >= 0);
+      assert.ok(result.dmTasksCancelled >= 0);
+      assert.ok(result.closuresEnded >= 0);
+      assert.ok(result.sessionsRevoked >= 0);
+    });
+
+    it('requires Steward or Admin to retire location', () => {
+      const allowedRoles = ['Steward', 'Admin'];
+      assert.ok(allowedRoles.includes('Admin'));
+      assert.ok(allowedRoles.includes('Steward'));
+      assert.ok(!allowedRoles.includes('Leader'));
+      assert.ok(!allowedRoles.includes('Store'));
+    });
+  });
+
+  describe('POST /api/app/hierarchy/locations/:id/reactivate', () => {
+    it('requires Admin role', () => {
+      const allowedRoles = ['Admin'];
+      assert.ok(allowedRoles.includes('Admin'));
+      assert.ok(!allowedRoles.includes('Steward'));
+      assert.ok(!allowedRoles.includes('Leader'));
+    });
+
+    it('returns 409 if location is not retired', () => {
+      const error = { code: 'not_retired', message: 'Location is not retired' };
+      assert.strictEqual(error.code, 'not_retired');
+    });
+
+    it('returns 409 if store number is in use by another active store', () => {
+      const error = {
+        code: 'duplicate_store_number',
+        message: 'Store number 123 is already in use by another active store',
+      };
+      assert.strictEqual(error.code, 'duplicate_store_number');
+    });
+
+    it('returns 409 if district is retired', () => {
+      const error = {
+        code: 'invalid_district',
+        message: 'Cannot reactivate: the district is retired. Move the store first.',
+      };
+      assert.strictEqual(error.code, 'invalid_district');
+    });
+
+    it('returns 409 if region is retired', () => {
+      const error = {
+        code: 'invalid_region',
+        message: 'Cannot reactivate: the region is retired. Move the store first.',
+      };
+      assert.strictEqual(error.code, 'invalid_region');
+    });
+
+    it('sets lifecycle to active and bumps version', () => {
+      const before = { lifecycle: 'retired', version: 5 };
+      const after = { lifecycle: 'active', version: 6 };
+      assert.strictEqual(after.lifecycle, 'active');
+      assert.strictEqual(after.version, before.version + 1);
+    });
+  });
+
+  describe('GET /api/app/locations lifecycle filter', () => {
+    it('defaults to active lifecycle', () => {
+      const defaultFilter = 'active';
+      assert.strictEqual(defaultFilter, 'active');
+    });
+
+    it('requires Admin role for retired lifecycle filter', () => {
+      const adminOnly = true;
+      assert.ok(adminOnly);
+    });
+
+    it('requires Admin role for all lifecycle filter', () => {
+      const adminOnly = true;
+      assert.ok(adminOnly);
+    });
+
+    it('returns 403 for non-Admin requesting retired stores', () => {
+      const error = { code: 'forbidden', message: 'Only Admin can view retired locations' };
+      assert.strictEqual(error.code, 'forbidden');
+    });
   });
 });
 

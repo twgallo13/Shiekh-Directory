@@ -16,7 +16,6 @@ const PrintableDirectoryView = lazy(() => import('./components/PrintableDirector
 const AdminView = lazy(() => import('./components/AdminView').then(m => ({ default: m.AdminView })));
 const PeopleListView = lazy(() => import('./components/PeopleListView').then(m => ({ default: m.PeopleListView })));
 const HierarchyView = lazy(() => import('./components/HierarchyView').then(m => ({ default: m.HierarchyView })));
-const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
 const ClosuresBoardPage = lazy(() => import('./components/ClosuresBoardPage').then(m => ({ default: m.ClosuresBoardPage })));
 const StaleStoresView = lazy(() => import('./components/StaleStoresView').then(m => ({ default: m.StaleStoresView })));
 const FinishSignInView = lazy(() => import('./components/FinishSignInView').then(m => ({ default: m.FinishSignInView })));
@@ -282,14 +281,6 @@ function AppRoutes() {
             <RouteErrorBoundary>
               <HierarchyView />
             </RouteErrorBoundary>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <ProtectedRoute>
-            <SettingsView />
           </ProtectedRoute>
         }
       />

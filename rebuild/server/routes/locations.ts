@@ -31,7 +31,8 @@ export function createLocationsRouter(db: Firestore): Router {
 
   router.get('/', async (req: Request, res: Response) => {
     try {
-      const { districtId, regionId, kind, storeType, limit } = req.query;
+      const { districtId, regionId, kind, storeType, limit, lifecycle } = req.query;
+      const authUser = res.locals.authUser as { uid: string; role: string } | undefined;
       
       // Validate storeType if provided
       if (storeType && typeof storeType === 'string' && !VALID_STORE_TYPES.has(storeType)) {
@@ -47,6 +48,20 @@ export function createLocationsRouter(db: Firestore): Router {
         });
       }
 
+      // Validate lifecycle if provided
+      const lifecycleFilter = (lifecycle as string) || 'active';
+      if (!['active', 'retired', 'all'].includes(lifecycleFilter)) {
+        return res.status(400).json({
+          error: { code: 'invalid_lifecycle', message: 'Invalid lifecycle. Valid values: active, retired, all', requestId: res.locals.requestId },
+        });
+      }
+
+      if (lifecycleFilter !== 'active' && authUser?.role !== 'Admin') {
+        return res.status(403).json({
+          error: { code: 'forbidden', message: 'Only Admin can view retired locations', requestId: res.locals.requestId },
+        });
+      }
+
       // Validate limit if provided
       if (limit !== undefined) {
         const limitNum = Number(limit);
@@ -57,8 +72,12 @@ export function createLocationsRouter(db: Firestore): Router {
         }
       }
       
-      let query = db.collection('locations')
-        .where('lifecycle', '==', 'active');
+      let query = db.collection('locations') as FirebaseFirestore.Query;
+      if (lifecycleFilter === 'all') {
+        query = query.where('lifecycle', 'in', ['active', 'planned', 'retired']);
+      } else {
+        query = query.where('lifecycle', '==', lifecycleFilter);
+      }
       
       const kindFilter = kind as string || 'store';
       if (kindFilter !== 'all') {

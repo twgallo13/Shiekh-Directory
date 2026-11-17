@@ -2,11 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Menu, User, LogOut, ClipboardCheck, Calendar, Printer, Users, Network,
-  FileCheck, Settings, AlertTriangle, Clock, Database, X, Home, FileText,
-  ChevronDown
+  FileCheck, AlertTriangle, Clock, X, Home, FileText, ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { canApproveCorrections, canAccessBackups } from '../lib/permissions';
+import { canApproveCorrections } from '../lib/permissions';
 import { OfflineBanner } from './OfflineBanner';
 import { HeaderSearch } from './HeaderSearch';
 
@@ -17,10 +16,12 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopDropdownOpen, setDesktopDropdownOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileButtonRef = useRef<HTMLButtonElement>(null);
   const desktopDropdownRef = useRef<HTMLDivElement>(null);
   const desktopButtonRef = useRef<HTMLButtonElement>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
   
   const { signOut, user, authUser, storeSession } = useAuth();
   const navigate = useNavigate();
@@ -31,7 +32,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isLeaderOrAbove = authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isStewardOrAdmin = authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isAdmin = authUser?.role === 'Admin';
-  const showBackups = canAccessBackups(authUser);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -51,6 +51,15 @@ export function AppLayout({ children }: AppLayoutProps) {
       ) {
         setDesktopDropdownOpen(false);
       }
+      if (
+        accountMenuRef.current &&
+        !accountMenuRef.current.contains(event.target as Node)
+      ) {
+        const accountButton = accountMenuRef.current.previousElementSibling;
+        if (accountButton && !accountButton.contains(event.target as Node)) {
+          setAccountMenuOpen(false);
+        }
+      }
     }
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -62,7 +71,41 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     setMobileMenuOpen(false);
     setDesktopDropdownOpen(false);
+    setAccountMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+        mobileButtonRef.current?.focus();
+        return;
+      }
+
+      if (e.key !== 'Tab' || !mobileMenuRef.current) return;
+
+      const focusableElements = mobileMenuRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      } else if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [mobileMenuOpen]);
 
   const handleNavigation = (path: string) => {
     navigate(path);
@@ -173,7 +216,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
               )}
 
-              {/* More dropdown */}
+              {/* Tools dropdown */}
               <div className="relative">
                 <button
                   ref={desktopButtonRef}
@@ -182,7 +225,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     desktopDropdownOpen ? 'bg-blue-600' : 'hover:bg-blue-600/50'
                   }`}
                 >
-                  More
+                  Tools
                   <ChevronDown className={`w-4 h-4 transition-transform ${desktopDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
                 
@@ -207,56 +250,58 @@ export function AppLayout({ children }: AppLayoutProps) {
                         Stale Stores
                       </DropdownItem>
                     )}
-                    {showBackups && (
-                      <DropdownItem
-                        icon={Database}
-                        onClick={() => handleNavigation('/admin?tab=backups')}
-                      >
-                        Backups
-                      </DropdownItem>
-                    )}
-                    <DropdownItem
-                      icon={FileText}
-                      onClick={() => handleNavigation('/my-requests')}
-                    >
-                      My Requests
-                    </DropdownItem>
                     <DropdownItem
                       icon={Printer}
                       onClick={() => handleNavigation('/print')}
                     >
                       Print / Export
                     </DropdownItem>
-                    <div className="border-t border-gray-100 my-1" />
-                    <DropdownItem
-                      icon={Settings}
-                      onClick={() => handleNavigation('/settings')}
-                    >
-                      Settings
-                    </DropdownItem>
                   </div>
                 )}
               </div>
 
-              {/* User Menu */}
-              <div className="ml-2 pl-2 border-l border-blue-500/50 flex items-center gap-2">
-                <div className="text-right hidden xl:block">
-                  <div className="text-sm font-medium truncate max-w-32">
-                    {user?.email?.split('@')[0] || authUser?.email?.split('@')[0] || 'User'}
-                  </div>
-                  <div className="text-xs text-blue-200">
-                    {authUser?.role}
-                    {authUser?.role === 'Store' && storeSession?.storeNumber && ` • Store #${storeSession.storeNumber}`}
-                  </div>
-                </div>
+              {/* Account Menu */}
+              <div className="relative ml-2 pl-2 border-l border-blue-500/50">
                 <button
-                  onClick={() => signOut()}
-                  className="p-2 hover:bg-blue-600/50 rounded-md transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-                  aria-label="Sign out"
-                  title="Sign Out"
+                  onClick={() => setAccountMenuOpen(!accountMenuOpen)}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
+                    accountMenuOpen ? 'bg-blue-600' : 'hover:bg-blue-600/50'
+                  }`}
+                  aria-label="Account menu"
+                  aria-expanded={accountMenuOpen}
                 >
-                  <LogOut className="w-5 h-5" />
+                  <div className="text-right hidden xl:block">
+                    <div className="text-sm font-medium truncate max-w-32">
+                      {user?.email?.split('@')[0] || authUser?.email?.split('@')[0] || 'User'}
+                    </div>
+                    <div className="text-xs text-blue-200">
+                      {authUser?.role}
+                      {authUser?.role === 'Store' && storeSession?.storeNumber && ` • Store #${storeSession.storeNumber}`}
+                    </div>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
+                
+                {accountMenuOpen && (
+                  <div
+                    ref={accountMenuRef}
+                    className="absolute right-0 top-full mt-1 w-56 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 py-1 z-50"
+                  >
+                    <DropdownItem
+                      icon={FileText}
+                      onClick={() => handleNavigation('/my-requests')}
+                    >
+                      My Requests
+                    </DropdownItem>
+                    <div className="border-t border-gray-100 my-1" />
+                    <DropdownItem
+                      icon={LogOut}
+                      onClick={() => signOut()}
+                    >
+                      Sign Out
+                    </DropdownItem>
+                  </div>
+                )}
               </div>
             </nav>
 
@@ -353,15 +398,6 @@ export function AppLayout({ children }: AppLayoutProps) {
                   </>
                 )}
 
-                {showBackups && (
-                  <MobileMenuItem
-                    icon={Database}
-                    label="Backups"
-                    onClick={() => handleNavigation('/admin?tab=backups')}
-                    isActive={location.pathname === '/admin' && location.search.includes('tab=backups')}
-                  />
-                )}
-
                 <MobileMenuItem
                   icon={FileText}
                   label="My Requests"
@@ -408,12 +444,6 @@ export function AppLayout({ children }: AppLayoutProps) {
 
               </nav>
               <div className="shrink-0 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)]">
-                <MobileMenuItem
-                  icon={Settings}
-                  label="Settings"
-                  onClick={() => handleNavigation('/settings')}
-                  isActive={isActivePath('/settings')}
-                />
                 <MobileMenuItem
                   icon={LogOut}
                   label="Sign Out"

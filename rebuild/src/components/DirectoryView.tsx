@@ -27,6 +27,7 @@ export function DirectoryView() {
   const [selectedDistrict, setSelectedDistrict] = useState<string>(searchParams.get('district') || '');
   const [selectedKind, setSelectedKind] = useState<string>(searchParams.get('kind') || 'store');
   const [selectedStoreType, setSelectedStoreType] = useState<string>(searchParams.get('storeType') || '');
+  const [selectedLifecycle, setSelectedLifecycle] = useState<string>(searchParams.get('lifecycle') || 'active');
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
@@ -34,7 +35,8 @@ export function DirectoryView() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
   
-  const { getIdToken } = useAuth();
+  const { getIdToken, authUser } = useAuth();
+  const isAdmin = authUser?.role === 'Admin';
   const navigate = useNavigate();
   
   const fetchLocations = useCallback(async () => {
@@ -48,6 +50,7 @@ export function DirectoryView() {
       if (selectedDistrict) params.set('districtId', selectedDistrict);
       else if (selectedRegion) params.set('regionId', selectedRegion);
       if (selectedStoreType) params.set('storeType', selectedStoreType);
+      if (selectedLifecycle !== 'active') params.set('lifecycle', selectedLifecycle);
       
       const response = await fetch(`/api/app/locations?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -66,7 +69,7 @@ export function DirectoryView() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken, selectedRegion, selectedDistrict, selectedKind, selectedStoreType]);
+  }, [getIdToken, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, selectedLifecycle]);
   
   const fetchFilters = useCallback(async () => {
     try {
@@ -136,8 +139,9 @@ export function DirectoryView() {
     if (selectedDistrict) params.set('district', selectedDistrict);
     if (selectedKind && selectedKind !== 'store') params.set('kind', selectedKind);
     if (selectedStoreType) params.set('storeType', selectedStoreType);
+    if (selectedLifecycle && selectedLifecycle !== 'active') params.set('lifecycle', selectedLifecycle);
     setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, setSearchParams]);
+  }, [searchQuery, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, selectedLifecycle, setSearchParams]);
   
   const handleCall = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -169,7 +173,7 @@ export function DirectoryView() {
   
   useEffect(() => {
     setPage(1);
-  }, [selectedRegion, selectedDistrict, selectedKind, selectedStoreType]);
+  }, [selectedRegion, selectedDistrict, selectedKind, selectedStoreType, selectedLifecycle]);
   
   return (
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
@@ -226,14 +230,23 @@ export function DirectoryView() {
               </select>
               
               <select
-                value={selectedKind}
-                onChange={(e) => setSelectedKind(e.target.value)}
+                value={selectedLifecycle === 'retired' ? 'retired' : selectedKind}
+                onChange={(e) => {
+                  if (e.target.value === 'retired') {
+                    setSelectedLifecycle('retired');
+                    setSelectedKind('store');
+                  } else {
+                    setSelectedLifecycle('active');
+                    setSelectedKind(e.target.value);
+                  }
+                }}
                 aria-label="Filter by location type"
                 className="w-full lg:w-auto px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white h-[44px] lg:h-[40px]"
               >
                 <option value="store">Stores</option>
                 <option value="facility">Facilities</option>
                 <option value="all">All Locations</option>
+                {isAdmin && <option value="retired">Permanently closed</option>}
               </select>
               
               <select
@@ -334,9 +347,13 @@ export function DirectoryView() {
             {locations.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
                 <Store className="w-12 h-12 text-gray-300 mx-auto" />
-                <p className="mt-4 text-gray-900 font-medium">No locations found</p>
+                <p className="mt-4 text-gray-900 font-medium">
+                  {selectedLifecycle === 'retired' ? 'No permanently closed stores' : 'No locations found'}
+                </p>
                 <p className="mt-2 text-gray-500 text-sm">
-                  {selectedDistrict || selectedRegion || selectedStoreType
+                  {selectedLifecycle === 'retired'
+                    ? 'No stores have been permanently closed'
+                    : selectedDistrict || selectedRegion || selectedStoreType
                     ? 'Try adjusting your filters'
                     : 'No stores have been added yet'}
                 </p>
@@ -397,7 +414,13 @@ export function DirectoryView() {
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            <StatusBadge status={location.statusNow.state} />
+                            {location.lifecycle === 'retired' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                Permanently closed
+                              </span>
+                            ) : (
+                              <StatusBadge status={location.statusNow.state} />
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1">
@@ -448,7 +471,13 @@ export function DirectoryView() {
                           <h2 className="font-medium text-gray-900 text-base">
                             #{location.storeNumber} {location.name}
                           </h2>
-                          <StatusBadge status={location.statusNow.state} />
+                          {location.lifecycle === 'retired' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                              Permanently closed
+                            </span>
+                          ) : (
+                            <StatusBadge status={location.statusNow.state} />
+                          )}
                         </div>
                         <p className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
                           <MapPin className="w-3.5 h-3.5" />

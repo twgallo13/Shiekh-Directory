@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog } from './Dialog';
+import { AccessDenied } from './AccessDenied';
 import type { DMTask, DMTaskStatus } from '../types';
 
 interface Toast {
@@ -14,7 +15,7 @@ interface Toast {
 
 export function DMTasksView() {
   useDocumentTitle('DM Tasks');
-  const { getIdToken } = useAuth();
+  const { getIdToken, authUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const locationIdFilter = searchParams.get('locationId');
@@ -27,6 +28,8 @@ export function DMTasksView() {
   const [processing, setProcessing] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [actionNote, setActionNote] = useState('');
+  
+  const isLeaderOrAbove = authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin';
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     const id = Math.random().toString(36).slice(2);
@@ -119,6 +122,10 @@ export function DMTasksView() {
         return type;
     }
   };
+
+  if (!isLeaderOrAbove) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">

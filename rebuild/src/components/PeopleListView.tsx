@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import type { PersonListItem } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
+import { AccessDenied } from './AccessDenied';
 
 interface CreatePersonForm {
   fullName: string;
@@ -15,6 +16,8 @@ interface CreatePersonForm {
 
 export function PeopleListView() {
   useDocumentTitle('People');
+  const { getIdToken, authUser } = useAuth();
+  const navigate = useNavigate();
   
   const [people, setPeople] = useState<PersonListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,10 +30,8 @@ export function PeopleListView() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
 
-  const { getIdToken, authUser } = useAuth();
-  const navigate = useNavigate();
-
-  const canManage = authUser?.role === 'Steward' || authUser?.role === 'Admin';
+  const isStewardOrAdmin = authUser?.role === 'Steward' || authUser?.role === 'Admin';
+  const canManage = isStewardOrAdmin;
   
   const totalPages = Math.ceil(people.length / PAGE_SIZE);
   const paginatedPeople = people.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -96,6 +97,10 @@ export function PeopleListView() {
       setCreating(false);
     }
   };
+
+  if (!isStewardOrAdmin) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">

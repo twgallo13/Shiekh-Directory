@@ -301,6 +301,7 @@ export interface LocationListItem {
   name: string;
   city: string;
   state: string;
+  lifecycle: LocationLifecycle;
   statusNow: OperatingStatus;
   phone: string;
   phoneFormatted: string;

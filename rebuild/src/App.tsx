@@ -322,7 +322,8 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-        <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/settings" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
   );

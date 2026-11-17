@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronRight, Copy, Check, ExternalLink, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Copy, Check, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { AccessDenied } from './AccessDenied';
 import {
   API_BASE_URL,
   API_VERSIONS,
@@ -176,22 +177,8 @@ export function ApiDocsView() {
   const navigate = useNavigate();
   const { authUser } = useAuth();
 
-  if (!authUser || !['Steward', 'Admin'].includes(authUser.role)) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center px-4">
-          <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-          <h1 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h1>
-          <p className="text-gray-600 mb-4">API documentation is only available to Steward and Admin users.</p>
-          <button
-            onClick={() => navigate('/')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 min-h-[44px]"
-          >
-            Back to Directory
-          </button>
-        </div>
-      </div>
-    );
+  if (!authUser || authUser.role !== 'Admin') {
+    return <AccessDenied />;
   }
 
   return (

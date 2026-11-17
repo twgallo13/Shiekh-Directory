@@ -34,6 +34,13 @@ export function LocationDetailView() {
   const [showCloseDialog, setShowCloseDialog] = useState(false);
   const [closeConfirmText, setCloseConfirmText] = useState('');
   const [closeLoading, setCloseLoading] = useState(false);
+  const [closePreview, setClosePreview] = useState<{
+    activeAssignments: { personName: string; role: string }[];
+    openVerifications: number;
+    openCorrections: number;
+    openDmTasks: number;
+    activeSessions: number;
+  } | null>(null);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [assignments, setAssignments] = useState<{
@@ -114,6 +121,21 @@ export function LocationDetailView() {
     }
   };
   
+  const openCloseDialog = async () => {
+    if (!location) return;
+    const activeAssignmentsList = assignments
+      .filter(a => a.isActive)
+      .map(a => ({ personName: a.personName, role: a.role }));
+    setClosePreview({
+      activeAssignments: activeAssignmentsList,
+      openVerifications: 0,
+      openCorrections: 0,
+      openDmTasks: 0,
+      activeSessions: 0,
+    });
+    setShowCloseDialog(true);
+  };
+
   const handleCloseStore = async () => {
     if (!location || closeConfirmText !== location.storeNumber) return;
     setCloseLoading(true);
@@ -122,6 +144,7 @@ export function LocationDetailView() {
       if (response.ok) {
         setShowCloseDialog(false);
         setCloseConfirmText('');
+        setClosePreview(null);
         setSuccessToast('Store permanently closed');
         setTimeout(() => setSuccessToast(null), 3000);
         fetchLocation();
@@ -809,7 +832,7 @@ export function LocationDetailView() {
           {!isRetired && canManageHierarchy && (
             <div className="mt-4 pt-4 border-t border-gray-200">
               <button
-                onClick={() => setShowCloseDialog(true)}
+                onClick={openCloseDialog}
                 className="w-full py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors min-h-[44px]"
               >
                 Close store permanently…
@@ -948,6 +971,7 @@ export function LocationDetailView() {
         onClose={() => {
           setShowCloseDialog(false);
           setCloseConfirmText('');
+          setClosePreview(null);
         }}
         title="Close Store Permanently"
         footer={
@@ -956,6 +980,7 @@ export function LocationDetailView() {
               onClick={() => {
                 setShowCloseDialog(false);
                 setCloseConfirmText('');
+                setClosePreview(null);
               }}
               className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
             >
@@ -970,15 +995,37 @@ export function LocationDetailView() {
             </button>
           </div>
         }
-        size="sm"
+        size="md"
       >
         <div className="space-y-4">
           <p className="text-gray-600">
-            This will permanently close <strong>Store #{location?.storeNumber}</strong>. All open requests, corrections, and verifications will be cancelled. Store sessions will be revoked.
+            This will permanently close <strong>Store #{location?.storeNumber}</strong>.
           </p>
-          <p className="text-gray-600 text-sm">
-            Only an Admin can undo this action.
+          
+          {closePreview && closePreview.activeAssignments.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm font-medium text-amber-800 mb-2">
+                The following people will be removed from their assignments:
+              </p>
+              <ul className="text-sm text-amber-700 space-y-1">
+                {closePreview.activeAssignments.map((a, i) => (
+                  <li key={i}>• {a.personName} ({a.role})</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          <div className="text-sm text-gray-600 space-y-1">
+            <p>Open requests, corrections, and verifications will be cancelled.</p>
+            <p>Store sessions will be revoked.</p>
+          </div>
+          
+          <p className="text-sm text-gray-600">
+            {isAdmin 
+              ? 'You can restore this store later using the Restore button.'
+              : 'Only an Admin can undo this action.'}
           </p>
+          
           <div>
             <label htmlFor="close-confirm" className="block text-sm font-medium text-gray-700 mb-1">
               Type <span className="font-mono bg-gray-100 px-1 rounded">{location?.storeNumber}</span> to confirm

@@ -3,6 +3,7 @@ import { AlertTriangle, Calendar, RefreshCw, Store, ExternalLink, Download, Filt
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { AccessDenied } from './AccessDenied';
 
 interface StaleStoreItem {
   id: string;
@@ -30,8 +31,9 @@ interface StaleStoresResponse {
 
 export function StaleStoresView() {
   useDocumentTitle('Stale Stores');
-  const { user } = useAuth();
+  const { user, authUser } = useAuth();
   const navigate = useNavigate();
+  
   const [data, setData] = useState<StaleStoresResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,6 +41,8 @@ export function StaleStoresView() {
   const [minDaysOverdue, setMinDaysOverdue] = useState('');
   const [maxDaysOverdue, setMaxDaysOverdue] = useState('');
   const [exporting, setExporting] = useState(false);
+  
+  const isLeaderOrAbove = authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin';
 
   const fetchStaleStores = useCallback(async () => {
     if (!user) return;
@@ -119,6 +123,10 @@ export function StaleStoresView() {
         Sign in to view stale stores
       </div>
     );
+  }
+
+  if (!isLeaderOrAbove) {
+    return <AccessDenied />;
   }
 
   return (

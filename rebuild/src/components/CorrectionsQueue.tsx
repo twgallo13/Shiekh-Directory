@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, Check, X, ChevronRight, AlertTriangle, Info } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { canApproveCorrections } from '../lib/permissions';
 import type { Correction } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog } from './Dialog';
+import { AccessDenied } from './AccessDenied';
 
 interface CorrectionsQueueProps {
   onBack: () => void;
@@ -16,13 +18,16 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
   const [searchParams] = useSearchParams();
   const locationIdFilter = searchParams.get('locationId');
   
-  const { getIdToken } = useAuth();
+  const { getIdToken, authUser } = useAuth();
+  
   const [corrections, setCorrections] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  
+  const hasAccess = authUser && canApproveCorrections(authUser);
 
   const loadCorrections = useCallback(async () => {
     try {
@@ -117,6 +122,10 @@ export function CorrectionsQueue({ onBack }: CorrectionsQueueProps) {
   };
 
   const selectedCorrection = corrections.find(c => c.id === selectedId);
+
+  if (!hasAccess) {
+    return <AccessDenied />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

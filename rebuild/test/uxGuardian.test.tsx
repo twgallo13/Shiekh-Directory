@@ -4,7 +4,6 @@ import React from 'react';
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppLayout } from '../src/components/AppLayout';
-import { SettingsView } from '../src/components/SettingsView';
 import { PeopleListView } from '../src/components/PeopleListView';
 import { StaleStoresView } from '../src/components/StaleStoresView';
 import { MyRequestsView } from '../src/components/MyRequestsView';
@@ -14,40 +13,123 @@ import { HierarchyView } from '../src/components/HierarchyView';
 import { canAccessBackups } from '../src/lib/permissions';
 import type { AuthUser } from '../src/types';
 
-const auth: { role: string; signOut: ReturnType<typeof vi.fn> } = { role: 'Admin', signOut: vi.fn() };
-const authUser = { email: 'qa@test.invalid', getIdToken: async () => '' };
+const authMock = { 
+  uid: 'test-uid',
+  email: 'qa@test.invalid', 
+  role: 'Admin' as string,
+  fullName: 'Test Admin'
+};
+const signOutMock = vi.fn();
 vi.mock('../src/context/AuthContext', () => ({
-  useAuth: () => ({ authUser: auth, user: authUser, signOut: auth.signOut, getIdToken: async () => '' }),
+  useAuth: () => ({ 
+    authUser: authMock, 
+    user: { email: authMock.email, getIdToken: async () => '' }, 
+    signOut: signOutMock, 
+    getIdToken: async () => '' 
+  }),
 }));
 vi.mock('../src/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/lib/api')>();
   return { ...actual, apiGet: vi.fn(async () => ({ ok: true, json: async () => ({ data: [] }) })) };
 });
 const renderNow = (node: React.ReactNode) => render(<MemoryRouter>{node}</MemoryRouter>);
-describe('Backups navigation uses real route permission', () => {
-  for (const role of ['Steward', 'Leader', 'Viewer', 'Admin']) {
-    it(`${role}: hidden or visible in desktop More and phone drawer`, async () => {
-      auth.role = role;
+
+describe('Desktop navigation role-based visibility', () => {
+  for (const role of ['Store', 'Viewer', 'Leader', 'Steward', 'Admin']) {
+    it(`${role}: correct items visible in desktop nav`, () => {
+      authMock.role = role;
       renderNow(<AppLayout>Page</AppLayout>);
-      fireEvent.click(screen.getByRole('button',{name:'More'}));
-      expect(screen.queryByText('Backups') !== null).toBe(role === 'Admin');
+      
+      // Tools menu should be hidden for Store/Viewer (no items), visible for Leader+
+      const toolsButton = screen.queryByRole('button', { name: 'Tools' });
+      const hasToolsAccess = role === 'Leader' || role === 'Steward' || role === 'Admin';
+      expect(toolsButton !== null).toBe(hasToolsAccess);
+      
+      // Account menu should always exist for authenticated users
+      const accountButton = screen.getByRole('button', { name: 'Account menu' });
+      expect(accountButton).toBeTruthy();
+      
+      // DM Tasks (main bar) should be visible for Leader, Steward, Admin
+      const dmTasksLink = screen.queryByText('DM Tasks');
+      expect(dmTasksLink !== null).toBe(role === 'Leader' || role === 'Steward' || role === 'Admin');
+      
       cleanup();
-      renderNow(<AppLayout>Page</AppLayout>);
-      fireEvent.click(screen.getByRole('button',{name:'Open menu'}));
-      expect(screen.queryByText('Backups') !== null).toBe(role === 'Admin');
-      expect(canAccessBackups({ uid: 'qa', email: 'qa@test.invalid', role } as AuthUser)).toBe(role === 'Admin');
     });
   }
 });
-it('Settings Sign Out calls the real handler', async () => {
-  renderNow(<SettingsView />);
-  fireEvent.click(screen.getByRole('button',{name:'Sign Out'}));
-  expect(auth.signOut).toHaveBeenCalledOnce();
+
+describe('Phone drawer navigation role-based visibility', () => {
+  for (const role of ['Store', 'Viewer', 'Leader', 'Steward', 'Admin']) {
+    it(`${role}: correct items in phone drawer`, () => {
+      authMock.role = role;
+      renderNow(<AppLayout>Page</AppLayout>);
+      fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+      
+      const isLeaderOrAbove = role === 'Leader' || role === 'Steward' || role === 'Admin';
+      const isStewardOrAdmin = role === 'Steward' || role === 'Admin';
+      const isAdmin = role === 'Admin';
+      
+      // Directory is always visible (using getAllByText since desktop nav may also show it)
+      expect(screen.getAllByText('Directory').length).toBeGreaterThan(0);
+      
+      // Approvals only for Steward/Admin (canApproveCorrections)
+      const approvalsLinks = screen.queryAllByText('Approvals');
+      expect(approvalsLinks.length > 0).toBe(isStewardOrAdmin);
+      
+      // Verification, DM Tasks, Closures for Leader+ only
+      const verificationLinks = screen.queryAllByText('Verification');
+      expect(verificationLinks.length > 0).toBe(isLeaderOrAbove);
+      
+      const dmTasksLinks = screen.queryAllByText('DM Tasks');
+      expect(dmTasksLinks.length > 0).toBe(isLeaderOrAbove);
+      
+      const closuresLinks = screen.queryAllByText('Closures');
+      expect(closuresLinks.length > 0).toBe(isLeaderOrAbove);
+      
+      // People and Hierarchy for Steward/Admin only
+      const peopleLinks = screen.queryAllByText('People');
+      expect(peopleLinks.length > 0).toBe(isStewardOrAdmin);
+      
+      // Admin link should only show for Admin
+      const adminLinks = screen.queryAllByText('Admin');
+      expect(adminLinks.length > 0).toBe(isAdmin);
+      
+      // My Requests and Sign Out should always be visible in drawer
+      expect(screen.getAllByText('My Requests').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Sign Out').length).toBeGreaterThan(0);
+      
+      // Print / Export in Tools section only for Leader+ (canPrint = isLeaderOrAbove)
+      // Note: label has spaces around slash: "Print / Export"
+      const printLinks = screen.queryAllByText('Print / Export');
+      expect(printLinks.length > 0).toBe(isLeaderOrAbove);
+      
+      // Backups permission check
+      expect(canAccessBackups({ uid: 'qa', email: 'qa@test.invalid', role } as AuthUser)).toBe(isAdmin);
+      
+      cleanup();
+    });
+  }
 });
-it('phone drawer keeps sign out outside the scrolling nav', () => {
-  const {container} = renderNow(<AppLayout>Page</AppLayout>);
-  fireEvent.click(screen.getByRole('button',{name:'Open menu'}));
-  expect(container.querySelector('.overflow-y-auto + div.shrink-0')?.textContent).toContain('Sign Out');
+
+it('Account menu Sign Out calls the real handler', async () => {
+  renderNow(<AppLayout>Page</AppLayout>);
+  // Open account menu dropdown
+  fireEvent.click(screen.getByRole('button', { name: 'Account menu' }));
+  // Find and click Sign Out button in the dropdown (should be the first one now that dropdown is open)
+  const signOutButtons = screen.getAllByRole('button', { name: /Sign Out/i });
+  fireEvent.click(signOutButtons[0]);
+  expect(signOutMock).toHaveBeenCalledOnce();
+});
+
+it('phone drawer keeps sign out pinned at bottom outside scrolling nav', () => {
+  const { container } = renderNow(<AppLayout>Page</AppLayout>);
+  fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+  // Sign Out should be visible in drawer
+  const signOutButton = screen.getByText('Sign Out');
+  expect(signOutButton).toBeTruthy();
+  // Check it's inside the fixed drawer (which has the shrink-0 class for the bottom section)
+  const bottomSection = container.querySelector('[class*="shrink-0"][class*="border-t"]');
+  expect(bottomSection?.textContent).toContain('Sign Out');
 });
 it('People pagination, role cell shows role NOT email, inactive checkbox larger', async () => {
   const people = Array.from({length:51},(_,i)=>({id:String(i),fullName:`Person ${i}`,workEmail:`p${i}@notshownhere.invalid`,primaryRole:'DM',primaryScopeName:'Central',lifecycle:'active'}));
@@ -97,8 +179,8 @@ it('HierarchyView shows skeleton loading then content after fetch', async () => 
 
 beforeEach(() => {
   cleanup();
-  auth.role = 'Admin';
-  auth.signOut = vi.fn(async () => undefined);
+  authMock.role = 'Admin';
+  signOutMock.mockClear();
   vi.stubGlobal('fetch', vi.fn(async (url) => {
     let body: unknown = { data: [] };
     if (String(url).includes('stale-stores')) body = { staleStores: [], districts: [], thresholdDays: 90, totalCount: 0 };

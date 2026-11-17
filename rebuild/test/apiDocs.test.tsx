@@ -9,7 +9,7 @@
  */
 
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ApiDocsView } from '../src/components/ApiDocsView';
@@ -21,6 +21,16 @@ import {
   MAX_PAGE_SIZE,
   getEndpointCount,
 } from '../src/lib/apiDocsData';
+
+// Mock the useAuth hook to return an Admin user (required for ApiDocsView)
+vi.mock('../src/context/AuthContext', () => ({
+  useAuth: () => ({
+    authUser: { uid: 'test-admin', email: 'admin@test.invalid', role: 'Admin' },
+    user: { email: 'admin@test.invalid', getIdToken: async () => '' },
+    signOut: vi.fn(),
+    getIdToken: async () => '',
+  }),
+}));
 
 describe('apiDocsData shared source', () => {
   it('uses correct base URL (shiekh-directory-v2.web.app)', () => {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Menu, User, LogOut, ClipboardCheck, Calendar, Printer, Users, Network,
-  FileCheck, AlertTriangle, Clock, X, Home, FileText, ChevronDown
+  FileCheck, AlertTriangle, Clock, X, Home, FileText, ChevronDown, CheckSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canApproveCorrections } from '../lib/permissions';
@@ -32,6 +32,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isLeaderOrAbove = authUser?.role === 'Leader' || authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isStewardOrAdmin = authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const isAdmin = authUser?.role === 'Admin';
+  const canPrint = isLeaderOrAbove;
+
+  const hasToolsItems = showHolidaysLink || isLeaderOrAbove || canPrint;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -111,9 +114,13 @@ export function AppLayout({ children }: AppLayoutProps) {
     navigate(path);
     setMobileMenuOpen(false);
     setDesktopDropdownOpen(false);
+    setAccountMenuOpen(false);
   };
 
   const isActivePath = (path: string) => location.pathname === path;
+
+  const displayName = authUser?.displayName || user?.email?.split('@')[0] || authUser?.email?.split('@')[0] || 'User';
+  const displayEmail = user?.email || authUser?.email || '';
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -175,6 +182,12 @@ export function AppLayout({ children }: AppLayoutProps) {
                     Verification
                   </NavLink>
                   <NavLink
+                    onClick={() => handleNavigation('/dm-tasks')}
+                    isActive={isActivePath('/dm-tasks')}
+                  >
+                    DM Tasks
+                  </NavLink>
+                  <NavLink
                     onClick={() => handleNavigation('/closures')}
                     isActive={isActivePath('/closures')}
                   >
@@ -216,49 +229,53 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
               )}
 
-              {/* Tools dropdown */}
-              <div className="relative">
-                <button
-                  ref={desktopButtonRef}
-                  onClick={() => setDesktopDropdownOpen(!desktopDropdownOpen)}
-                  className={`px-3 py-2 text-sm font-medium rounded-md flex items-center gap-1 transition-colors ${
-                    desktopDropdownOpen ? 'bg-blue-600' : 'hover:bg-blue-600/50'
-                  }`}
-                >
-                  Tools
-                  <ChevronDown className={`w-4 h-4 transition-transform ${desktopDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {desktopDropdownOpen && (
-                  <div
-                    ref={desktopDropdownRef}
-                    className="absolute right-0 top-full mt-1 w-56 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 py-1 z-50"
+              {/* Tools dropdown - only show if user has access to any tool */}
+              {hasToolsItems && (
+                <div className="relative">
+                  <button
+                    ref={desktopButtonRef}
+                    onClick={() => setDesktopDropdownOpen(!desktopDropdownOpen)}
+                    className={`px-3 py-2 text-sm font-medium rounded-md flex items-center gap-1 transition-colors ${
+                      desktopDropdownOpen ? 'bg-blue-600' : 'hover:bg-blue-600/50'
+                    }`}
                   >
-                    {showHolidaysLink && (
-                      <DropdownItem
-                        icon={Calendar}
-                        onClick={() => handleNavigation('/holidays')}
-                      >
-                        Manage Holidays
-                      </DropdownItem>
-                    )}
-                    {isLeaderOrAbove && (
-                      <DropdownItem
-                        icon={Clock}
-                        onClick={() => handleNavigation('/stale-stores')}
-                      >
-                        Stale Stores
-                      </DropdownItem>
-                    )}
-                    <DropdownItem
-                      icon={Printer}
-                      onClick={() => handleNavigation('/print')}
+                    Tools
+                    <ChevronDown className={`w-4 h-4 transition-transform ${desktopDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {desktopDropdownOpen && (
+                    <div
+                      ref={desktopDropdownRef}
+                      className="absolute right-0 top-full mt-1 w-56 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 py-1 z-50"
                     >
-                      Print / Export
-                    </DropdownItem>
-                  </div>
-                )}
-              </div>
+                      {showHolidaysLink && (
+                        <DropdownItem
+                          icon={Calendar}
+                          onClick={() => handleNavigation('/holidays')}
+                        >
+                          Manage Holidays
+                        </DropdownItem>
+                      )}
+                      {isLeaderOrAbove && (
+                        <DropdownItem
+                          icon={Clock}
+                          onClick={() => handleNavigation('/stale-stores')}
+                        >
+                          Stale Stores
+                        </DropdownItem>
+                      )}
+                      {canPrint && (
+                        <DropdownItem
+                          icon={Printer}
+                          onClick={() => handleNavigation('/print')}
+                        >
+                          Print / Export
+                        </DropdownItem>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Account Menu */}
               <div className="relative ml-2 pl-2 border-l border-blue-500/50">
@@ -272,7 +289,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 >
                   <div className="text-right hidden xl:block">
                     <div className="text-sm font-medium truncate max-w-32">
-                      {user?.email?.split('@')[0] || authUser?.email?.split('@')[0] || 'User'}
+                      {displayName}
                     </div>
                     <div className="text-xs text-blue-200">
                       {authUser?.role}
@@ -285,8 +302,21 @@ export function AppLayout({ children }: AppLayoutProps) {
                 {accountMenuOpen && (
                   <div
                     ref={accountMenuRef}
-                    className="absolute right-0 top-full mt-1 w-56 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 py-1 z-50"
+                    className="absolute right-0 top-full mt-1 w-64 bg-white text-gray-900 rounded-lg shadow-xl border border-gray-200 py-1 z-50"
                   >
+                    {/* Profile section */}
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <User className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">{displayName}</div>
+                          <div className="text-xs text-gray-500 truncate">{displayEmail}</div>
+                          <div className="text-xs text-gray-500">{authUser?.role}</div>
+                        </div>
+                      </div>
+                    </div>
                     <DropdownItem
                       icon={FileText}
                       onClick={() => handleNavigation('/my-requests')}
@@ -330,15 +360,15 @@ export function AppLayout({ children }: AppLayoutProps) {
               ref={mobileMenuRef}
               className="fixed right-0 top-14 w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100dvh-56px)] flex flex-col xl:hidden"
             >
+              {/* Profile header */}
               <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-gray-50">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                     <User className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium block truncate">
-                      {user?.email || authUser?.email || 'User'}
-                    </span>
+                    <span className="text-sm font-medium block truncate">{displayName}</span>
+                    <span className="text-xs text-gray-500 block truncate">{displayEmail}</span>
                     {authUser && (
                       <span className="text-xs text-gray-500">{authUser.role}</span>
                     )}
@@ -349,7 +379,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                 </div>
               </div>
 
-              <nav className="py-2 overflow-y-auto">
+              <nav className="py-2 overflow-y-auto flex-1">
+                {/* Main navigation - Marge's drawer order */}
                 <MobileMenuItem
                   icon={Home}
                   label="Directory"
@@ -360,18 +391,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                 {showCorrectionsLink && (
                   <MobileMenuItem
                     icon={ClipboardCheck}
-                    label="Approval Queue"
+                    label="Approvals"
                     onClick={() => handleNavigation('/corrections')}
                     isActive={isActivePath('/corrections')}
-                  />
-                )}
-
-                {showHolidaysLink && (
-                  <MobileMenuItem
-                    icon={Calendar}
-                    label="Manage Holidays"
-                    onClick={() => handleNavigation('/holidays')}
-                    isActive={isActivePath('/holidays')}
                   />
                 )}
 
@@ -379,38 +401,24 @@ export function AppLayout({ children }: AppLayoutProps) {
                   <>
                     <MobileMenuItem
                       icon={FileCheck}
-                      label="Store Verification"
+                      label="Verification"
                       onClick={() => handleNavigation('/verification')}
                       isActive={isActivePath('/verification')}
                     />
                     <MobileMenuItem
+                      icon={CheckSquare}
+                      label="DM Tasks"
+                      onClick={() => handleNavigation('/dm-tasks')}
+                      isActive={isActivePath('/dm-tasks')}
+                    />
+                    <MobileMenuItem
                       icon={AlertTriangle}
-                      label="Closures Board"
+                      label="Closures"
                       onClick={() => handleNavigation('/closures')}
                       isActive={isActivePath('/closures')}
                     />
-                    <MobileMenuItem
-                      icon={Clock}
-                      label="Stale Stores"
-                      onClick={() => handleNavigation('/stale-stores')}
-                      isActive={isActivePath('/stale-stores')}
-                    />
                   </>
                 )}
-
-                <MobileMenuItem
-                  icon={FileText}
-                  label="My Requests"
-                  onClick={() => handleNavigation('/my-requests')}
-                  isActive={isActivePath('/my-requests')}
-                />
-
-                <MobileMenuItem
-                  icon={Printer}
-                  label="Print / Export"
-                  onClick={() => handleNavigation('/print')}
-                  isActive={isActivePath('/print')}
-                />
 
                 {isStewardOrAdmin && (
                   <>
@@ -442,8 +450,49 @@ export function AppLayout({ children }: AppLayoutProps) {
                   </>
                 )}
 
+                {/* Tools section - only show if user has access to any tool */}
+                {hasToolsItems && (
+                  <>
+                    <div className="border-t border-gray-100 my-2" />
+                    <div className="px-4 py-1">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Tools</span>
+                    </div>
+                    {showHolidaysLink && (
+                      <MobileMenuItem
+                        icon={Calendar}
+                        label="Manage Holidays"
+                        onClick={() => handleNavigation('/holidays')}
+                        isActive={isActivePath('/holidays')}
+                      />
+                    )}
+                    {isLeaderOrAbove && (
+                      <MobileMenuItem
+                        icon={Clock}
+                        label="Stale Stores"
+                        onClick={() => handleNavigation('/stale-stores')}
+                        isActive={isActivePath('/stale-stores')}
+                      />
+                    )}
+                    {canPrint && (
+                      <MobileMenuItem
+                        icon={Printer}
+                        label="Print / Export"
+                        onClick={() => handleNavigation('/print')}
+                        isActive={isActivePath('/print')}
+                      />
+                    )}
+                  </>
+                )}
               </nav>
+
+              {/* Pinned bottom section: My Requests + Sign Out */}
               <div className="shrink-0 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)]">
+                <MobileMenuItem
+                  icon={FileText}
+                  label="My Requests"
+                  onClick={() => handleNavigation('/my-requests')}
+                  isActive={isActivePath('/my-requests')}
+                />
                 <MobileMenuItem
                   icon={LogOut}
                   label="Sign Out"

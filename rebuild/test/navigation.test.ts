@@ -76,12 +76,13 @@ describe('Navigation role visibility', () => {
       assert.ok(!show('Store'));
     });
 
-    it('shows Print/Export to all roles', () => {
-      const roles = ['Store', 'Leader', 'Steward', 'Admin'];
-      roles.forEach(role => {
-        const show = true;
-        assert.ok(show, `Print/Export should show for ${role}`);
-      });
+    it('shows Print/Export to Leader and above only', () => {
+      const show = (role: string) => ['Leader', 'Steward', 'Admin'].includes(role);
+      assert.ok(show('Admin'));
+      assert.ok(show('Steward'));
+      assert.ok(show('Leader'));
+      assert.ok(!show('Store'));
+      assert.ok(!show('Viewer'));
     });
 
     it('does NOT contain Backups (moved to Admin panel)', () => {
@@ -126,10 +127,10 @@ describe('Navigation role visibility', () => {
   });
 
   describe('API Docs access', () => {
-    it('requires Steward or Admin role', () => {
-      const canAccess = (role: string) => ['Steward', 'Admin'].includes(role);
+    it('requires Admin role only', () => {
+      const canAccess = (role: string) => role === 'Admin';
       assert.ok(canAccess('Admin'));
-      assert.ok(canAccess('Steward'));
+      assert.ok(!canAccess('Steward'));
       assert.ok(!canAccess('Leader'));
       assert.ok(!canAccess('Store'));
     });

@@ -226,6 +226,7 @@ export function createLocationsRouter(db: Firestore): Router {
           name: location.name,
           city: addr.city || '',
           state: addr.state || '',
+          lifecycle: location.lifecycle,
           statusNow,
           phone: location.mainPhone,
           phoneFormatted: location.phonePublic ? formatPhoneNumber(location.mainPhone) : 'Private',

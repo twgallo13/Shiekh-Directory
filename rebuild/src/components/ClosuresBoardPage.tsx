@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, AlertTriangle } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ClosuresBoard } from './ClosuresBoard';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { AccessDenied } from './AccessDenied';
 
 export function ClosuresBoardPage() {
   useDocumentTitle('Closures');
@@ -17,19 +18,7 @@ export function ClosuresBoardPage() {
   );
 
   if (!canAccess) {
-    return (
-      <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center max-w-lg mx-auto">
-            <AlertTriangle className="w-12 h-12 text-yellow-600 mx-auto mb-3" />
-            <h2 className="text-lg font-semibold text-yellow-800 mb-2">Access Restricted</h2>
-            <p className="text-yellow-700">
-              The Closures Board is only available to Admin, Steward, and Leader users.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   const districtFilter = authUser.role === 'Leader' && authUser.leaderScope?.districtIds?.[0]

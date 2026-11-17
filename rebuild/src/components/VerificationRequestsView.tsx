@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import type { VerificationRequest, LocationListItem, Region, District } from '../types';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
+import { AccessDenied } from './AccessDenied';
 
 export function VerificationRequestsView() {
   useDocumentTitle('Verification');
@@ -507,14 +508,7 @@ export function VerificationRequestsView() {
   const selectedRequest = requests.find(r => r.id === selectedId);
 
   if (!authUser || !hasAccess) {
-    return (
-      <div className="bg-gray-50 min-h-[calc(100vh-56px)] flex items-center justify-center">
-        <div className="text-center">
-          <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto" />
-          <p className="mt-4 text-gray-600">Access denied</p>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Check, AlertTriangle, Store, ChevronDown, ChevronUp, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { AccessDenied } from './AccessDenied';
 
 interface Holiday {
   id: string;
@@ -195,21 +196,7 @@ export function BulkHolidayManager() {
   const selectedHolidayData = holidays.find(h => h.id === selectedHoliday);
 
   if (!canManageHolidays) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center max-w-md">
-          <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600 mb-4">Only Admin and Steward users can manage bulk holidays.</p>
-          <button
-            onClick={() => navigate('/')}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Back to Directory
-          </button>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (

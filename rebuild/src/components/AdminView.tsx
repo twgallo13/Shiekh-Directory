@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { HoursTemplatesView } from './HoursTemplatesView';
@@ -7,6 +6,7 @@ import { EmailSettingsView } from './EmailSettingsView';
 import { WorkflowRulesView } from './WorkflowRulesView';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
+import { AccessDenied } from './AccessDenied';
 
 type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'workflow-rules' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
 
@@ -66,23 +66,9 @@ export function AdminView() {
   
   const [activeTab, setActiveTab] = useState<TabId>('users');
   const { getIdToken, authUser } = useAuth();
-  const navigate = useNavigate();
 
   if (authUser?.role !== 'Admin') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto" />
-          <p className="mt-4 text-gray-600">Admin access required</p>
-          <button
-            onClick={() => navigate('/')}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Back to Directory
-          </button>
-        </div>
-      </div>
-    );
+    return <AccessDenied />;
   }
 
   return (

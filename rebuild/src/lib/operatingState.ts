@@ -213,7 +213,7 @@ export function resolveOperatingStatus(
   if (location.lifecycle !== 'active') {
     return {
       state: 'Closed',
-      reason: location.lifecycle === 'retired' ? 'Location retired' : 'Location not active',
+      reason: location.lifecycle === 'retired' ? 'Permanently closed' : 'Location not active',
       source: 'unknown',
       hours: null,
       localDate,

@@ -197,11 +197,13 @@ async function processLocations(
   const existingLocations = new Map<string, { id: string; data: Location }>();
   
   const locationsSnap = await db.collection('locations').get();
-  const retiredStoreNumbers = new Set<string>();
+  const retiredStores = new Map<string, string>();
   for (const doc of locationsSnap.docs) {
     const data = doc.data() as Location;
     if (data.lifecycle === 'retired') {
-      retiredStoreNumbers.add(data.storeNumber);
+      if (!retiredStores.has(data.storeNumber)) {
+        retiredStores.set(data.storeNumber, doc.id);
+      }
     } else {
       existingLocations.set(data.storeNumber, { id: doc.id, data: { ...data, id: doc.id } });
     }
@@ -363,11 +365,13 @@ async function processLocations(
       }
     } else {
       // Check if this store number belongs to a retired/closed store
-      if (retiredStoreNumbers.has(storeNumber)) {
+      const retiredLocationId = retiredStores.get(storeNumber);
+      if (retiredLocationId) {
         preview.errors.push({
           row: rowNum,
           column: 'storeNumber',
           message: `Store #${storeNumber} is permanently closed. Restore it instead of creating a duplicate.`,
+          locationId: retiredLocationId,
         });
         continue;
       }

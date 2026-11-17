@@ -250,7 +250,7 @@ describe('Operating State - Unknown Fallback', () => {
     const result = resolveOperatingStatus(retiredLocation, [], [], new Date());
     
     assert.strictEqual(result.state, 'Closed');
-    assert.strictEqual(result.reason, 'Location retired');
+    assert.strictEqual(result.reason, 'Permanently closed');
   });
 });
 

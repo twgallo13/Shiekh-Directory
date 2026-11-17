@@ -27,6 +27,7 @@ interface ImportRowResult {
   message?: string;
   errors?: string[];
   changes?: string[];
+  restoreLocationId?: string;
 }
 
 interface LegacyImportPreview {
@@ -384,6 +385,7 @@ function mapLegacyColumns(row: CsvRow): Record<string, string> {
 
 interface ExistingData {
   locations: Map<string, { id: string; data: Location }>;
+  retiredByNormalizedNum: Map<string, { id: string; storeNumber: string }>;
   locationsById: Map<string, { id: string; data: Location }>;
   locationsByNormalizedNum: Map<string, { id: string; data: Location }>;
   regions: Map<string, Region>;
@@ -408,9 +410,15 @@ async function loadExistingData(db: Firestore): Promise<ExistingData> {
   const locations = new Map<string, { id: string; data: Location }>();
   const locationsById = new Map<string, { id: string; data: Location }>();
   const locationsByNormalizedNum = new Map<string, { id: string; data: Location }>();
+  const retiredByNormalizedNum = new Map<string, { id: string; storeNumber: string }>();
   for (const doc of locationsSnap.docs) {
     const data = { id: doc.id, ...doc.data() } as Location;
-    if (data.lifecycle !== 'retired') {
+    if (data.lifecycle === 'retired') {
+      const key = normalizeStoreNumber(data.storeNumber);
+      if (!retiredByNormalizedNum.has(key)) {
+        retiredByNormalizedNum.set(key, { id: doc.id, storeNumber: data.storeNumber });
+      }
+    } else {
       locations.set(data.storeNumber, { id: doc.id, data });
       locationsByNormalizedNum.set(normalizeStoreNumber(data.storeNumber), { id: doc.id, data });
     }
@@ -457,7 +465,7 @@ async function loadExistingData(db: Firestore): Promise<ExistingData> {
   }
 
   return { 
-    locations, locationsById, locationsByNormalizedNum, 
+    locations, locationsById, locationsByNormalizedNum, retiredByNormalizedNum,
     regions, regionsById, districts, districtsById, 
     people, peopleByName, assignments, districtAssignments 
   };
@@ -492,6 +500,19 @@ function parseAndValidateRows(
       continue;
     }
     seenNormalizedNumbers.add(normalizedNum);
+
+    const retiredMatch = existing.retiredByNormalizedNum.get(normalizedNum);
+    if (retiredMatch && !(row.locationId || '').trim()) {
+      results.push({
+        row: rowNum,
+        action: 'error',
+        existingId: retiredMatch.id,
+        data: { storeNumber: retiredMatch.storeNumber },
+        errors: [`Store #${storeNumber} is permanently closed. Restore it instead of creating a duplicate.`],
+        changes: [],
+      });
+      continue;
+    }
 
     const locationId = (row.locationId || '').trim();
     let existingEntry = locationId 
@@ -776,6 +797,7 @@ function buildPreview(rows: ParsedLocationRow[]): LegacyImportPreview {
       message: r.action === 'error' ? r.errors.join('; ') : r.action === 'skip' ? r.changes[0] : undefined,
       errors: r.errors.length > 0 ? r.errors : undefined,
       changes: r.changes.length > 0 ? r.changes : undefined,
+      restoreLocationId: r.action === 'error' && r.existingId ? r.existingId : undefined,
     })),
     timestamp: new Date().toISOString(),
   };

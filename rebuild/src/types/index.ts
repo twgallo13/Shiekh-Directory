@@ -411,6 +411,7 @@ export interface ImportError {
   row: number;
   column?: string;
   message: string;
+  locationId?: string;
 }
 
 export interface ImportWarning {

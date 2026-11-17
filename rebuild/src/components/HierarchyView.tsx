@@ -6,6 +6,7 @@ import type { PersonListItem, PositionStatus } from '../types';
 import { VacantBadge } from './CapacityBadge';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
+import { CloseStoreDialog } from './CloseStoreDialog';
 import { AccessDenied } from './AccessDenied';
 
 interface HierarchyRegion {
@@ -79,10 +80,10 @@ export function HierarchyView() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const [removeDialog, setRemoveDialog] = useState<{ type: 'region' | 'district' | 'location'; id: string; name: string; storeNumber?: string } | null>(null);
+  const [removeDialog, setRemoveDialog] = useState<{ type: 'region' | 'district'; id: string; name: string } | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
-  const [removeConfirmText, setRemoveConfirmText] = useState('');
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [closeStore, setCloseStore] = useState<{ id: string; storeNumber: string; name: string } | null>(null);
   
   const isStewardOrAdmin = authUser?.role === 'Steward' || authUser?.role === 'Admin';
   const canManage = isStewardOrAdmin;
@@ -250,22 +251,14 @@ export function HierarchyView() {
     }
   };
 
-  const openRemoveDialog = (type: 'region' | 'district' | 'location', id: string, name: string, storeNumber?: string) => {
-    setRemoveDialog({ type, id, name, storeNumber });
-    setRemoveConfirmText('');
+  const openRemoveDialog = (type: 'region' | 'district', id: string, name: string) => {
+    setRemoveDialog({ type, id, name });
     setRemoveError(null);
   };
 
   const handleRemove = async () => {
     if (!removeDialog) return;
-    
-    if (removeDialog.type === 'location' && removeDialog.storeNumber) {
-      if (removeConfirmText.trim() !== removeDialog.storeNumber.trim()) {
-        setRemoveError('Store number does not match');
-        return;
-      }
-    }
-    
+
     setRemoveLoading(true);
     setRemoveError(null);
     try {
@@ -278,21 +271,15 @@ export function HierarchyView() {
 
       if (!response.ok) {
         const err = await response.json();
-        const errorCode = err.error?.code;
-        if (errorCode === 'already_retired') {
-          setRemoveError('This store is already closed.');
-        } else {
-          setRemoveError("Couldn't close the store. Nothing was changed. Try again.");
-        }
+        setRemoveError(err.error?.message || 'Failed to remove');
         return;
       }
 
       setRemoveDialog(null);
-      setRemoveConfirmText('');
       setRemoveError(null);
       await fetchHierarchy();
     } catch {
-      setRemoveError("Couldn't close the store. Nothing was changed. Try again.");
+      setRemoveError('Failed to remove');
     } finally {
       setRemoveLoading(false);
     }
@@ -512,7 +499,7 @@ export function HierarchyView() {
                                       <div className="ml-auto flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                         <button onClick={() => openMoveLocation(location)} aria-label="Move location to another district" title="Move location to another district" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
                                           <Move className="w-4 h-4" />Move</button>
-                                        <button onClick={() => openRemoveDialog('location', location.id, location.name, location.storeNumber)} aria-label="Close store permanently" title="Close store permanently" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg">
+                                        <button onClick={() => setCloseStore({ id: location.id, storeNumber: location.storeNumber, name: location.name })} aria-label="Close store permanently" title="Close store permanently" className="min-h-[44px] px-2 flex items-center gap-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg">
                                           Close permanently</button>
                                       </div>
                                     )}
@@ -547,25 +534,18 @@ export function HierarchyView() {
         onAssign={handleAssign}
       />
       
-      {/* Remove/Close Dialog */}
       <Dialog
         isOpen={removeDialog !== null}
         onClose={() => {
           setRemoveDialog(null);
-          setRemoveConfirmText('');
           setRemoveError(null);
         }}
-        title={
-          removeDialog?.type === 'region' ? 'Remove Region' :
-          removeDialog?.type === 'district' ? 'Remove District' :
-          `Close #${removeDialog?.storeNumber || ''} ${removeDialog?.name || ''} permanently?`
-        }
+        title={removeDialog?.type === 'region' ? 'Remove Region' : 'Remove District'}
         footer={
           <div className="flex gap-3">
             <button
               onClick={() => {
                 setRemoveDialog(null);
-                setRemoveConfirmText('');
                 setRemoveError(null);
               }}
               className="flex-1 py-2.5 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50 min-h-[44px]"
@@ -574,11 +554,10 @@ export function HierarchyView() {
             </button>
             <button
               onClick={handleRemove}
-              disabled={removeLoading || (removeDialog?.type === 'location' && !!removeDialog?.storeNumber && removeConfirmText.trim() !== removeDialog.storeNumber.trim())}
+              disabled={removeLoading}
               className="flex-1 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 min-h-[44px]"
             >
-              {removeLoading ? 'Closing...' : 
-                removeDialog?.type === 'location' ? `Close store #${removeDialog?.storeNumber || ''}` : 'Remove'}
+              {removeLoading ? 'Removing...' : 'Remove'}
             </button>
           </div>
         }
@@ -602,35 +581,23 @@ export function HierarchyView() {
               This district must have no active stores.
             </p>
           )}
-          {removeDialog?.type === 'location' && (
-            <>
-              <p className="text-gray-600">
-                All open requests, corrections, and verifications will be cancelled. Store sessions will be revoked.
-              </p>
-              <p className="text-sm text-gray-600">
-                {authUser?.role === 'Admin' 
-                  ? 'You can restore it later from the Directory.'
-                  : "Only an Admin can undo this. People taken off won't be put back automatically."}
-              </p>
-              <div>
-                <label htmlFor="hierarchy-close-confirm" className="block text-sm font-medium text-gray-700 mb-1">
-                  Type <span className="font-mono bg-gray-100 px-1 rounded">{removeDialog.storeNumber}</span> to confirm
-                </label>
-                <input
-                  id="hierarchy-close-confirm"
-                  type="text"
-                  inputMode="numeric"
-                  value={removeConfirmText}
-                  onChange={(e) => setRemoveConfirmText(e.target.value)}
-                  placeholder={removeDialog.storeNumber || ''}
-                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 min-h-[44px]"
-                  autoComplete="off"
-                />
-              </div>
-            </>
-          )}
         </div>
       </Dialog>
+
+      {closeStore && (
+        <CloseStoreDialog
+          isOpen={true}
+          onClose={() => setCloseStore(null)}
+          locationId={closeStore.id}
+          storeNumber={closeStore.storeNumber}
+          storeName={closeStore.name}
+          isAdmin={authUser?.role === 'Admin'}
+          onClosed={() => {
+            setCloseStore(null);
+            void fetchHierarchy();
+          }}
+        />
+      )}
     </div>
   );
 }

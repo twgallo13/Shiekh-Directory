@@ -39,6 +39,7 @@ export function ClosuresBoardPage() {
             </button>
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Closures Board</h1>
+              <p className="text-sm text-gray-500">These are temporary closures. To close a store for good, open the store and use Close store permanently.</p>
               {authUser.role === 'Leader' && (
                 <p className="text-sm text-gray-500">Showing closures in your district</p>
               )}

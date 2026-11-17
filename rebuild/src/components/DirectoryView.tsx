@@ -27,7 +27,7 @@ export function DirectoryView() {
   const [selectedDistrict, setSelectedDistrict] = useState<string>(searchParams.get('district') || '');
   const [selectedKind, setSelectedKind] = useState<string>(searchParams.get('kind') || 'store');
   const [selectedStoreType, setSelectedStoreType] = useState<string>(searchParams.get('storeType') || '');
-  const [selectedLifecycle, setSelectedLifecycle] = useState<string>(searchParams.get('lifecycle') || 'active');
+  const [selectedLifecycle, setSelectedLifecycle] = useState('active');
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export function DirectoryView() {
       if (selectedDistrict) params.set('districtId', selectedDistrict);
       else if (selectedRegion) params.set('regionId', selectedRegion);
       if (selectedStoreType) params.set('storeType', selectedStoreType);
-      if (selectedLifecycle !== 'active') params.set('lifecycle', selectedLifecycle);
+      if (authUser?.role === 'Admin' && selectedLifecycle !== 'active') params.set('lifecycle', selectedLifecycle);
       
       const response = await fetch(`/api/app/locations?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -69,7 +69,19 @@ export function DirectoryView() {
     } finally {
       setLoading(false);
     }
-  }, [getIdToken, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, selectedLifecycle]);
+  }, [getIdToken, authUser?.role, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, selectedLifecycle]);
+
+  useEffect(() => {
+    if (!authUser) return;
+    if (authUser.role !== 'Admin') {
+      if (selectedLifecycle !== 'active') setSelectedLifecycle('active');
+      return;
+    }
+    const fromUrl = searchParams.get('lifecycle');
+    if (fromUrl && fromUrl !== 'active' && fromUrl !== selectedLifecycle) {
+      setSelectedLifecycle(fromUrl);
+    }
+  }, [authUser, searchParams, selectedLifecycle]);
   
   const fetchFilters = useCallback(async () => {
     try {
@@ -133,15 +145,16 @@ export function DirectoryView() {
   }, [searchQuery, searchLocations]);
   
   useEffect(() => {
+    if (!authUser) return;
     const params = new URLSearchParams();
     if (searchQuery) params.set('q', searchQuery);
     if (selectedRegion) params.set('region', selectedRegion);
     if (selectedDistrict) params.set('district', selectedDistrict);
     if (selectedKind && selectedKind !== 'store') params.set('kind', selectedKind);
     if (selectedStoreType) params.set('storeType', selectedStoreType);
-    if (selectedLifecycle && selectedLifecycle !== 'active') params.set('lifecycle', selectedLifecycle);
+    if (authUser.role === 'Admin' && selectedLifecycle && selectedLifecycle !== 'active') params.set('lifecycle', selectedLifecycle);
     setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, selectedLifecycle, setSearchParams]);
+  }, [authUser, searchQuery, selectedRegion, selectedDistrict, selectedKind, selectedStoreType, selectedLifecycle, setSearchParams]);
   
   const handleCall = (phone: string, e: React.MouseEvent) => {
     e.stopPropagation();

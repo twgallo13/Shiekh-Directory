@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { HoursTemplatesView } from './HoursTemplatesView';
@@ -1428,6 +1429,7 @@ interface ImportPreview {
     message?: string;
     errors?: string[];
     changes?: string[];
+    restoreLocationId?: string;
   }[];
   timestamp: string;
 }
@@ -1624,6 +1626,17 @@ function ImportTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                         </td>
                         <td className="px-3 py-2 text-gray-600 text-xs">
                           {row.errors?.join('; ') || row.changes?.join('; ') || row.message}
+                          {row.restoreLocationId && (
+                            <>
+                              {' '}
+                              <Link
+                                to={`/location/${row.restoreLocationId}`}
+                                className="text-blue-700 underline font-medium"
+                              >
+                                Restore #{row.storeNumber}
+                              </Link>
+                            </>
+                          )}
                         </td>
                       </tr>
                     ))}

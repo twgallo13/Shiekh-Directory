@@ -505,15 +505,18 @@ describe('Reactivate Conflict Tests', () => {
 });
 
 describe('Store Sign-In with Reused Number', () => {
+  const reusedNumber = String(9100 + (Date.now() % 400));
+  const closedOnlyNumber = String(9600 + (Date.now() % 300));
+  let activeLocationId = '';
+
   before(async () => {
     await seedTestUsers();
     const db = getTestDb();
     const now = new Date().toISOString();
-    const suffix = `signin_${Date.now()}`;
+    await db.collection('settings').doc('email').set({ appBaseUrl: 'http://localhost:3001' }, { merge: true });
 
-    // Create active hierarchy
     const regionRef = await db.collection('regions').add({
-      code: `SIGN_REG_${suffix.slice(-6)}`,
+      code: `SIGN_REG_${reusedNumber}`,
       name: 'Sign-In Test Region',
       lifecycle: 'active',
       createdAt: now,
@@ -523,7 +526,7 @@ describe('Store Sign-In with Reused Number', () => {
     });
 
     const districtRef = await db.collection('districts').add({
-      code: `SIGN_DIST_${suffix.slice(-6)}`,
+      code: `SIGN_DIST_${reusedNumber}`,
       name: 'Sign-In Test District',
       regionId: regionRef.id,
       lifecycle: 'active',
@@ -533,61 +536,70 @@ describe('Store Sign-In with Reused Number', () => {
       version: 1,
     });
 
-    // Create RETIRED store with number "777"
-    await db.collection('locations').add({
+    const baseLocation = {
       kind: 'store',
-      storeNumber: '777',
-      name: 'Retired Store 777',
-      lifecycle: 'retired',
       address: { street: '123 Test St', city: 'Test City', state: 'CA', zip: '90001', country: 'US' },
       timeZone: 'America/Los_Angeles',
       mainPhone: '+12135550009',
       phonePublic: true,
-      sharedInboxEmail: 'store777old@shiekh.test',
       regionId: regionRef.id,
       districtId: districtRef.id,
       createdAt: now,
       updatedAt: now,
       updatedBy: 'test',
       version: 1,
+    };
+
+    await db.collection('locations').add({
+      ...baseLocation,
+      storeNumber: reusedNumber,
+      name: 'Retired reused store',
+      lifecycle: 'retired',
     });
 
-    // Create ACTIVE store with SAME number "777"
-    void await db.collection('locations').add({
-      kind: 'store',
-      storeNumber: '777',
-      name: 'Active Store 777',
+    const activeRef = await db.collection('locations').add({
+      ...baseLocation,
+      storeNumber: reusedNumber,
+      name: 'Active reused store',
       lifecycle: 'active',
-      address: { street: '456 Test St', city: 'Test City', state: 'CA', zip: '90002', country: 'US' },
-      timeZone: 'America/Los_Angeles',
-      mainPhone: '+12135550010',
-      phonePublic: true,
-      sharedInboxEmail: 'store777new@shiekh.test',
-      regionId: regionRef.id,
-      districtId: districtRef.id,
-      createdAt: now,
-      updatedAt: now,
-      updatedBy: 'test',
-      version: 1,
+      address: { ...baseLocation.address, street: '456 Test St' },
+    });
+    activeLocationId = activeRef.id;
+
+    await db.collection('locations').add({
+      ...baseLocation,
+      storeNumber: closedOnlyNumber,
+      name: 'Closed only store',
+      lifecycle: 'retired',
     });
   });
 
-  it('Store PIN sign-in with reused number finds active store, not retired', async () => {
-    const res = await fetch(`${API_BASE}/api/store/sign-in`, {
+  it('POST /api/store-auth/send-link finds the active store when a closed store reused the number', async () => {
+    const email = `store${reusedNumber}@shiekhshoes.com`;
+    const res = await fetch(`${API_BASE}/api/store-auth/send-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'store777new@shiekh.test' }),
+      body: JSON.stringify({ email }),
     });
+    const body = await res.json();
+    assert.notStrictEqual(body.error?.code, 'store_permanently_closed');
+    assert.strictEqual(res.status, 200, `active store should get a sign-in link, got ${res.status} ${JSON.stringify(body)}`);
 
-    // Should succeed (200) or at least not return store_permanently_closed
-    if (res.status === 200) {
-      const body = await res.json();
-      assert.ok(body.data, 'should return sign-in data for active store');
-    } else {
-      const body = await res.json();
-      assert.notStrictEqual(body.error?.code, 'store_permanently_closed', 
-        'should NOT say store is permanently closed when active store exists');
-    }
+    const db = getTestDb();
+    const tokens = await db.collection('testTokens').where('storeEmail', '==', email).get();
+    assert.strictEqual(tokens.empty, false, 'sign-in should record the active store');
+    assert.strictEqual(tokens.docs[0].data().locationId, activeLocationId);
+  });
+
+  it('POST /api/store-auth/send-link returns store_permanently_closed when only a closed store has the number', async () => {
+    const res = await fetch(`${API_BASE}/api/store-auth/send-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `store${closedOnlyNumber}@shiekhshoes.com` }),
+    });
+    assert.strictEqual(res.status, 400);
+    const body = await res.json();
+    assert.strictEqual(body.error?.code, 'store_permanently_closed');
   });
 });
 

@@ -22,8 +22,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   const desktopDropdownRef = useRef<HTMLDivElement>(null);
   const desktopButtonRef = useRef<HTMLButtonElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const accountButtonRef = useRef<HTMLButtonElement>(null);
   
-  const { signOut, user, authUser, storeSession } = useAuth();
+  const { signOut, user, authUser, storeSession, isStoreSession } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -110,6 +111,17 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [mobileMenuOpen]);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const first = mobileMenuRef.current?.querySelector<HTMLElement>(
+        'button, a[href], [tabindex]:not([tabindex="-1"])'
+      );
+      first?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [mobileMenuOpen]);
+
   // Escape handler for desktop Tools and Account menus
   useEffect(() => {
     if (!desktopDropdownOpen && !accountMenuOpen) return;
@@ -122,7 +134,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         }
         if (accountMenuOpen) {
           setAccountMenuOpen(false);
-          // Focus will be handled by the account button ref
+          accountButtonRef.current?.focus();
         }
       }
     }
@@ -179,10 +191,10 @@ export function AppLayout({ children }: AppLayoutProps) {
             {/* Desktop Navigation - show at xl (1280px) and above */}
             <nav className="hidden xl:flex items-center gap-1">
               <NavLink
-                onClick={() => handleNavigation('/')}
-                isActive={isActivePath('/')}
+                onClick={() => handleNavigation(isStoreSession && storeSession?.locationId ? `/location/${storeSession.locationId}` : '/')}
+                isActive={isStoreSession ? isActivePath(`/location/${storeSession?.locationId || ''}`) : isActivePath('/')}
               >
-                Directory
+                {isStoreSession ? 'My store' : 'Directory'}
               </NavLink>
 
               {showCorrectionsLink && (
@@ -276,7 +288,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                           icon={Calendar}
                           onClick={() => handleNavigation('/holidays')}
                         >
-                          Manage Holidays
+                          Holidays
                         </DropdownItem>
                       )}
                       {isLeaderOrAbove && (
@@ -303,6 +315,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               {/* Account Menu */}
               <div className="relative ml-2 pl-2 border-l border-blue-500/50">
                 <button
+                  ref={accountButtonRef}
                   onClick={() => setAccountMenuOpen(!accountMenuOpen)}
                   className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
                     accountMenuOpen ? 'bg-blue-600' : 'hover:bg-blue-600/50'
@@ -315,7 +328,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                       {displayName}
                     </div>
                     <div className="text-xs text-blue-200">
-                      {authUser?.role}
+                      {authUser ? getRoleDisplayName(authUser.role) : ''}
                       {authUser?.role === 'Store' && storeSession?.storeNumber && ` • Store #${storeSession.storeNumber}`}
                     </div>
                   </div>
@@ -336,7 +349,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                         <div className="min-w-0">
                           <div className="text-sm font-medium text-gray-900 truncate">{displayName}</div>
                           <div className="text-xs text-gray-500 truncate">{displayEmail}</div>
-                          <div className="text-xs text-gray-500">{authUser?.role}</div>
+                          <div className="text-xs text-gray-500">{authUser ? getRoleDisplayName(authUser.role) : ''}</div>
                         </div>
                       </div>
                     </div>
@@ -409,9 +422,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                 {/* Main navigation - Marge's drawer order */}
                 <MobileMenuItem
                   icon={Home}
-                  label="Directory"
-                  onClick={() => handleNavigation('/')}
-                  isActive={isActivePath('/')}
+                  label={isStoreSession ? 'My store' : 'Directory'}
+                  onClick={() => handleNavigation(isStoreSession && storeSession?.locationId ? `/location/${storeSession.locationId}` : '/')}
+                  isActive={isStoreSession ? isActivePath(`/location/${storeSession?.locationId || ''}`) : isActivePath('/')}
                 />
 
                 {showCorrectionsLink && (
@@ -486,7 +499,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     {showHolidaysLink && (
                       <MobileMenuItem
                         icon={Calendar}
-                        label="Manage Holidays"
+                        label="Holidays"
                         onClick={() => handleNavigation('/holidays')}
                         isActive={isActivePath('/holidays')}
                       />

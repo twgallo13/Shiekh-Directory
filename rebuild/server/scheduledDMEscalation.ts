@@ -73,6 +73,7 @@ export const escalateToDM = onSchedule(
     for (const request of requests) {
       const location = locations.get(request.locationId);
       if (!location) continue;
+      if (location.lifecycle !== 'active') continue;
       
       const districtId = location.districtId;
       if (!requestsByDistrict.has(districtId)) {

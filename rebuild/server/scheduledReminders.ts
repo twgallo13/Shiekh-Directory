@@ -94,6 +94,10 @@ export const sendVerificationReminders = onSchedule(
         }
 
         const location = locationDoc.data() as Location;
+        if (location.lifecycle !== 'active') {
+          console.log(`[Reminders] Skipping retired/closed location ${request.locationId}`);
+          continue;
+        }
         if (location.kind === 'facility') {
           console.log(`[Reminders] Skipping facility ${request.locationId}`);
           continue;

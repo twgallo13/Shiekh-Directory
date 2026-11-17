@@ -101,27 +101,37 @@ export function createStoreAuthRouter(db: Firestore): Router {
       const uniqueFormats = [...new Set(storeNumberFormats)];
 
       let locationDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
-      let foundRetiredStore = false;
       
+      // First pass: look for an ACTIVE store only
       for (const format of uniqueFormats) {
         const query = await db.collection('locations')
           .where('storeNumber', '==', format)
+          .where('lifecycle', '==', 'active')
           .limit(1)
           .get();
         
         if (!query.empty) {
-          const doc = query.docs[0];
-          const loc = doc.data();
-          if (loc.lifecycle === 'active') {
-            locationDoc = doc;
-            break;
-          } else if (loc.lifecycle === 'retired') {
-            foundRetiredStore = true;
-          }
+          locationDoc = query.docs[0];
+          break;
         }
       }
 
+      // If no active store found, check if a retired store exists (for the error message)
       if (!locationDoc) {
+        let foundRetiredStore = false;
+        for (const format of uniqueFormats) {
+          const query = await db.collection('locations')
+            .where('storeNumber', '==', format)
+            .where('lifecycle', '==', 'retired')
+            .limit(1)
+            .get();
+          
+          if (!query.empty) {
+            foundRetiredStore = true;
+            break;
+          }
+        }
+        
         if (foundRetiredStore) {
           return res.status(400).json({
             error: { code: 'store_permanently_closed', message: 'This store is permanently closed', requestId: res.locals.requestId },

@@ -80,6 +80,11 @@ export const flagOverdueCorrections = onSchedule(
       if (locationDoc.exists) {
         const location = locationDoc.data() as Location;
         
+        if (location.lifecycle !== 'active') {
+          console.log(`[Corrections] Skipping retired/closed location ${correction.locationId}`);
+          continue;
+        }
+        
         let assigneeId: string | undefined;
         let assigneeName: string | undefined;
         let assigneeType: 'manager' | 'dm' | 'rm' = 'dm';

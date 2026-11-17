@@ -110,6 +110,27 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [mobileMenuOpen]);
 
+  // Escape handler for desktop Tools and Account menus
+  useEffect(() => {
+    if (!desktopDropdownOpen && !accountMenuOpen) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        if (desktopDropdownOpen) {
+          setDesktopDropdownOpen(false);
+          desktopButtonRef.current?.focus();
+        }
+        if (accountMenuOpen) {
+          setAccountMenuOpen(false);
+          // Focus will be handled by the account button ref
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [desktopDropdownOpen, accountMenuOpen]);
+
   const handleNavigation = (path: string) => {
     navigate(path);
     setMobileMenuOpen(false);
@@ -235,7 +256,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                   <button
                     ref={desktopButtonRef}
                     onClick={() => setDesktopDropdownOpen(!desktopDropdownOpen)}
-                    className={`px-3 py-2 text-sm font-medium rounded-md flex items-center gap-1 transition-colors ${
+                    aria-expanded={desktopDropdownOpen}
+                    aria-haspopup="menu"
+                    className={`px-3 py-2 text-sm font-medium rounded-md flex items-center gap-1 transition-colors min-h-[44px] ${
                       desktopDropdownOpen ? 'bg-blue-600' : 'hover:bg-blue-600/50'
                     }`}
                   >
@@ -358,6 +381,9 @@ export function AppLayout({ children }: AppLayoutProps) {
             />
             <div
               ref={mobileMenuRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Navigation menu"
               className="fixed right-0 top-14 w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100dvh-56px)] flex flex-col xl:hidden"
             >
               {/* Profile header */}
@@ -518,7 +544,8 @@ function NavLink({ onClick, isActive, children }: { onClick: () => void; isActiv
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+      aria-current={isActive ? 'page' : undefined}
+      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors min-h-[44px] ${
         isActive
           ? 'bg-blue-600 text-white'
           : 'text-blue-100 hover:bg-blue-600/50 hover:text-white'
@@ -533,7 +560,7 @@ function DropdownItem({ icon: Icon, onClick, children }: { icon: typeof Home; on
   return (
     <button
       onClick={onClick}
-      className="w-full px-4 py-2 text-left text-sm flex items-center gap-3 hover:bg-gray-50 text-gray-700"
+      className="w-full px-4 py-2 text-left text-sm flex items-center gap-3 hover:bg-gray-50 text-gray-700 min-h-[44px]"
     >
       <Icon className="w-4 h-4 text-gray-600" />
       {children}
@@ -545,7 +572,8 @@ function MobileMenuItem({ icon: Icon, label, onClick, isActive }: { icon: typeof
   return (
     <button
       onClick={onClick}
-      className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 transition-colors ${
+      aria-current={isActive ? 'page' : undefined}
+      className={`w-full px-4 py-3 text-left text-sm flex items-center gap-3 transition-colors min-h-[44px] ${
         isActive
           ? 'bg-blue-50 text-blue-700 font-medium'
           : 'hover:bg-gray-50 text-gray-700'

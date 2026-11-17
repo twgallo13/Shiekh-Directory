@@ -414,18 +414,20 @@ export function LocationDetailView() {
             <span className="text-lg font-medium text-gray-900">{location.phoneFormatted}</span>
           </div>
           
-          {/* Contact Actions */}
-          <div className="grid grid-cols-2 gap-3">
-            <a
-              href={`tel:${location.mainPhone}`}
-              className="flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700"
-            >
-              <Phone className="w-4 h-4" />
-              Call Store
-            </a>
+          {/* Contact Actions - hide Call Store for closed stores */}
+          <div className={`grid gap-3 ${isRetired ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {!isRetired && (
+              <a
+                href={`tel:${location.mainPhone}`}
+                className="flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 min-h-[44px]"
+              >
+                <Phone className="w-4 h-4" />
+                Call Store
+              </a>
+            )}
             <button
               onClick={() => handleCopy(location.phoneFormatted, 'Phone')}
-              className="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-200"
+              className="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-200 min-h-[44px]"
             >
               <Copy className="w-4 h-4" />
               Copy Phone
@@ -841,8 +843,8 @@ export function LocationDetailView() {
           )}
         </div>
         
-        {/* Report a Problem - available to all signed-in users */}
-        {authUser && (
+        {/* Report a Problem - available to all signed-in users, hidden for closed stores */}
+        {authUser && !isRetired && (
           <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
             <div className="flex items-center justify-between">
               <div>

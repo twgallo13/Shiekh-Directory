@@ -905,7 +905,7 @@ export function createHierarchyRouter(db: Firestore): Router {
           status: 'cancelled',
           cancelledAt: nowStr,
           cancelledBy: authUser.uid,
-          cancelledReason: closeNote,
+          cancelReason: closeNote,
         });
         verificationsCancelled++;
       }
@@ -920,7 +920,6 @@ export function createHierarchyRouter(db: Firestore): Router {
           status: 'cancelled',
           cancelledAt: nowStr,
           cancelledBy: authUser.uid,
-          cancelReason: closeNote,
         });
         correctionsCancelled++;
       }
@@ -933,25 +932,11 @@ export function createHierarchyRouter(db: Firestore): Router {
       for (const doc of dmTasksSnap.docs) {
         batch.update(doc.ref, {
           status: 'cancelled',
-          closedAt: nowStr,
-          closedBy: authUser.uid,
-          closedReason: closeNote,
-        });
-        dmTasksCancelled++;
-      }
-
-      const dmVerificationsSnap = await db.collection('dmVerificationRequests')
-        .where('locationId', '==', id)
-        .where('status', 'in', ['pending', 'in_progress'])
-        .get();
-      let dmVerificationsCancelled = 0;
-      for (const doc of dmVerificationsSnap.docs) {
-        batch.update(doc.ref, {
-          status: 'cancelled',
           cancelledAt: nowStr,
           cancelledBy: authUser.uid,
+          cancelledReason: closeNote,
         });
-        dmVerificationsCancelled++;
+        dmTasksCancelled++;
       }
 
       const closuresSnap = await db.collection('locations').doc(id)
@@ -962,10 +947,9 @@ export function createHierarchyRouter(db: Firestore): Router {
       for (const doc of closuresSnap.docs) {
         batch.update(doc.ref, {
           status: 'ended',
-          endsAt: nowStr,
           endedBy: authUser.uid,
           endedAt: nowStr,
-          endedReason: closeNote,
+          endedReason: 'manual',
         });
         closuresEnded++;
       }
@@ -1004,6 +988,12 @@ export function createHierarchyRouter(db: Firestore): Router {
         locationId: id,
         changes: [
           { field: 'lifecycle', oldValue: currentLocation.lifecycle || 'active', newValue: 'retired' },
+          { field: 'assignmentsEnded', newValue: String(assignmentsEnded) },
+          { field: 'verificationsCancelled', newValue: String(verificationsCancelled) },
+          { field: 'correctionsCancelled', newValue: String(correctionsCancelled) },
+          { field: 'dmTasksCancelled', newValue: String(dmTasksCancelled) },
+          { field: 'closuresEnded', newValue: String(closuresEnded) },
+          { field: 'sessionsRevoked', newValue: String(sessionsRevoked) },
         ],
       });
 
@@ -1015,7 +1005,6 @@ export function createHierarchyRouter(db: Firestore): Router {
           verificationsCancelled,
           correctionsCancelled,
           dmTasksCancelled,
-          dmVerificationsCancelled,
           closuresEnded,
           sessionsRevoked,
         },

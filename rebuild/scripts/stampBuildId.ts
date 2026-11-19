@@ -1,4 +1,5 @@
 export const BUILD_ID_PLACEHOLDER = "__BUILD_ID__";
+export const KILL_SWITCH_MARKER = "SHKDIR_KILL_SWITCH";
 
 const BUILD_ID_PATTERN = /^[0-9a-z-]+$/i;
 
@@ -24,6 +25,28 @@ export function stampServiceWorker(source: string, buildId: string): string {
   const stamped = source.replace(BUILD_ID_PLACEHOLDER, buildId);
   if (stamped.includes(BUILD_ID_PLACEHOLDER)) {
     throw new Error("Build stopped: __BUILD_ID__ placeholder survived in sw.js.");
+  }
+  return stamped;
+}
+
+export function finalizeServiceWorker(source: string, buildId: string): string {
+  if (source.includes(KILL_SWITCH_MARKER)) {
+    if (source.includes(BUILD_ID_PLACEHOLDER)) {
+      throw new Error(
+        "Build stopped: __BUILD_ID__ placeholder survived in the kill-switch worker.",
+      );
+    }
+    return source;
+  }
+  if (!source.includes(BUILD_ID_PLACEHOLDER)) {
+    if (!source.includes(buildId)) {
+      throw new Error(`Build stopped: dist/sw.js is missing build id ${buildId}.`);
+    }
+    return source;
+  }
+  const stamped = stampServiceWorker(source, buildId);
+  if (stamped.includes(BUILD_ID_PLACEHOLDER)) {
+    throw new Error("Build stopped: __BUILD_ID__ placeholder survived in dist/sw.js.");
   }
   return stamped;
 }

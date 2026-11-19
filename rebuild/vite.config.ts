@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import fs from 'fs';
 import path from 'path';
-import { BUILD_ID_PLACEHOLDER, createBuildId, stampServiceWorker } from './scripts/stampBuildId';
+import { createBuildId, finalizeServiceWorker } from './scripts/stampBuildId';
 
 // Build guard (2026-11-04): a production build must carry a real Firebase web config.
 // A placeholder config shipped once and broke live sign-in (auth/api-key-not-valid).
@@ -51,16 +51,9 @@ function stampBuildIdPlugin(): Plugin {
         throw new Error(`Build stopped: ${swPath} was not emitted, so the build id could not be stamped.`);
       }
       const source = fs.readFileSync(swPath, 'utf8');
-      if (!source.includes(BUILD_ID_PLACEHOLDER)) {
-        if (!source.includes(buildId)) {
-          throw new Error(`Build stopped: dist/sw.js is missing build id ${buildId}.`);
-        }
-        return;
-      }
-      fs.writeFileSync(swPath, stampServiceWorker(source, buildId));
-      const stamped = fs.readFileSync(swPath, 'utf8');
-      if (stamped.includes(BUILD_ID_PLACEHOLDER)) {
-        throw new Error('Build stopped: __BUILD_ID__ placeholder survived in dist/sw.js.');
+      const finalized = finalizeServiceWorker(source, buildId);
+      if (finalized !== source) {
+        fs.writeFileSync(swPath, finalized);
       }
     },
   };

@@ -11,7 +11,7 @@ The kill worker:
 
 ## Same deploy, both changes
 
-1. Replace `public/sw.js` with `docs/sw-killswitch.js` (copy the file over `public/sw.js` before the build).
+1. Replace `public/sw.js` with `docs/sw-killswitch.js` (copy the file over `public/sw.js` before the build). The copied file contains the marker `SHKDIR_KILL_SWITCH`. `npm run build`, which is also the Firebase predeploy build, publishes that worker as `dist/sw.js` and does not require a build id. The build still stops if `__BUILD_ID__` is left in the kill-switch file. A normal `public/sw.js` still has to contain that placeholder exactly once.
 2. In that **same** Hosting deploy, remove the `navigator.serviceWorker.register` call from `src/main.tsx`. Also remove `<PwaUpdateBanner />` from `AppLayout` in that same change so open tabs stop calling `registration.update()`. Do not ship the kill worker while `main.tsx` still registers `/sw.js`. The next navigation would install the kill worker again.
 
 Removing the register call in a follow-up deploy is not enough. The register call comes out in the same deploy as the kill worker.

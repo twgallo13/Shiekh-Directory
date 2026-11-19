@@ -4,7 +4,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { BUILD_ID_PLACEHOLDER, createBuildId, stampServiceWorker } from '../scripts/stampBuildId.ts';
+import {
+  BUILD_ID_PLACEHOLDER,
+  KILL_SWITCH_MARKER,
+  createBuildId,
+  finalizeServiceWorker,
+  stampServiceWorker,
+} from '../scripts/stampBuildId.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -174,9 +180,21 @@ describe('service worker policy', () => {
     assert.throws(() => stampServiceWorker(doubled, first));
   });
 
-  it('dist/sw.js does not keep the build-id placeholder', async () => {
-    const distPath = join(root, 'dist', 'sw.js');
-    assert.equal(existsSync(distPath), true, 'dist/sw.js is missing. Run npm run build before this test.');
+  it('finalizeServiceWorker stamps a normal worker and rejects an unmarked worker with no id', () => {
+    const buildId = 'build-test-final';
+    const stamped = finalizeServiceWorker(publicSource, buildId);
+    assert.equal(stamped.includes(BUILD_ID_PLACEHOLDER), false);
+    assert.equal(stamped.includes(buildId), true);
+    assert.equal(finalizeServiceWorker(stamped, buildId), stamped);
+    assert.throws(() => finalizeServiceWorker('self.addEventListener("install", () => {});\n', buildId));
+  });
+
+  const distPath = join(root, 'dist', 'sw.js');
+  it('dist/sw.js does not keep the build-id placeholder', {
+    skip: existsSync(distPath)
+      ? false
+      : 'dist/sw.js is produced by npm run build, which fails if the placeholder survives',
+  }, async () => {
     const text = readFileSync(distPath, 'utf8');
     assert.equal(text.includes(BUILD_ID_PLACEHOLDER), false);
     const match = text.match(/const BUILD_ID = "([^"]+)";/);
@@ -191,6 +209,17 @@ describe('service worker policy', () => {
 
 describe('kill switch', () => {
   const source = readFileSync(join(root, 'docs', 'sw-killswitch.js'), 'utf8');
+
+  it('passes through the production build without a build id', () => {
+    assert.equal(source.includes(KILL_SWITCH_MARKER), true);
+    assert.equal(source.includes(BUILD_ID_PLACEHOLDER), false);
+    const buildId = 'build-test-kill';
+    assert.equal(finalizeServiceWorker(source, buildId), source);
+    assert.throws(
+      () => finalizeServiceWorker(`${source}\nconst BUILD_ID = "${BUILD_ID_PLACEHOLDER}";\n`, buildId),
+      /placeholder survived/,
+    );
+  });
 
   it('unregisters, deletes caches, and never navigates or fetches', async () => {
     assert.equal(source.includes('clients.navigate'), false);

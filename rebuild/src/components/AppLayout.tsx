@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { canApproveCorrections, getRoleDisplayName } from '../lib/permissions';
 import { OfflineBanner } from './OfflineBanner';
+import { PwaUpdateBanner } from './PwaUpdateBanner';
 import { HeaderSearch } from './HeaderSearch';
 
 interface AppLayoutProps {
@@ -171,8 +172,10 @@ export function AppLayout({ children }: AppLayoutProps) {
       >
         Skip to content
       </a>
+      <div className="sticky top-0 z-[60]">
       <OfflineBanner />
-      <header className="bg-blue-700 text-white sticky top-0 z-50">
+      <PwaUpdateBanner />
+      <header className="bg-blue-700 text-white">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
@@ -545,6 +548,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </>
         )}
       </header>
+      </div>
 
       <main id="main" tabIndex={-1} className="flex-1 outline-none">
         {children}

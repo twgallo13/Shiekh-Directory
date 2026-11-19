@@ -29,6 +29,18 @@
         "headers": [
           { "key": "Referrer-Policy", "value": "no-referrer" }
         ]
+      },
+      {
+        "source": "{/index.html,/sw.js,/manifest.json,/!(*.*|api|assets),/!(api|assets)/**}",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        ]
+      },
+      {
+        "source": "/assets/**",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
       }
     ],
     "rewrites": [

@@ -31,7 +31,7 @@ export function OfflineBanner() {
 
   if (showReconnected) {
     return (
-      <div className="fixed top-0 left-0 right-0 z-50 bg-green-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 animate-fade-in">
+      <div className="bg-green-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 animate-fade-in">
         <Wifi className="w-4 h-4" />
         Back online
       </div>
@@ -43,7 +43,7 @@ export function OfflineBanner() {
   }
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-amber-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2">
+    <div className="bg-amber-600 text-white px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2">
       <WifiOff className="w-4 h-4" />
       You are offline. Changes may not be saved.
     </div>

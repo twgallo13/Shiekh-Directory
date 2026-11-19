@@ -1,5 +1,10 @@
 export const BUILD_ID_PLACEHOLDER = "__BUILD_ID__";
-export const KILL_SWITCH_MARKER = "SHKDIR_KILL_SWITCH";
+export const KILL_SWITCH_MARKER_LINE = "// SHKDIR_KILL_SWITCH";
+
+export function isKillSwitchWorker(source: string): boolean {
+  const firstLine = source.split(/\r?\n/, 1)[0] ?? "";
+  return firstLine === KILL_SWITCH_MARKER_LINE;
+}
 
 const BUILD_ID_PATTERN = /^[0-9a-z-]+$/i;
 
@@ -30,7 +35,7 @@ export function stampServiceWorker(source: string, buildId: string): string {
 }
 
 export function finalizeServiceWorker(source: string, buildId: string): string {
-  if (source.includes(KILL_SWITCH_MARKER)) {
+  if (isKillSwitchWorker(source)) {
     if (source.includes(BUILD_ID_PLACEHOLDER)) {
       throw new Error(
         "Build stopped: __BUILD_ID__ placeholder survived in the kill-switch worker.",

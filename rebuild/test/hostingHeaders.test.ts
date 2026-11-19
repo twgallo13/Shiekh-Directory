@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 // Same call superstatic (the Hosting emulator) makes: minimatch(path, source)
-// with minimatch 3 defaults. See the "/" test for the matcher caveat.
+// with minimatch 3 defaults. "/" is a literal in the no-cache brace because
+// minimatch does not match "/" against the extensionless extglob.
 const minimatch = require('minimatch') as (target: string, pattern: string) => boolean;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -99,6 +100,7 @@ describe('firebase.json hosting headers', () => {
 
   it('sets no-cache on the shell, worker, manifest, and extensionless navigations', () => {
     const noCachePaths = [
+      '/',
       '/index.html',
       '/sw.js',
       '/manifest.json',
@@ -140,20 +142,18 @@ describe('firebase.json hosting headers', () => {
     assert.equal(matches(minimatch, '/finish-sign-in', referrerRules).length, 0);
   });
 
-  it('notes the / caveat: minimatch misses /, matchesGlob hits one no-cache rule', () => {
-    // minimatch 3.1.5 (superstatic, used by the Hosting emulator) does not
-    // match "/" against an extglob such as "/!(*.*|api|assets)" or "**/!(*.*)".
-    // Node path.matchesGlob does. Real Hosting returned a single
-    // "no-cache, no-store, must-revalidate" for GET / with that kind of
-    // extglob (measured on ROPI). This test uses minimatch for the other
-    // paths and, for "/", only allows one Cache-Control rule under either
-    // matcher. Do not add a second source of "/" — matchesGlob would then
-    // see two rules.
+  it('requires exactly one no-cache Cache-Control rule for / on minimatch and matchesGlob', () => {
+    // minimatch 3.1.5 (superstatic, the Hosting emulator) does not match "/"
+    // against "/!(*.*|api|assets)". "/" is therefore a literal alternative in
+    // the same no-cache source. A second source of "/" would make one of
+    // these matchers see two Cache-Control rules.
     const byMinimatch = matches(minimatch, '/', cacheRules);
     const byMatchesGlob = matches(matchesGlob, '/', cacheRules);
-    assert.equal(byMinimatch.length, 0);
+    assert.equal(byMinimatch.length, 1);
     assert.equal(byMatchesGlob.length, 1);
+    assert.equal(byMinimatch[0].value, NO_CACHE);
     assert.equal(byMatchesGlob[0].value, NO_CACHE);
+    assert.equal(byMinimatch[0].source, byMatchesGlob[0].source);
     assert.equal(minimatch('/', '**/!(*.*)'), false);
     assert.equal(matchesGlob('/', '**/!(*.*)'), true);
   });

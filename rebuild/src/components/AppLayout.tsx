@@ -18,6 +18,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [desktopDropdownOpen, setDesktopDropdownOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const chromeRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileButtonRef = useRef<HTMLButtonElement>(null);
   const desktopDropdownRef = useRef<HTMLDivElement>(null);
@@ -71,6 +72,19 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
+  }, []);
+
+  useEffect(() => {
+    const el = chromeRef.current;
+    if (!el) return;
+    const apply = () => {
+      el.style.setProperty('--app-chrome-height', `${el.offsetHeight}px`);
+    };
+    apply();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -172,11 +186,11 @@ export function AppLayout({ children }: AppLayoutProps) {
       >
         Skip to content
       </a>
-      <div className="sticky top-0 z-[60]">
+      <div ref={chromeRef} className="sticky top-0 z-50">
       <OfflineBanner />
       <PwaUpdateBanner />
       <header className="bg-blue-700 text-white">
-        <div className="max-w-7xl mx-auto px-4">
+        <div className="relative z-50 max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
             <button
@@ -400,7 +414,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               role="dialog"
               aria-modal="true"
               aria-label="Navigation menu"
-              className="fixed right-0 top-14 w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100dvh-56px)] flex flex-col xl:hidden"
+              className="absolute right-0 top-full w-full sm:w-80 bg-white text-gray-900 shadow-xl border-t border-gray-200 z-50 max-h-[calc(100dvh-var(--app-chrome-height,3.5rem))] flex flex-col xl:hidden"
             >
               {/* Profile header */}
               <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-gray-50">

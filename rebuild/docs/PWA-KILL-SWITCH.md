@@ -11,8 +11,8 @@ The kill worker:
 
 ## Same deploy, both changes
 
-1. Replace `public/sw.js` with `docs/sw-killswitch.js` (copy the file over `public/sw.js` before the build). The copied file contains the marker `SHKDIR_KILL_SWITCH`. `npm run build`, which is also the Firebase predeploy build, publishes that worker as `dist/sw.js` and does not require a build id. The build still stops if `__BUILD_ID__` is left in the kill-switch file. A normal `public/sw.js` still has to contain that placeholder exactly once.
-2. In that **same** Hosting deploy, remove the `navigator.serviceWorker.register` call from `src/main.tsx`. Also remove `<PwaUpdateBanner />` from `AppLayout` in that same change so open tabs stop calling `registration.update()`. Do not ship the kill worker while `main.tsx` still registers `/sw.js`. The next navigation would install the kill worker again.
+1. Replace `public/sw.js` with `docs/sw-killswitch.js` (copy the file over `public/sw.js` before the build). The first line of that file must be exactly `// SHKDIR_KILL_SWITCH`. Only that exact first line skips the build id. A later mention of `SHKDIR_KILL_SWITCH` does not. `npm run build`, which is also the Firebase predeploy build, publishes that worker as `dist/sw.js` and does not require a build id. The build still stops if `__BUILD_ID__` is left in the kill-switch file. A normal `public/sw.js` still has to contain that placeholder exactly once.
+2. In that **same** Hosting deploy, remove the `registerServiceWorker` function from `src/main.tsx`, not only the call at the bottom of the file. Also remove `<PwaUpdateBanner />` and the `PwaUpdateBanner` import from `AppLayout`. `tsc` uses `noUnusedLocals`, so an unused function or an unused import fails the build. Do not ship the kill worker while `main.tsx` still registers `/sw.js`. The next navigation would install the kill worker again. Open tabs stop calling `registration.update()` once the banner is gone.
 
 Removing the register call in a follow-up deploy is not enough. The register call comes out in the same deploy as the kill worker.
 

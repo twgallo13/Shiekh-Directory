@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { PwaUpdateBanner } from '../src/components/PwaUpdateBanner';
 
 vi.mock('../src/lib/buildId', () => ({
@@ -9,6 +9,7 @@ vi.mock('../src/lib/buildId', () => ({
 
 interface SwHandle {
   update: ReturnType<typeof vi.fn>;
+  onReply: ReturnType<typeof vi.fn>;
   setControllerId: (id: string | null) => void;
   fireControllerChange: () => void;
 }
@@ -17,10 +18,12 @@ function installServiceWorker(initialId: string | null): SwHandle {
   const listeners = new Set<(event: Event) => void>();
   let controllerId = initialId;
   const update = vi.fn(async () => {});
+  const onReply = vi.fn();
   const postMessage = (message: { type?: string }, transfer?: MessagePort[]) => {
     if (!message || message.type !== 'GET_BUILD_ID') return;
     const port = transfer?.[0];
     port?.postMessage({ type: 'BUILD_ID', buildId: controllerId });
+    onReply(controllerId);
   };
   const sw = {
     get controller() {
@@ -39,6 +42,7 @@ function installServiceWorker(initialId: string | null): SwHandle {
   Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: sw });
   return {
     update,
+    onReply,
     setControllerId(id: string | null) {
       controllerId = id;
     },
@@ -63,14 +67,15 @@ afterEach(() => {
 describe('PwaUpdateBanner', () => {
   it('stays hidden when the worker build id matches the page', async () => {
     const reload = mockReload();
-    installServiceWorker('page-build');
+    const sw = installServiceWorker('page-build');
     render(<PwaUpdateBanner />);
     await waitFor(() => {
-      expect(navigator.serviceWorker.getRegistration).toHaveBeenCalled();
+      expect(sw.onReply).toHaveBeenCalledWith('page-build');
     });
-    await waitFor(() => {
-      expect(screen.queryByRole('status')).toBeNull();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    expect(screen.queryByRole('status')).toBeNull();
     expect(reload).not.toHaveBeenCalled();
   });
 

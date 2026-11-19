@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import {
   BUILD_ID_PLACEHOLDER,
-  KILL_SWITCH_MARKER,
+  KILL_SWITCH_MARKER_LINE,
+  isKillSwitchWorker,
   createBuildId,
   finalizeServiceWorker,
   stampServiceWorker,
@@ -187,6 +188,11 @@ describe('service worker policy', () => {
     assert.equal(stamped.includes(buildId), true);
     assert.equal(finalizeServiceWorker(stamped, buildId), stamped);
     assert.throws(() => finalizeServiceWorker('self.addEventListener("install", () => {});\n', buildId));
+    const stray = `// mentions ${KILL_SWITCH_MARKER_LINE.slice(3)} in passing\n${publicSource}`;
+    assert.equal(isKillSwitchWorker(stray), false);
+    const strayStamped = finalizeServiceWorker(stray, buildId);
+    assert.equal(strayStamped.includes(BUILD_ID_PLACEHOLDER), false);
+    assert.equal(strayStamped.includes(buildId), true);
   });
 
   const distPath = join(root, 'dist', 'sw.js');
@@ -211,7 +217,9 @@ describe('kill switch', () => {
   const source = readFileSync(join(root, 'docs', 'sw-killswitch.js'), 'utf8');
 
   it('passes through the production build without a build id', () => {
-    assert.equal(source.includes(KILL_SWITCH_MARKER), true);
+    assert.equal(source.startsWith(`${KILL_SWITCH_MARKER_LINE}\n`), true);
+    assert.equal(isKillSwitchWorker(source), true);
+    assert.equal(isKillSwitchWorker(`/* ${KILL_SWITCH_MARKER_LINE} */\n${source}`), false);
     assert.equal(source.includes(BUILD_ID_PLACEHOLDER), false);
     const buildId = 'build-test-kill';
     assert.equal(finalizeServiceWorker(source, buildId), source);

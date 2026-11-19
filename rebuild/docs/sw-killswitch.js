@@ -1,6 +1,6 @@
 // SHKDIR_KILL_SWITCH
 // Ready-to-copy kill switch. Replace public/sw.js with this file.
-// The build recognizes this marker and publishes the file without a build id.
+// The build skips the build id only when the line above is the first line.
 // It takes over, deletes Cache Storage, and unregisters. It never
 // navigates clients and never reloads pages.
 self.addEventListener("install", () => {

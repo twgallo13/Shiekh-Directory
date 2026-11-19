@@ -24,6 +24,7 @@ interface HeaderRule {
 }
 
 interface FirebaseHosting {
+  ignore: string[];
   headers: HeaderRule[];
   rewrites: Array<{ source: string; function?: string; destination?: string }>;
 }
@@ -85,8 +86,29 @@ describe('firebase.json hosting headers', () => {
     ]);
     assert.deepEqual(config.hosting.rewrites, [
       { source: '/api/**', function: 'api' },
-      { source: '**', destination: '/index.html' },
+      { source: '!/functions.js', destination: '/index.html' },
     ]);
+  });
+
+  it('keeps the server bundle out of the Hosting upload', () => {
+    // This test fails if functions.js (or the source map) is removed from
+    // hosting.ignore, which would publish the Cloud Functions bundle.
+    const { ignore } = config.hosting;
+    assert.equal(ignore.includes('functions.js'), true);
+    assert.equal(ignore.includes('functions.js.map'), true);
+  });
+
+  it('does not rewrite /functions.js to the app, and still rewrites SPA paths', () => {
+    const spa = config.hosting.rewrites.find((rule) => rule.destination === '/index.html');
+    assert.ok(spa?.source, 'expected an index.html rewrite');
+    assert.equal(minimatch('/functions.js', spa.source), false);
+    assert.equal(minimatch('/functions.js/', spa.source), false);
+    // The map is ignored at upload time. It may still match this rewrite
+    // (soft 404 as index.html) because a brace-negation glob is unreliable
+    // on Hosting. The leak path is /functions.js.
+    for (const urlPath of PATHS) {
+      assert.equal(minimatch(urlPath, spa.source), true, urlPath);
+    }
   });
 
   it('matches at most one Cache-Control rule per path on minimatch and matchesGlob', () => {

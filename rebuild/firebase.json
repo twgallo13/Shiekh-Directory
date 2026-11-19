@@ -1,7 +1,13 @@
 {
   "hosting": {
     "public": "dist",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "functions.js",
+      "functions.js.map"
+    ],
     "predeploy": [
       "npm run build"
     ],
@@ -49,7 +55,7 @@
         "function": "api"
       },
       {
-        "source": "**",
+        "source": "!/functions.js",
         "destination": "/index.html"
       }
     ]

@@ -14,6 +14,7 @@ import type {
 } from '../../src/types';
 import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
 import { normalizePhoneNumber } from '../utils/phone';
+import { normalizeStoreNumber, storeNumbersMatch } from '../utils/storeNumber';
 import { createPreImportBackup } from '../scheduledBackup';
 
 interface CsvRow {
@@ -150,15 +151,8 @@ const FACILITY_STORE_NUMBERS = new Set(['01', '04', '86']);
 
 const IMPORT_SESSION_TTL_MS = 30 * 60_000;
 
-export function normalizeStoreNumber(storeNumber: string): string {
-  const cleaned = storeNumber.replace(/^#/, '').trim();
-  const numeric = cleaned.replace(/^0+/, '') || '0';
-  return numeric.padStart(2, '0');
-}
-
-export function storeNumbersMatch(a: string, b: string): boolean {
-  return normalizeStoreNumber(a) === normalizeStoreNumber(b);
-}
+// Re-export from shared util for backward compatibility (used by realImport.test.ts)
+export { normalizeStoreNumber, storeNumbersMatch };
 
 export function createLegacyImportRouter(db: Firestore): Router {
   const router = Router();

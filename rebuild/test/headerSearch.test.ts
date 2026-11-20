@@ -1,3 +1,10 @@
+/**
+ * HeaderSearch Component Tests
+ * 
+ * Tests UI behavior and accessibility requirements.
+ * Search ranking logic is tested in searchRoutes.test.ts via the real route handlers.
+ */
+
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
@@ -30,10 +37,14 @@ describe('HeaderSearch Component', () => {
   });
 
   describe('Search query handling', () => {
-    it('ignores queries shorter than 2 characters', () => {
-      const query = 'a';
-      const shouldSearch = query.trim().length >= 2;
-      assert.strictEqual(shouldSearch, false);
+    it('ignores queries shorter than 2 characters (except single digit)', () => {
+      // Single letter should not search
+      const queryA = 'a';
+      const shouldSearchA = queryA.trim().length >= 2;
+      assert.strictEqual(shouldSearchA, false);
+      
+      // But note: single digit store numbers (e.g., "7") ARE allowed by the route
+      // This test is for the UI minimum, the route handles single digits specially
     });
 
     it('searches queries of 2 or more characters', () => {
@@ -158,3 +169,8 @@ describe('HeaderSearch Component', () => {
     });
   });
 });
+
+// Search ranking tests are now in searchRoutes.test.ts
+// which tests the actual route handlers with a fake Firestore.
+
+console.log('HeaderSearch component tests loaded');

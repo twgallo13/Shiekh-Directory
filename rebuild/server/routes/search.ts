@@ -8,6 +8,7 @@ import {
   rankLocationsForStoreQuery,
   filterLocationsForTextQuery,
   isPhoneLikeQuery,
+  isZeroOnlyQuery,
   type RankableLocation,
 } from '../utils/storeNumber';
 
@@ -31,33 +32,33 @@ export function createSearchRouter(db: Firestore): Router {
       });
     }
     
-    // Check for minimum length after stripping '#'
+    // Check for '#' alone - return empty
     const withoutHash = query.replace(/^#/, '');
-    if (withoutHash.length < 1) {
+    if (withoutHash.length === 0) {
       return res.json({ data: [] });
     }
     
-    // Single character: only allow single-digit store-number queries
-    if (withoutHash.length === 1 && !/^\d$/.test(withoutHash)) {
-      return res.json({ data: [] });
-    }
+    // Note: 1-character text queries (like 'l', 'a') are allowed for name/city matching
+    // This matches main's behavior. Only '#' alone is rejected.
     
     try {
       const isStoreQuery = isStoreNumberQuery(query);
       const phoneQuery = isPhoneLikeQuery(query);
+      const isZeroOnly = isZeroOnlyQuery(query);
       
       // ========== LOCATIONS ==========
       const locationsSnap = await db.collection('locations')
         .where('lifecycle', '==', 'active')
         .get();
       
-      // Build rankable locations (minimal data for ranking)
-      const rankableLocations: (RankableLocation & { 
-        state: string;
-        mainPhoneRaw: string;
-        phonePublic: boolean;
-      })[] = locationsSnap.docs.map(doc => {
-        const data = doc.data() as Location;
+      // Keep the FULL Location document for each location
+      // This is needed for correct statusNow calculation later
+      type LocationWithDoc = RankableLocation & { 
+        _doc: Location;  // Full Firestore document
+      };
+      
+      const rankableLocations: LocationWithDoc[] = locationsSnap.docs.map(doc => {
+        const data = { id: doc.id, ...doc.data() } as Location;
         return {
           id: doc.id,
           storeNumber: data.storeNumber || '',
@@ -65,14 +66,12 @@ export function createSearchRouter(db: Firestore): Router {
           city: data.address?.city || '',
           mall: data.mallOrCenterName,
           mainPhone: data.mainPhone,
-          state: data.address?.state || '',
-          mainPhoneRaw: data.mainPhone || '',
-          phonePublic: data.phonePublic ?? true,
+          _doc: data,  // Keep full document
         };
       });
       
       // Rank/filter locations (pure, no DB calls)
-      let rankedLocations: typeof rankableLocations;
+      let rankedLocations: LocationWithDoc[];
       
       if (isStoreQuery) {
         // Store-number-shaped query: use tiered ranking (store first, then prefix, then others)
@@ -99,6 +98,7 @@ export function createSearchRouter(db: Firestore): Router {
       
       // Filter people: name match, or work phone match (3+ digits)
       // M7: Do NOT match on mobilePhone - this is a privacy fix
+      // Note: Zero-only queries (like '000') skip phone matching for people too
       const matchedPeople: Person[] = [];
       
       for (const doc of peopleSnap.docs) {
@@ -107,8 +107,9 @@ export function createSearchRouter(db: Firestore): Router {
         const nameMatch = person.fullName.toLowerCase().includes(query);
         
         // Phone match requires 3+ digits and uses workPhone only (not mobilePhone)
+        // Zero-only queries skip phone matching entirely
         let phoneMatch = false;
-        if (phoneQuery.isPhoneLike && person.workPhone) {
+        if (phoneQuery.isPhoneLike && !isZeroOnly && person.workPhone) {
           const workDigits = person.workPhone.replace(/\D/g, '');
           phoneMatch = workDigits.includes(phoneQuery.digits);
         }
@@ -131,7 +132,7 @@ export function createSearchRouter(db: Firestore): Router {
       // For non-store-number queries: interleave by title (existing behavior)
       
       const LIMIT = 20;
-      let finalLocations: typeof rankedLocations;
+      let finalLocations: LocationWithDoc[];
       let finalPeople: Person[];
       
       if (isStoreQuery) {
@@ -143,7 +144,7 @@ export function createSearchRouter(db: Firestore): Router {
       } else {
         // Non-store-number query: existing behavior - interleave by title
         // Build combined list with types, sort by title, then limit
-        const combined: Array<{ type: 'location' | 'person'; title: string; item: typeof rankableLocations[0] | Person }> = [];
+        const combined: Array<{ type: 'location' | 'person'; title: string; item: LocationWithDoc | Person }> = [];
         
         for (const loc of rankedLocations) {
           combined.push({
@@ -171,7 +172,7 @@ export function createSearchRouter(db: Firestore): Router {
         
         // Take first 20 and separate back into locations and people
         const limited = combined.slice(0, LIMIT);
-        finalLocations = limited.filter(x => x.type === 'location').map(x => x.item as typeof rankableLocations[0]);
+        finalLocations = limited.filter(x => x.type === 'location').map(x => x.item as LocationWithDoc);
         finalPeople = limited.filter(x => x.type === 'person').map(x => x.item as Person);
       }
       
@@ -188,25 +189,20 @@ export function createSearchRouter(db: Firestore): Router {
         const exceptionsSnap = await db.collection(`locations/${loc.id}/hoursExceptions`).get();
         const exceptions = exceptionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as HoursException[];
         
-        // Build a minimal Location object for resolveOperatingStatus
-        const locationForStatus: Location = {
-          id: loc.id,
-          storeNumber: loc.storeNumber,
-          name: loc.name,
-          address: { city: loc.city, state: loc.state, street: '', zip: '', country: 'US' },
-          mainPhone: loc.mainPhoneRaw,
-          phonePublic: loc.phonePublic,
-          timeZone: 'America/Los_Angeles', // Default for status calculation
-        } as Location;
+        // Use the FULL Location document for resolveOperatingStatus
+        // This ensures lifecycle, standardHours, and timeZone are all correct
+        const statusNow = resolveOperatingStatus(loc._doc, closures, exceptions);
         
-        const statusNow = resolveOperatingStatus(locationForStatus, closures, exceptions);
+        // Phone visibility: use === true to match base behavior
+        // A missing phonePublic field means the phone is HIDDEN (base behavior)
+        const showPhone = loc._doc.phonePublic === true;
         
         locationResults.push({
           type: 'location',
           id: loc.id,
           title: `#${loc.storeNumber} ${loc.name}`,
-          subtitle: `${loc.city}, ${loc.state}`,
-          phone: loc.phonePublic ? formatPhoneNumber(loc.mainPhoneRaw) : undefined,
+          subtitle: `${loc.city}, ${loc._doc.address?.state || ''}`,
+          phone: showPhone ? formatPhoneNumber(loc._doc.mainPhone) : undefined,
           statusNow,
         });
       }

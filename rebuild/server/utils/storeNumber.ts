@@ -4,14 +4,24 @@
  * Store numbers are stored as text with leading zeros preserved ("007" is not "7").
  * However, for search purposes, users expect 7, 07, and 007 to match the same store.
  * 
- * Tie-break rule when multiple stores match (e.g., 7, 07, 007 all exist):
- * 1. Raw exact match first (typed "12" matches stored "12" before "012")
- * 2. Then by normalized value length ascending (shorter normalized = more specific)
- * 3. Then by raw string lexicographic order
- * 4. Then by document id as final deterministic key
+ * Tie-break rules (applied in order):
  * 
- * Zero-only queries (0, 00, 000): These all normalize to "00" and should return
- * only exact matches, not substring matches (since every store contains "0").
+ * TIER 1 (exact normalized match):
+ *   1. Raw exact match first (typed "12" → stored "12" before "012")
+ *   2. Then shorter raw string (stored "7" before "07" before "007")
+ *   3. Then raw string lexicographic
+ *   4. Then document id as final deterministic key
+ * 
+ * TIER 2 (prefix match):
+ *   1. By normalized length ascending (store 12 before 100, 101, 112)
+ *   2. Then raw string lexicographic
+ *   3. Then document id
+ * 
+ * Zero-only queries (0, 00, 000): These all normalize to "00" and return
+ * only exact matches, not substring matches.
+ * 
+ * Single-digit queries (7, #7): Return only exact + prefix matches,
+ * NOT substring matches like 307, 317. This prevents tier-3 spray.
  */
 
 /**
@@ -20,10 +30,11 @@
  * - Strip leading zeros (but keep at least one digit)
  * - Pad to minimum 2 digits
  * 
- * Examples: "007" → "07", "7" → "07", "12" → "12", "0" → "00"
+ * Examples: "007" → "07", "7" → "07", "12" → "12", "0" → "00", "" → "00"
  */
 export function normalizeStoreNumber(storeNumber: string): string {
   const cleaned = storeNumber.replace(/^#/, '').trim();
+  if (cleaned === '') return '00'; // Empty string normalizes to "00"
   const numeric = cleaned.replace(/^0+/, '') || '0';
   return numeric.padStart(2, '0');
 }
@@ -38,10 +49,11 @@ export function storeNumbersMatch(a: string, b: string): boolean {
 /**
  * Check if a query looks like a store number:
  * - Optional leading '#'
- * - 1-4 digits only (after stripping #)
+ * - 1+ digits only (after stripping # and leading zeros)
+ * - The significant part (after stripping leading zeros) must be 1-4 digits
  * - No letters or other characters
  * 
- * This is strict to avoid treating "store 07" or "1 2" as store numbers.
+ * This allows '00123' to match store 123 (leading zeros don't count toward limit).
  */
 export function isStoreNumberQuery(query: string): boolean {
   const trimmed = query.trim();
@@ -50,10 +62,25 @@ export function isStoreNumberQuery(query: string): boolean {
   // Strip optional leading '#'
   const withoutHash = trimmed.replace(/^#/, '');
   
-  // Must be 1-4 digits only
-  if (!/^\d{1,4}$/.test(withoutHash)) return false;
+  // Must be all digits
+  if (!/^\d+$/.test(withoutHash)) return false;
+  
+  // Strip leading zeros and check the significant part is 1-4 digits
+  const significant = withoutHash.replace(/^0+/, '') || '0';
+  if (significant.length > 4) return false;
   
   return true;
+}
+
+/**
+ * Check if a query is a single-digit store number (after stripping # and zeros).
+ * Single-digit queries only get exact + prefix matches, not tier-3 substring.
+ */
+export function isSingleDigitStoreQuery(query: string): boolean {
+  if (!isStoreNumberQuery(query)) return false;
+  const withoutHash = query.trim().replace(/^#/, '');
+  const significant = withoutHash.replace(/^0+/, '') || '0';
+  return significant.length === 1;
 }
 
 /**
@@ -63,7 +90,7 @@ export function isStoreNumberQuery(query: string): boolean {
  */
 export function isZeroOnlyQuery(query: string): boolean {
   const withoutHash = query.trim().replace(/^#/, '');
-  return /^0+$/.test(withoutHash);
+  return withoutHash.length > 0 && /^0+$/.test(withoutHash);
 }
 
 /**
@@ -76,10 +103,13 @@ export function extractStoreDigits(query: string): string {
 /**
  * Check if a query is phone-like: consists of digits and phone separators only,
  * with at least 3 digits. This prevents "store 07" from being treated as a phone query.
+ * 
+ * Note: "ext." style extensions are allowed (555-123 ext. 4567) since they contain
+ * only the allowed characters when checking the phone portion.
  */
 export function isPhoneLikeQuery(query: string): { isPhoneLike: boolean; digits: string } {
-  // Allow only digits and common phone separators
-  const phoneChars = /^[\d\s\-().+]+$/;
+  // Allow only digits and common phone separators (including 'ext' for extensions)
+  const phoneChars = /^[\d\s\-().+ext]+$/i;
   const trimmed = query.trim();
   
   if (!phoneChars.test(trimmed)) {
@@ -110,7 +140,7 @@ export interface RankableLocation {
  * Ranking tier for store-number-shaped queries:
  * 1 = exact store number match (normalized equality)
  * 2 = prefix match (store number starts with query digits)
- * 3 = other matches (name, city, mall, phone)
+ * 3 = other matches (name, city, mall, phone) - SKIPPED for single-digit queries
  */
 export type RankTier = 1 | 2 | 3;
 
@@ -126,6 +156,9 @@ export interface RankedLocation<T extends RankableLocation> {
  * This is a pure function: no database access, no side effects.
  * It only handles location ranking - people are handled separately by the caller.
  * 
+ * For single-digit queries (like '7'), only tier 1 (exact) and tier 2 (prefix)
+ * matches are returned - tier 3 (substring) matches are excluded to prevent spray.
+ * 
  * @param query - The search query (must pass isStoreNumberQuery check)
  * @param locations - Array of locations to rank
  * @param includePhoneMatches - Whether to include phone-based matches (tier 3)
@@ -139,15 +172,22 @@ export function rankLocationsForStoreQuery<T extends RankableLocation>(
   const queryDigits = extractStoreDigits(query.toLowerCase());
   const normalizedQuery = normalizeStoreNumber(queryDigits);
   const isZeroOnly = isZeroOnlyQuery(query);
+  const isSingleDigit = isSingleDigitStoreQuery(query);
   
-  // For phone matching, we need 3+ digits
+  // For phone matching, we need 3+ digits and not zero-only
   const phoneQuery = isPhoneLikeQuery(query);
-  const canMatchPhone = includePhoneMatches && phoneQuery.isPhoneLike && !isZeroOnly;
+  const canMatchPhone = includePhoneMatches && phoneQuery.isPhoneLike && !isZeroOnly && !isSingleDigit;
   
   const results: RankedLocation<T>[] = [];
   
   for (const location of locations) {
     const storeNum = location.storeNumber?.toLowerCase() || '';
+    
+    // A blank/empty store number should not match zero queries
+    if (storeNum === '' && isZeroOnly) {
+      continue;
+    }
+    
     const normalizedStore = normalizeStoreNumber(storeNum);
     
     // Check for exact match (tier 1)
@@ -174,6 +214,11 @@ export function rankLocationsForStoreQuery<T extends RankableLocation>(
         tier: 2,
         rawExact: false,
       });
+      continue;
+    }
+    
+    // For single-digit queries, skip tier 3 entirely (no substring matches)
+    if (isSingleDigit) {
       continue;
     }
     
@@ -205,28 +250,48 @@ export function rankLocationsForStoreQuery<T extends RankableLocation>(
     // Primary sort: by tier
     if (a.tier !== b.tier) return a.tier - b.tier;
     
+    const snA = a.location.storeNumber || '';
+    const snB = b.location.storeNumber || '';
+    
     // Within tier 1 (exact matches), apply tie-break:
     // 1. Raw exact match first
-    // 2. Then by normalized length (shorter = more specific)
-    // 3. Then by raw string lexicographic
+    // 2. Then shorter raw string
+    // 3. Then raw string lexicographic
     // 4. Then by id
     if (a.tier === 1) {
       if (a.rawExact && !b.rawExact) return -1;
       if (b.rawExact && !a.rawExact) return 1;
       
-      const normA = normalizeStoreNumber(a.location.storeNumber);
-      const normB = normalizeStoreNumber(b.location.storeNumber);
-      if (normA.length !== normB.length) return normA.length - normB.length;
+      // Shorter raw string first (7 before 07 before 007)
+      if (snA.length !== snB.length) return snA.length - snB.length;
+      
+      // Lexicographic
+      const cmp = snA.localeCompare(snB);
+      if (cmp !== 0) return cmp;
+      
+      return a.location.id.localeCompare(b.location.id);
     }
     
-    // Within tier 2 (prefix matches), sort by store number
-    // to get 120, 121, 125 in order
-    const snA = a.location.storeNumber || '';
-    const snB = b.location.storeNumber || '';
+    // Within tier 2 (prefix matches):
+    // 1. By normalized length ascending (12 before 100, 101, 112)
+    // 2. Then raw string lexicographic
+    // 3. Then by id
+    if (a.tier === 2) {
+      const normA = normalizeStoreNumber(snA);
+      const normB = normalizeStoreNumber(snB);
+      
+      if (normA.length !== normB.length) return normA.length - normB.length;
+      
+      const cmp = snA.localeCompare(snB);
+      if (cmp !== 0) return cmp;
+      
+      return a.location.id.localeCompare(b.location.id);
+    }
+    
+    // Tier 3: just lexicographic by store number, then id
     const cmp = snA.localeCompare(snB);
     if (cmp !== 0) return cmp;
     
-    // Final deterministic tie-break: document id
     return a.location.id.localeCompare(b.location.id);
   });
   

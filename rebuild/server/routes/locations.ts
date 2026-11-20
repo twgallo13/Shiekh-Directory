@@ -18,6 +18,13 @@ import { formatPhoneNumber } from '../utils/phone';
 import { formatAddress, getMapsUrl } from '../utils/address';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 import { resolvePositionHolders } from '../utils/positionHolder';
+import {
+  isStoreNumberQuery,
+  rankLocationsForStoreQuery,
+  filterLocationsForTextQuery,
+  isPhoneLikeQuery,
+  type RankableLocation,
+} from '../utils/storeNumber';
 
 export function createLocationsRouter(db: Firestore): Router {
   const router = Router();
@@ -261,8 +268,6 @@ export function createLocationsRouter(db: Firestore): Router {
     try {
       const { q } = req.query;
       
-      // Minimum length check: 2 characters AFTER stripping leading '#'
-      // This prevents '#' alone from matching everything
       if (!q || typeof q !== 'string') {
         return res.json({ data: [] });
       }
@@ -270,11 +275,15 @@ export function createLocationsRouter(db: Firestore): Router {
       const trimmed = q.trim();
       const withoutHash = trimmed.replace(/^#/, '');
       
+      // '#' alone returns empty
+      if (withoutHash.length === 0) {
+        return res.json({ data: [] });
+      }
+      
+      // Minimum 2 characters, except single-digit store-number queries
       if (withoutHash.length < 2) {
-        // Special case: single digit store-number query (e.g., "7", "#7")
-        // Allow these for exact/prefix store matches only
         if (withoutHash.length === 1 && /^\d$/.test(withoutHash)) {
-          // Fall through to handle as store-number query
+          // Single digit store-number query - allow for exact/prefix only
         } else {
           return res.json({ data: [] });
         }
@@ -287,7 +296,8 @@ export function createLocationsRouter(db: Firestore): Router {
         .get();
       
       // Build rankable locations from Firestore docs
-      const rankableLocations = locationsSnap.docs.map(doc => {
+      type HeaderRankable = RankableLocation & { state?: string };
+      const rankableLocations: HeaderRankable[] = locationsSnap.docs.map(doc => {
         const data = doc.data() as Location;
         return {
           id: doc.id,
@@ -300,10 +310,7 @@ export function createLocationsRouter(db: Firestore): Router {
         };
       });
       
-      // Import ranking helpers
-      const { isStoreNumberQuery, rankLocationsForStoreQuery, filterLocationsForTextQuery, isPhoneLikeQuery } = await import('../utils/storeNumber');
-      
-      let rankedResults: typeof rankableLocations;
+      let rankedResults: HeaderRankable[];
       
       if (isStoreNumberQuery(searchQuery)) {
         // Store-number-shaped query: use tiered ranking

@@ -1,7 +1,17 @@
 /**
- * Mutation Tests for Search Ranking Fixes (R1 Review)
+ * Helper Unit Tests for storeNumber.ts
  * 
- * These 8 mutations verify the core search ranking behaviors are correct.
+ * These are unit-level assertions on the pure helper functions, NOT route-level
+ * mutation tests. The real mutation testing is done in searchRoutes.test.ts
+ * which calls the actual route handlers with a fake Firestore.
+ * 
+ * These tests verify:
+ * - Tier assignment (exact vs prefix vs substring)
+ * - Single-digit query handling (no tier 3)
+ * - Tie-break ordering (raw exact → shorter → lexicographic)
+ * - Zero-only query behavior
+ * - Store number normalization
+ * - Query validation
  */
 
 import { describe, it } from 'node:test';
@@ -18,7 +28,7 @@ function makeLoc(storeNumber: string): RankableLocation {
   return { id: `loc-${storeNumber}`, storeNumber, name: `Store ${storeNumber}`, city: 'Test City' };
 }
 
-describe('Mutation Tests for Search Ranking (R1)', () => {
+describe('Helper Unit Tests (storeNumber.ts)', () => {
   it('M1: q=12 → 012 is tier 1 (exact), not tier 2', () => {
     const locs = [
       makeLoc('012'),   // Should be tier 1 (exact)

@@ -261,64 +261,80 @@ export function createLocationsRouter(db: Firestore): Router {
     try {
       const { q } = req.query;
       
-      if (!q || typeof q !== 'string' || q.trim().length < 2) {
+      // Minimum length check: 2 characters AFTER stripping leading '#'
+      // This prevents '#' alone from matching everything
+      if (!q || typeof q !== 'string') {
         return res.json({ data: [] });
       }
       
-      const searchQuery = q.trim().toLowerCase();
-      const searchDigits = searchQuery.replace(/\D/g, '');
-      const searchWithoutHash = searchQuery.replace(/^#/, '');
+      const trimmed = q.trim();
+      const withoutHash = trimmed.replace(/^#/, '');
+      
+      if (withoutHash.length < 2) {
+        // Special case: single digit store-number query (e.g., "7", "#7")
+        // Allow these for exact/prefix store matches only
+        if (withoutHash.length === 1 && /^\d$/.test(withoutHash)) {
+          // Fall through to handle as store-number query
+        } else {
+          return res.json({ data: [] });
+        }
+      }
+      
+      const searchQuery = trimmed.toLowerCase();
       
       const locationsSnap = await db.collection('locations')
         .where('lifecycle', '==', 'active')
         .get();
       
-      const results: Array<{
-        id: string;
-        storeNumber: string;
-        title: string;
-        city?: string;
-        state?: string;
-        statusNow?: { state: string };
-      }> = [];
-      
-      for (const doc of locationsSnap.docs) {
+      // Build rankable locations from Firestore docs
+      const rankableLocations = locationsSnap.docs.map(doc => {
         const data = doc.data() as Location;
-        
-        const storeNumber = data.storeNumber?.toLowerCase() || '';
-        const name = data.name?.toLowerCase() || '';
-        const city = data.address?.city?.toLowerCase() || '';
-        const mall = data.mallOrCenterName?.toLowerCase() || '';
-        const phone = (data.mainPhone || '').replace(/\D/g, '');
-        
-        const matches =
-          storeNumber === searchWithoutHash ||
-          storeNumber.includes(searchWithoutHash) ||
-          name.includes(searchQuery) ||
-          city.includes(searchQuery) ||
-          mall.includes(searchQuery) ||
-          (searchDigits.length >= 3 && phone.includes(searchDigits));
-        
-        if (matches) {
-          results.push({
-            id: doc.id,
-            storeNumber: data.storeNumber,
-            title: data.name,
-            city: data.address?.city,
-            state: data.address?.state,
-          });
-        }
-        
-        if (results.length >= 10) break;
+        return {
+          id: doc.id,
+          storeNumber: data.storeNumber || '',
+          name: data.name || '',
+          city: data.address?.city || '',
+          mall: data.mallOrCenterName,
+          mainPhone: data.mainPhone,
+          state: data.address?.state,
+        };
+      });
+      
+      // Import ranking helpers
+      const { isStoreNumberQuery, rankLocationsForStoreQuery, filterLocationsForTextQuery, isPhoneLikeQuery } = await import('../utils/storeNumber');
+      
+      let rankedResults: typeof rankableLocations;
+      
+      if (isStoreNumberQuery(searchQuery)) {
+        // Store-number-shaped query: use tiered ranking
+        // Phone matches allowed only for 3+ digit queries
+        const phoneQuery = isPhoneLikeQuery(searchQuery);
+        const ranked = rankLocationsForStoreQuery(
+          searchQuery,
+          rankableLocations,
+          phoneQuery.isPhoneLike
+        );
+        rankedResults = ranked.map(r => r.location);
+      } else {
+        // Non-store-number query: keep existing behavior (startsWith title, then alpha)
+        rankedResults = filterLocationsForTextQuery(
+          searchQuery,
+          rankableLocations,
+          loc => `#${loc.storeNumber} ${loc.name}`
+        );
       }
       
-      results.sort((a, b) => {
-        const aExact = a.storeNumber?.toLowerCase() === searchWithoutHash;
-        const bExact = b.storeNumber?.toLowerCase() === searchWithoutHash;
-        if (aExact && !bExact) return -1;
-        if (bExact && !aExact) return 1;
-        return (a.storeNumber || '').localeCompare(b.storeNumber || '');
-      });
+      // Apply limit AFTER sorting (collect all, sort, then limit 10)
+      const limited = rankedResults.slice(0, 10);
+      
+      // Build response (title is name only - client adds #storeNumber)
+      const results = limited.map(loc => ({
+        id: loc.id,
+        storeNumber: loc.storeNumber,
+        title: loc.name,
+        city: loc.city,
+        state: loc.state,
+      }));
       
       return res.json({ data: results });
     } catch (err) {

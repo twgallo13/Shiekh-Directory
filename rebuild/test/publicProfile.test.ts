@@ -219,7 +219,7 @@ describe('public store profile', () => {
     assert.equal(body.companyTiles.some((tile) => tile.key === 'shop'), false);
     assert.equal('shop' in store, false);
     assert.equal('shopTileVisible' in store, false);
-    const serialized = JSON.stringify({ stores: body.stores, companyTiles: body.companyTiles });
+    const serialized = JSON.stringify(body);
     for (const secret of ['LEAKED_INBOX@secret.test', 'SECRET_WAYFINDING', 'SECRET_REASON_NOTE', 'SECRET_PERSON', 'defaultImage', 'imageUrl']) {
       assert.equal(serialized.includes(secret), false, secret);
     }
@@ -549,6 +549,30 @@ describe('public store profile', () => {
     assert.equal('unknown' in weekly.thursday, false);
     assert.deepEqual(weekly.friday, { closed: false, intervals: [{ open: '11:00', close: '19:00' }] });
     assert.equal('unknown' in weekly.friday, false);
+  });
+
+  it('a stored default link that fails the allowlist is omitted', async () => {
+    const db = getTestDb();
+    const ref = db.collection('settings').doc('storePageDefaults');
+    const before = await ref.get();
+    try {
+      await ref.set({
+        ...(before.data() ?? {}),
+        findStoreUrl: 'https://evil.example/stores',
+        defaultStoreImageUrl: 'https://www.shiekh.com/images/store.jpg',
+      }, { merge: true });
+      const response = await api('/api/public-profile/v1/stores', PUBLIC);
+      const body = await response.json() as Record<string, unknown>;
+      assert.equal(response.status, 200);
+      assert.equal('findStoreUrl' in body, false);
+      assert.equal('defaultStoreImageUrl' in body, false);
+      const serialized = JSON.stringify(body);
+      assert.equal(serialized.includes('evil.example'), false);
+      assert.equal(serialized.includes('www.shiekh.com/images/store.jpg'), false);
+    } finally {
+      if (before.exists) await ref.set(before.data()!);
+      else await ref.delete();
+    }
   });
 
   it('a page that is off omits saved store page fields', async () => {

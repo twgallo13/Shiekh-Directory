@@ -13,7 +13,8 @@ import {
   savedCompanyTileUrl,
   validateCompanyUrl,
   validateHoursException,
-  validateOptionalHttpsUrl,
+  readDefaultStoreImageUrl,
+  readFindStoreUrl,
   validateReviewUrl,
 } from '../../src/lib/storePageValidation';
 
@@ -157,9 +158,10 @@ function companyTiles(raw: unknown): Record<string, unknown>[] {
   return result;
 }
 
-function savedPublicUrl(raw: unknown): string | null {
-  const parsed = validateOptionalHttpsUrl(raw);
-  return parsed.ok ? parsed.href : null;
+function savedPublicUrl(raw: unknown, read: (value: unknown) => { action: string; href?: string }): string | null {
+  if (typeof raw !== 'string' || raw === '') return null;
+  const parsed = read(raw);
+  return parsed.action === 'set' && parsed.href ? parsed.href : null;
 }
 
 async function loadDefaults(db: Firestore): Promise<{ tiles: Record<string, unknown>[]; links: Record<string, string> }> {
@@ -167,8 +169,8 @@ async function loadDefaults(db: Firestore): Promise<{ tiles: Record<string, unkn
   if (!snap.exists) return { tiles: [], links: {} };
   const data = snap.data();
   const links: Record<string, string> = {};
-  const findStoreUrl = savedPublicUrl(data?.findStoreUrl);
-  const defaultStoreImageUrl = savedPublicUrl(data?.defaultStoreImageUrl);
+  const findStoreUrl = savedPublicUrl(data?.findStoreUrl, readFindStoreUrl);
+  const defaultStoreImageUrl = savedPublicUrl(data?.defaultStoreImageUrl, readDefaultStoreImageUrl);
   if (findStoreUrl) links.findStoreUrl = findStoreUrl;
   if (defaultStoreImageUrl) links.defaultStoreImageUrl = defaultStoreImageUrl;
   return { tiles: companyTiles(data?.tiles), links };

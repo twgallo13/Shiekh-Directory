@@ -12,8 +12,11 @@ import {
 import {
   parseExpectedVersion,
   parseMagentoStoreId,
+  readDefaultStoreImageUrl,
+  readFindStoreUrl,
   savedCompanyTileUrl,
-  validateOptionalHttpsUrl,
+  validateDefaultStoreImageUrl,
+  validateFindStoreUrl,
   validateReviewUrl,
   validateStorePageTiles,
 } from '../../src/lib/storePageValidation';
@@ -381,8 +384,8 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
       const data = snap.data();
       const parsed = data ? validateStorePageTiles(data.tiles) : null;
       const tiles = parsed?.ok ? parsed.tiles : EMPTY_STORE_PAGE_TILES;
-      const findStore = validateOptionalHttpsUrl(data?.findStoreUrl);
-      const defaultImageUrl = validateOptionalHttpsUrl(data?.defaultStoreImageUrl);
+      const findStore = validateFindStoreUrl(data?.findStoreUrl);
+      const defaultImageUrl = validateDefaultStoreImageUrl(data?.defaultStoreImageUrl);
       return res.json({
         data: {
           version: snap.exists ? Number(data?.version ?? 0) : 0,
@@ -412,10 +415,10 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
       }
       const parsed = validateStorePageTiles(req.body?.tiles);
       if (!parsed.ok) return errorBody(res, 400, 'invalid_tiles', parsed.message);
-      const findStore = validateOptionalHttpsUrl(req.body?.findStoreUrl);
-      if (!findStore.ok) return errorBody(res, 400, 'invalid_url', findStore.message);
-      const defaultImageUrl = validateOptionalHttpsUrl(req.body?.defaultStoreImageUrl);
-      if (!defaultImageUrl.ok) return errorBody(res, 400, 'invalid_url', defaultImageUrl.message);
+      const findStore = readFindStoreUrl(req.body?.findStoreUrl);
+      if (findStore.action === 'invalid') return errorBody(res, 400, 'invalid_url', findStore.message);
+      const defaultImageUrl = readDefaultStoreImageUrl(req.body?.defaultStoreImageUrl);
+      if (defaultImageUrl.action === 'invalid') return errorBody(res, 400, 'invalid_url', defaultImageUrl.message);
 
       const saved = await db.runTransaction(async (tx) => {
         const ref = db.collection('settings').doc('storePageDefaults');
@@ -427,16 +430,27 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
         const current = snap.data();
         const previousFind = typeof current?.findStoreUrl === 'string' ? current.findStoreUrl : null;
         const previousImage = typeof current?.defaultStoreImageUrl === 'string' ? current.defaultStoreImageUrl : null;
+        const nextFind = findStore.action === 'keep' ? previousFind : findStore.action === 'clear' ? null : findStore.href;
+        const nextImage = defaultImageUrl.action === 'keep' ? previousImage : defaultImageUrl.action === 'clear' ? null : defaultImageUrl.href;
         const now = new Date().toISOString();
         const nextVersion = currentVersion + 1;
         const doc = {
           tiles: parsed.tiles,
-          findStoreUrl: findStore.href,
-          defaultStoreImageUrl: defaultImageUrl.href,
+          findStoreUrl: nextFind,
+          defaultStoreImageUrl: nextImage,
           version: nextVersion,
           updatedAt: now,
           updatedBy: authUser.uid,
         };
+        const changes: { field: string; oldValue: string | null; newValue: string | null }[] = [
+          { field: 'tiles', oldValue: null, newValue: 'updated' },
+        ];
+        if (nextFind !== previousFind) {
+          changes.push({ field: 'findStoreUrl', oldValue: previousFind, newValue: nextFind });
+        }
+        if (nextImage !== previousImage) {
+          changes.push({ field: 'defaultStoreImageUrl', oldValue: previousImage, newValue: nextImage });
+        }
         if (!snap.exists) tx.create(ref, doc);
         else tx.update(ref, doc);
         const auditRef = db.collection('auditLog').doc();
@@ -450,11 +464,7 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
           entityType: 'store-page',
           entityId: 'defaults',
           entityName: 'Store page defaults',
-          changes: [
-            { field: 'tiles', oldValue: null, newValue: 'updated' },
-            { field: 'findStoreUrl', oldValue: previousFind, newValue: findStore.href },
-            { field: 'defaultStoreImageUrl', oldValue: previousImage, newValue: defaultImageUrl.href },
-          ],
+          changes,
           previousVersion: currentVersion,
           newVersion: nextVersion,
         });

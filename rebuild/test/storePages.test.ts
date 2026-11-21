@@ -32,6 +32,15 @@ function freshMagento(nudge: number): string {
   return String(((Date.now() + nudge) % 800000) + 100000);
 }
 
+function encodedPast2048(prefix: string): string {
+  const raw = `${prefix}${'é'.repeat(360)}`;
+  const href = new URL(raw).href;
+  if (raw.length >= href.length || href.length <= 2048) {
+    throw new Error(`fixture did not grow past 2048: raw ${raw.length} href ${href.length}`);
+  }
+  return raw;
+}
+
 describe('store pages app API', () => {
   const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const ownMagento = freshMagento(1);
@@ -361,7 +370,7 @@ describe('store pages app API', () => {
     const ref = db.collection('settings').doc('storePageDefaults');
     const before = await ref.get();
     const findStoreUrl = 'https://www.shiekh.com/stores';
-    const defaultStoreImageUrl = 'https://cdn.shiekh.com/images/store-default.jpg';
+    const defaultStoreImageUrl = 'https://qr.shiekh.store/images/store-default.jpg';
     const publicToken = 'test-api-token-public-profile';
     try {
       const current = await api('/api/app/admin/store-page-defaults', 'test-token-admin');
@@ -406,7 +415,7 @@ describe('store pages app API', () => {
       assert.equal(still.data()?.findStoreUrl, findStoreUrl);
       assert.equal(still.data()?.defaultStoreImageUrl, defaultStoreImageUrl);
 
-      const tooLong = `https://cdn.shiekh.com/${'a'.repeat(2040)}`;
+      const tooLong = `https://qr.shiekh.store/${'a'.repeat(2040)}`;
       assert.ok(tooLong.length > 2048);
       const rejected = [
         'http://www.shiekh.com/stores',
@@ -415,7 +424,11 @@ describe('store pages app API', () => {
         'https://localhost/stores',
         'https://127.0.0.1/stores',
         'https://[::1]/stores',
-        'https://cdn.shiekh.com:8443/image.jpg',
+        'https://qr.shiekh.store:8443/image.jpg',
+        'https://shíekh.com/stores',
+        'https://xn--shekh-0sa.com/stores',
+        'https://example.com/stores',
+        'https://evil.qr.shiekh.store/image.jpg',
         tooLong,
       ];
       for (const bad of rejected) {
@@ -508,6 +521,221 @@ describe('store pages app API', () => {
       if (before.exists) await ref.set(before.data()!);
       else await ref.delete();
     }
+  });
+
+  it('a partial defaults save keeps, clears, and audits each url on its own', async () => {
+    const db = getTestDb();
+    const ref = db.collection('settings').doc('storePageDefaults');
+    const before = await ref.get();
+    const tiles = {
+      ...EMPTY_STORE_PAGE_TILES,
+      returns: { ...EMPTY_STORE_PAGE_TILES.returns, url: 'https://www.shiekh.com/returns', show: true },
+    };
+    const findStoreUrl = 'https://shiekh.com/stores';
+    const replacementFind = 'https://qr.shiekh.store/find';
+    const defaultStoreImageUrl = 'https://qr.shiekh.store/images/store-default.jpg';
+    try {
+      const current = await api('/api/app/admin/store-page-defaults', 'test-token-admin');
+      const currentBody = await current.json() as { data: { version: number } };
+      const seeded = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: currentBody.data.version,
+          tiles,
+          findStoreUrl,
+          defaultStoreImageUrl,
+        }),
+      });
+      assert.equal(seeded.status, 200);
+      const seededBody = await seeded.json() as { data: { version: number } };
+      const beforeAudits = new Set(
+        (await db.collection('auditLog').where('entityId', '==', 'defaults').get()).docs.map((doc) => doc.id),
+      );
+
+      const tilesOnly = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({ expectedVersion: seededBody.data.version, tiles }),
+      });
+      assert.equal(tilesOnly.status, 200);
+      const tilesOnlyBody = await tilesOnly.json() as { data: { version: number; findStoreUrl: string; defaultStoreImageUrl: string; tiles: { returns: { url: string } } } };
+      assert.equal(tilesOnlyBody.data.version, seededBody.data.version + 1);
+      assert.equal(tilesOnlyBody.data.findStoreUrl, findStoreUrl);
+      assert.equal(tilesOnlyBody.data.defaultStoreImageUrl, defaultStoreImageUrl);
+      assert.equal(tilesOnlyBody.data.tiles.returns.url, 'https://www.shiekh.com/returns');
+
+      const clearFind = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: tilesOnlyBody.data.version,
+          tiles,
+          findStoreUrl: '',
+        }),
+      });
+      assert.equal(clearFind.status, 200);
+      const clearFindBody = await clearFind.json() as { data: { findStoreUrl: string | null; defaultStoreImageUrl: string } };
+      assert.equal(clearFindBody.data.findStoreUrl, null);
+      assert.equal(clearFindBody.data.defaultStoreImageUrl, defaultStoreImageUrl);
+
+      const clearImage = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: tilesOnlyBody.data.version + 1,
+          tiles,
+          defaultStoreImageUrl: null,
+        }),
+      });
+      assert.equal(clearImage.status, 200);
+      const clearImageBody = await clearImage.json() as { data: { version: number; findStoreUrl: string | null; defaultStoreImageUrl: string | null } };
+      assert.equal(clearImageBody.data.findStoreUrl, null);
+      assert.equal(clearImageBody.data.defaultStoreImageUrl, null);
+
+      const restored = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: clearImageBody.data.version,
+          tiles,
+          findStoreUrl,
+          defaultStoreImageUrl,
+        }),
+      });
+      const restoredBody = await restored.json() as { data: { version: number } };
+      assert.equal(restored.status, 200);
+      const changed = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: restoredBody.data.version,
+          tiles,
+          findStoreUrl: replacementFind,
+        }),
+      });
+      assert.equal(changed.status, 200);
+      const changedBody = await changed.json() as { data: { findStoreUrl: string; defaultStoreImageUrl: string; version: number } };
+      assert.equal(changedBody.data.findStoreUrl, replacementFind);
+      assert.equal(changedBody.data.defaultStoreImageUrl, defaultStoreImageUrl);
+      assert.equal(changedBody.data.version, restoredBody.data.version + 1);
+
+      const audits = await db.collection('auditLog').where('entityId', '==', 'defaults').get();
+      const created = audits.docs.filter((doc) => !beforeAudits.has(doc.id));
+      const findChange = created.flatMap((doc) => (doc.data().changes as Array<{ field: string; oldValue: string | null; newValue: string | null }>))
+        .find((change) => change.field === 'findStoreUrl' && change.newValue === replacementFind);
+      assert.equal(findChange?.oldValue, findStoreUrl);
+
+      for (const bad of [12, { href: findStoreUrl }, ['https://shiekh.com/stores'], true]) {
+        const response = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+          method: 'PUT',
+          body: JSON.stringify({
+            expectedVersion: changedBody.data.version,
+            tiles,
+            findStoreUrl: bad,
+          }),
+        });
+        assert.equal(response.status, 400, typeof bad);
+      }
+      const afterBad = await ref.get();
+      assert.equal(afterBad.data()?.findStoreUrl, replacementFind);
+      assert.equal(afterBad.data()?.defaultStoreImageUrl, defaultStoreImageUrl);
+      assert.equal(afterBad.data()?.version, changedBody.data.version);
+
+      const imageOnFindHost = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: changedBody.data.version,
+          tiles,
+          defaultStoreImageUrl: 'https://www.shiekh.com/images/store.jpg',
+        }),
+      });
+      assert.equal(imageOnFindHost.status, 400);
+      const qrFind = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: changedBody.data.version,
+          tiles,
+          findStoreUrl: 'https://QR.shiekh.store/find',
+          defaultStoreImageUrl: 'https://qr.shiekh.store/images/other.jpg',
+        }),
+      });
+      assert.equal(qrFind.status, 200);
+      const qrBody = await qrFind.json() as { data: { findStoreUrl: string; defaultStoreImageUrl: string } };
+      assert.equal(qrBody.data.findStoreUrl, 'https://qr.shiekh.store/find');
+      assert.equal(qrBody.data.defaultStoreImageUrl, 'https://qr.shiekh.store/images/other.jpg');
+    } finally {
+      if (before.exists) await ref.set(before.data()!);
+      else await ref.delete();
+    }
+  });
+
+  it('a stale defaults version is rejected and writes nothing', async () => {
+    const db = getTestDb();
+    const ref = db.collection('settings').doc('storePageDefaults');
+    const before = await ref.get();
+    try {
+      const current = await api('/api/app/admin/store-page-defaults', 'test-token-admin');
+      const currentBody = await current.json() as { data: { version: number } };
+      const saved = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: currentBody.data.version,
+          tiles: EMPTY_STORE_PAGE_TILES,
+          findStoreUrl: 'https://shiekh.com/stores',
+        }),
+      });
+      assert.equal(saved.status, 200);
+      const savedBody = await saved.json() as { data: { version: number } };
+      const stale = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: savedBody.data.version - 1,
+          tiles: EMPTY_STORE_PAGE_TILES,
+          findStoreUrl: 'https://www.shiekh.com/other',
+        }),
+      });
+      const staleBody = await stale.json() as { error?: { code?: string } };
+      assert.equal(stale.status, 409);
+      assert.equal(staleBody.error?.code, 'version_conflict');
+      const after = await ref.get();
+      assert.equal(after.data()?.version, savedBody.data.version);
+      assert.equal(after.data()?.findStoreUrl, 'https://shiekh.com/stores');
+    } finally {
+      if (before.exists) await ref.set(before.data()!);
+      else await ref.delete();
+    }
+  });
+
+  it('percent-encoded links past 2048 are rejected for review, tile, and find-a-store urls', async () => {
+    const id = await seedTestLocation({
+      storeNumber: `95${suffix.slice(-4)}`,
+      name: 'Long Link',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    const review = await api(`/api/app/store-pages/${id}`, 'test-token-steward', {
+      method: 'PATCH',
+      body: JSON.stringify({ reviewUrl: encodedPast2048('https://g.page/r/'), expectedVersion: 0 }),
+    });
+    assert.equal(review.status, 400);
+    assert.equal((await getTestDb().collection('storePages').doc(id).get()).data()?.reviewUrl, undefined);
+
+    const tiles = {
+      ...EMPTY_STORE_PAGE_TILES,
+      returns: { ...EMPTY_STORE_PAGE_TILES.returns, url: encodedPast2048('https://www.shiekh.com/'), show: true },
+    };
+    const current = await api('/api/app/admin/store-page-defaults', 'test-token-admin');
+    const currentBody = await current.json() as { data: { version: number } };
+    const tileSave = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+      method: 'PUT',
+      body: JSON.stringify({ expectedVersion: currentBody.data.version, tiles }),
+    });
+    assert.equal(tileSave.status, 400);
+
+    const findSave = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+      method: 'PUT',
+      body: JSON.stringify({
+        expectedVersion: currentBody.data.version,
+        tiles: EMPTY_STORE_PAGE_TILES,
+        findStoreUrl: encodedPast2048('https://www.shiekh.com/'),
+      }),
+    });
+    assert.equal(findSave.status, 400);
   });
 
   it('version conflict on a second write', async () => {

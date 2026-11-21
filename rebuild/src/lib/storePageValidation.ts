@@ -74,9 +74,6 @@ function isIpLiteral(hostname: string): boolean {
 }
 
 function inspectHttps(raw: string, maxLength: number): { ok: true; url: URL } | { ok: false; message: string } {
-  if (raw.length > maxLength) {
-    return { ok: false, message: `Link must be ${maxLength} characters or less.` };
-  }
   if (hasWhitespaceOrControl(raw)) {
     return { ok: false, message: 'Link cannot contain spaces or line breaks.' };
   }
@@ -95,6 +92,9 @@ function inspectHttps(raw: string, maxLength: number): { ok: true; url: URL } | 
   if (url.port) {
     return { ok: false, message: 'Link cannot include a port.' };
   }
+  if (url.href.length > maxLength) {
+    return { ok: false, message: `Link must be ${maxLength} characters or less.` };
+  }
   return { ok: true, url };
 }
 
@@ -108,20 +108,58 @@ function parseHttps(raw: string, hosts: Set<string>, hostMessage: string): UrlRe
   return { ok: true, href: inspected.url.href };
 }
 
-/**
- * Optional public https link. Empty is unset.
- * Rejects credentials, localhost, IP-literal hosts, and any non-default port.
- */
-export function validateOptionalHttpsUrl(raw: unknown): UrlResult {
-  if (raw === null || raw === undefined || raw === '') return { ok: true, href: null };
-  if (typeof raw !== 'string') return { ok: false, message: 'Enter a link.' };
+const FIND_STORE_HOSTS = new Set(['shiekh.com', 'www.shiekh.com', 'qr.shiekh.store']);
+const DEFAULT_IMAGE_HOSTS = new Set(['qr.shiekh.store']);
+
+export type UrlFieldUpdate =
+  | { action: 'keep' }
+  | { action: 'clear' }
+  | { action: 'set'; href: string }
+  | { action: 'invalid'; message: string };
+
+/** Exact host match on the normalized hostname. Punycode look-alikes are not the listed hosts. */
+function hostAllowed(hostname: string, hosts: Set<string>): boolean {
+  const host = hostname.toLowerCase();
+  if (host.endsWith('.') || host === 'localhost' || host.endsWith('.localhost') || isIpLiteral(host)) return false;
+  return hosts.has(host);
+}
+
+function readAllowlistedUrl(raw: unknown, hosts: Set<string>, hostMessage: string): UrlFieldUpdate {
+  if (raw === undefined) return { action: 'keep' };
+  if (raw === null || raw === '') return { action: 'clear' };
+  if (typeof raw !== 'string') return { action: 'invalid', message: 'Enter a link.' };
   const inspected = inspectHttps(raw, 2048);
-  if (!inspected.ok) return inspected;
-  const host = inspected.url.hostname.toLowerCase();
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.') || isIpLiteral(host)) {
-    return { ok: false, message: 'Use a public https link. Local and IP addresses are not allowed.' };
+  if (!inspected.ok) return { action: 'invalid', message: inspected.message };
+  if (!hostAllowed(inspected.url.hostname, hosts)) {
+    return { action: 'invalid', message: hostMessage };
   }
-  return { ok: true, href: inspected.url.href };
+  return { action: 'set', href: inspected.url.href };
+}
+
+export function readFindStoreUrl(raw: unknown): UrlFieldUpdate {
+  return readAllowlistedUrl(
+    raw,
+    FIND_STORE_HOSTS,
+    'Use an https link on shiekh.com, www.shiekh.com, or qr.shiekh.store.',
+  );
+}
+
+export function readDefaultStoreImageUrl(raw: unknown): UrlFieldUpdate {
+  return readAllowlistedUrl(raw, DEFAULT_IMAGE_HOSTS, 'Use an https link on qr.shiekh.store.');
+}
+
+function urlResult(update: UrlFieldUpdate): UrlResult {
+  if (update.action === 'invalid') return { ok: false, message: update.message };
+  if (update.action === 'set') return { ok: true, href: update.href };
+  return { ok: true, href: null };
+}
+
+export function validateFindStoreUrl(raw: unknown): UrlResult {
+  return urlResult(readFindStoreUrl(raw));
+}
+
+export function validateDefaultStoreImageUrl(raw: unknown): UrlResult {
+  return urlResult(readDefaultStoreImageUrl(raw));
 }
 
 /** Empty becomes null. Otherwise a Google review link on an allowed host and path. */

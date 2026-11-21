@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { COMPANY_TILE_KEYS, COMPANY_TILE_LABELS, type CompanyTileKey, type StorePageTileDefaults } from '../constants/storePage';
-import { validateOptionalHttpsUrl } from '../lib/storePageValidation';
+import { validateDefaultStoreImageUrl, validateFindStoreUrl } from '../lib/storePageValidation';
 import { Dialog } from './Dialog';
 
 interface DefaultsPayload {
@@ -81,14 +81,18 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
     }
   };
 
-  const linkError = (value: string): string | null => {
-    const parsed = validateOptionalHttpsUrl(value);
+  const findLinkError = (value: string): string | null => {
+    const parsed = validateFindStoreUrl(value);
+    return parsed.ok ? null : parsed.message;
+  };
+  const imageLinkError = (value: string): string | null => {
+    const parsed = validateDefaultStoreImageUrl(value);
     return parsed.ok ? null : parsed.message;
   };
 
   const requestSave = () => {
-    const nextFindError = linkError(findStoreUrl);
-    const nextImageError = linkError(defaultStoreImageUrl);
+    const nextFindError = findLinkError(findStoreUrl);
+    const nextImageError = imageLinkError(defaultStoreImageUrl);
     setFindError(nextFindError);
     setImageError(nextImageError);
     if (nextFindError || nextImageError) return;
@@ -126,7 +130,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
               setFindStoreUrl(event.target.value);
               setFindError(null);
             }}
-            onBlur={() => setFindError(linkError(findStoreUrl))}
+            onBlur={() => setFindError(findLinkError(findStoreUrl))}
             aria-invalid={!!findError}
             aria-describedby={findError ? 'find-store-url-error' : 'find-store-url-help'}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
@@ -144,7 +148,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
               setDefaultStoreImageUrl(event.target.value);
               setImageError(null);
             }}
-            onBlur={() => setImageError(linkError(defaultStoreImageUrl))}
+            onBlur={() => setImageError(imageLinkError(defaultStoreImageUrl))}
             aria-invalid={!!imageError}
             aria-describedby={imageError ? 'default-store-image-url-error' : 'default-store-image-url-help'}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"

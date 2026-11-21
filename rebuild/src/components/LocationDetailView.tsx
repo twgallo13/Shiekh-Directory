@@ -18,6 +18,8 @@ import { Dialog } from './Dialog';
 import { CloseStoreDialog } from './CloseStoreDialog';
 import { apiGet, apiPost } from '../lib/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { StorePageCard } from './StorePageCard';
+import { canSeeStorePageCard } from '../lib/storePageAccess';
 
 export function LocationDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -889,9 +891,23 @@ export function LocationDetailView() {
             </div>
           )}
         </div>
+
+        {location && authUser && canSeeStorePageCard(authUser, location.id) && (
+          <StorePageCard
+            locationId={location.id}
+            storeNumber={location.storeNumber}
+            lifecycle={location.lifecycle}
+            authUser={authUser}
+          />
+        )}
         
-        {/* Report a Problem - available to all signed-in users, hidden for closed stores */}
-        {authUser && !isRetired && (
+        {/* Report a Problem - hidden for closed stores. A store login on another store gets a plain message. */}
+        {authUser && !isRetired && authUser.role === 'Store' && authUser.storeLocationId !== location.id && (
+          <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
+            <p className="text-sm text-gray-700">You can only report a problem for your own store.</p>
+          </div>
+        )}
+        {authUser && !isRetired && !(authUser.role === 'Store' && authUser.storeLocationId !== location.id) && (
           <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
             <div className="flex items-center justify-between">
               <div>

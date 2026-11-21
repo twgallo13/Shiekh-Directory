@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
+import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play, Lock } from 'lucide-react';
+import { StorePageDefaultsTab } from './StorePageDefaultsTab';
+import { PUBLIC_PROFILE_RATE_LIMIT } from '../constants/storePage';
 import { useAuth } from '../context/AuthContext';
 import { HoursTemplatesView } from './HoursTemplatesView';
 import { EmailSettingsView } from './EmailSettingsView';
@@ -9,7 +11,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
 import { AccessDenied } from './AccessDenied';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'workflow-rules' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'workflow-rules' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality' | 'store-page-defaults';
 
 interface User {
   id: string;
@@ -60,6 +62,7 @@ const SCOPES = [
   { id: 'staffing:read', label: 'Staffing (Read)' },
   { id: 'district-leadership:read', label: 'District Leadership (Read)' },
   { id: 'district-leadership:contacts:read', label: 'District Leadership Contacts (Read)' },
+  { id: 'public-profile:read', label: 'Public store page (Read)' },
 ];
 
 export function AdminView() {
@@ -88,6 +91,9 @@ export function AdminView() {
               </TabButton>
               <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock} panelId="panel-hours-templates">
                 Hours Templates
+              </TabButton>
+              <TabButton id="store-page-defaults" active={activeTab === 'store-page-defaults'} onClick={setActiveTab} icon={Lock} panelId="panel-store-page-defaults">
+                Store page defaults
               </TabButton>
               <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
               {/* Group 2: Workflows */}
@@ -162,6 +168,9 @@ export function AdminView() {
         </div>
         <div id="panel-hours-templates" role="tabpanel" aria-labelledby="tab-hours-templates" hidden={activeTab !== 'hours-templates'}>
           {activeTab === 'hours-templates' && <HoursTemplatesTab />}
+        </div>
+        <div id="panel-store-page-defaults" role="tabpanel" aria-labelledby="tab-store-page-defaults" hidden={activeTab !== 'store-page-defaults'}>
+          {activeTab === 'store-page-defaults' && <StorePageDefaultsTab getIdToken={getIdToken} />}
         </div>
         <div id="panel-backups" role="tabpanel" aria-labelledby="tab-backups" hidden={activeTab !== 'backups'}>
           {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
@@ -1066,9 +1075,15 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
   const [error, setError] = useState('');
 
   const toggleScope = (scope: string) => {
-    setScopes(prev =>
-      prev.includes(scope) ? prev.filter(s => s !== scope) : [...prev, scope]
-    );
+    setScopes((prev) => {
+      if (scope === 'public-profile:read') {
+        return prev.includes(scope) ? prev.filter((item) => item !== scope) : ['public-profile:read'];
+      }
+      const withoutPublic = prev.filter((item) => item !== 'public-profile:read');
+      return withoutPublic.includes(scope)
+        ? withoutPublic.filter((item) => item !== scope)
+        : [...withoutPublic, scope];
+    });
   };
 
   const handleSave = async () => {
@@ -1089,7 +1104,11 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
       const res = await fetch('/api/app/api-clients', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, scopes }),
+        body: JSON.stringify({
+          name,
+          scopes,
+          ...(scopes.includes('public-profile:read') ? { rateLimit: PUBLIC_PROFILE_RATE_LIMIT } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -1154,6 +1173,11 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
                 <span className="text-sm text-gray-700">{scope.label}</span>
               </label>
             ))}
+            {scopes.includes('public-profile:read') && (
+              <p className="text-sm text-gray-600">
+                Dynamic QR only. This scope cannot be combined with others. Rate limit: {PUBLIC_PROFILE_RATE_LIMIT} requests per minute.
+              </p>
+            )}
           </div>
         </fieldset>
       </div>

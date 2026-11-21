@@ -82,6 +82,10 @@ function formatFieldName(field: string): string {
     wayfindingDirections: 'Directions',
     status: 'Status',
     reason: 'Reason',
+    reviewUrl: 'Review link',
+    pageEnabled: 'Page on/off',
+    magentoStoreId: 'Magento store ID',
+    tiles: 'Company tiles',
   };
   return fieldLabels[field] || field.replace(/([A-Z])/g, ' $1').trim();
 }
@@ -199,6 +203,7 @@ export function AuditHistory({ locationId }: AuditHistoryProps) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium text-gray-900 text-sm">
+                            {entry.entityType === 'store-page' ? 'Store page · ' : ''}
                             {ACTION_LABELS[entry.action] || entry.action}
                           </span>
                           <span className={`text-xs px-1.5 py-0.5 rounded ${ROLE_COLORS[entry.userRole]}`}>

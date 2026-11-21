@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { User, AuthUser, Assignment, UserRole } from '../../src/types';
-import { isEmailDomainAllowed, isAdminEmail, getEmailDomain, getAllowedDomains, isSignInRestricted, isEmailOnAllowList, getSignInRestriction, type SignInRestriction } from '../config/auth';
+import { isEmailDomainAllowed, isGoogleSignInDomainAllowed, isRegisteredUserStatus, isAdminEmail, getEmailDomain, getAllowedDomains, isSignInRestricted, isEmailOnAllowList, getSignInRestriction, type SignInRestriction } from '../config/auth';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 
 function formatSignInRestrictedResponse(
@@ -50,29 +50,40 @@ export function createUsersRouter(db: Firestore): Router {
 
       let userDoc = await db.collection('users').doc(firebaseUser.uid).get();
 
-      // Domain rule: Google always; password users only when they would be linked/created
-      // (existing password accounts with their own record, e.g. QA test accounts, keep working).
-      // Email-link/password users outside the company domain (e.g. @shiekhshoes.com) are allowed
-      // only when an Admin explicitly put them on the approved list.
-      const passwordNeedsDomain = isPasswordUser && !userDoc.exists && !(await isEmailOnAllowList(db, normalizedEmail));
-      if ((isGoogleUser || passwordNeedsDomain) && !isEmailDomainAllowed(normalizedEmail)) {
-        const allowedDomains = getAllowedDomains();
-        const domain = getEmailDomain(normalizedEmail);
-        return res.status(403).json({
-          error: {
-            code: 'domain_not_allowed',
-            message: `Sign-in is restricted to company accounts. Your domain (${domain}) is not in the allowed list: ${allowedDomains.join(', ')}`,
-            requestId: res.locals.requestId,
-          },
-        });
-      }
-
       // r31/D4: approved-list mode
       const restricted = await isSignInRestricted(db);
       const onAllowList = await isEmailOnAllowList(db, normalizedEmail);
 
+      // Domain and email_verified apply only when creating or linking a NEW record.
+      // A user who already has users/{uid} passes here regardless of domain or
+      // email_verified (password Stewards on @shiekhshoes.com / @shiekh.test).
       if (!userDoc.exists && (isGoogleUser || isPasswordUser)) {
-        const emailVerified = isGoogleUser || firebaseUser.email_verified === true;
+        if (isGoogleUser && !isGoogleSignInDomainAllowed(normalizedEmail)) {
+          const domain = getEmailDomain(normalizedEmail);
+          return res.status(403).json({
+            error: {
+              code: 'domain_not_allowed',
+              message: `Sign-in with Google is restricted to @shiekhshoes.org. Your domain (${domain}) is not allowed.`,
+              requestId: res.locals.requestId,
+            },
+          });
+        }
+        // Password / email-link: company domain, or an Admin-approved address
+        // (including @shiekhshoes.com). Existing records never reach this branch.
+        const passwordNeedsDomain = isPasswordUser && !onAllowList;
+        if (passwordNeedsDomain && !isEmailDomainAllowed(normalizedEmail)) {
+          const allowedDomains = getAllowedDomains();
+          const domain = getEmailDomain(normalizedEmail);
+          return res.status(403).json({
+            error: {
+              code: 'domain_not_allowed',
+              message: `Sign-in is restricted to company accounts. Your domain (${domain}) is not in the allowed list: ${allowedDomains.join(', ')}`,
+              requestId: res.locals.requestId,
+            },
+          });
+        }
+
+        const emailVerified = firebaseUser.email_verified === true;
         const existingByEmail = await db.collection('users')
           .where('email', '==', normalizedEmail)
           .limit(2)
@@ -87,8 +98,15 @@ export function createUsersRouter(db: Firestore): Router {
         }
 
         if (candidates.length === 1) {
-          // Admin-added record exists. Password users need a verified email or an approved-list entry.
-          if (!emailVerified && !onAllowList) {
+          // Google must have email_verified === true before a link. Password users
+          // still link with a verified email or an approved-list entry.
+          if (isGoogleUser && !emailVerified) {
+            console.warn(`[me] not linking ${normalizedEmail}: Google email is not verified`);
+            return res.status(403).json({
+              error: { code: 'email_not_verified', message: 'Your email address has not been verified, so your account could not be linked. Please contact an Admin.', requestId: res.locals.requestId },
+            });
+          }
+          if (!isGoogleUser && !emailVerified && !onAllowList) {
             console.warn(`[me] not linking ${normalizedEmail}: email not verified and not on approved list`);
             return res.status(403).json({
               error: { code: 'email_not_verified', message: 'Your email address has not been verified, so your account could not be linked. Please contact an Admin.', requestId: res.locals.requestId },
@@ -102,6 +120,12 @@ export function createUsersRouter(db: Firestore): Router {
           }
           userDoc = await db.collection('users').doc(firebaseUser.uid).get();
         } else if (isGoogleUser) {
+          if (!emailVerified) {
+            console.warn(`[me] not creating ${normalizedEmail}: Google email is not verified`);
+            return res.status(403).json({
+              error: { code: 'email_not_verified', message: 'Your email address has not been verified, so an account was not created. Please contact an Admin.', requestId: res.locals.requestId },
+            });
+          }
           let role: UserRole | null = null;
           if (isAdminEmail(normalizedEmail)) {
             role = 'Admin';
@@ -145,6 +169,12 @@ export function createUsersRouter(db: Firestore): Router {
       }
 
       const userData = userDoc.data() as User;
+      if (!isRegisteredUserStatus(userData.status)) {
+        console.warn(`[me] blocked uid=${firebaseUser.uid} status=${JSON.stringify(userData.status)}`);
+        return res.status(403).json({
+          error: { code: 'account_disabled', message: 'This account is disabled.', requestId: res.locals.requestId },
+        });
+      }
       
       const authUser: AuthUser = {
         uid: firebaseUser.uid,

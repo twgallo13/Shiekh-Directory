@@ -61,19 +61,15 @@ describe('APP_URL Security', () => {
 });
 
 describe('Firestore Rules Security', () => {
-  it('should deny client access to dmTasks collection', () => {
+  it('should deny every client read and write, including dmTasks', () => {
     const rulesPath = join(__dirname, '..', 'firestore.rules');
     const content = readFileSync(rulesPath, 'utf-8');
-    
-    assert.ok(content.includes('match /dmTasks/{taskId}'), 'Should have dmTasks rule');
-    assert.ok(
-      content.includes('dmTasks') && content.includes('allow read: if false'),
-      'dmTasks should deny read access'
-    );
-    assert.ok(
-      content.includes('dmTasks') && content.includes('allow write: if false'),
-      'dmTasks should deny write access'
-    );
+
+    assert.ok(content.includes('Admin SDK'), 'header should say access is via the Admin SDK');
+    assert.ok(content.includes('match /{document=**}'), 'should catch every document');
+    assert.ok(content.includes('allow read, write: if false'), 'should deny client read and write');
+    assert.ok(!content.includes('isSignedIn'), 'signed-in clients must not be allowed to read');
+    assert.ok(!content.includes('request.auth'), 'rules must not grant access from auth claims');
   });
 });
 

@@ -132,17 +132,19 @@ export function DirectoryView() {
   }, [getIdToken]);
   
   useEffect(() => {
+    if (!authUser) return;
     fetchLocations();
     fetchFilters();
-  }, [fetchLocations, fetchFilters]);
+  }, [authUser, fetchLocations, fetchFilters]);
   
   useEffect(() => {
+    if (!authUser) return;
     const debounceTimer = setTimeout(() => {
       searchLocations(searchQuery);
     }, 200);
     
     return () => clearTimeout(debounceTimer);
-  }, [searchQuery, searchLocations]);
+  }, [authUser, searchQuery, searchLocations]);
   
   useEffect(() => {
     if (!authUser) return;

@@ -1,8 +1,16 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { getTestDb, seedTestUsers } from './testHelpers';
+import { getLocalDate } from '../server/utils/assignment';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3001';
+
+function shiftIsoDate(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 async function fetchApi(path: string, token: string, options: RequestInit = {}): Promise<Response> {
   return fetch(`${API_BASE}${path}`, {
@@ -44,8 +52,12 @@ describe('Performance Batch Handler Regression Tests', () => {
 
     before(async () => {
       const now = new Date().toISOString();
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+      // endDate is compared to America/Los_Angeles, not the UTC calendar day.
+      // "24 hours ago" is still today in LA during the UTC morning, which made
+      // this expired fixture look active.
+      const localToday = getLocalDate();
+      const yesterday = shiftIsoDate(localToday, -2);
+      const nextWeek = shiftIsoDate(localToday, 7);
 
       const locationRef = db.collection('locations').doc(`loc_item1_${testSuffix}`);
       await locationRef.set({

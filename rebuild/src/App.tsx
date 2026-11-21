@@ -51,10 +51,11 @@ function ProtectedRoute({
   withLayout?: boolean;
   storeAllowed?: boolean;
 }) {
-  const { user, loading, isStoreSession, storeSession, authError } = useAuth();
+  const { user, authUser, loading, isStoreSession, storeSession, authError } = useAuth();
   const isAuthenticated = !!user || isStoreSession;
+  const profilePending = !!user && !isStoreSession && !authUser && !authError;
   
-  if (loading) {
+  if (loading || profilePending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -86,11 +87,12 @@ function ProtectedRoute({
 }
 
 function StoreLocationRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, isStoreSession, storeSession, authError } = useAuth();
+  const { user, authUser, loading, isStoreSession, storeSession, authError } = useAuth();
   const { id } = useParams<{ id: string }>();
   const isAuthenticated = !!user || isStoreSession;
+  const profilePending = !!user && !isStoreSession && !authUser && !authError;
   
-  if (loading) {
+  if (loading || profilePending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">

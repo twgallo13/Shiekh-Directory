@@ -488,7 +488,7 @@ export const API_VERSIONS: ApiVersion[] = [
         method: 'GET',
         path: '/api/public-profile/v1/stores',
         summary: 'List public store pages',
-        description: 'Active and retired stores. Planned stores are omitted. Page off and retired stores return a short record. companyTiles is top-level and lists only saved https company links, in order: app (Get the app, order 3, hidden until an iOS or Android URL is saved), rewards (Legacy rewards, 4), instagram (Instagram, 5), launch (Launch Calendar, 6), card (Sunbit card, 7), returns (Return policy, 8). The shop tile is not returned. When hours is present, weekly always has monday through sunday; a missing day is closed, never null. Times are 24-hour HH:MM. Exception type is holiday or special.',
+        description: 'Active and retired stores. Planned stores are omitted. Page off and retired stores return a short record. companyTiles is top-level and lists only saved https company links, in order: app (Get the app, order 3, hidden until an iOS or Android URL is saved), rewards (Legacy rewards, 4), instagram (Instagram, 5), launch (Launch Calendar, 6), card (Sunbit card, 7), returns (Return policy, 8). The shop tile is not returned. If no weekly hours are saved, hours is null. When hours is present, weekly always has monday through sunday. A missing or null day is { closed: false, intervals: [], unknown: true }. A day saved as closed is { closed: true, intervals: [] } and omits unknown. Known open days also omit unknown. Times are 24-hour HH:MM. Exception type is holiday or special.',
         scope: 'public-profile:read',
         responseExample: `{
   "contractVersion": "public-profile.v1",

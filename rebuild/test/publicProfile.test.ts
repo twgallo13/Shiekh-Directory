@@ -199,6 +199,8 @@ describe('public store profile', () => {
     assert.deepEqual(hours.weekly.tuesday!.intervals, [{ open: '10:00', close: '18:00' }, { open: '19:00', close: '21:00' }]);
     assert.deepEqual(hours.weekly.wednesday!.intervals, [{ open: '22:00', close: '02:00' }]);
     assert.deepEqual(hours.weekly.thursday, { closed: true, intervals: [] });
+    assert.equal('unknown' in hours.weekly.thursday, false);
+    assert.equal('unknown' in hours.weekly.tuesday!, false);
     assert.equal(hours.exceptions.length, 1);
     assert.equal(hours.exceptions[0].type, 'holiday');
     assert.deepEqual(Object.keys(hours.exceptions[0]).sort(), ['closed', 'endDate', 'intervals', 'label', 'startDate', 'type']);
@@ -308,9 +310,10 @@ describe('public store profile', () => {
     };
     const missingWeekly = missingDayBody.stores[0].hours.weekly;
     assert.deepEqual(Object.keys(missingWeekly), ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
-    assert.deepEqual(missingWeekly.monday, { closed: true, intervals: [] });
+    assert.deepEqual(missingWeekly.monday, { closed: false, intervals: [], unknown: true });
     assert.notEqual(missingWeekly.monday, null);
     assert.deepEqual(missingWeekly.friday!.intervals, [{ open: '11:00', close: '19:00' }]);
+    assert.equal('unknown' in missingWeekly.friday!, false);
 
     const badId = await seedTestLocation({
       storeNumber: badUrlNumber,
@@ -502,6 +505,41 @@ describe('public store profile', () => {
       assert.equal(snap.docs[0].data().rateLimit, 120);
       await snap.docs[0].ref.delete();
     });
+  });
+
+  it('unknown weekly hours are not reported as closed', async () => {
+    const number = `70${stamp.slice(-6)}`;
+    const id = await seedTestLocation({
+      storeNumber: number,
+      name: 'Partial Hours',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    await enablePage(id, { magentoStoreId: '420713', reviewUrl: null });
+    const none = await api(`/api/public-profile/v1/stores/${number}`, PUBLIC);
+    const noneBody = await none.json() as { stores: Array<{ hours: unknown }> };
+    assert.equal(none.status, 200);
+    assert.equal(noneBody.stores[0].hours, null);
+
+    await getTestDb().collection('locations').doc(id).set({
+      standardHours: {
+        tuesday: null,
+        thursday: { closed: true, intervals: [] },
+        friday: { closed: false, intervals: [{ open: '11:00', close: '19:00' }] },
+      },
+    }, { merge: true });
+    const partial = await api(`/api/public-profile/v1/stores/${number}`, PUBLIC);
+    const partialBody = await partial.json() as {
+      stores: Array<{ hours: { weekly: Record<string, { closed: boolean; intervals: unknown[]; unknown?: boolean }> } }>;
+    };
+    const weekly = partialBody.stores[0].hours.weekly;
+    assert.notEqual(weekly, null);
+    assert.deepEqual(weekly.monday, { closed: false, intervals: [], unknown: true });
+    assert.deepEqual(weekly.tuesday, { closed: false, intervals: [], unknown: true });
+    assert.deepEqual(weekly.thursday, { closed: true, intervals: [] });
+    assert.equal('unknown' in weekly.thursday, false);
+    assert.deepEqual(weekly.friday, { closed: false, intervals: [{ open: '11:00', close: '19:00' }] });
+    assert.equal('unknown' in weekly.friday, false);
   });
 
   it('an expired closure does not mark the store temporarily closed', async () => {

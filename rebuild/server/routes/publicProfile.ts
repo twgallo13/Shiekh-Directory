@@ -74,18 +74,24 @@ export function buildPublicStore(
   return body;
 }
 
-function mapHours(standard: StandardHours | undefined, exceptions: HoursException[]): Record<string, unknown> | null {
-  if (!standard) return null;
+function mapHours(standard: StandardHours | null | undefined, exceptions: HoursException[]): Record<string, unknown> | null {
+  if (!standard || typeof standard !== 'object') return null;
   const weekly: Record<string, unknown> = {};
   for (const day of DAYS) {
-    const hours = standard[day];
-    if (!hours || hours.closed || !Array.isArray(hours.intervals)) {
+    const hours = standard[day] as { closed?: boolean; intervals?: Array<{ open?: string; close?: string }> } | null | undefined;
+    if (hours == null) {
+      weekly[day] = { closed: false, intervals: [], unknown: true };
+      continue;
+    }
+    if (hours.closed === true) {
       weekly[day] = { closed: true, intervals: [] };
       continue;
     }
-    const intervals = hours.intervals
-      .filter((interval) => interval && typeof interval.open === 'string' && typeof interval.close === 'string')
-      .map((interval) => ({ open: interval.open, close: interval.close }));
+    const intervals = Array.isArray(hours.intervals)
+      ? hours.intervals
+        .filter((interval) => interval && typeof interval.open === 'string' && typeof interval.close === 'string')
+        .map((interval) => ({ open: interval.open, close: interval.close }))
+      : [];
     weekly[day] = { closed: false, intervals };
   }
   const mapped = exceptions

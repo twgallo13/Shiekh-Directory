@@ -428,10 +428,21 @@ export function createCorrectionsRouter(db: Firestore): Router {
                 .orderBy('submittedAt', 'desc'),
             );
             const existing = pendingSnap.docs.find((doc) => doc.data().category === 'store-link');
-            if (lockSnap.exists || existing) {
-              const existingId = existing?.id
-                || (typeof lockSnap.data()?.correctionId === 'string' ? lockSnap.data()?.correctionId : '');
-              throw new PendingStoreLinkError(existingId);
+            if (existing) {
+              throw new PendingStoreLinkError(existing.id);
+            }
+            const lockedId = lockSnap.exists && typeof lockSnap.data()?.correctionId === 'string'
+              ? lockSnap.data()?.correctionId as string
+              : '';
+            if (lockedId) {
+              const locked = await tx.get(db.collection('corrections').doc(lockedId));
+              const lockedData = locked.exists ? locked.data() : undefined;
+              if (lockedData?.status === 'pending' && lockedData?.category === 'store-link') {
+                throw new PendingStoreLinkError(lockedId);
+              }
+            }
+            if (lockSnap.exists) {
+              tx.delete(lockRef);
             }
             tx.create(lockRef, { correctionId: correctionRef.id, locationId, createdAt: nowIso });
             tx.set(correctionRef, correction);

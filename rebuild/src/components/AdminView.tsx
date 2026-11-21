@@ -700,6 +700,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newToken, setNewToken] = useState<{ clientId: string; token: string } | null>(null);
   const [editingRateLimit, setEditingRateLimit] = useState<{ client: ApiClient; value: number } | null>(null);
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
 
   const loadClients = useCallback(async () => {
     try {
@@ -810,11 +811,16 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       });
       
       if (res.ok) {
+        setRateLimitError(null);
         setEditingRateLimit(null);
         loadClients();
+      } else {
+        const body = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+        setRateLimitError(body?.error?.message || 'Could not save the rate limit.');
       }
     } catch (error) {
       console.error('Update rate limit error:', error);
+      setRateLimitError('Could not save the rate limit.');
     }
   };
 
@@ -876,7 +882,10 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                   </td>
                   <td className="px-4 py-3">
                     <button
-                      onClick={() => setEditingRateLimit({ client, value: client.rateLimit ?? 60 })}
+                      onClick={() => {
+                        setRateLimitError(null);
+                        setEditingRateLimit({ client, value: client.rateLimit ?? 60 });
+                      }}
                       className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
                       disabled={!client.active}
                     >
@@ -965,13 +974,13 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       {editingRateLimit && (
         <Dialog 
           isOpen={true} 
-          onClose={() => setEditingRateLimit(null)} 
+          onClose={() => { setRateLimitError(null); setEditingRateLimit(null); }}
           title="Edit Rate Limit"
           size="sm"
           footer={
             <div className="flex gap-3 w-full">
               <button
-                onClick={() => setEditingRateLimit(null)}
+                onClick={() => { setRateLimitError(null); setEditingRateLimit(null); }}
                 className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
               >
                 Cancel
@@ -996,13 +1005,19 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                 min={editingRateLimit.client.scopes.includes('public-profile:read') ? 1 : 0}
                 max={10000}
                 value={editingRateLimit.value}
-                onChange={(e) => setEditingRateLimit({ 
-                  ...editingRateLimit, 
-                  value: parseInt(e.target.value) || 0 
-                })}
+                onChange={(e) => {
+                  setRateLimitError(null);
+                  setEditingRateLimit({
+                    ...editingRateLimit,
+                    value: parseInt(e.target.value) || 0,
+                  });
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
               />
             </FormField>
+            {rateLimitError && (
+              <p role="alert" className="text-sm text-red-700">{rateLimitError}</p>
+            )}
           </div>
         </Dialog>
       )}

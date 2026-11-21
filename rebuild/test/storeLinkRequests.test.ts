@@ -703,6 +703,65 @@ describe('store-link requests and own-store filing', () => {
     assert.equal(lock.data()?.correctionId, links[0].id);
   });
 
+  it('a closed store-link releases the pending lock', async () => {
+    const db = getTestDb();
+    const now = new Date().toISOString();
+    const locationId = await seedTestLocation({
+      storeNumber: `79${suffix.slice(-4)}`,
+      name: 'Stale Lock',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    const filer = `store-stale-${suffix}`;
+    await db.collection('users').doc(filer).set({
+      email: `${filer}@test.com`,
+      displayName: 'Stale Filer',
+      role: 'Store',
+      status: 'active',
+      storeLocationId: locationId,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const first = await api('/api/app/corrections', `test-token-${filer}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId,
+        category: 'store-link',
+        proposedChanges: { reviewUrl: GOOD_REVIEW_URL },
+      }),
+    });
+    const firstBody = await first.json() as { data?: { id: string }; error?: { code?: string } };
+    assert.equal(first.status, 201, firstBody.error?.code || 'file failed');
+    const blocked = await api('/api/app/corrections', `test-token-${filer}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId,
+        category: 'store-link',
+        proposedChanges: { reviewUrl: 'https://g.page/r/still-pending/review' },
+      }),
+    });
+    const blockedBody = await blocked.json() as { error?: { code?: string } };
+    assert.equal(blocked.status, 409);
+    assert.equal(blockedBody.error?.code, 'pending_store_link');
+    await db.collection('corrections').doc(firstBody.data!.id).update({ status: 'rejected' });
+    const staleLock = await db.collection('storeLinkPending').doc(locationId).get();
+    assert.equal(staleLock.data()?.correctionId, firstBody.data!.id);
+    const again = await api('/api/app/corrections', `test-token-${filer}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId,
+        category: 'store-link',
+        proposedChanges: { reviewUrl: 'https://g.page/r/after-close/review' },
+      }),
+    });
+    const againBody = await again.json() as { data?: { id: string }; error?: { code?: string } };
+    assert.equal(again.status, 201, againBody.error?.code || 'refile failed');
+    const lock = await db.collection('storeLinkPending').doc(locationId).get();
+    assert.equal(lock.data()?.correctionId, againBody.data?.id);
+    assert.notEqual(againBody.data?.id, firstBody.data!.id);
+  });
+
   it('a leader who is no longer a leader cannot be approved', async () => {
     const db = getTestDb();
     const now = new Date().toISOString();

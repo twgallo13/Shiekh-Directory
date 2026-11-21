@@ -8,6 +8,11 @@ import type {
 } from '../../src/types';
 import { canApproveCorrections } from '../../src/lib/permissions';
 import { getWorkflowRules } from '../services/workflowSettings';
+import { sanitizeLocationProposal, validateReviewUrl } from '../../src/lib/storePageValidation';
+import { assertCanFileFor, assertStoredStoreOwner } from '../storePage/access';
+import { approveStoreLinkRequest, transitionStoreLinkRequest } from '../storePage/approveStoreLink';
+
+const VALID_CORRECTION_TYPES = new Set(['phone', 'address', 'inbox', 'hours', 'store-page']);
 
 export function createCorrectionsRouter(db: Firestore): Router {
   const router = Router();
@@ -147,6 +152,11 @@ export function createCorrectionsRouter(db: Firestore): Router {
 
       const correction = { id: correctionDoc.id, ...correctionDoc.data() } as Correction;
 
+      if (correction.category === 'store-link') {
+        const result = await approveStoreLinkRequest(db, authUser, id, notes, res.locals.requestId);
+        return res.status(result.status).json(result.body);
+      }
+
       if (correction.status !== 'pending') {
         return res.status(400).json({
           error: { code: 'invalid_status', message: 'Correction has already been reviewed', requestId: res.locals.requestId },
@@ -174,12 +184,26 @@ export function createCorrectionsRouter(db: Firestore): Router {
         });
       }
 
+      const owner = await assertStoredStoreOwner(db, correction);
+      if (!owner.ok) {
+        return res.status(owner.status).json({
+          error: { code: owner.code, message: owner.message, requestId: res.locals.requestId },
+        });
+      }
+
+      const sanitized = sanitizeLocationProposal(correction.proposedChanges);
+      if (!sanitized.ok) {
+        return res.status(400).json({
+          error: { code: sanitized.code, message: sanitized.message, requestId: res.locals.requestId },
+        });
+      }
+
       const batch = db.batch();
       const auditChanges: { field: string; oldValue?: string | null; newValue: string | null }[] = [];
 
       // Handle special case: addHoursException (Item #4: Store holiday hours with approval)
-      if (correction.proposedChanges.addHoursException) {
-        const exceptionData = correction.proposedChanges.addHoursException as Record<string, unknown>;
+      if (sanitized.changes.addHoursException) {
+        const exceptionData = sanitized.changes.addHoursException as Record<string, unknown>;
         const exceptionRef = db.collection(`locations/${correction.locationId}/hoursExceptions`).doc();
         batch.set(exceptionRef, exceptionData);
         auditChanges.push({
@@ -189,7 +213,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
       }
 
       // Handle regular location field updates
-      const regularChanges = { ...correction.proposedChanges };
+      const regularChanges = { ...sanitized.changes };
       delete regularChanges.addHoursException;
       
       if (Object.keys(regularChanges).length > 0) {
@@ -208,7 +232,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
             newValue: value as string,
           });
         }
-      } else if (correction.proposedChanges.addHoursException) {
+      } else if (sanitized.changes.addHoursException) {
         // Just update the location version even if only adding an hours exception
         batch.update(locationRef, {
           updatedAt: new Date().toISOString(),
@@ -275,11 +299,29 @@ export function createCorrectionsRouter(db: Firestore): Router {
         });
       }
 
-      const validCategories = ['address', 'suite', 'directions', 'phone', 'hours', 'manager', 'other'];
+      const validCategories = ['address', 'suite', 'directions', 'phone', 'hours', 'manager', 'other', 'store-link'];
       if (!validCategories.includes(category)) {
         return res.status(400).json({
           error: { code: 'invalid_category', message: 'Invalid category', requestId: res.locals.requestId },
         });
+      }
+
+      if (type !== undefined && type !== null && type !== '') {
+        if (typeof type !== 'string' || !VALID_CORRECTION_TYPES.has(type)) {
+          return res.status(400).json({
+            error: { code: 'invalid_type', message: 'That request type is not allowed.', requestId: res.locals.requestId },
+          });
+        }
+        if (type === 'store-page' && category !== 'store-link') {
+          return res.status(400).json({
+            error: { code: 'invalid_type', message: 'store-page is only valid for a store page link request.', requestId: res.locals.requestId },
+          });
+        }
+        if (category === 'store-link' && type !== 'store-page') {
+          return res.status(400).json({
+            error: { code: 'invalid_type', message: 'A store page link request must use type store-page.', requestId: res.locals.requestId },
+          });
+        }
       }
 
       const locationDoc = await db.collection('locations').doc(locationId).get();
@@ -290,6 +332,115 @@ export function createCorrectionsRouter(db: Firestore): Router {
       }
 
       const location = locationDoc.data() as Location;
+
+      const filing = assertCanFileFor(authUser, locationId);
+      if (!filing.ok) {
+        return res.status(filing.status).json({
+          error: { code: filing.code, message: filing.message, requestId: res.locals.requestId },
+        });
+      }
+
+      if (category === 'store-link') {
+        if (authUser.role === 'Steward' || authUser.role === 'Admin') {
+          return res.status(403).json({
+            error: {
+              code: 'use_direct_edit',
+              message: 'Edit the review link on the store page. Stewards and Admins do not file this request.',
+              requestId: res.locals.requestId,
+            },
+          });
+        }
+        if (authUser.role !== 'Store' && authUser.role !== 'Leader') {
+          return res.status(403).json({
+            error: { code: 'forbidden', message: 'You cannot request a review link change.', requestId: res.locals.requestId },
+          });
+        }
+        if (authUser.role === 'Leader' && !authUser.leaderScope?.locationIds?.includes(locationId)) {
+          return res.status(403).json({
+            error: { code: 'out_of_scope', message: 'That store is outside your district.', requestId: res.locals.requestId },
+          });
+        }
+        if (!proposedChanges || typeof proposedChanges !== 'object' || Array.isArray(proposedChanges)) {
+          return res.status(400).json({
+            error: { code: 'invalid_proposed_changes', message: 'Send a review link.', requestId: res.locals.requestId },
+          });
+        }
+        const proposedKeys = Object.keys(proposedChanges as Record<string, unknown>);
+        if (proposedKeys.length !== 1 || proposedKeys[0] !== 'reviewUrl') {
+          return res.status(400).json({
+            error: { code: 'invalid_proposed_changes', message: 'A store page link request can only change the review link.', requestId: res.locals.requestId },
+          });
+        }
+        const review = validateReviewUrl((proposedChanges as Record<string, unknown>).reviewUrl);
+        if (!review.ok || !review.href) {
+          return res.status(400).json({
+            error: { code: 'invalid_review_url', message: review.ok ? 'Enter a review link.' : review.message, requestId: res.locals.requestId },
+          });
+        }
+
+        const pendingSnap = await db.collection('corrections')
+          .where('locationId', '==', locationId)
+          .where('status', '==', 'pending')
+          .orderBy('submittedAt', 'desc')
+          .limit(20)
+          .get();
+        const existing = pendingSnap.docs.find((doc) => doc.data().category === 'store-link');
+        if (existing) {
+          return res.status(409).json({
+            error: {
+              code: 'pending_store_link',
+              message: 'A review link change is already pending for this store.',
+              existingId: existing.id,
+              requestId: res.locals.requestId,
+            },
+          });
+        }
+
+        const pageSnap = await db.collection('storePages').doc(locationId).get();
+        const storePageVersion = pageSnap.exists ? Number(pageSnap.data()?.version ?? 0) : 0;
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const workflowRules = await getWorkflowRules(db);
+        const expiresAt = new Date(now.getTime() + workflowRules.correctionExpiryDays * 24 * 60 * 60 * 1000);
+        const correctionRef = db.collection('corrections').doc();
+        const correction: Omit<Correction, 'id'> = {
+          status: 'pending',
+          type: 'store-page',
+          category: 'store-link',
+          locationId,
+          locationName: location.name,
+          storeNumber: location.storeNumber,
+          submittedBy: authUser.uid,
+          submittedByEmail: authUser.email,
+          submittedByRole: authUser.role,
+          submittedAt: nowIso,
+          expiresAt: expiresAt.toISOString(),
+          proposedChanges: { reviewUrl: review.href },
+          proposedNote: typeof proposedNote === 'string' ? proposedNote.trim() || undefined : undefined,
+          currentValues: { reviewUrl: pageSnap.exists ? (pageSnap.data()?.reviewUrl ?? null) : null },
+          locationVersion: location.version,
+          storePageVersion,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          updatedBy: authUser.uid,
+          version: 1,
+        };
+        await correctionRef.set(correction);
+        await logAudit(db, {
+          userId: authUser.uid,
+          userEmail: authUser.email,
+          userRole: authUser.role,
+          action: 'create',
+          entityType: 'correction',
+          entityId: correctionRef.id,
+          entityName: `Store page link for ${location.storeNumber}`,
+          changes: [
+            { field: 'category', newValue: 'store-link' },
+            { field: 'status', newValue: 'pending' },
+          ],
+        });
+        return res.status(201).json({ data: { id: correctionRef.id, ...correction } });
+      }
 
       // Determine correction type based on category
       const correctionType = 
@@ -385,6 +536,28 @@ export function createCorrectionsRouter(db: Firestore): Router {
 
       const correction = correctionDoc.data() as Correction;
 
+      if (correction.category === 'store-link') {
+        if (correction.submittedBy !== authUser.uid) {
+          return res.status(403).json({
+            error: { code: 'forbidden', message: 'You can only cancel your own requests', requestId: res.locals.requestId },
+          });
+        }
+        const result = await transitionStoreLinkRequest(db, id, authUser, 'cancelled', undefined, res.locals.requestId);
+        if (result.status === 200) {
+          await logAudit(db, {
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'cancel',
+            entityType: 'correction',
+            entityId: id,
+            entityName: `Correction for ${correction.storeNumber}`,
+            changes: [{ field: 'status', oldValue: 'pending', newValue: 'cancelled' }],
+          });
+        }
+        return res.status(result.status).json(result.body);
+      }
+
       // Only allow submitter to cancel their own pending requests
       if (correction.submittedBy !== authUser.uid) {
         return res.status(403).json({
@@ -455,6 +628,23 @@ export function createCorrectionsRouter(db: Firestore): Router {
       }
 
       const correction = correctionDoc.data() as Correction;
+
+      if (correction.category === 'store-link') {
+        const result = await transitionStoreLinkRequest(db, id, authUser, 'rejected', notes, res.locals.requestId);
+        if (result.status === 200) {
+          await logAudit(db, {
+            userId: authUser.uid,
+            userEmail: authUser.email,
+            userRole: authUser.role,
+            action: 'reject',
+            entityType: 'correction',
+            entityId: id,
+            entityName: `Correction for ${correction.storeNumber}`,
+            changes: [{ field: 'status', oldValue: 'pending', newValue: 'rejected' }],
+          });
+        }
+        return res.status(result.status).json(result.body);
+      }
 
       if (correction.status !== 'pending') {
         return res.status(400).json({

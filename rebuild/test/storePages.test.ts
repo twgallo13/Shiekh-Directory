@@ -222,6 +222,38 @@ describe('store pages app API', () => {
     assert.ok(storePageAudits.length >= 1);
   });
 
+  it('g.page and maps.app.goo.gl reject redirect paths', async () => {
+    const id = await seedTestLocation({
+      storeNumber: `89${suffix.slice(-3)}`,
+      name: 'Redirect Paths',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    const db = getTestDb();
+    const blocked = ['/url', '/url/redirect', '/amp', '/amp/s/example', '/aclk', '/aclk?sa=l'];
+    for (const host of ['https://g.page', 'https://maps.app.goo.gl']) {
+      for (const path of blocked) {
+        const reviewUrl = `${host}${path}`;
+        const response = await api(`/api/app/store-pages/${id}`, 'test-token-steward', {
+          method: 'PATCH',
+          body: JSON.stringify({ reviewUrl, expectedVersion: 0 }),
+        });
+        assert.equal(response.status, 400, reviewUrl);
+        const page = await db.collection('storePages').doc(id).get();
+        assert.notEqual(page.data()?.reviewUrl, reviewUrl);
+      }
+    }
+    let version = 0;
+    for (const reviewUrl of ['https://g.page/r/plain/review', 'https://maps.app.goo.gl/plainPath']) {
+      const response = await api(`/api/app/store-pages/${id}`, 'test-token-steward', {
+        method: 'PATCH',
+        body: JSON.stringify({ reviewUrl, expectedVersion: version }),
+      });
+      assert.equal(response.status, 200, reviewUrl);
+      version += 1;
+    }
+  });
+
   it('reviewurl_rejects', async () => {
     const db = getTestDb();
     const version = (await db.collection('storePages').doc(otherId).get()).data()?.version ?? 0;

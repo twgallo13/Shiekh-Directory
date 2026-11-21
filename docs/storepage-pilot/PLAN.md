@@ -145,6 +145,7 @@ Why Custom Fields can't hold these with the same access limits [Fact unless mark
 - Exceptions that fail validation are dropped, not passed through.
 - `temporaryClosure` is `{ publicExplanation, reopensOn }`. It uses only `Closure.publicExplanation` ("safe for public display", `src/types/index.ts:99`), never `reason` or `reasonNote`.
 - **Not included:** emails (store inbox or personal), people and manager data, district/region, internal doc ids, `wayfindingDirections`, `lastVerifiedAt`, notes.
+- Live pages include `magentoStoreId`. Dynamic QR uses that field for the Shop button. A missing value, or one that starts with `0`, is `null`. Page-off and retired records omit the field. The shop tile is not a `companyTiles` entry.
 - Text is trimmed, control characters are stripped, and lengths are capped (name ≤ 100, labels ≤ 60). Dynamic QR still escapes everything (Frink B4).
 
 **Retired and off stores:**

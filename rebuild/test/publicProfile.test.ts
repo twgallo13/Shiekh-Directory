@@ -22,6 +22,11 @@ function stripRequestId(body: string): string {
   return body.replace(/"requestId":"[^"]*"/g, '"requestId":"X"');
 }
 
+function daysFromNow(days: number): { iso: string; date: string } {
+  const iso = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  return { iso, date: iso.slice(0, 10) };
+}
+
 describe('public store profile', () => {
   const stamp = String(Date.now());
   const liveNumber = `61${stamp.slice(-6)}`;
@@ -150,12 +155,14 @@ describe('public store profile', () => {
       closed: true,
       intervals: [],
     });
+    const liveClosureStart = daysFromNow(-2);
+    const liveClosureEnd = daysFromNow(14);
     await db.collection(`locations/${liveId}/closures`).add({
       reason: 'Repair',
       reasonNote: 'SECRET_REASON_NOTE',
       publicExplanation: 'Closed for a repair',
-      startsAt: '2026-11-20T08:00:00.000Z',
-      endsAt: '2026-12-01T08:00:00.000Z',
+      startsAt: liveClosureStart.iso,
+      endsAt: liveClosureEnd.iso,
       status: 'active',
     });
 
@@ -184,7 +191,7 @@ describe('public store profile', () => {
     const closure = store.temporaryClosure as Record<string, unknown>;
     assert.deepEqual(Object.keys(closure).sort(), ['publicExplanation', 'reopensOn']);
     assert.equal(closure.publicExplanation, 'Closed for a repair');
-    assert.equal(closure.reopensOn, '2026-12-01');
+    assert.equal(closure.reopensOn, liveClosureEnd.date);
     const hours = store.hours as { weekly: Record<string, { closed: boolean; intervals: Array<{ open: string; close: string }> } | null>; exceptions: Array<Record<string, unknown>> };
     const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     assert.deepEqual(Object.keys(hours.weekly), dayNames);
@@ -222,12 +229,13 @@ describe('public store profile', () => {
       kind: 'store',
       lifecycle: 'active',
     });
+    const offClosureEnd = daysFromNow(20);
     await db.collection(`locations/${offId}/closures`).add({
       reason: 'Repair',
       publicExplanation: 'SECRET_OFF_REASON',
       reasonNote: 'SECRET_OFF_NOTE',
-      startsAt: '2026-11-20T08:00:00.000Z',
-      endsAt: '2026-12-15T08:00:00.000Z',
+      startsAt: daysFromNow(-2).iso,
+      endsAt: offClosureEnd.iso,
       status: 'active',
     });
     const off = await api(`/api/public-profile/v1/stores/${offNumber}`, PUBLIC);
@@ -542,6 +550,34 @@ describe('public store profile', () => {
     assert.equal('unknown' in weekly.friday, false);
   });
 
+  it('a page that is off omits saved store page fields', async () => {
+    const number = `59${stamp.slice(-6)}`;
+    const id = await seedTestLocation({
+      storeNumber: number,
+      name: 'SECRET_PAGE_OFF',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    const now = new Date().toISOString();
+    await getTestDb().collection('storePages').doc(id).set({
+      reviewUrl: 'https://g.page/r/hidden-off/review',
+      magentoStoreId: '420714',
+      pageEnabled: false,
+      version: 3,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+    });
+    const response = await api(`/api/public-profile/v1/stores/${number}`, PUBLIC);
+    const body = await response.json() as { stores: Array<Record<string, unknown>> };
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.stores[0], { storeNumber: number, status: 'Active', pageEnabled: false });
+    const serialized = JSON.stringify(body.stores[0]);
+    assert.equal(serialized.includes('420714'), false);
+    assert.equal(serialized.includes('hidden-off'), false);
+    assert.equal(serialized.includes('SECRET_PAGE_OFF'), false);
+  });
+
   it('an expired closure does not mark the store temporarily closed', async () => {
     const number = `77${stamp.slice(-6)}`;
     const id = await seedTestLocation({
@@ -571,8 +607,8 @@ describe('public store profile', () => {
     await closures.add({
       reason: 'Current repair',
       publicExplanation: 'Closed this week',
-      startsAt: '2026-11-20T00:00:00.000Z',
-      endsAt: '2026-12-20T00:00:00.000Z',
+      startsAt: daysFromNow(-1).iso,
+      endsAt: daysFromNow(30).iso,
       status: 'active',
     });
     const current = await api(`/api/public-profile/v1/stores/${number}`, PUBLIC);

@@ -462,6 +462,85 @@ describe('store-link requests and own-store filing', () => {
     assert.notEqual(page.data()?.reviewUrl, GOOD_REVIEW_URL);
   });
 
+  it('a store cannot file a holiday exception for another store', async () => {
+    const db = getTestDb();
+    const beforeExceptions = (await db.collection(`locations/${otherId}/hoursExceptions`).get()).size;
+    const beforeCorrections = (await db.collection('corrections').where('locationId', '==', otherId).get()).docs
+      .filter((doc) => doc.data().proposedChanges?.addHoursException).length;
+    const response = await api(`/api/app/hours-exceptions/locations/${otherId}`, `test-token-${storeUid}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'holiday',
+        label: 'Other store holiday',
+        startDate: '2026-12-25',
+        endDate: '2026-12-25',
+        closed: true,
+        intervals: [],
+      }),
+    });
+    const body = await response.json() as { error?: { code?: string; message?: string } };
+    assert.equal(response.status, 403);
+    assert.equal(body.error?.code, 'forbidden');
+    assert.equal(body.error?.message, 'You can only submit requests for your own store.');
+    assert.equal((await db.collection(`locations/${otherId}/hoursExceptions`).get()).size, beforeExceptions);
+    const afterCorrections = (await db.collection('corrections').where('locationId', '==', otherId).get()).docs
+      .filter((doc) => doc.data().proposedChanges?.addHoursException).length;
+    assert.equal(afterCorrections, beforeCorrections);
+  });
+
+  it('storelink_approve_rejects_a_changed_page_version', async () => {
+    const db = getTestDb();
+    const now = new Date().toISOString();
+    const locationId = await seedTestLocation({
+      storeNumber: `80${suffix.slice(-4)}`,
+      name: 'Version Clash',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    await db.collection('storePages').doc(locationId).set({
+      reviewUrl: 'https://g.page/r/before/review',
+      magentoStoreId: null,
+      pageEnabled: false,
+      version: 2,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'admin',
+    });
+    const correction = db.collection('corrections').doc();
+    await correction.set({
+      status: 'pending',
+      type: 'store-page',
+      category: 'store-link',
+      locationId,
+      locationName: 'Version Clash',
+      storeNumber: '80',
+      submittedBy: 'admin',
+      submittedByEmail: 'admin@test.com',
+      submittedByRole: 'Admin',
+      submittedAt: now,
+      expiresAt: now,
+      proposedChanges: { reviewUrl: 'https://g.page/r/after-version/review' },
+      currentValues: { reviewUrl: 'https://g.page/r/before/review' },
+      locationVersion: 1,
+      storePageVersion: 0,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'admin',
+      version: 1,
+    });
+    const response = await api(`/api/app/corrections/${correction.id}/approve`, 'test-token-steward', {
+      method: 'POST',
+      body: '{}',
+    });
+    const body = await response.json() as { error?: { code?: string } };
+    assert.equal(response.status, 409);
+    assert.equal(body.error?.code, 'version_conflict');
+    const page = await db.collection('storePages').doc(locationId).get();
+    assert.equal(page.data()?.reviewUrl, 'https://g.page/r/before/review');
+    assert.equal(page.data()?.version, 2);
+    assert.equal((await correction.get()).data()?.status, 'pending');
+  });
+
   it('hoursexception_label_61_rejected_at_create_and_approve', async () => {
     const token = `test-token-${storeUid}`;
     const created = await api(`/api/app/hours-exceptions/locations/${ownId}`, token, {

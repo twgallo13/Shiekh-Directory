@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { DirectoryView } from '../src/components/DirectoryView';
+import { ProtectedRoute, StoreLocationRoute } from '../src/App';
 
 const authState = vi.hoisted(() => ({
+  user: null as null | { email: string },
   authUser: null as null | { uid: string; email: string; displayName: string; role: 'Viewer' },
+  loading: false,
+  isStoreSession: false,
+  storeSession: null as null | { locationId: string },
+  authError: null as null | { code: string; message: string },
+  signOut: async () => {},
   getIdToken: async () => 'token-1',
 }));
 
@@ -19,8 +26,85 @@ vi.mock('../src/context/AuthContext', async () => {
 
 afterEach(() => {
   cleanup();
+  authState.user = null;
   authState.authUser = null;
+  authState.loading = false;
+  authState.isStoreSession = false;
+  authState.storeSession = null;
+  authState.authError = null;
   vi.unstubAllGlobals();
+});
+
+describe('route guards wait for the profile', () => {
+  it('ProtectedRoute and StoreLocationRoute show the spinner until authUser arrives', () => {
+    authState.user = { email: 'new@shiekhshoes.org' };
+
+    const directory = render(
+      <MemoryRouter>
+        <ProtectedRoute>
+          <div>directory-ready</div>
+        </ProtectedRoute>
+      </MemoryRouter>,
+    );
+    expect(directory.getByText('Loading...')).toBeTruthy();
+    expect(directory.queryByText('directory-ready')).toBeNull();
+
+    authState.authUser = {
+      uid: 'new-user',
+      email: 'new@shiekhshoes.org',
+      displayName: 'New',
+      role: 'Viewer',
+    };
+    directory.rerender(
+      <MemoryRouter>
+        <ProtectedRoute>
+          <div>directory-ready</div>
+        </ProtectedRoute>
+      </MemoryRouter>,
+    );
+    expect(directory.getByText('directory-ready')).toBeTruthy();
+    directory.unmount();
+
+    authState.authUser = null;
+    const location = render(
+      <MemoryRouter initialEntries={['/location/loc-1']}>
+        <Routes>
+          <Route
+            path="/location/:id"
+            element={
+              <StoreLocationRoute>
+                <div>location-ready</div>
+              </StoreLocationRoute>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(location.getByText('Loading...')).toBeTruthy();
+    expect(location.queryByText('location-ready')).toBeNull();
+
+    authState.authUser = {
+      uid: 'new-user',
+      email: 'new@shiekhshoes.org',
+      displayName: 'New',
+      role: 'Viewer',
+    };
+    location.rerender(
+      <MemoryRouter initialEntries={['/location/loc-1']}>
+        <Routes>
+          <Route
+            path="/location/:id"
+            element={
+              <StoreLocationRoute>
+                <div>location-ready</div>
+              </StoreLocationRoute>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(location.getByText('location-ready')).toBeTruthy();
+  });
 });
 
 describe('profile errors', () => {

@@ -42,7 +42,7 @@ function CorrectionsQueuePage() {
   return <CorrectionsQueue onBack={() => navigate('/')} />;
 }
 
-function ProtectedRoute({ 
+export function ProtectedRoute({ 
   children, 
   withLayout = true,
   storeAllowed = false,
@@ -86,7 +86,7 @@ function ProtectedRoute({
   return <>{children}</>;
 }
 
-function StoreLocationRoute({ children }: { children: React.ReactNode }) {
+export function StoreLocationRoute({ children }: { children: React.ReactNode }) {
   const { user, authUser, loading, isStoreSession, storeSession, authError } = useAuth();
   const { id } = useParams<{ id: string }>();
   const isAuthenticated = !!user || isStoreSession;

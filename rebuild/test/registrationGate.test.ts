@@ -177,9 +177,20 @@ describe('registration gate', () => {
         assertNoData(body);
       }
     }
+    // Parallel files toggle settings/signIn. An address on the approved list
+    // still has no users record, so the handler must return user_not_found
+    // whether or not approved-list mode is on.
+    await getTestDb().collection('signInAllowList').doc(bareEmail).set({
+      email: bareEmail,
+      addedBy: 'registration-test',
+      addedByEmail: 'registration-test',
+      addedAt: new Date().toISOString(),
+    });
+    assert.strictEqual((await getTestDb().collection('signInAllowList').doc(bareEmail).get()).exists, true);
     const open = await authed('/api/app/users/me', token(bare, bareEmail, 'password', 'verified'));
-    assert.strictEqual(open.status, 404, 'exact GET /users/me reaches the handler');
-    assert.strictEqual((await open.json()).error.code, 'user_not_found');
+    const openBody = await open.json() as { error?: { code?: string } };
+    assert.strictEqual(open.status, 404, `exact GET /users/me reaches the handler: ${JSON.stringify(openBody)}`);
+    assert.strictEqual(openBody.error?.code, 'user_not_found');
     assert.strictEqual((await getTestDb().collection('users').doc(bare).get()).exists, false);
   });
 
@@ -195,6 +206,12 @@ describe('registration gate', () => {
 
     const uid = `g-new-${rid}`;
     const email = `new-${rid}@shiekhshoes.org`;
+    await getTestDb().collection('signInAllowList').doc(email).set({
+      email,
+      addedBy: 'registration-test',
+      addedByEmail: 'registration-test',
+      addedAt: new Date().toISOString(),
+    });
     const created = await authed('/api/app/users/me', token(uid, email, 'google'));
     assert.strictEqual(created.status, 200, await created.clone().text());
     assert.strictEqual((await created.json()).data.role, 'Viewer');
@@ -208,6 +225,13 @@ describe('registration gate', () => {
 
   it('Google domain is exact lowercase shiekhshoes.org', async () => {
     const mixedUid = `g-case-${rid}`;
+    const mixedEmail = `case-${rid}@shiekhshoes.org`;
+    await getTestDb().collection('signInAllowList').doc(mixedEmail).set({
+      email: mixedEmail,
+      addedBy: 'registration-test',
+      addedByEmail: 'registration-test',
+      addedAt: new Date().toISOString(),
+    });
     const mixed = await authed('/api/app/users/me', token(mixedUid, `Case-${rid}@ShiekhShoes.org`, 'google'));
     assert.strictEqual(mixed.status, 200, await mixed.clone().text());
     assert.strictEqual((await getTestDb().collection('users').doc(mixedUid).get()).data()?.email, `case-${rid}@shiekhshoes.org`);

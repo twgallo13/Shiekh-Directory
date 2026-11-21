@@ -9,7 +9,7 @@ The new `public-profile:read` key is not created by this change. Do not revoke D
 | Key | How to recognize it | What to do |
 |---|---|---|
 | Existing v1 key | Scopes include `locations:read`. It does not include `public-profile:read`. This is the key Dynamic QR uses today. Its client id is the one already in Dynamic QR, not a new id. | Do not pause, revoke, or rotate it. |
-| New public store page key | Scopes are exactly `public-profile:read`. Client id looks like `api-<uuid>`. Rate limit is explicit (use 60). It does not exist until an Admin creates it. | Revoke this id only. Record the id in the deploy log when it is created. |
+| New public store page key | Scopes are exactly `public-profile:read`. Client id looks like `api-<uuid>`. Rate limit is explicit: 120 requests per minute. It does not exist until an Admin creates it. | Revoke this id only. Record the id in the deploy log when it is created. |
 
 `NEW_PUBLIC_PROFILE_CLIENT_ID` = not assigned yet. Fill it in when the key is created. Until then there is nothing to revoke.
 

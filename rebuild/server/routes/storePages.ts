@@ -5,13 +5,14 @@ import { requireStoreAccess } from '../middleware/auth';
 import {
   COMPANY_TILE_KEYS,
   COMPANY_TILE_ORDER,
-  DEFAULT_STORE_PAGE_TILES,
+  EMPTY_STORE_PAGE_TILES,
   storePageUrl,
   type StorePageTileDefaults,
 } from '../../src/constants/storePage';
 import {
   parseExpectedVersion,
   parseMagentoStoreId,
+  savedCompanyTileUrl,
   validateReviewUrl,
   validateStorePageTiles,
 } from '../../src/lib/storePageValidation';
@@ -47,20 +48,21 @@ function mapTxError(error: unknown): HttpError | null {
 
 async function loadTiles(db: Firestore): Promise<StorePageTileDefaults> {
   const snap = await db.collection('settings').doc('storePageDefaults').get();
-  if (!snap.exists) return DEFAULT_STORE_PAGE_TILES;
+  if (!snap.exists) return EMPTY_STORE_PAGE_TILES;
   const parsed = validateStorePageTiles(snap.data()?.tiles);
-  return parsed.ok ? parsed.tiles : DEFAULT_STORE_PAGE_TILES;
+  return parsed.ok ? parsed.tiles : EMPTY_STORE_PAGE_TILES;
 }
 
 function cardTiles(reviewUrl: string | null, shopVisible: boolean, tiles: StorePageTileDefaults) {
   const company = COMPANY_TILE_KEYS.map((key) => {
     const row = tiles[key];
+    const href = savedCompanyTileUrl(key, row);
     return {
       key,
       label: row.label,
       locked: true,
-      visible: row.show,
-      note: 'Set by Shiekh',
+      visible: !!href && row.show,
+      note: href ? 'Set by Shiekh' : 'Not set',
       order: COMPANY_TILE_ORDER[key],
     };
   });
@@ -368,7 +370,7 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
       const snap = await db.collection('settings').doc('storePageDefaults').get();
       const data = snap.data();
       const parsed = data ? validateStorePageTiles(data.tiles) : null;
-      const tiles = parsed?.ok ? parsed.tiles : DEFAULT_STORE_PAGE_TILES;
+      const tiles = parsed?.ok ? parsed.tiles : EMPTY_STORE_PAGE_TILES;
       return res.json({
         data: {
           version: snap.exists ? Number(data?.version ?? 0) : 0,

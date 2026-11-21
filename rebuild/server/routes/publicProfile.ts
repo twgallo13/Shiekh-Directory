@@ -5,15 +5,14 @@ import { requireLegacyScope, sendLegacyError } from '../middleware/legacyApiAuth
 import {
   COMPANY_TILE_KEYS,
   COMPANY_TILE_ORDER,
-  DEFAULT_STORE_PAGE_TILES,
-  type StorePageTileDefaults,
 } from '../../src/constants/storePage';
 import {
   cleanText,
   parseMagentoStoreId,
+  savedCompanyTileUrl,
+  validateCompanyUrl,
   validateHoursException,
   validateReviewUrl,
-  validateStorePageTiles,
 } from '../../src/lib/storePageValidation';
 
 const DAYS: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -115,43 +114,45 @@ function mapClosure(closure: Closure | null): { publicExplanation: string; reope
   };
 }
 
-function companyTiles(tiles: StorePageTileDefaults): Record<string, unknown>[] {
+function companyTiles(raw: unknown): Record<string, unknown>[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+  const record = raw as Record<string, unknown>;
   const result: Record<string, unknown>[] = [];
   for (const key of COMPANY_TILE_KEYS) {
+    const row = record[key];
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const fields = row as Record<string, unknown>;
+    if (fields.show === false) continue;
+    const url = savedCompanyTileUrl(key, row);
+    if (!url) continue;
+    const label = cleanText(fields.label, 40) || key;
     if (key === 'app') {
-      const app = tiles.app;
-      if (!app.show) continue;
-      const ios = app.iosUrl;
-      const android = app.androidUrl;
-      const url = ios || android;
-      if (!url) continue;
+      const ios = validateCompanyUrl(fields.iosUrl, false);
+      const android = validateCompanyUrl(fields.androidUrl, false);
       result.push({
         key,
-        label: cleanText(app.label, 40),
+        label,
         url,
-        ...(ios ? { iosUrl: ios } : {}),
-        ...(android ? { androidUrl: android } : {}),
+        ...(ios.ok && ios.href ? { iosUrl: ios.href } : {}),
+        ...(android.ok && android.href ? { androidUrl: android.href } : {}),
         order: COMPANY_TILE_ORDER[key],
       });
       continue;
     }
-    const row = tiles[key];
-    if (!row.show || !row.url) continue;
     result.push({
       key,
-      label: cleanText(row.label, 40),
-      url: row.url,
+      label,
+      url,
       order: COMPANY_TILE_ORDER[key],
     });
   }
   return result;
 }
 
-async function loadTiles(db: Firestore): Promise<StorePageTileDefaults> {
+async function loadTiles(db: Firestore): Promise<Record<string, unknown>[]> {
   const snap = await db.collection('settings').doc('storePageDefaults').get();
-  if (!snap.exists) return DEFAULT_STORE_PAGE_TILES;
-  const parsed = validateStorePageTiles(snap.data()?.tiles);
-  return parsed.ok ? parsed.tiles : DEFAULT_STORE_PAGE_TILES;
+  if (!snap.exists) return [];
+  return companyTiles(snap.data()?.tiles);
 }
 
 function chooseLocation(docs: FirebaseFirestore.QueryDocumentSnapshot[]): FirebaseFirestore.QueryDocumentSnapshot | null {
@@ -230,7 +231,7 @@ export function createPublicProfileRouter(db: Firestore): Router {
       return res.json({
         contractVersion: 'public-profile.v1',
         generatedAt: new Date().toISOString(),
-        companyTiles: companyTiles(tiles),
+        companyTiles: tiles,
         stores,
       });
     } catch (error) {
@@ -252,7 +253,7 @@ export function createPublicProfileRouter(db: Firestore): Router {
       return res.json({
         contractVersion: 'public-profile.v1',
         generatedAt: new Date().toISOString(),
-        companyTiles: companyTiles(tiles),
+        companyTiles: tiles,
         stores: [await toPublic(db, chosen)],
       });
     } catch (error) {

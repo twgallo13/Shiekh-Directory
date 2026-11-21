@@ -114,6 +114,19 @@ export function validateReviewUrl(raw: unknown): UrlResult {
   return parsed;
 }
 
+/** An Admin-saved https link on an allowlisted host. Anything else is not a public tile url. */
+export function savedCompanyTileUrl(key: CompanyTileKey, row: unknown): string | null {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+  const fields = row as Record<string, unknown>;
+  if (key === 'app') {
+    const ios = validateCompanyUrl(fields.iosUrl, false);
+    const android = validateCompanyUrl(fields.androidUrl, false);
+    return (ios.ok && ios.href) || (android.ok && android.href) || null;
+  }
+  const url = validateCompanyUrl(fields.url, false);
+  return url.ok ? url.href : null;
+}
+
 export function validateCompanyUrl(raw: unknown, required: boolean): UrlResult {
   if (raw === null || raw === undefined || raw === '') {
     if (required) return { ok: false, message: 'Enter a link.' };

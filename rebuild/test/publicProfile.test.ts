@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import type { ChildProcess } from 'child_process';
 import { getTestDb, seedTestLocation, seedTestUsers } from './testHelpers';
 import { API_BASE, WEEK_HOURS, api } from './storePageHttp';
+import { PUBLIC_PROFILE_RATE_LIMIT } from '../src/constants/storePage';
 import { startFf606e5Server, stopChild } from './ff606e5Server';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -184,16 +185,30 @@ describe('public store profile', () => {
     assert.deepEqual(Object.keys(closure).sort(), ['publicExplanation', 'reopensOn']);
     assert.equal(closure.publicExplanation, 'Closed for a repair');
     assert.equal(closure.reopensOn, '2026-12-01');
-    const hours = store.hours as { weekly: Record<string, { closed: boolean; intervals: Array<{ open: string; close: string }> }>; exceptions: Array<Record<string, unknown>> };
-    assert.deepEqual(hours.weekly.tuesday.intervals, [{ open: '10:00', close: '18:00' }, { open: '19:00', close: '21:00' }]);
-    assert.deepEqual(hours.weekly.wednesday.intervals, [{ open: '22:00', close: '02:00' }]);
+    const hours = store.hours as { weekly: Record<string, { closed: boolean; intervals: Array<{ open: string; close: string }> } | null>; exceptions: Array<Record<string, unknown>> };
+    const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    assert.deepEqual(Object.keys(hours.weekly), dayNames);
+    for (const day of dayNames) {
+      assert.notEqual(hours.weekly[day], null, day);
+      assert.notEqual(hours.weekly[day], undefined, day);
+      for (const interval of hours.weekly[day]!.intervals) {
+        assert.match(interval.open, /^([01]\d|2[0-3]):[0-5]\d$/);
+        assert.match(interval.close, /^([01]\d|2[0-3]):[0-5]\d$/);
+      }
+    }
+    assert.deepEqual(hours.weekly.tuesday!.intervals, [{ open: '10:00', close: '18:00' }, { open: '19:00', close: '21:00' }]);
+    assert.deepEqual(hours.weekly.wednesday!.intervals, [{ open: '22:00', close: '02:00' }]);
+    assert.deepEqual(hours.weekly.thursday, { closed: true, intervals: [] });
     assert.equal(hours.exceptions.length, 1);
+    assert.equal(hours.exceptions[0].type, 'holiday');
+    assert.deepEqual(Object.keys(hours.exceptions[0]).sort(), ['closed', 'endDate', 'intervals', 'label', 'startDate', 'type']);
     assert.equal(hours.exceptions[0].endDate, '2026-11-27');
     assert.equal(hours.exceptions[0].source, undefined);
-    const instagram = body.companyTiles.find((tile) => tile.key === 'instagram');
-    assert.equal(instagram?.url, 'https://www.instagram.com/shiekh');
-    assert.equal(instagram?.order, 7);
-    assert.equal(body.companyTiles.some((tile) => tile.key === 'app'), false);
+    assert.equal(Array.isArray(body.companyTiles), true);
+    assert.equal('companyTiles' in store, false);
+    assert.equal(body.companyTiles.some((tile) => tile.key === 'shop'), false);
+    assert.equal('shop' in store, false);
+    assert.equal('shopTileVisible' in store, false);
     const serialized = JSON.stringify(body);
     for (const secret of ['LEAKED_INBOX@secret.test', 'SECRET_WAYFINDING', 'SECRET_REASON_NOTE', 'SECRET_PERSON', 'defaultImage', 'imageUrl']) {
       assert.equal(serialized.includes(secret), false, secret);
@@ -230,6 +245,8 @@ describe('public store profile', () => {
     const retired = await api(`/api/public-profile/v1/stores/${retiredNumber}`, PUBLIC);
     const retiredBody = await retired.json() as { stores: Array<Record<string, unknown>> };
     assert.deepEqual(retiredBody.stores[0], { storeNumber: retiredNumber, status: 'Retired' });
+    assert.equal('pageEnabled' in retiredBody.stores[0], false);
+    assert.equal(retiredBody.stores[0].status, 'Retired');
 
     const activeId = await seedTestLocation({
       storeNumber: collisionNumber,
@@ -280,6 +297,20 @@ describe('public store profile', () => {
     const bare = await api(`/api/public-profile/v1/stores/${noHoursNumber}`, PUBLIC);
     const bareBody = await bare.json() as { stores: Array<Record<string, unknown>> };
     assert.equal(bareBody.stores[0].hours, null);
+    await db.collection('locations').doc(bareId).set({
+      standardHours: {
+        friday: { closed: false, intervals: [{ open: '11:00', close: '19:00' }] },
+      },
+    }, { merge: true });
+    const missingDay = await api(`/api/public-profile/v1/stores/${noHoursNumber}`, PUBLIC);
+    const missingDayBody = await missingDay.json() as {
+      stores: Array<{ hours: { weekly: Record<string, { closed: boolean; intervals: unknown[] } | null> } }>;
+    };
+    const missingWeekly = missingDayBody.stores[0].hours.weekly;
+    assert.deepEqual(Object.keys(missingWeekly), ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+    assert.deepEqual(missingWeekly.monday, { closed: true, intervals: [] });
+    assert.notEqual(missingWeekly.monday, null);
+    assert.deepEqual(missingWeekly.friday!.intervals, [{ open: '11:00', close: '19:00' }]);
 
     const badId = await seedTestLocation({
       storeNumber: badUrlNumber,
@@ -296,6 +327,7 @@ describe('public store profile', () => {
     assert.equal(badBody.stores[0].reviewUrl, null);
     assert.equal(badBody.stores[0].magentoStoreId, null);
     assert.equal(JSON.stringify(badBody).includes('evil.example'), false);
+    assert.equal(JSON.stringify(badBody).includes('0123'), false);
 
     const zeroId = await seedTestLocation({
       storeNumber: '001',
@@ -345,6 +377,93 @@ describe('public store profile', () => {
       body: JSON.stringify({ name: `Locations ${stamp}`, scopes: ['locations:read'] }),
     });
     assert.equal(locationsOnly.status, 201);
+  });
+
+  it('omits company tiles with no Admin-saved https url', async () => {
+    const db = getTestDb();
+    const ref = db.collection('settings').doc('storePageDefaults');
+    await ref.delete();
+    const empty = await api('/api/public-profile/v1/stores', PUBLIC);
+    assert.equal(empty.status, 200);
+    const emptyBody = await empty.json() as { companyTiles: unknown[] };
+    assert.deepEqual(emptyBody.companyTiles, []);
+
+    await ref.set({
+      version: 1,
+      tiles: {
+        instagram: { label: 'Instagram', url: 'https://www.instagram.com/shiekh', show: true },
+        returns: { label: 'Return policy', url: 'https://www.shiekh.com/returns' },
+        launch: { label: 'Launch Calendar', url: 'https://www.shiekh.com/launch', show: false },
+        rewards: { label: 'Legacy rewards', url: null, show: true },
+        card: { label: 'Sunbit card' },
+        app: { label: 'Get the app', iosUrl: 'http://apps.apple.com/app/id1', androidUrl: null, show: true },
+      },
+    });
+    const partial = await api('/api/public-profile/v1/stores', PUBLIC);
+    const partialBody = await partial.json() as { companyTiles: Array<{ key: string; url: string; order: number }> };
+    assert.deepEqual(
+      partialBody.companyTiles.map((tile) => tile.key),
+      ['instagram', 'returns'],
+    );
+    assert.deepEqual(
+      partialBody.companyTiles.map((tile) => tile.url),
+      ['https://www.instagram.com/shiekh', 'https://www.shiekh.com/returns'],
+    );
+    assert.deepEqual(partialBody.companyTiles.map((tile) => tile.order), [5, 8]);
+    assert.equal(partialBody.companyTiles.some((tile) => tile.key === 'shop' || tile.key === 'app'), false);
+    await ref.delete();
+    const cleared = await api('/api/public-profile/v1/stores', PUBLIC);
+    const clearedBody = await cleared.json() as { companyTiles: unknown[] };
+    assert.deepEqual(clearedBody.companyTiles, []);
+  });
+
+  it('a 15-minute public-profile refresh is not throttled', async () => {
+    const burst = 1 + 3 + 5;
+    assert.equal(PUBLIC_PROFILE_RATE_LIMIT, 120);
+    assert.ok(PUBLIC_PROFILE_RATE_LIMIT >= burst * 4);
+    const created = await api('/api/app/api-clients', 'test-token-admin', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: `Refresh ${stamp}`,
+        scopes: ['public-profile:read'],
+        rateLimit: PUBLIC_PROFILE_RATE_LIMIT,
+      }),
+    });
+    assert.equal(created.status, 201);
+    const createdBody = await created.json() as {
+      token?: string;
+      client?: { id?: string; rateLimit?: number };
+    };
+    assert.equal(createdBody.client?.rateLimit, 120);
+    const token = createdBody.token;
+    const clientId = createdBody.client?.id;
+    assert.equal(typeof token, 'string');
+    assert.equal(typeof clientId, 'string');
+    const paths = [
+      '/api/public-profile/v1/stores',
+      '/api/public-profile/v1/stores',
+      '/api/public-profile/v1/stores',
+      '/api/public-profile/v1/stores',
+      '/api/public-profile/v1/stores/1',
+      '/api/public-profile/v1/stores/1',
+      '/api/public-profile/v1/stores/1',
+      '/api/public-profile/v1/stores/1',
+      '/api/public-profile/v1/stores/1',
+    ];
+    assert.equal(paths.length, burst);
+    const statuses: number[] = [];
+    for (const path of paths) {
+      const response = await api(path, token || null);
+      statuses.push(response.status);
+      await response.arrayBuffer();
+    }
+    assert.deepEqual(statuses.filter((status) => status === 429), []);
+    assert.equal(statuses[0], 200);
+    if (clientId) {
+      const revoked = await api(`/api/app/api-clients/${clientId}/revoke`, 'test-token-admin', { method: 'POST' });
+      await revoked.arrayBuffer();
+      assert.equal(revoked.status, 200);
+    }
   });
 
   it('firestore.rules, indexes, and legacy routes are unchanged from ff606e5', () => {

@@ -357,7 +357,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
                 {tile.locked ? (
                   <span className="inline-flex items-center gap-1 text-gray-500">
                     <Lock className="w-4 h-4" aria-hidden="true" />
-                    Set by Shiekh
+                    {tile.note === 'Not set' ? 'Not set' : 'Set by Shiekh'}
                   </span>
                 ) : (
                   <span className="text-gray-500">{tile.visible ? 'Shown' : 'Hidden'}</span>

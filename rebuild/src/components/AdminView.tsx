@@ -1175,7 +1175,7 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
             ))}
             {scopes.includes('public-profile:read') && (
               <p className="text-sm text-gray-600">
-                Dynamic QR only. This scope cannot be combined with others. Rate limit: {PUBLIC_PROFILE_RATE_LIMIT} requests per minute.
+                Dynamic QR only. This scope cannot be combined with others. Rate limit: {PUBLIC_PROFILE_RATE_LIMIT} requests per minute. A 15-minute refresh is about 96 list calls a day; this covers that, plus retries and a few detail calls.
               </p>
             )}
           </div>

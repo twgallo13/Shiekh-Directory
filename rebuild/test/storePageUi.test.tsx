@@ -6,7 +6,7 @@ import type { AuthUser } from '../src/types';
 import { LocationDetailView } from '../src/components/LocationDetailView';
 import { StorePageCard } from '../src/components/StorePageCard';
 import { StorePageDefaultsTab } from '../src/components/StorePageDefaultsTab';
-import { DEFAULT_STORE_PAGE_TILES } from '../src/constants/storePage';
+import { EMPTY_STORE_PAGE_TILES } from '../src/constants/storePage';
 
 const api = vi.hoisted(() => ({
   apiGet: vi.fn(),
@@ -93,6 +93,7 @@ function pageFixture(pageEnabled = false) {
     tiles: [
       { key: 'review', label: 'Review', locked: false, visible: true, note: null, order: 1 },
       { key: 'instagram', label: 'Instagram', locked: true, visible: true, note: 'Set by Shiekh', order: 7 },
+      { key: 'rewards', label: 'Legacy rewards', locked: true, visible: false, note: 'Not set', order: 4 },
     ],
     defaultImage: { source: 'dynamic-qr', label: 'Company default image · Set by Shiekh' },
   };
@@ -159,6 +160,7 @@ describe('store page screens', () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText('Set by Shiekh')).toBeTruthy();
+    expect(screen.getAllByText('Not set').length).toBeGreaterThan(0);
     expect(screen.getByText('Company default image · Set by Shiekh')).toBeTruthy();
     fireEvent.click(screen.getByRole('switch'));
     expect(api.apiPost).not.toHaveBeenCalled();
@@ -194,7 +196,7 @@ describe('store page screens', () => {
         data: {
           version: 1,
           updatedAt: null,
-          tiles: DEFAULT_STORE_PAGE_TILES,
+          tiles: EMPTY_STORE_PAGE_TILES,
           defaultImage: { source: 'dynamic-qr', label: 'Company default image · Set by Shiekh' },
         },
       }),
@@ -202,6 +204,16 @@ describe('store page screens', () => {
     render(<StorePageDefaultsTab getIdToken={async () => 'token'} />);
     expect(await screen.findByRole('heading', { name: 'Store page defaults' })).toBeTruthy();
     expect(screen.getAllByText('Fixed tile').length).toBe(6);
+    expect(screen.getAllByText('Not set').length).toBe(6);
+    for (const label of ['Get the app', 'Legacy rewards', 'Instagram', 'Launch Calendar', 'Sunbit card', 'Return policy']) {
+      expect(screen.getByRole('heading', { name: label })).toBeTruthy();
+    }
+    expect(screen.queryByText('New Arrivals')).toBeNull();
+    expect(screen.queryByText('Shiekh App')).toBeNull();
+    expect(screen.queryByText('Shiekh Card')).toBeNull();
+    expect(screen.queryByRole('heading', { name: /^Rewards$/ })).toBeNull();
+    expect(screen.queryByRole('heading', { name: /^Returns$/ })).toBeNull();
+    expect(screen.getByText(/The shop tile is not here/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /add tile/i })).toBeNull();
     expect(screen.queryByText(/add tile/i)).toBeNull();
     expect(screen.getByText('Hosted by Dynamic QR. This directory does not store an image URL.')).toBeTruthy();

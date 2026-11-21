@@ -111,7 +111,7 @@ export function createApiClientsRouter(db: Firestore): Router {
           return res.status(400).json({
             error: {
               code: 'rate_limit_required',
-              message: 'An explicit rateLimit from 1 to 10000 is required for a public-profile:read key. Use 60 for the store page pilot.',
+              message: 'An explicit rateLimit from 1 to 10000 is required for a public-profile:read key. Use 120 requests per minute for the store page pilot.',
               requestId: res.locals.requestId || 'unknown',
             },
           });

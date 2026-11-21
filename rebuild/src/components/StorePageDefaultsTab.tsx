@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
-import { COMPANY_TILE_KEYS, type CompanyTileKey, type StorePageTileDefaults } from '../constants/storePage';
+import { COMPANY_TILE_KEYS, COMPANY_TILE_LABELS, type CompanyTileKey, type StorePageTileDefaults } from '../constants/storePage';
 import { Dialog } from './Dialog';
 
 interface DefaultsPayload {
@@ -9,15 +9,6 @@ interface DefaultsPayload {
   tiles: StorePageTileDefaults;
   defaultImage: { source: string; label: string };
 }
-
-const TILE_NAMES: Record<CompanyTileKey, string> = {
-  app: 'App',
-  launch: 'Launch',
-  rewards: 'Rewards',
-  card: 'Card',
-  instagram: 'Instagram',
-  returns: 'Returns',
-};
 
 export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   const [defaults, setDefaults] = useState<DefaultsPayload | null>(null);
@@ -92,7 +83,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
     <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-gray-900">Store page defaults</h2>
-        <p className="text-sm text-gray-600">Six fixed company tiles. Stores cannot add, remove, or reorder them.</p>
+        <p className="text-sm text-gray-600">Six fixed company tiles. Stores cannot add, remove, or reorder them. The shop tile is not here. Dynamic QR builds it from the Magento store ID.</p>
       </div>
       {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
       <div className="space-y-4">
@@ -101,7 +92,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
           return (
             <div key={key} className="border border-gray-200 rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-medium text-gray-900">{TILE_NAMES[key]}</h3>
+                <h3 className="font-medium text-gray-900">{COMPANY_TILE_LABELS[key]}</h3>
                 <span className="inline-flex items-center gap-1 text-sm text-gray-500">
                   <Lock className="w-4 h-4" aria-hidden="true" />
                   Fixed tile
@@ -120,6 +111,8 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
                   <input id="tile-app-ios" value={draft.app.iosUrl || ''} onChange={(event) => update('app', 'iosUrl', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]" />
                   <label className="block text-sm text-gray-700" htmlFor="tile-app-android">Google Play link</label>
                   <input id="tile-app-android" value={draft.app.androidUrl || ''} onChange={(event) => update('app', 'androidUrl', event.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]" />
+                  {!draft.app.iosUrl && !draft.app.androidUrl && <p className="text-sm text-gray-500">Not set</p>}
+                  <p className="text-sm text-gray-500">Hidden on the public page until an App Store or Google Play link is saved.</p>
                 </>
               ) : (
                 <>
@@ -130,6 +123,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
                     onChange={(event) => update(key, 'url', event.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
                   />
+                  {'url' in row && !row.url && <p className="text-sm text-gray-500">Not set</p>}
                 </>
               )}
               <label className="inline-flex items-center gap-2 min-h-[44px]">
@@ -137,7 +131,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
                   type="checkbox"
                   checked={row.show}
                   onChange={(event) => update(key, 'show', event.target.checked)}
-                  aria-label={`Show ${TILE_NAMES[key]}`}
+                  aria-label={`Show ${COMPANY_TILE_LABELS[key]}`}
                 />
                 Show on the store page
               </label>

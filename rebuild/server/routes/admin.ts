@@ -4,6 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { createHash } from 'crypto';
 import type { User, AuthUser, UserRole, Location, HoursTemplate, StandardHours, StoreTypeCode, DayOfWeek, AuditLogEntry } from '../../src/types';
 import { isValidStoreTypeCode, STORE_TYPE_CODE_FROM_LABEL } from '../../src/types';
+import { registerStorePageDefaultRoutes } from './storePages';
 
 async function addAuditEntry(
   db: Firestore,
@@ -845,6 +846,8 @@ export function createAdminRouter(db: Firestore): Router {
       res.status(500).json({ error: { code: 'import_error', message: 'Failed to import store types' } });
     }
   });
+
+  registerStorePageDefaultRoutes(router, db);
 
   return router;
 }

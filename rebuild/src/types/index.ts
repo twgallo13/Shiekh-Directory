@@ -524,7 +524,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client' | 'workflow-rules' | 'settings' | 'email-settings' | 'test-data';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client' | 'workflow-rules' | 'settings' | 'email-settings' | 'test-data' | 'store-page';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store

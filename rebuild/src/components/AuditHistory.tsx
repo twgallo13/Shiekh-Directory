@@ -86,6 +86,8 @@ function formatFieldName(field: string): string {
     pageEnabled: 'Page on/off',
     magentoStoreId: 'Magento store ID',
     tiles: 'Company tiles',
+    findStoreUrl: 'Find-a-store page URL',
+    defaultStoreImageUrl: 'Default store image URL',
   };
   return fieldLabels[field] || field.replace(/([A-Z])/g, ' $1').trim();
 }

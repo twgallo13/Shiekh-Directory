@@ -64,10 +64,16 @@ function reviewPathAllowed(host: string, pathname: string): boolean {
   }
 }
 
-function parseHttps(raw: string, hosts: Set<string>, hostMessage: string): UrlResult {
-  if (raw.length > MAX_URL_LENGTH) {
-    return { ok: false, message: 'Link must be 500 characters or less.' };
-  }
+const IPV4 = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
+
+function isIpLiteral(hostname: string): boolean {
+  const host = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  return IPV4.test(host) || host.includes(':');
+}
+
+function inspectHttps(raw: string, maxLength: number): { ok: true; url: URL } | { ok: false; message: string } {
   if (hasWhitespaceOrControl(raw)) {
     return { ok: false, message: 'Link cannot contain spaces or line breaks.' };
   }
@@ -86,11 +92,74 @@ function parseHttps(raw: string, hosts: Set<string>, hostMessage: string): UrlRe
   if (url.port) {
     return { ok: false, message: 'Link cannot include a port.' };
   }
-  const host = url.hostname.toLowerCase();
+  if (url.href.length > maxLength) {
+    return { ok: false, message: `Link must be ${maxLength} characters or less.` };
+  }
+  return { ok: true, url };
+}
+
+function parseHttps(raw: string, hosts: Set<string>, hostMessage: string): UrlResult {
+  const inspected = inspectHttps(raw, MAX_URL_LENGTH);
+  if (!inspected.ok) return inspected;
+  const host = inspected.url.hostname.toLowerCase();
   if (host.endsWith('.') || !hosts.has(host)) {
     return { ok: false, message: hostMessage };
   }
-  return { ok: true, href: url.href };
+  return { ok: true, href: inspected.url.href };
+}
+
+const FIND_STORE_HOSTS = new Set(['shiekh.com', 'www.shiekh.com', 'qr.shiekh.store']);
+const DEFAULT_IMAGE_HOSTS = new Set(['qr.shiekh.store']);
+
+export type UrlFieldUpdate =
+  | { action: 'keep' }
+  | { action: 'clear' }
+  | { action: 'set'; href: string }
+  | { action: 'invalid'; message: string };
+
+/** Exact host match on the normalized hostname. Punycode look-alikes are not the listed hosts. */
+function hostAllowed(hostname: string, hosts: Set<string>): boolean {
+  const host = hostname.toLowerCase();
+  if (host.endsWith('.') || host === 'localhost' || host.endsWith('.localhost') || isIpLiteral(host)) return false;
+  return hosts.has(host);
+}
+
+function readAllowlistedUrl(raw: unknown, hosts: Set<string>, hostMessage: string): UrlFieldUpdate {
+  if (raw === undefined) return { action: 'keep' };
+  if (raw === null || raw === '') return { action: 'clear' };
+  if (typeof raw !== 'string') return { action: 'invalid', message: 'Enter a link.' };
+  const inspected = inspectHttps(raw, 2048);
+  if (!inspected.ok) return { action: 'invalid', message: inspected.message };
+  if (!hostAllowed(inspected.url.hostname, hosts)) {
+    return { action: 'invalid', message: hostMessage };
+  }
+  return { action: 'set', href: inspected.url.href };
+}
+
+export function readFindStoreUrl(raw: unknown): UrlFieldUpdate {
+  return readAllowlistedUrl(
+    raw,
+    FIND_STORE_HOSTS,
+    'Use an https link on shiekh.com, www.shiekh.com, or qr.shiekh.store.',
+  );
+}
+
+export function readDefaultStoreImageUrl(raw: unknown): UrlFieldUpdate {
+  return readAllowlistedUrl(raw, DEFAULT_IMAGE_HOSTS, 'Use an https link on qr.shiekh.store.');
+}
+
+function urlResult(update: UrlFieldUpdate): UrlResult {
+  if (update.action === 'invalid') return { ok: false, message: update.message };
+  if (update.action === 'set') return { ok: true, href: update.href };
+  return { ok: true, href: null };
+}
+
+export function validateFindStoreUrl(raw: unknown): UrlResult {
+  return urlResult(readFindStoreUrl(raw));
+}
+
+export function validateDefaultStoreImageUrl(raw: unknown): UrlResult {
+  return urlResult(readDefaultStoreImageUrl(raw));
 }
 
 /** Empty becomes null. Otherwise a Google review link on an allowed host and path. */

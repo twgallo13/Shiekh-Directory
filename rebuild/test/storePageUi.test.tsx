@@ -204,7 +204,7 @@ describe('store page screens', () => {
     render(<StorePageDefaultsTab getIdToken={async () => 'token'} />);
     expect(await screen.findByRole('heading', { name: 'Store page defaults' })).toBeTruthy();
     expect(screen.getAllByText('Fixed tile').length).toBe(6);
-    expect(screen.getAllByText('Not set').length).toBe(6);
+    expect(screen.getAllByText('Not set').length).toBe(8);
     for (const label of ['Get the app', 'Legacy rewards', 'Instagram', 'Launch Calendar', 'Sunbit card', 'Return policy']) {
       expect(screen.getByRole('heading', { name: label })).toBeTruthy();
     }
@@ -216,6 +216,39 @@ describe('store page screens', () => {
     expect(screen.getByText(/The shop tile is not here/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /add tile/i })).toBeNull();
     expect(screen.queryByText(/add tile/i)).toBeNull();
-    expect(screen.getByText('Hosted by Dynamic QR. This directory does not store an image URL.')).toBeTruthy();
+    expect(screen.getByLabelText('Find-a-store page URL')).toBeTruthy();
+    expect(screen.getByLabelText('Default store image URL')).toBeTruthy();
+    expect(screen.getByText('The image file stays at the default store image URL. Leave that field blank and the public feed omits it.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Find-a-store page URL'), { target: { value: 'http://www.shiekh.com/stores' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save store page defaults' }));
+    expect(screen.getByText('Link must start with https.')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('opens the store page in a new tab, and disables the link when the page is off', async () => {
+    api.apiGet.mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: pageFixture(true) }) });
+    const admin: AuthUser = { uid: 'admin', email: 'admin@test.com', role: 'Admin', displayName: 'Admin' };
+    const { unmount } = render(
+      <MemoryRouter>
+        <StorePageCard locationId="loc-1" storeNumber="48" lifecycle="active" authUser={admin} />
+      </MemoryRouter>,
+    );
+    const link = await screen.findByRole('link', { name: 'Open page' });
+    expect(link.getAttribute('href')).toBe('https://qr.shiekh.store/s/48');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(screen.queryByText('Page is off')).toBeNull();
+    unmount();
+
+    api.apiGet.mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: pageFixture(false) }) });
+    render(
+      <MemoryRouter>
+        <StorePageCard locationId="loc-1" storeNumber="48" lifecycle="active" authUser={admin} />
+      </MemoryRouter>,
+    );
+    const disabled = await screen.findByRole('button', { name: 'Open page' });
+    expect((disabled as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('link', { name: 'Open page' })).toBeNull();
+    expect(screen.getByText('Page is off')).toBeTruthy();
   });
 });

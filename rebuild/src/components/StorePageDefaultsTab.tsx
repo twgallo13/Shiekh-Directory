@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { COMPANY_TILE_KEYS, COMPANY_TILE_LABELS, type CompanyTileKey, type StorePageTileDefaults } from '../constants/storePage';
+import { validateDefaultStoreImageUrl, validateFindStoreUrl } from '../lib/storePageValidation';
 import { Dialog } from './Dialog';
 
 interface DefaultsPayload {
   version: number;
   updatedAt: string | null;
   tiles: StorePageTileDefaults;
+  findStoreUrl: string | null;
+  defaultStoreImageUrl: string | null;
   defaultImage: { source: string; label: string };
 }
 
 export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   const [defaults, setDefaults] = useState<DefaultsPayload | null>(null);
   const [draft, setDraft] = useState<StorePageTileDefaults | null>(null);
+  const [findStoreUrl, setFindStoreUrl] = useState('');
+  const [defaultStoreImageUrl, setDefaultStoreImageUrl] = useState('');
+  const [findError, setFindError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -30,6 +37,10 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
       }
       setDefaults(payload.data);
       setDraft(structuredClone(payload.data.tiles));
+      setFindStoreUrl(payload.data.findStoreUrl || '');
+      setDefaultStoreImageUrl(payload.data.defaultStoreImageUrl || '');
+      setFindError(null);
+      setImageError(null);
       setError(null);
     } catch {
       setError('Couldn\'t load store page defaults.');
@@ -49,7 +60,12 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
       const response = await fetch('/api/app/admin/store-page-defaults', {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expectedVersion: defaults.version, tiles: draft }),
+        body: JSON.stringify({
+          expectedVersion: defaults.version,
+          tiles: draft,
+          findStoreUrl,
+          defaultStoreImageUrl,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -63,6 +79,24 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
     } finally {
       setSaving(false);
     }
+  };
+
+  const findLinkError = (value: string): string | null => {
+    const parsed = validateFindStoreUrl(value);
+    return parsed.ok ? null : parsed.message;
+  };
+  const imageLinkError = (value: string): string | null => {
+    const parsed = validateDefaultStoreImageUrl(value);
+    return parsed.ok ? null : parsed.message;
+  };
+
+  const requestSave = () => {
+    const nextFindError = findLinkError(findStoreUrl);
+    const nextImageError = imageLinkError(defaultStoreImageUrl);
+    setFindError(nextFindError);
+    setImageError(nextImageError);
+    if (nextFindError || nextImageError) return;
+    setConfirming(true);
   };
 
   const update = (key: CompanyTileKey, field: string, value: string | boolean) => {
@@ -87,6 +121,42 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
       </div>
       {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
       <div className="space-y-4">
+        <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+          <label className="block text-sm text-gray-700" htmlFor="find-store-url">Find-a-store page URL</label>
+          <input
+            id="find-store-url"
+            value={findStoreUrl}
+            onChange={(event) => {
+              setFindStoreUrl(event.target.value);
+              setFindError(null);
+            }}
+            onBlur={() => setFindError(findLinkError(findStoreUrl))}
+            aria-invalid={!!findError}
+            aria-describedby={findError ? 'find-store-url-error' : 'find-store-url-help'}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+          />
+          <p id="find-store-url-help" className="text-sm text-gray-500">Optional https link. The public feed includes it only after you save one.</p>
+          {!findStoreUrl && <p className="text-sm text-gray-500">Not set</p>}
+          {findError && <p id="find-store-url-error" className="text-sm text-red-600" role="alert">{findError}</p>}
+        </div>
+        <div className="border border-gray-200 rounded-lg p-3 space-y-2">
+          <label className="block text-sm text-gray-700" htmlFor="default-store-image-url">Default store image URL</label>
+          <input
+            id="default-store-image-url"
+            value={defaultStoreImageUrl}
+            onChange={(event) => {
+              setDefaultStoreImageUrl(event.target.value);
+              setImageError(null);
+            }}
+            onBlur={() => setImageError(imageLinkError(defaultStoreImageUrl))}
+            aria-invalid={!!imageError}
+            aria-describedby={imageError ? 'default-store-image-url-error' : 'default-store-image-url-help'}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+          />
+          <p id="default-store-image-url-help" className="text-sm text-gray-500">Optional https link to the image file. The public feed includes it only after you save one.</p>
+          {!defaultStoreImageUrl && <p className="text-sm text-gray-500">Not set</p>}
+          {imageError && <p id="default-store-image-url-error" className="text-sm text-red-600" role="alert">{imageError}</p>}
+        </div>
         {COMPANY_TILE_KEYS.map((key) => {
           const row = draft[key];
           return (
@@ -141,11 +211,11 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
       </div>
       <div className="rounded-lg border border-dashed border-gray-300 p-4">
         <p className="font-medium text-gray-900">Company default image · Set by Shiekh</p>
-        <p className="text-sm text-gray-600">Hosted by Dynamic QR. This directory does not store an image URL.</p>
+        <p className="text-sm text-gray-600">The image file stays at the default store image URL. Leave that field blank and the public feed omits it.</p>
       </div>
       <button
         type="button"
-        onClick={() => setConfirming(true)}
+        onClick={requestSave}
         className="min-h-[44px] px-4 rounded-lg bg-blue-600 text-white font-medium"
       >
         Save store page defaults

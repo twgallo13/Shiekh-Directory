@@ -32,6 +32,9 @@ const DIRECTORY_COLLECTIONS = [
   'dmVerificationRequests',
   'corrections',
   'dmTasks',
+  'storePages',
+  'storePageMagentoIds',
+  'storeLinkPending',
 ];
 
 const USERS_COLLECTION = 'users';

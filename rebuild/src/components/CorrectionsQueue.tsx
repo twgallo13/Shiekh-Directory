@@ -284,7 +284,9 @@ function CorrectionDetailDialog({ correction, onClose, onApprove, onReject, proc
     <Dialog
       isOpen={true}
       onClose={onClose}
-      title={`#${correction.storeNumber} - ${correction.type} Correction`}
+      title={correction.category === 'store-link'
+        ? `#${correction.storeNumber} - Store page link`
+        : `#${correction.storeNumber} - ${correction.type} Correction`}
       footer={dialogFooter}
       size="lg"
       triggerRef={triggerRef}
@@ -302,19 +304,19 @@ function CorrectionDetailDialog({ correction, onClose, onApprove, onReject, proc
           <h3 className="font-medium text-gray-900">Proposed Changes</h3>
           {Object.entries(correction.proposedChanges ?? {}).map(([field, newValue]) => (
             <div key={field} className="border border-gray-200 rounded-lg overflow-hidden">
-              <div className="bg-gray-50 px-3 py-2 font-medium text-sm">{field}</div>
+              <div className="bg-gray-50 px-3 py-2 font-medium text-sm">{field === 'reviewUrl' ? 'Review link' : field}</div>
               <div className="grid grid-cols-2 divide-x divide-gray-200">
                 <div className="p-3">
                   <p className="text-xs text-gray-500 mb-1">Current</p>
-                  <pre className="text-sm text-red-700 whitespace-pre-wrap">
+                  <p className="text-sm text-red-700 whitespace-pre-wrap break-all">
                     {formatValue(correction.currentValues?.[field])}
-                  </pre>
+                  </p>
                 </div>
                 <div className="p-3">
                   <p className="text-xs text-gray-500 mb-1">Proposed</p>
-                  <pre className="text-sm text-green-700 whitespace-pre-wrap">
+                  <p className="text-sm text-green-700 whitespace-pre-wrap break-all">
                     {formatValue(newValue)}
-                  </pre>
+                  </p>
                 </div>
               </div>
             </div>

@@ -524,7 +524,7 @@ export interface AuditLogEntry {
   userEmail: string;
   userRole: UserRole;
   action: AuditAction;
-  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client' | 'workflow-rules' | 'settings' | 'email-settings' | 'test-data';
+  entityType: 'location' | 'person' | 'assignment' | 'closure' | 'correction' | 'user' | 'verification' | 'store-auth' | 'restore-drill' | 'hours-template' | 'notice' | 'import' | 'custom-field' | 'verification-campaign' | 'invitation' | 'api-client' | 'workflow-rules' | 'settings' | 'email-settings' | 'test-data' | 'store-page';
   entityId: string;
   entityName: string;
   locationId?: string | null; // For assignment entries - links to the store
@@ -636,7 +636,7 @@ export interface DMVerificationRequest extends RecordMetadata {
 
 // === Corrections (requires Steward approval) ===
 export type CorrectionStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'archived' | 'expired';
-export type CorrectionType = 'phone' | 'address' | 'inbox' | 'hours';
+export type CorrectionType = 'phone' | 'address' | 'inbox' | 'hours' | 'store-page';
 
 // User-facing categories for issue reporting
 export type CorrectionCategory = 
@@ -646,7 +646,8 @@ export type CorrectionCategory =
   | 'phone'       // Phone number is wrong
   | 'hours'       // Hours are incorrect
   | 'manager'     // Manager info is wrong
-  | 'other';      // Other issue
+  | 'other'       // Other issue
+  | 'store-link'; // Review link on the public store page
 
 export interface Correction extends RecordMetadata {
   id: string;
@@ -679,6 +680,8 @@ export interface Correction extends RecordMetadata {
   overdueFlaggedAt?: string;
   // Version of location when submitted (for conflict detection)
   locationVersion: number;
+  // storePages version when a store-link request was filed. Missing means 0.
+  storePageVersion?: number;
 }
 
 // === Extended Location Detail with permissions ===

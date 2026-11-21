@@ -405,6 +405,13 @@ export function requireStoreAccess(locationIdParam: string = 'id'): (req: Reques
   };
 }
 
+export async function computeLeaderScopeFor(
+  db: Firestore,
+  userId: string,
+): Promise<AuthUser['leaderScope']> {
+  return computeLeaderScope(db, userId);
+}
+
 async function computeLeaderScope(
   db: Firestore,
   userId: string

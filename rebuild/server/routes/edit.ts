@@ -12,6 +12,7 @@ import { isValidStoreTypeCode } from '../../src/types';
 import { hasPermission, canEditLocation } from '../../src/lib/permissions';
 import { normalizePhoneNumber } from '../utils/phone';
 import { getWorkflowRules } from '../services/workflowSettings';
+import { assertCanFileFor } from '../storePage/access';
 
 export function createEditRouter(db: Firestore): Router {
   const router = Router();
@@ -186,6 +187,12 @@ export function createEditRouter(db: Firestore): Router {
       }
 
       if (requiresApproval && Object.keys(proposedChanges).length > 0) {
+        const filing = assertCanFileFor(authUser, id);
+        if (!filing.ok) {
+          return res.status(filing.status).json({
+            error: { code: filing.code, message: filing.message, requestId: res.locals.requestId },
+          });
+        }
         const correctionRef = db.collection('corrections').doc();
         const correctionWorkflowRules = await getWorkflowRules(db);
         // Determine type and category from the proposed changes

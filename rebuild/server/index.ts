@@ -34,6 +34,8 @@ import { createInvitationsRouter } from './routes/invitations';
 import { createEmailSettingsRouter } from './routes/emailSettings';
 import { createWorkflowRulesRouter } from './routes/workflowRules';
 import { createSignInSettingsRouter } from './routes/signInSettings';
+import { createStorePagesRouter } from './routes/storePages';
+import { createPublicProfileRouter } from './routes/publicProfile';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -76,12 +78,14 @@ app.use('/api/app/invitations', createInvitationsRouter(db));
 app.use('/api/app/email-settings', createEmailSettingsRouter(db));
 app.use('/api/app/workflow-rules', createWorkflowRulesRouter(db));
 app.use('/api/app/signin-settings', createSignInSettingsRouter(db));
+app.use('/api/app/store-pages', createStorePagesRouter(db));
 app.use('/api/store-auth', createOptionalAuthMiddleware(db), createAuthUserMiddleware(db), createStoreAuthRouter(db));
 
 // Legacy API routes (v1/v2/v3)
 app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));
 app.use('/api/v2', createLegacyApiAuthMiddleware(db), createLegacyV2Router(db));
 app.use('/api/v3', createLegacyApiAuthMiddleware(db), createLegacyV3Router(db));
+app.use('/api/public-profile/v1', createLegacyApiAuthMiddleware(db), createPublicProfileRouter(db));
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

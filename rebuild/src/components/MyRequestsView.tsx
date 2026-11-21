@@ -12,6 +12,7 @@ const CATEGORY_LABELS: Record<CorrectionCategory, string> = {
   hours: 'Hours',
   manager: 'Manager Info',
   other: 'Other',
+  'store-link': 'Store page link',
 };
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -237,6 +238,11 @@ export function MyRequestsView() {
                     }}>
                       <strong>Category:</strong> {CATEGORY_LABELS[req.category] || req.category}
                     </div>
+                    {req.category === 'store-link' && typeof req.proposedChanges?.reviewUrl === 'string' && (
+                      <div className="text-sm text-gray-700 mt-1 break-all">
+                        Proposed link: {req.proposedChanges.reviewUrl}
+                      </div>
+                    )}
                     {req.proposedNote && (
                       <div style={{ 
                         fontSize: '0.875rem', 

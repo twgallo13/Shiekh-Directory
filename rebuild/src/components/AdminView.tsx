@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play } from 'lucide-react';
+import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play, Lock } from 'lucide-react';
+import { StorePageDefaultsTab } from './StorePageDefaultsTab';
+import { PUBLIC_PROFILE_RATE_LIMIT } from '../constants/storePage';
 import { useAuth } from '../context/AuthContext';
 import { HoursTemplatesView } from './HoursTemplatesView';
 import { EmailSettingsView } from './EmailSettingsView';
@@ -9,7 +11,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
 import { AccessDenied } from './AccessDenied';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'workflow-rules' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality';
+type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'workflow-rules' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality' | 'store-page-defaults';
 
 interface User {
   id: string;
@@ -60,6 +62,7 @@ const SCOPES = [
   { id: 'staffing:read', label: 'Staffing (Read)' },
   { id: 'district-leadership:read', label: 'District Leadership (Read)' },
   { id: 'district-leadership:contacts:read', label: 'District Leadership Contacts (Read)' },
+  { id: 'public-profile:read', label: 'Public store page (Read)' },
 ];
 
 export function AdminView() {
@@ -88,6 +91,9 @@ export function AdminView() {
               </TabButton>
               <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock} panelId="panel-hours-templates">
                 Hours Templates
+              </TabButton>
+              <TabButton id="store-page-defaults" active={activeTab === 'store-page-defaults'} onClick={setActiveTab} icon={Lock} panelId="panel-store-page-defaults">
+                Store page defaults
               </TabButton>
               <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
               {/* Group 2: Workflows */}
@@ -162,6 +168,9 @@ export function AdminView() {
         </div>
         <div id="panel-hours-templates" role="tabpanel" aria-labelledby="tab-hours-templates" hidden={activeTab !== 'hours-templates'}>
           {activeTab === 'hours-templates' && <HoursTemplatesTab />}
+        </div>
+        <div id="panel-store-page-defaults" role="tabpanel" aria-labelledby="tab-store-page-defaults" hidden={activeTab !== 'store-page-defaults'}>
+          {activeTab === 'store-page-defaults' && <StorePageDefaultsTab getIdToken={getIdToken} />}
         </div>
         <div id="panel-backups" role="tabpanel" aria-labelledby="tab-backups" hidden={activeTab !== 'backups'}>
           {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
@@ -691,6 +700,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newToken, setNewToken] = useState<{ clientId: string; token: string } | null>(null);
   const [editingRateLimit, setEditingRateLimit] = useState<{ client: ApiClient; value: number } | null>(null);
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
 
   const loadClients = useCallback(async () => {
     try {
@@ -801,11 +811,16 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       });
       
       if (res.ok) {
+        setRateLimitError(null);
         setEditingRateLimit(null);
         loadClients();
+      } else {
+        const body = await res.json().catch(() => null) as { error?: { message?: string } } | null;
+        setRateLimitError(body?.error?.message || 'Could not save the rate limit.');
       }
     } catch (error) {
       console.error('Update rate limit error:', error);
+      setRateLimitError('Could not save the rate limit.');
     }
   };
 
@@ -867,7 +882,10 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
                   </td>
                   <td className="px-4 py-3">
                     <button
-                      onClick={() => setEditingRateLimit({ client, value: client.rateLimit ?? 60 })}
+                      onClick={() => {
+                        setRateLimitError(null);
+                        setEditingRateLimit({ client, value: client.rateLimit ?? 60 });
+                      }}
                       className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
                       disabled={!client.active}
                     >
@@ -956,13 +974,13 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
       {editingRateLimit && (
         <Dialog 
           isOpen={true} 
-          onClose={() => setEditingRateLimit(null)} 
+          onClose={() => { setRateLimitError(null); setEditingRateLimit(null); }}
           title="Edit Rate Limit"
           size="sm"
           footer={
             <div className="flex gap-3 w-full">
               <button
-                onClick={() => setEditingRateLimit(null)}
+                onClick={() => { setRateLimitError(null); setEditingRateLimit(null); }}
                 className="flex-1 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 min-h-[44px]"
               >
                 Cancel
@@ -980,20 +998,26 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
             <p className="text-sm text-gray-600">
               Configure rate limit for <strong>{editingRateLimit.client.name}</strong>
             </p>
-            <FormField id="rate-limit-value" label="Requests per minute" hint="Set to 0 for unlimited. Default is 60 requests/min.">
+            <FormField id="rate-limit-value" label="Requests per minute" hint={editingRateLimit.client.scopes.includes('public-profile:read') ? '1 to 10000 requests per minute. This key cannot be unlimited. The store page pilot uses 120.' : 'Set to 0 for unlimited. Default is 60 requests/min.'}>
               <input
                 id="rate-limit-value"
                 type="number"
-                min={0}
+                min={editingRateLimit.client.scopes.includes('public-profile:read') ? 1 : 0}
                 max={10000}
                 value={editingRateLimit.value}
-                onChange={(e) => setEditingRateLimit({ 
-                  ...editingRateLimit, 
-                  value: parseInt(e.target.value) || 0 
-                })}
+                onChange={(e) => {
+                  setRateLimitError(null);
+                  setEditingRateLimit({
+                    ...editingRateLimit,
+                    value: parseInt(e.target.value) || 0,
+                  });
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-h-[44px]"
               />
             </FormField>
+            {rateLimitError && (
+              <p role="alert" className="text-sm text-red-700">{rateLimitError}</p>
+            )}
           </div>
         </Dialog>
       )}
@@ -1066,9 +1090,15 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
   const [error, setError] = useState('');
 
   const toggleScope = (scope: string) => {
-    setScopes(prev =>
-      prev.includes(scope) ? prev.filter(s => s !== scope) : [...prev, scope]
-    );
+    setScopes((prev) => {
+      if (scope === 'public-profile:read') {
+        return prev.includes(scope) ? prev.filter((item) => item !== scope) : ['public-profile:read'];
+      }
+      const withoutPublic = prev.filter((item) => item !== 'public-profile:read');
+      return withoutPublic.includes(scope)
+        ? withoutPublic.filter((item) => item !== scope)
+        : [...withoutPublic, scope];
+    });
   };
 
   const handleSave = async () => {
@@ -1089,7 +1119,11 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
       const res = await fetch('/api/app/api-clients', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, scopes }),
+        body: JSON.stringify({
+          name,
+          scopes,
+          ...(scopes.includes('public-profile:read') ? { rateLimit: PUBLIC_PROFILE_RATE_LIMIT } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -1154,6 +1188,11 @@ function ApiClientModal({ getIdToken, onClose, onCreated }: {
                 <span className="text-sm text-gray-700">{scope.label}</span>
               </label>
             ))}
+            {scopes.includes('public-profile:read') && (
+              <p className="text-sm text-gray-600">
+                Dynamic QR only. This scope cannot be combined with others. Rate limit: {PUBLIC_PROFILE_RATE_LIMIT} requests per minute. A 15-minute refresh is about 96 list calls a day; this covers that, plus retries and a few detail calls.
+              </p>
+            )}
           </div>
         </fieldset>
       </div>

@@ -8,6 +8,7 @@ import {
   type LegacyApiScope,
   type ApiClientDocument,
 } from '../middleware/legacyApiAuth';
+import { checkPublicProfileClient } from '../apiClientPolicy';
 
 const VALID_SCOPES: LegacyApiScope[] = [
   'locations:read',
@@ -15,6 +16,7 @@ const VALID_SCOPES: LegacyApiScope[] = [
   'staffing:read',
   'district-leadership:read',
   'district-leadership:contacts:read',
+  'public-profile:read',
 ];
 
 export function createApiClientsRouter(db: Firestore): Router {
@@ -93,6 +95,18 @@ export function createApiClientsRouter(db: Firestore): Router {
         });
       }
 
+      const profileCheck = checkPublicProfileClient(requestedScopes, req.body?.rateLimit, 'create');
+      if (!profileCheck.ok) {
+        return res.status(400).json({
+          error: {
+            code: profileCheck.code,
+            message: profileCheck.message,
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+      const explicitRateLimit = profileCheck.rateLimit;
+
       const token = generateApiToken();
       const tokenHash = hashToken(token);
       const clientId = `api-${randomUUID()}`;
@@ -105,6 +119,7 @@ export function createApiClientsRouter(db: Firestore): Router {
         active: true,
         version: 1,
         createdAt: now,
+        ...(explicitRateLimit !== undefined ? { rateLimit: explicitRateLimit } : {}),
       };
 
       await db.collection('apiClients').doc(clientId).set(clientDoc);
@@ -130,7 +145,7 @@ export function createApiClientsRouter(db: Firestore): Router {
           active: true,
           version: 1,
           createdAt: now,
-          rateLimit: 60,
+          rateLimit: explicitRateLimit ?? 60,
         },
         token,
       });
@@ -175,6 +190,16 @@ export function createApiClientsRouter(db: Firestore): Router {
       }
 
       const data = doc.data() as Omit<ApiClientDocument, 'id'>;
+      const profileCheck = checkPublicProfileClient(data.scopes, rateLimit, 'update');
+      if (!profileCheck.ok) {
+        return res.status(400).json({
+          error: {
+            code: profileCheck.code,
+            message: profileCheck.message,
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
       const oldRateLimit = data.rateLimit ?? 60;
       const now = new Date().toISOString();
 

@@ -9,6 +9,8 @@ import type {
 } from '../../src/types';
 import { hasPermission } from '../../src/lib/permissions';
 import { getWorkflowRules } from '../services/workflowSettings';
+import { validateHoursException } from '../../src/lib/storePageValidation';
+import { assertCanFileFor } from '../storePage/access';
 
 interface Holiday {
   id: string;
@@ -94,6 +96,15 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
         });
       }
 
+      if (authUser.role === 'Store') {
+        const filing = assertCanFileFor(authUser, locationId);
+        if (!filing.ok) {
+          return res.status(filing.status).json({
+            error: { code: filing.code, message: filing.message, requestId: res.locals.requestId },
+          });
+        }
+      }
+
       const permission = hasPermission(authUser, 'edit:hours', locationId);
       const workflowRules = await getWorkflowRules(db);
       
@@ -120,27 +131,22 @@ export function createHoursExceptionsRouter(db: Firestore): Router {
 
       const location = { id: locationDoc.id, ...locationDoc.data() } as Location;
 
-      if (!label?.trim()) {
-        return res.status(400).json({
-          error: { code: 'invalid_label', message: 'Label is required', requestId: res.locals.requestId },
-        });
-      }
-
-      if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-        return res.status(400).json({
-          error: { code: 'invalid_date', message: 'Start date is required (YYYY-MM-DD)', requestId: res.locals.requestId },
-        });
-      }
-
-      const exceptionData: Omit<HoursException, 'id'> = {
-        type: type || 'holiday',
-        label: label.trim(),
+      const candidate = {
+        type: type === undefined || type === null || type === '' ? 'holiday' : type,
+        label,
         startDate,
         endDate: endDate || startDate,
-        closed: closed !== false,
-        intervals: intervals || [],
+        closed: closed === undefined ? true : closed,
+        intervals: intervals === undefined ? [] : intervals,
         source: 'manual',
       };
+      const validatedException = validateHoursException(candidate);
+      if (!validatedException.ok) {
+        return res.status(400).json({
+          error: { code: 'invalid_hours_exception', message: validatedException.message, requestId: res.locals.requestId },
+        });
+      }
+      const exceptionData: Omit<HoursException, 'id'> = validatedException.value;
 
       // If store user requires approval, create a correction instead
       if (requiresApproval) {

@@ -13,6 +13,7 @@ import { initializeApp, cert, type ServiceAccount } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { randomUUID } from 'crypto';
 import { hashToken, generateApiToken, type LegacyApiScope, type ApiClientDocument } from '../server/middleware/legacyApiAuth';
+import { checkPublicProfileClient } from '../server/apiClientPolicy';
 
 const VALID_SCOPES: LegacyApiScope[] = [
   'locations:read',
@@ -20,9 +21,10 @@ const VALID_SCOPES: LegacyApiScope[] = [
   'staffing:read',
   'district-leadership:read',
   'district-leadership:contacts:read',
+  'public-profile:read',
 ];
 
-function parseArgs(args: string[]): { project?: string; command?: string; name?: string; id?: string; scopes?: string } {
+function parseArgs(args: string[]): { project?: string; command?: string; name?: string; id?: string; scopes?: string; rateLimit?: string } {
   const result: Record<string, string | undefined> = {};
   let i = 0;
   
@@ -36,6 +38,8 @@ function parseArgs(args: string[]): { project?: string; command?: string; name?:
       result.id = args[++i];
     } else if (arg === '--scopes' && args[i + 1]) {
       result.scopes = args[++i];
+    } else if (arg === '--rate-limit' && args[i + 1]) {
+      result.rateLimit = args[++i];
     } else if (!arg.startsWith('--')) {
       result.command = arg;
     }
@@ -63,6 +67,7 @@ Options:
   --name <name>    Client name (for create)
   --id <id>        Client ID (for revoke/rotate)
   --scopes <list>  Comma-separated scopes (for create, default: locations:read)
+  --rate-limit <n> Required for public-profile:read. Integer from 1 to 10000. Use 120 for the store page pilot.
 
 Valid scopes: ${VALID_SCOPES.join(', ')}
 
@@ -113,7 +118,7 @@ async function main() {
   
   switch (args.command) {
     case 'create':
-      await createClient(db, args.name, args.scopes);
+      await createClient(db, args.name, args.scopes, args.rateLimit);
       break;
     case 'list':
       await listClients(db);
@@ -131,7 +136,7 @@ async function main() {
   }
 }
 
-async function createClient(db: FirebaseFirestore.Firestore, name?: string, scopesArg?: string) {
+async function createClient(db: FirebaseFirestore.Firestore, name?: string, scopesArg?: string, rateLimitArg?: string) {
   if (!name) {
     console.error('Error: --name is required for create');
     process.exit(1);
@@ -147,6 +152,13 @@ async function createClient(db: FirebaseFirestore.Firestore, name?: string, scop
       process.exit(1);
     }
   }
+
+  const parsedRateLimit = rateLimitArg === undefined ? undefined : Number(rateLimitArg);
+  const profileCheck = checkPublicProfileClient(scopes, parsedRateLimit, 'create');
+  if (!profileCheck.ok) {
+    console.error(`Error: ${profileCheck.message}`);
+    process.exit(1);
+  }
   
   const token = generateApiToken();
   const tokenHash = hashToken(token);
@@ -160,6 +172,7 @@ async function createClient(db: FirebaseFirestore.Firestore, name?: string, scop
     active: true,
     version: 1,
     createdAt: now,
+    ...(profileCheck.rateLimit !== undefined ? { rateLimit: profileCheck.rateLimit } : {}),
   };
   
   await db.collection('apiClients').doc(clientId).set(clientDoc);

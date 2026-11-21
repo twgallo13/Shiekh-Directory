@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { User, AuthUser, Assignment, UserRole } from '../../src/types';
 import { isEmailDomainAllowed, isGoogleSignInDomainAllowed, isRegisteredUserStatus, isAdminEmail, getEmailDomain, getAllowedDomains, isSignInRestricted, isEmailOnAllowList, getSignInRestriction, type SignInRestriction } from '../config/auth';
+import { emulatorAuthFault } from '../middleware/auth';
 import { isAssignmentActive, getLocalDate } from '../utils/assignment';
 
 function formatSignInRestrictedResponse(
@@ -54,9 +55,10 @@ export function createUsersRouter(db: Firestore): Router {
       const restricted = await isSignInRestricted(db);
       const onAllowList = await isEmailOnAllowList(db, normalizedEmail);
 
-      // Domain and email_verified apply only when creating or linking a NEW record.
-      // A user who already has users/{uid} passes here regardless of domain or
-      // email_verified (password Stewards on @shiekhshoes.com / @shiekh.test).
+      // email_verified applies only when creating or linking a NEW record.
+      // Password and email-link accounts that already have users/{uid} pass
+      // regardless of domain (including @shiekhshoes.com and @shiekh.test).
+      // Google sign-ins are checked again below even when the record exists.
       if (!userDoc.exists && (isGoogleUser || isPasswordUser)) {
         if (isGoogleUser && !isGoogleSignInDomainAllowed(normalizedEmail)) {
           const domain = getEmailDomain(normalizedEmail);
@@ -169,6 +171,19 @@ export function createUsersRouter(db: Firestore): Router {
       }
 
       const userData = userDoc.data() as User;
+      // Record-holder Google domain check. Password and email-link records
+      // pass here regardless of domain. A Google sign-in must still be exactly
+      // @shiekhshoes.org, even when users/{uid} already exists.
+      if (isGoogleUser && !isGoogleSignInDomainAllowed(normalizedEmail)) {
+        const domain = getEmailDomain(normalizedEmail);
+        return res.status(403).json({
+          error: {
+            code: 'domain_not_allowed',
+            message: `Sign-in with Google is restricted to @shiekhshoes.org. Your domain (${domain}) is not allowed.`,
+            requestId: res.locals.requestId,
+          },
+        });
+      }
       if (!isRegisteredUserStatus(userData.status)) {
         console.warn(`[me] blocked uid=${firebaseUser.uid} status=${JSON.stringify(userData.status)}`);
         return res.status(403).json({
@@ -185,7 +200,18 @@ export function createUsersRouter(db: Firestore): Router {
       };
 
       if (userData.role === 'Leader') {
-        authUser.leaderScope = await computeLeaderScope(db, firebaseUser.uid);
+        try {
+          authUser.leaderScope = await computeLeaderScope(db, firebaseUser.uid);
+        } catch (error) {
+          console.error('[me] leader scope lookup failed', error);
+          return res.status(403).json({
+            error: {
+              code: 'user_lookup_failed',
+              message: 'Could not verify your account. Please try again.',
+              requestId: res.locals.requestId,
+            },
+          });
+        }
       }
 
       return res.json({ data: authUser });
@@ -258,6 +284,9 @@ async function computeLeaderScope(
   db: Firestore,
   userId: string
 ): Promise<AuthUser['leaderScope']> {
+  if (emulatorAuthFault(userId) === 'leader_scope') {
+    throw new Error('forced leader scope failure');
+  }
   const personDoc = await db.collection('people')
     .where('userId', '==', userId)
     .limit(1)

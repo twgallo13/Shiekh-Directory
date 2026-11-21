@@ -9,11 +9,13 @@ import type { User, AuthUser, Assignment } from '../../src/types';
 export type RegistrationState = 'registered' | 'no_record' | 'bad_status' | 'lookup_error';
 
 /**
- * Emulator-only fault injection so tests can force the lookup catch.
- * Production never sets FIREBASE_AUTH_EMULATOR_HOST. A match fails closed
+ * Test-only fault injection. Enabled only when FIREBASE_AUTH_EMULATOR_HOST is set.
+ * The API server and the Cloud Function never assign that variable. The test
+ * harness (rebuild/test/testHelpers.ts) sets it, and the emulator seed scripts
+ * set it only when invoked with --emulator. A match fails closed
  * (403 user_lookup_failed) and does not grant access.
  */
-function emulatorAuthFault(uid: string): 'lookup' | 'leader_scope' | null {
+export function emulatorAuthFault(uid: string): 'lookup' | 'leader_scope' | null {
   if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) return null;
   if (uid.startsWith('fault-lookup-')) return 'lookup';
   if (uid.startsWith('fault-leader-scope-')) return 'leader_scope';
@@ -281,6 +283,11 @@ export function createAuthUserMiddleware(db: Firestore): Router {
   return router;
 }
 
+function googleDomainMessage(email: string): string {
+  const domain = email.trim().toLowerCase().split('@')[1] || '(none)';
+  return `Sign-in with Google is restricted to @shiekhshoes.org. Your domain (${domain}) is not allowed.`;
+}
+
 function isValidStoreSession(res: Response): boolean {
   const session = res.locals.storeSession as StoreSession | undefined;
   const authUser = res.locals.authUser as (AuthUser & { isStoreSession?: boolean }) | undefined;
@@ -307,12 +314,30 @@ export function requireRegisteredUser(): Router {
       return next();
     }
 
+    const requestId = res.locals.requestId;
     const state = res.locals.authState as RegistrationState | undefined;
+    const firebaseUser = res.locals.user as { email?: string; firebase?: { sign_in_provider?: string } } | undefined;
+    const provider = firebaseUser?.firebase?.sign_in_provider;
+    const email = String(firebaseUser?.email || '');
+    const googleOutsideWorkspace = provider === 'google.com' && !isGoogleSignInDomainAllowed(email);
+
+    // Record-holder Google domain check. An active (or otherwise registered)
+    // users record does not exempt a Google sign-in from outside shiekhshoes.org.
+    // Password and email-link records are not checked here.
+    if (googleOutsideWorkspace && state === 'registered') {
+      return res.status(403).json({
+        error: {
+          code: 'domain_not_allowed',
+          message: googleDomainMessage(email),
+          requestId,
+        },
+      });
+    }
+
     if (state === 'registered') {
       return next();
     }
 
-    const requestId = res.locals.requestId;
     if (state === 'bad_status') {
       return res.status(403).json({
         error: { code: 'account_disabled', message: 'This account is disabled.', requestId },
@@ -324,15 +349,11 @@ export function requireRegisteredUser(): Router {
       });
     }
 
-    const firebaseUser = res.locals.user as { email?: string; firebase?: { sign_in_provider?: string } } | undefined;
-    const provider = firebaseUser?.firebase?.sign_in_provider;
-    const email = String(firebaseUser?.email || '');
-    if ((state === 'no_record' || state === undefined) && provider === 'google.com' && !isGoogleSignInDomainAllowed(email)) {
-      const domain = email.trim().toLowerCase().split('@')[1] || '(none)';
+    if (googleOutsideWorkspace && (state === 'no_record' || state === undefined)) {
       return res.status(403).json({
         error: {
           code: 'domain_not_allowed',
-          message: `Sign-in with Google is restricted to @shiekhshoes.org. Your domain (${domain}) is not allowed.`,
+          message: googleDomainMessage(email),
           requestId,
         },
       });

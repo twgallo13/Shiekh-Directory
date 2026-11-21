@@ -8,8 +8,9 @@
  *                    (store{n}@shiekhshoes.com) are a separate store-session flow.
  *                    Existing user records pass regardless of domain.
  * - Google Workspace sign-in is NOT this list. Only the exact domain
- *   shiekhshoes.org is allowed, and only when creating or linking a record
- *   or when choosing domain_not_allowed for an unregistered Google token.
+ *   shiekhshoes.org is allowed, on every /api/app route, including when a
+ *   users record already exists. Password and email-link records are not
+ *   subject to that Google check.
  * - ADMIN_EMAILS: Comma-separated list of emails that should be bootstrapped as Admin
  *                 Example: theo@shiekhshoes.org,admin@shiekhshoes.org
  * 
@@ -51,9 +52,10 @@ export function isEmailDomainAllowed(email: string): boolean {
 export const GOOGLE_WORKSPACE_DOMAIN = 'shiekhshoes.org';
 
 /**
- * Google sign-in (sign_in_provider google.com) may create or link a user only
- * when the email's domain is exactly shiekhshoes.org. Comparison is lowercase
- * and exact (same split as isEmailDomainAllowed): subdomains and lookalikes fail.
+ * Google sign-in (sign_in_provider google.com) is allowed only when the email's
+ * domain is exactly shiekhshoes.org. This applies to existing records as well as
+ * create/link. Comparison is lowercase and exact (same split as
+ * isEmailDomainAllowed): subdomains and lookalikes fail.
  * shiekhshoes.com is a store-mailbox / password domain, not a Google Workspace domain.
  */
 export function isGoogleSignInDomainAllowed(email: string): boolean {

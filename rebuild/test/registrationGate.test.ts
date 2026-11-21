@@ -93,10 +93,26 @@ describe('registration gate', () => {
     assert.strictEqual((await getTestDb().collection('users').doc(`gmail-none-${rid}`).get()).exists, false);
   });
 
-  it('registered gmail account with an active record passes a data route', async () => {
+  it('gmail Google account with an active record gets 403 domain_not_allowed', async () => {
     const uid = `gmail-rec-${rid}`;
-    await putUser(uid, { email: `kept-${rid}@gmail.com`, role: 'Viewer', status: 'active' });
-    const res = await authed('/api/app/regions', token(uid, `kept-${rid}@gmail.com`, 'google'));
+    const email = `kept-${rid}@gmail.com`;
+    await putUser(uid, { email, role: 'Viewer', status: 'active' });
+    const bearer = token(uid, email, 'google');
+    for (const path of ['/api/app/regions', '/api/app/locations?kind=store', '/api/app/users/me']) {
+      const res = await authed(path, bearer);
+      const parsed = await readError(res);
+      assert.strictEqual(parsed.status, 403, path);
+      assert.strictEqual(parsed.code, 'domain_not_allowed', path);
+      assertNoData(parsed.body);
+    }
+    assert.strictEqual((await getTestDb().collection('users').doc(uid).get()).exists, true);
+  });
+
+  it('password @shiekh.test account with a record passes a data route', async () => {
+    const uid = `pw-test-${rid}`;
+    const email = `qa-pass-${rid}@shiekh.test`;
+    await putUser(uid, { email, role: 'Viewer', status: 'active' });
+    const res = await authed('/api/app/regions', token(uid, email, 'password', 'verified'));
     assert.strictEqual(res.status, 200, await res.clone().text());
     const body = await res.json();
     assert.ok(Array.isArray(body.data));
@@ -244,6 +260,15 @@ describe('registration gate', () => {
     assert.strictEqual(scopeParsed.status, 403);
     assert.strictEqual(scopeParsed.code, 'user_lookup_failed');
     assertNoData(scopeParsed.body);
+
+    const meUid = `fault-leader-scope-me-${rid}`;
+    const meEmail = `scope-me-${rid}@shiekhshoes.org`;
+    await putUser(meUid, { email: meEmail, role: 'Leader', status: 'active' });
+    const me = await authed('/api/app/users/me', token(meUid, meEmail, 'password', 'verified'));
+    const meParsed = await readError(me);
+    assert.strictEqual(meParsed.status, 403);
+    assert.strictEqual(meParsed.code, 'user_lookup_failed');
+    assertNoData(meParsed.body);
   });
 
   it('status allow-list: missing, active, and pending pass; every other value is blocked', async () => {

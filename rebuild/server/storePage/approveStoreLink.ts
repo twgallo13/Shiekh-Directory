@@ -76,7 +76,11 @@ export async function approveStoreLinkRequest(
         throw new HttpError(409, 'requester_not_owner', 'The store that filed this request can no longer request changes for this location.');
       }
       if (correction.submittedByRole === 'Leader') {
-        if (correction.submittedBy !== preData.submittedBy || !leaderInScope) {
+        const leaderSnap = correction.submittedBy
+          ? await tx.get(db.collection('users').doc(correction.submittedBy))
+          : null;
+        const leaderRole = leaderSnap?.exists ? leaderSnap.data()?.role : undefined;
+        if (correction.submittedBy !== preData.submittedBy || leaderRole !== 'Leader' || !leaderInScope) {
           throw new HttpError(409, 'requester_out_of_scope', 'The leader who filed this request is no longer in scope for this store.');
         }
       }
@@ -200,6 +204,19 @@ export async function transitionStoreLinkRequest(
       if (lockSnap.exists && lockSnap.data()?.correctionId === correctionId) {
         tx.delete(lockRef);
       }
+      const auditRef = db.collection('auditLog').doc();
+      tx.set(auditRef, {
+        id: auditRef.id,
+        timestamp: now,
+        userId: authUser.uid,
+        userEmail: authUser.email,
+        userRole: authUser.role,
+        action: next === 'cancelled' ? 'cancel' : 'reject',
+        entityType: 'correction',
+        entityId: correctionId,
+        entityName: `Correction for ${correction.storeNumber}`,
+        changes: [{ field: 'status', oldValue: 'pending', newValue: next }],
+      });
     });
     return { status: 200, body: { data: { success: true } } };
   } catch (error) {

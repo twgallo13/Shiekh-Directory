@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Firestore } from 'firebase-admin/firestore';
 import type { Closure, DayOfWeek, HoursException, Location, StandardHours } from '../../src/types';
+import { findActiveClosure } from '../../src/lib/operatingState';
 import { requireLegacyScope, sendLegacyError } from '../middleware/legacyApiAuth';
 import {
   COMPANY_TILE_KEYS,
@@ -171,13 +172,12 @@ function chooseLocation(docs: FirebaseFirestore.QueryDocumentSnapshot[]): Fireba
   })[0];
 }
 
-async function loadClosure(db: Firestore, locationId: string): Promise<Closure | null> {
+async function loadClosure(db: Firestore, locationId: string, timeZone: string): Promise<Closure | null> {
   const snap = await db.collection('locations').doc(locationId).collection('closures')
     .where('status', '==', 'active')
-    .limit(1)
     .get();
-  if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() } as Closure;
+  const closures = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Closure);
+  return findActiveClosure(closures, new Date(), timeZone || 'America/Los_Angeles');
 }
 
 async function loadExceptions(db: Firestore, locationId: string): Promise<HoursException[]> {
@@ -193,11 +193,11 @@ async function toPublic(db: Firestore, doc: FirebaseFirestore.QueryDocumentSnaps
   const pageSnap = await db.collection('storePages').doc(doc.id).get();
   const page = pageSnap.exists ? pageSnap.data() as PageRecord : null;
   if (page?.pageEnabled !== true) {
-    const closure = await loadClosure(db, doc.id);
+    const closure = await loadClosure(db, doc.id, location.timeZone || 'America/Los_Angeles');
     return buildPublicStore(location, page, [], closure);
   }
   const [closure, exceptions] = await Promise.all([
-    loadClosure(db, doc.id),
+    loadClosure(db, doc.id, location.timeZone || 'America/Los_Angeles'),
     loadExceptions(db, doc.id),
   ]);
   return buildPublicStore(location, page, exceptions, closure);

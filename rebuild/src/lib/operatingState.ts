@@ -123,7 +123,7 @@ function findActiveException(
   ) || null;
 }
 
-function findActiveClosure(
+export function findActiveClosure(
   closures: Closure[],
   now: Date,
   timeZone: string

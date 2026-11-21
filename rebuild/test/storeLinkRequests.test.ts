@@ -702,4 +702,70 @@ describe('store-link requests and own-store filing', () => {
     assert.equal(lock.exists, true);
     assert.equal(lock.data()?.correctionId, links[0].id);
   });
+
+  it('a leader who is no longer a leader cannot be approved', async () => {
+    const db = getTestDb();
+    const now = new Date().toISOString();
+    const hierarchy = await seedTestHierarchy(`demote-${suffix}`);
+    const locationId = await seedTestLocation({
+      storeNumber: `78${suffix.slice(-4)}`,
+      name: 'Demoted Leader Store',
+      kind: 'store',
+      lifecycle: 'active',
+      districtId: hierarchy.districtId,
+      regionId: hierarchy.regionId,
+    });
+    const personId = `demote-person-${suffix}`;
+    const userId = `demote-leader-${suffix}`;
+    await db.collection('people').doc(personId).set({
+      fullName: 'Demoted Leader',
+      lifecycle: 'active',
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+      version: 1,
+    });
+    await db.collection('users').doc(userId).set({
+      email: `${userId}@test.com`,
+      displayName: 'Demoted Leader',
+      role: 'Leader',
+      status: 'active',
+      personId,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.collection('assignments').doc(`demote-asg-${suffix}`).set({
+      personId,
+      role: 'DM',
+      scopeType: 'district',
+      scopeId: hierarchy.districtId,
+      slot: 'primary',
+      startDate: now.slice(0, 10),
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+      version: 1,
+    });
+    const filed = await api('/api/app/corrections', `test-token-${userId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId,
+        category: 'store-link',
+        proposedChanges: { reviewUrl: 'https://g.page/r/demoted/review' },
+      }),
+    });
+    const filedBody = await filed.json() as { data?: { id: string }; error?: { code?: string } };
+    assert.equal(filed.status, 201, filedBody.error?.code || 'file failed');
+    await db.collection('users').doc(userId).update({ role: 'Viewer' });
+    const denied = await api(`/api/app/corrections/${filedBody.data?.id}/approve`, 'test-token-steward', {
+      method: 'POST',
+      body: '{}',
+    });
+    const deniedBody = await denied.json() as { error?: { code?: string } };
+    assert.equal(denied.status, 409);
+    assert.equal(deniedBody.error?.code, 'requester_out_of_scope');
+    const page = await db.collection('storePages').doc(locationId).get();
+    assert.equal(page.exists ? page.data()?.reviewUrl ?? null : null, null);
+  });
 });

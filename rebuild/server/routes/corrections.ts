@@ -435,6 +435,22 @@ export function createCorrectionsRouter(db: Firestore): Router {
             }
             tx.create(lockRef, { correctionId: correctionRef.id, locationId, createdAt: nowIso });
             tx.set(correctionRef, correction);
+            const auditRef = db.collection('auditLog').doc();
+            tx.set(auditRef, {
+              id: auditRef.id,
+              timestamp: nowIso,
+              userId: authUser.uid,
+              userEmail: authUser.email,
+              userRole: authUser.role,
+              action: 'create',
+              entityType: 'correction',
+              entityId: correctionRef.id,
+              entityName: `Store page link for ${location.storeNumber}`,
+              changes: [
+                { field: 'category', newValue: 'store-link' },
+                { field: 'status', newValue: 'pending' },
+              ],
+            });
           });
         } catch (error) {
           if (error instanceof PendingStoreLinkError || (error instanceof HttpError && error.code === 'pending_store_link')) {
@@ -462,19 +478,6 @@ export function createCorrectionsRouter(db: Firestore): Router {
           }
           throw error;
         }
-        await logAudit(db, {
-          userId: authUser.uid,
-          userEmail: authUser.email,
-          userRole: authUser.role,
-          action: 'create',
-          entityType: 'correction',
-          entityId: correctionRef.id,
-          entityName: `Store page link for ${location.storeNumber}`,
-          changes: [
-            { field: 'category', newValue: 'store-link' },
-            { field: 'status', newValue: 'pending' },
-          ],
-        });
         return res.status(201).json({ data: { id: correctionRef.id, ...correction } });
       }
 
@@ -579,18 +582,6 @@ export function createCorrectionsRouter(db: Firestore): Router {
           });
         }
         const result = await transitionStoreLinkRequest(db, id, authUser, 'cancelled', undefined, res.locals.requestId);
-        if (result.status === 200) {
-          await logAudit(db, {
-            userId: authUser.uid,
-            userEmail: authUser.email,
-            userRole: authUser.role,
-            action: 'cancel',
-            entityType: 'correction',
-            entityId: id,
-            entityName: `Correction for ${correction.storeNumber}`,
-            changes: [{ field: 'status', oldValue: 'pending', newValue: 'cancelled' }],
-          });
-        }
         return res.status(result.status).json(result.body);
       }
 
@@ -667,18 +658,6 @@ export function createCorrectionsRouter(db: Firestore): Router {
 
       if (correction.category === 'store-link') {
         const result = await transitionStoreLinkRequest(db, id, authUser, 'rejected', notes, res.locals.requestId);
-        if (result.status === 200) {
-          await logAudit(db, {
-            userId: authUser.uid,
-            userEmail: authUser.email,
-            userRole: authUser.role,
-            action: 'reject',
-            entityType: 'correction',
-            entityId: id,
-            entityName: `Correction for ${correction.storeNumber}`,
-            changes: [{ field: 'status', oldValue: 'pending', newValue: 'rejected' }],
-          });
-        }
         return res.status(result.status).json(result.body);
       }
 

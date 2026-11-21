@@ -504,6 +504,47 @@ describe('public store profile', () => {
     });
   });
 
+  it('an expired closure does not mark the store temporarily closed', async () => {
+    const number = `77${stamp.slice(-6)}`;
+    const id = await seedTestLocation({
+      storeNumber: number,
+      name: 'Reopened Store',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    await getTestDb().collection('locations').doc(id).set({
+      timeZone: 'America/Los_Angeles',
+    }, { merge: true });
+    await enablePage(id, { magentoStoreId: '420712', reviewUrl: null });
+    const closures = getTestDb().collection('locations').doc(id).collection('closures');
+    await closures.add({
+      reason: 'Old repair',
+      publicExplanation: 'SECRET_EXPIRED',
+      startsAt: '2020-01-01T00:00:00.000Z',
+      endsAt: '2020-01-02T00:00:00.000Z',
+      status: 'active',
+    });
+    const expired = await api(`/api/public-profile/v1/stores/${number}`, PUBLIC);
+    const expiredBody = await expired.json() as { stores: Array<{ status: string; temporaryClosure: unknown }> };
+    assert.equal(expired.status, 200);
+    assert.equal(expiredBody.stores[0].status, 'Active');
+    assert.equal(expiredBody.stores[0].temporaryClosure, null);
+    assert.equal(JSON.stringify(expiredBody).includes('SECRET_EXPIRED'), false);
+    await closures.add({
+      reason: 'Current repair',
+      publicExplanation: 'Closed this week',
+      startsAt: '2026-11-20T00:00:00.000Z',
+      endsAt: '2026-12-20T00:00:00.000Z',
+      status: 'active',
+    });
+    const current = await api(`/api/public-profile/v1/stores/${number}`, PUBLIC);
+    const currentBody = await current.json() as {
+      stores: Array<{ status: string; temporaryClosure: { publicExplanation: string } | null }>;
+    };
+    assert.equal(currentBody.stores[0].status, 'Temporarily Closed');
+    assert.equal(currentBody.stores[0].temporaryClosure?.publicExplanation, 'Closed this week');
+  });
+
   it('firestore.rules, indexes, and legacy routes are unchanged from ff606e5', () => {
     const diff = execFileSync('git', [
       'diff', '--exit-code', 'ff606e5', '--',

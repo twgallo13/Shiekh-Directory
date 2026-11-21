@@ -989,11 +989,11 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
             <p className="text-sm text-gray-600">
               Configure rate limit for <strong>{editingRateLimit.client.name}</strong>
             </p>
-            <FormField id="rate-limit-value" label="Requests per minute" hint="Set to 0 for unlimited. Default is 60 requests/min.">
+            <FormField id="rate-limit-value" label="Requests per minute" hint={editingRateLimit.client.scopes.includes('public-profile:read') ? '1 to 10000 requests per minute. This key cannot be unlimited. The store page pilot uses 120.' : 'Set to 0 for unlimited. Default is 60 requests/min.'}>
               <input
                 id="rate-limit-value"
                 type="number"
-                min={0}
+                min={editingRateLimit.client.scopes.includes('public-profile:read') ? 1 : 0}
                 max={10000}
                 value={editingRateLimit.value}
                 onChange={(e) => setEditingRateLimit({ 

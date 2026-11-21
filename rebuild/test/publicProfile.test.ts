@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import type { ChildProcess } from 'child_process';
@@ -460,10 +460,48 @@ describe('public store profile', () => {
     assert.deepEqual(statuses.filter((status) => status === 429), []);
     assert.equal(statuses[0], 200);
     if (clientId) {
+      const blocked = await api(`/api/app/api-clients/${clientId}/rate-limit`, 'test-token-admin', {
+        method: 'POST',
+        body: JSON.stringify({ rateLimit: 0 }),
+      });
+      const blockedBody = await blocked.json() as { error?: { code?: string } };
+      assert.equal(blocked.status, 400);
+      assert.equal(blockedBody.error?.code, 'rate_limit_required');
+      const kept = await api(`/api/app/api-clients/${clientId}/rate-limit`, 'test-token-admin', {
+        method: 'POST',
+        body: JSON.stringify({ rateLimit: 120 }),
+      });
+      assert.equal(kept.status, 200);
       const revoked = await api(`/api/app/api-clients/${clientId}/revoke`, 'test-token-admin', { method: 'POST' });
       await revoked.arrayBuffer();
       assert.equal(revoked.status, 200);
     }
+  });
+
+  it('the management CLI keeps public-profile:read alone and rate limited', () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const project = process.env.GCLOUD_PROJECT || 'demo-storepage-dir';
+    const run = (args: string[]) => spawnSync('npx', ['tsx', 'scripts/manage-api-client.ts', '--project', project, ...args], {
+      cwd: root,
+      env: {
+        ...process.env,
+        FIRESTORE_EMULATOR_HOST: process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:18581',
+        GCLOUD_PROJECT: project,
+      },
+      encoding: 'utf8',
+    });
+    const mixed = run(['create', '--name', `Mixed CLI ${stamp}`, '--scopes', 'public-profile:read,locations:read', '--rate-limit', '120']);
+    assert.equal(mixed.status, 1);
+    const missingLimit = run(['create', '--name', `No limit CLI ${stamp}`, '--scopes', 'public-profile:read']);
+    assert.equal(missingLimit.status, 1);
+    const created = run(['create', '--name', `Public CLI ${stamp}`, '--scopes', 'public-profile:read', '--rate-limit', '120']);
+    assert.equal(created.status, 0, created.stderr);
+    return getTestDb().collection('apiClients').where('name', '==', `Public CLI ${stamp}`).get().then(async (snap) => {
+      assert.equal(snap.size, 1);
+      assert.deepEqual(snap.docs[0].data().scopes, ['public-profile:read']);
+      assert.equal(snap.docs[0].data().rateLimit, 120);
+      await snap.docs[0].ref.delete();
+    });
   });
 
   it('firestore.rules, indexes, and legacy routes are unchanged from ff606e5', () => {

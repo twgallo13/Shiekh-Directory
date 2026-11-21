@@ -581,4 +581,125 @@ describe('store-link requests and own-store filing', () => {
     assert.equal(after?.version, before?.version);
     assert.equal(after?.updatedAt, before?.updatedAt);
   });
+
+  it('one pending store-link is atomic and is not hidden by newer requests', async () => {
+    const db = getTestDb();
+    const locationId = await seedTestLocation({
+      storeNumber: `75${suffix.slice(-4)}`,
+      name: 'Pending Lock',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    const filer = `store-lock-${suffix}`;
+    const now = new Date().toISOString();
+    await db.collection('users').doc(filer).set({
+      email: `${filer}@test.com`,
+      displayName: 'Lock Filer',
+      role: 'Store',
+      status: 'active',
+      storeLocationId: locationId,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const olderId = `older-store-link-${suffix}`;
+    await db.collection('corrections').doc(olderId).set({
+      status: 'pending',
+      type: 'store-page',
+      category: 'store-link',
+      locationId,
+      locationName: 'Pending Lock',
+      storeNumber: '75',
+      submittedBy: filer,
+      submittedByEmail: `${filer}@test.com`,
+      submittedByRole: 'Store',
+      submittedAt: '2000-01-01T00:00:00.000Z',
+      expiresAt: now,
+      proposedChanges: { reviewUrl: GOOD_REVIEW_URL },
+      currentValues: {},
+      locationVersion: 1,
+      storePageVersion: 0,
+      createdAt: '2000-01-01T00:00:00.000Z',
+      updatedAt: '2000-01-01T00:00:00.000Z',
+      updatedBy: filer,
+      version: 1,
+    });
+    for (let i = 0; i < 21; i += 1) {
+      await db.collection('corrections').doc().set({
+        status: 'pending',
+        type: 'phone',
+        category: 'phone',
+        locationId,
+        locationName: 'Pending Lock',
+        storeNumber: '75',
+        submittedBy: filer,
+        submittedByEmail: `${filer}@test.com`,
+        submittedByRole: 'Store',
+        submittedAt: `2026-11-21T00:00:${String(i).padStart(2, '0')}.000Z`,
+        expiresAt: now,
+        proposedChanges: { mainPhone: '+12135550000' },
+        currentValues: {},
+        locationVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: filer,
+        version: 1,
+      });
+    }
+    const hidden = await api('/api/app/corrections', `test-token-${filer}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        locationId,
+        category: 'store-link',
+        proposedChanges: { reviewUrl: 'https://g.page/r/hidden/review' },
+      }),
+    });
+    const hiddenBody = await hidden.json() as { error?: { code?: string; existingId?: string } };
+    assert.equal(hidden.status, 409);
+    assert.equal(hiddenBody.error?.code, 'pending_store_link');
+    assert.equal(hiddenBody.error?.existingId, olderId);
+
+    const raceId = await seedTestLocation({
+      storeNumber: `76${suffix.slice(-4)}`,
+      name: 'Race Lock',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    const racer = `store-race-${suffix}`;
+    await db.collection('users').doc(racer).set({
+      email: `${racer}@test.com`,
+      displayName: 'Race Filer',
+      role: 'Store',
+      status: 'active',
+      storeLocationId: raceId,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [first, second] = await Promise.all([
+      api('/api/app/corrections', `test-token-${racer}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          locationId: raceId,
+          category: 'store-link',
+          proposedChanges: { reviewUrl: GOOD_REVIEW_URL },
+        }),
+      }),
+      api('/api/app/corrections', `test-token-${racer}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          locationId: raceId,
+          category: 'store-link',
+          proposedChanges: { reviewUrl: 'https://g.page/r/race/review' },
+        }),
+      }),
+    ]);
+    assert.deepEqual([first.status, second.status].sort(), [201, 409]);
+    const pending = await db.collection('corrections').where('locationId', '==', raceId).get();
+    const links = pending.docs.filter((doc) => doc.data().category === 'store-link');
+    assert.equal(links.length, 1);
+    const lock = await db.collection('storeLinkPending').doc(raceId).get();
+    assert.equal(lock.exists, true);
+    assert.equal(lock.data()?.correctionId, links[0].id);
+  });
 });

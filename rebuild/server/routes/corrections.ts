@@ -11,8 +11,18 @@ import { getWorkflowRules } from '../services/workflowSettings';
 import { sanitizeLocationProposal, validateReviewUrl } from '../../src/lib/storePageValidation';
 import { assertCanFileFor, assertStoredStoreOwner } from '../storePage/access';
 import { approveStoreLinkRequest, transitionStoreLinkRequest } from '../storePage/approveStoreLink';
+import { HttpError, isAlreadyExists } from '../storePage/httpError';
 
 const VALID_CORRECTION_TYPES = new Set(['phone', 'address', 'inbox', 'hours', 'store-page']);
+
+class PendingStoreLinkError extends HttpError {
+  readonly existingId: string;
+
+  constructor(existingId: string) {
+    super(409, 'pending_store_link', 'A review link change is already pending for this store.');
+    this.existingId = existingId;
+  }
+}
 
 export function createCorrectionsRouter(db: Firestore): Router {
   const router = Router();
@@ -378,24 +388,6 @@ export function createCorrectionsRouter(db: Firestore): Router {
           });
         }
 
-        const pendingSnap = await db.collection('corrections')
-          .where('locationId', '==', locationId)
-          .where('status', '==', 'pending')
-          .orderBy('submittedAt', 'desc')
-          .limit(20)
-          .get();
-        const existing = pendingSnap.docs.find((doc) => doc.data().category === 'store-link');
-        if (existing) {
-          return res.status(409).json({
-            error: {
-              code: 'pending_store_link',
-              message: 'A review link change is already pending for this store.',
-              existingId: existing.id,
-              requestId: res.locals.requestId,
-            },
-          });
-        }
-
         const pageSnap = await db.collection('storePages').doc(locationId).get();
         const storePageVersion = pageSnap.exists ? Number(pageSnap.data()?.version ?? 0) : 0;
         const now = new Date();
@@ -403,6 +395,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
         const workflowRules = await getWorkflowRules(db);
         const expiresAt = new Date(now.getTime() + workflowRules.correctionExpiryDays * 24 * 60 * 60 * 1000);
         const correctionRef = db.collection('corrections').doc();
+        const lockRef = db.collection('storeLinkPending').doc(locationId);
         const correction: Omit<Correction, 'id'> = {
           status: 'pending',
           type: 'store-page',
@@ -425,7 +418,50 @@ export function createCorrectionsRouter(db: Firestore): Router {
           updatedBy: authUser.uid,
           version: 1,
         };
-        await correctionRef.set(correction);
+        try {
+          await db.runTransaction(async (tx) => {
+            const lockSnap = await tx.get(lockRef);
+            const pendingSnap = await tx.get(
+              db.collection('corrections')
+                .where('locationId', '==', locationId)
+                .where('status', '==', 'pending')
+                .orderBy('submittedAt', 'desc'),
+            );
+            const existing = pendingSnap.docs.find((doc) => doc.data().category === 'store-link');
+            if (lockSnap.exists || existing) {
+              const existingId = existing?.id
+                || (typeof lockSnap.data()?.correctionId === 'string' ? lockSnap.data()?.correctionId : '');
+              throw new PendingStoreLinkError(existingId);
+            }
+            tx.create(lockRef, { correctionId: correctionRef.id, locationId, createdAt: nowIso });
+            tx.set(correctionRef, correction);
+          });
+        } catch (error) {
+          if (error instanceof PendingStoreLinkError || (error instanceof HttpError && error.code === 'pending_store_link')) {
+            const existingId = error instanceof PendingStoreLinkError ? error.existingId : '';
+            return res.status(409).json({
+              error: {
+                code: 'pending_store_link',
+                message: 'A review link change is already pending for this store.',
+                ...(existingId ? { existingId } : {}),
+                requestId: res.locals.requestId,
+              },
+            });
+          }
+          if (isAlreadyExists(error)) {
+            const lock = await lockRef.get();
+            const existingId = typeof lock.data()?.correctionId === 'string' ? lock.data()?.correctionId : '';
+            return res.status(409).json({
+              error: {
+                code: 'pending_store_link',
+                message: 'A review link change is already pending for this store.',
+                ...(existingId ? { existingId } : {}),
+                requestId: res.locals.requestId,
+              },
+            });
+          }
+          throw error;
+        }
         await logAudit(db, {
           userId: authUser.uid,
           userEmail: authUser.email,

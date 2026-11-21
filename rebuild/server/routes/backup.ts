@@ -144,6 +144,7 @@ export function createBackupRouter(db: Firestore): Router {
         'closures',
         'storePages',
         'storePageMagentoIds',
+        'storeLinkPending',
       ];
       
       const collectionsToBackup = requestedCollections?.length > 0 

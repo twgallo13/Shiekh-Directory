@@ -83,6 +83,8 @@ export async function approveStoreLinkRequest(
 
       const pageRef = db.collection('storePages').doc(correction.locationId);
       const pageSnap = await tx.get(pageRef);
+      const lockRef = db.collection('storeLinkPending').doc(correction.locationId);
+      const lockSnap = await tx.get(lockRef);
       const currentVersion = pageSnap.exists ? Number(pageSnap.data()?.version ?? 0) : 0;
       const submittedVersion = typeof correction.storePageVersion === 'number' ? correction.storePageVersion : 0;
       if (currentVersion !== submittedVersion) {
@@ -138,6 +140,9 @@ export async function approveStoreLinkRequest(
         previousVersion: currentVersion,
         newVersion: nextVersion,
       });
+      if (lockSnap.exists && lockSnap.data()?.correctionId === correctionId) {
+        tx.delete(lockRef);
+      }
       return nextVersion;
     });
     return { status: 200, body: { data: { success: true, newVersion } } };
@@ -168,6 +173,8 @@ export async function transitionStoreLinkRequest(
           ? 'Only pending requests can be cancelled'
           : 'Correction has already been reviewed');
       }
+      const lockRef = db.collection('storeLinkPending').doc(correction.locationId);
+      const lockSnap = await tx.get(lockRef);
       const now = new Date().toISOString();
       if (next === 'cancelled') {
         tx.update(correctionRef, {
@@ -189,6 +196,9 @@ export async function transitionStoreLinkRequest(
           updatedBy: authUser.uid,
           version: (correction.version || 1) + 1,
         });
+      }
+      if (lockSnap.exists && lockSnap.data()?.correctionId === correctionId) {
+        tx.delete(lockRef);
       }
     });
     return { status: 200, body: { data: { success: true } } };

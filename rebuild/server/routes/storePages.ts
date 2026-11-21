@@ -115,13 +115,22 @@ export function createStorePagesRouter(db: Firestore): Router {
       const privileged = authUser.role === 'Admin' || authUser.role === 'Steward';
       const magentoStoreId = page?.magentoStoreId ?? null;
 
-      const pendingSnap = await db.collection('corrections')
+      const lockSnap = await db.collection('storeLinkPending').doc(locationId).get();
+      const lockedId = lockSnap.exists && typeof lockSnap.data()?.correctionId === 'string'
+        ? lockSnap.data()?.correctionId as string
+        : '';
+      const lockedDoc = lockedId ? await db.collection('corrections').doc(lockedId).get() : null;
+      const lockedPending = lockedDoc?.exists
+        && lockedDoc.data()?.status === 'pending'
+        && lockedDoc.data()?.category === 'store-link'
+        ? lockedDoc
+        : null;
+      const pendingSnap = lockedPending ? null : await db.collection('corrections')
         .where('locationId', '==', locationId)
         .where('status', '==', 'pending')
         .orderBy('submittedAt', 'desc')
-        .limit(20)
         .get();
-      const pending = pendingSnap.docs.find((doc) => doc.data().category === 'store-link');
+      const pending = lockedPending ?? pendingSnap?.docs.find((doc) => doc.data().category === 'store-link') ?? null;
       const pendingData = pending?.data();
       const tiles = await loadTiles(db);
 

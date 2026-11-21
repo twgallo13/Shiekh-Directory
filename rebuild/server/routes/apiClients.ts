@@ -8,6 +8,7 @@ import {
   type LegacyApiScope,
   type ApiClientDocument,
 } from '../middleware/legacyApiAuth';
+import { checkPublicProfileClient } from '../apiClientPolicy';
 
 const VALID_SCOPES: LegacyApiScope[] = [
   'locations:read',
@@ -94,30 +95,17 @@ export function createApiClientsRouter(db: Firestore): Router {
         });
       }
 
-      const publicProfileOnly = requestedScopes.includes('public-profile:read');
-      if (publicProfileOnly && requestedScopes.length !== 1) {
+      const profileCheck = checkPublicProfileClient(requestedScopes, req.body?.rateLimit, 'create');
+      if (!profileCheck.ok) {
         return res.status(400).json({
           error: {
-            code: 'invalid_request',
-            message: 'public-profile:read cannot be combined with other scopes.',
+            code: profileCheck.code,
+            message: profileCheck.message,
             requestId: res.locals.requestId || 'unknown',
           },
         });
       }
-      let explicitRateLimit: number | undefined;
-      if (publicProfileOnly) {
-        const rateLimit = req.body?.rateLimit;
-        if (typeof rateLimit !== 'number' || !Number.isInteger(rateLimit) || rateLimit < 1 || rateLimit > 10000) {
-          return res.status(400).json({
-            error: {
-              code: 'rate_limit_required',
-              message: 'An explicit rateLimit from 1 to 10000 is required for a public-profile:read key. Use 120 requests per minute for the store page pilot.',
-              requestId: res.locals.requestId || 'unknown',
-            },
-          });
-        }
-        explicitRateLimit = rateLimit;
-      }
+      const explicitRateLimit = profileCheck.rateLimit;
 
       const token = generateApiToken();
       const tokenHash = hashToken(token);
@@ -202,6 +190,16 @@ export function createApiClientsRouter(db: Firestore): Router {
       }
 
       const data = doc.data() as Omit<ApiClientDocument, 'id'>;
+      const profileCheck = checkPublicProfileClient(data.scopes, rateLimit, 'update');
+      if (!profileCheck.ok) {
+        return res.status(400).json({
+          error: {
+            code: profileCheck.code,
+            message: profileCheck.message,
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
       const oldRateLimit = data.rateLimit ?? 60;
       const now = new Date().toISOString();
 

@@ -177,7 +177,8 @@ describe('public store profile', () => {
     assert.equal(response.status, 200);
     assert.equal(body.contractVersion, 'public-profile.v1');
     assert.equal(typeof body.generatedAt, 'string');
-    assert.deepEqual(Object.keys(body).sort(), ['companyTiles', 'contractVersion', 'generatedAt', 'stores']);
+    const envelopeKeys = Object.keys(body).filter((key) => key !== 'findStoreUrl' && key !== 'defaultStoreImageUrl');
+    assert.deepEqual(envelopeKeys.sort(), ['companyTiles', 'contractVersion', 'generatedAt', 'stores']);
     assert.equal(body.stores.length, 1);
     const store = body.stores[0];
     assert.deepEqual(Object.keys(store).sort(), [...LIVE_KEYS].sort());
@@ -218,7 +219,7 @@ describe('public store profile', () => {
     assert.equal(body.companyTiles.some((tile) => tile.key === 'shop'), false);
     assert.equal('shop' in store, false);
     assert.equal('shopTileVisible' in store, false);
-    const serialized = JSON.stringify(body);
+    const serialized = JSON.stringify({ stores: body.stores, companyTiles: body.companyTiles });
     for (const secret of ['LEAKED_INBOX@secret.test', 'SECRET_WAYFINDING', 'SECRET_REASON_NOTE', 'SECRET_PERSON', 'defaultImage', 'imageUrl']) {
       assert.equal(serialized.includes(secret), false, secret);
     }

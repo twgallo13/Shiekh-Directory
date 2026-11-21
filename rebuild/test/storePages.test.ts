@@ -2,6 +2,7 @@ import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { getTestDb, seedTestHierarchy, seedTestLocation, seedTestUsers } from './testHelpers';
 import { hashSessionId } from '../server/services/tokenAuth';
+import { EMPTY_STORE_PAGE_TILES } from '../src/constants/storePage';
 import { API_BASE, GOOD_REVIEW_URL, api } from './storePageHttp';
 
 const badUrls = [
@@ -352,6 +353,160 @@ describe('store pages app API', () => {
       const body = await response.json() as { error?: { code?: string } };
       assert.equal(response.status, 400, id);
       assert.equal(body.error?.code, 'not_a_live_store');
+    }
+  });
+
+  it('saves find-a-store and default image urls for Admin only', async () => {
+    const db = getTestDb();
+    const ref = db.collection('settings').doc('storePageDefaults');
+    const before = await ref.get();
+    const findStoreUrl = 'https://www.shiekh.com/stores';
+    const defaultStoreImageUrl = 'https://cdn.shiekh.com/images/store-default.jpg';
+    const publicToken = 'test-api-token-public-profile';
+    try {
+      const current = await api('/api/app/admin/store-page-defaults', 'test-token-admin');
+      assert.equal(current.status, 200);
+      const currentBody = await current.json() as { data: { version: number } };
+      const beforeAudits = new Set(
+        (await db.collection('auditLog').where('entityId', '==', 'defaults').get()).docs.map((doc) => doc.id),
+      );
+      const saved = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: currentBody.data.version,
+          tiles: EMPTY_STORE_PAGE_TILES,
+          findStoreUrl,
+          defaultStoreImageUrl,
+        }),
+      });
+      assert.equal(saved.status, 200);
+      const savedBody = await saved.json() as { data: { findStoreUrl: string; defaultStoreImageUrl: string; version: number } };
+      assert.equal(savedBody.data.findStoreUrl, findStoreUrl);
+      assert.equal(savedBody.data.defaultStoreImageUrl, defaultStoreImageUrl);
+
+      const read = await api('/api/app/admin/store-page-defaults', 'test-token-admin');
+      const readBody = await read.json() as { data: { findStoreUrl: string; defaultStoreImageUrl: string; version: number } };
+      assert.equal(read.status, 200);
+      assert.equal(readBody.data.findStoreUrl, findStoreUrl);
+      assert.equal(readBody.data.defaultStoreImageUrl, defaultStoreImageUrl);
+
+      for (const token of ['test-token-steward', 'test-token-viewer']) {
+        const denied = await api('/api/app/admin/store-page-defaults', token, {
+          method: 'PUT',
+          body: JSON.stringify({
+            expectedVersion: readBody.data.version,
+            tiles: EMPTY_STORE_PAGE_TILES,
+            findStoreUrl: 'https://evil.example/stores',
+            defaultStoreImageUrl: 'https://evil.example/image.jpg',
+          }),
+        });
+        assert.equal(denied.status, 403, token);
+      }
+      const still = await ref.get();
+      assert.equal(still.data()?.findStoreUrl, findStoreUrl);
+      assert.equal(still.data()?.defaultStoreImageUrl, defaultStoreImageUrl);
+
+      const tooLong = `https://cdn.shiekh.com/${'a'.repeat(2040)}`;
+      assert.ok(tooLong.length > 2048);
+      const rejected = [
+        'http://www.shiekh.com/stores',
+        'javascript:alert(1)',
+        'https://user:pass@www.shiekh.com/stores',
+        'https://localhost/stores',
+        'https://127.0.0.1/stores',
+        'https://[::1]/stores',
+        'https://cdn.shiekh.com:8443/image.jpg',
+        tooLong,
+      ];
+      for (const bad of rejected) {
+        const response = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+          method: 'PUT',
+          body: JSON.stringify({
+            expectedVersion: readBody.data.version,
+            tiles: EMPTY_STORE_PAGE_TILES,
+            findStoreUrl: bad,
+            defaultStoreImageUrl: bad,
+          }),
+        });
+        assert.equal(response.status, 400, bad.slice(0, 80));
+      }
+      const unchanged = await ref.get();
+      assert.equal(unchanged.data()?.findStoreUrl, findStoreUrl);
+      assert.equal(unchanged.data()?.defaultStoreImageUrl, defaultStoreImageUrl);
+      assert.equal(unchanged.data()?.version, readBody.data.version);
+
+      const audits = await db.collection('auditLog').where('entityId', '==', 'defaults').get();
+      const created = audits.docs.filter((doc) => !beforeAudits.has(doc.id));
+      assert.equal(created.length, 1);
+      const changes = created[0].data().changes as Array<{ field: string; newValue: string | null }>;
+      assert.equal(changes.find((change) => change.field === 'findStoreUrl')?.newValue, findStoreUrl);
+      assert.equal(changes.find((change) => change.field === 'defaultStoreImageUrl')?.newValue, defaultStoreImageUrl);
+      assert.equal(created[0].data().previousVersion, currentBody.data.version);
+      assert.equal(created[0].data().newVersion, readBody.data.version);
+
+      const offNumber = `93${suffix.slice(-4)}`;
+      const retiredNumber = `94${suffix.slice(-4)}`;
+      const offId = await seedTestLocation({
+        storeNumber: offNumber,
+        name: 'Defaults Off',
+        kind: 'store',
+        lifecycle: 'active',
+      });
+      await db.collection('storePages').doc(offId).set({
+        reviewUrl: 'https://g.page/r/defaults-off/review',
+        magentoStoreId: '420788',
+        pageEnabled: false,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'admin',
+      });
+      const retiredStoreId = await seedTestLocation({
+        storeNumber: retiredNumber,
+        name: 'Defaults Retired',
+        kind: 'store',
+        lifecycle: 'retired',
+      });
+      await db.collection('storePages').doc(retiredStoreId).set({
+        reviewUrl: 'https://g.page/r/defaults-retired/review',
+        magentoStoreId: '420789',
+        pageEnabled: true,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'admin',
+      });
+
+      const listed = await api('/api/public-profile/v1/stores', publicToken);
+      const listedBody = await listed.json() as {
+        findStoreUrl?: string;
+        defaultStoreImageUrl?: string;
+        stores: Array<Record<string, unknown>>;
+      };
+      assert.equal(listed.status, 200);
+      assert.equal(listedBody.findStoreUrl, findStoreUrl);
+      assert.equal(listedBody.defaultStoreImageUrl, defaultStoreImageUrl);
+      const offStore = listedBody.stores.find((store) => store.storeNumber === offNumber);
+      const retiredStore = listedBody.stores.find((store) => store.storeNumber === retiredNumber);
+      assert.deepEqual(offStore, { storeNumber: offNumber, status: 'Active', pageEnabled: false });
+      assert.deepEqual(retiredStore, { storeNumber: retiredNumber, status: 'Retired' });
+
+      const cleared = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
+        method: 'PUT',
+        body: JSON.stringify({
+          expectedVersion: readBody.data.version,
+          tiles: EMPTY_STORE_PAGE_TILES,
+          findStoreUrl: '',
+          defaultStoreImageUrl: '',
+        }),
+      });
+      assert.equal(cleared.status, 200);
+      const omitted = await api('/api/public-profile/v1/stores', publicToken);
+      const omittedBody = await omitted.json() as Record<string, unknown>;
+      assert.equal(omitted.status, 200);
+      assert.equal('findStoreUrl' in omittedBody, false);
+      assert.equal('defaultStoreImageUrl' in omittedBody, false);
+    } finally {
+      if (before.exists) await ref.set(before.data()!);
+      else await ref.delete();
     }
   });
 

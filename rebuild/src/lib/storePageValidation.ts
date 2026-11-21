@@ -64,9 +64,18 @@ function reviewPathAllowed(host: string, pathname: string): boolean {
   }
 }
 
-function parseHttps(raw: string, hosts: Set<string>, hostMessage: string): UrlResult {
-  if (raw.length > MAX_URL_LENGTH) {
-    return { ok: false, message: 'Link must be 500 characters or less.' };
+const IPV4 = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
+
+function isIpLiteral(hostname: string): boolean {
+  const host = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  return IPV4.test(host) || host.includes(':');
+}
+
+function inspectHttps(raw: string, maxLength: number): { ok: true; url: URL } | { ok: false; message: string } {
+  if (raw.length > maxLength) {
+    return { ok: false, message: `Link must be ${maxLength} characters or less.` };
   }
   if (hasWhitespaceOrControl(raw)) {
     return { ok: false, message: 'Link cannot contain spaces or line breaks.' };
@@ -86,11 +95,33 @@ function parseHttps(raw: string, hosts: Set<string>, hostMessage: string): UrlRe
   if (url.port) {
     return { ok: false, message: 'Link cannot include a port.' };
   }
-  const host = url.hostname.toLowerCase();
+  return { ok: true, url };
+}
+
+function parseHttps(raw: string, hosts: Set<string>, hostMessage: string): UrlResult {
+  const inspected = inspectHttps(raw, MAX_URL_LENGTH);
+  if (!inspected.ok) return inspected;
+  const host = inspected.url.hostname.toLowerCase();
   if (host.endsWith('.') || !hosts.has(host)) {
     return { ok: false, message: hostMessage };
   }
-  return { ok: true, href: url.href };
+  return { ok: true, href: inspected.url.href };
+}
+
+/**
+ * Optional public https link. Empty is unset.
+ * Rejects credentials, localhost, IP-literal hosts, and any non-default port.
+ */
+export function validateOptionalHttpsUrl(raw: unknown): UrlResult {
+  if (raw === null || raw === undefined || raw === '') return { ok: true, href: null };
+  if (typeof raw !== 'string') return { ok: false, message: 'Enter a link.' };
+  const inspected = inspectHttps(raw, 2048);
+  if (!inspected.ok) return inspected;
+  const host = inspected.url.hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.') || isIpLiteral(host)) {
+    return { ok: false, message: 'Use a public https link. Local and IP addresses are not allowed.' };
+  }
+  return { ok: true, href: inspected.url.href };
 }
 
 /** Empty becomes null. Otherwise a Google review link on an allowed host and path. */

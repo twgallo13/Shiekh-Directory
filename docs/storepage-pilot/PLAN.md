@@ -79,7 +79,8 @@ Why Custom Fields can't hold these with the same access limits [Fact unless mark
   - URLs: same https rules as above. Host allowlist: `shiekh.com`, `www.shiekh.com`, `apps.apple.com`, `play.google.com`, `get-card.sunbit.com`, `instagram.com`, `www.instagram.com`.
   - Seeded with the values Theo approved on the Page, Sunbit link unchanged. Seeding is a live-data write (§6).
 - `version`, `updatedAt`, `updatedBy`.
-- **Default image:** not stored in the Directory for the pilot. There's no upload and no Storage (photos are Phase 2). The image ships as a fixed asset in Dynamic QR. The Admin tab shows a read-only "Company default image · Set by Shiekh" preview.
+- `findStoreUrl` and `defaultStoreImageUrl`: optional https strings, max 2048 characters. Reject a username or password, localhost, an IP-literal host, and any non-default port. The public envelope includes each field only when it is set. Admin only, in the same save and audit row as the tiles.
+- **Default image:** the file is not uploaded here (no Storage). `defaultStoreImageUrl` is the https address of that file. The Admin tab still shows "Company default image · Set by Shiekh".
 
 **Request record:** reuse `corrections`.
 - New `category: 'store-link'` and `type: 'store-page'`. Update the `CorrectionCategory` and `CorrectionType` unions in `src/types/index.ts:639-649`.
@@ -135,6 +136,7 @@ Why Custom Fields can't hold these with the same access limits [Fact unless mark
 ```
 
 - Status values are `Active`, `Temporarily Closed` or `Retired`. Planned stores are left out.
+- `findStoreUrl` and `defaultStoreImageUrl` are next to `companyTiles`. Each is omitted when it is not set. Page-off and retired store records stay the short shapes.
 
 **Field rules:**
 - Only `kind === 'store'` locations are included.

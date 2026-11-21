@@ -13,6 +13,7 @@ import {
   parseExpectedVersion,
   parseMagentoStoreId,
   savedCompanyTileUrl,
+  validateOptionalHttpsUrl,
   validateReviewUrl,
   validateStorePageTiles,
 } from '../../src/lib/storePageValidation';
@@ -380,12 +381,16 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
       const data = snap.data();
       const parsed = data ? validateStorePageTiles(data.tiles) : null;
       const tiles = parsed?.ok ? parsed.tiles : EMPTY_STORE_PAGE_TILES;
+      const findStore = validateOptionalHttpsUrl(data?.findStoreUrl);
+      const defaultImageUrl = validateOptionalHttpsUrl(data?.defaultStoreImageUrl);
       return res.json({
         data: {
           version: snap.exists ? Number(data?.version ?? 0) : 0,
           updatedAt: data?.updatedAt ?? null,
           updatedBy: data?.updatedBy ?? null,
           tiles,
+          findStoreUrl: findStore.ok ? findStore.href : null,
+          defaultStoreImageUrl: defaultImageUrl.ok ? defaultImageUrl.href : null,
           defaultImage: {
             source: 'dynamic-qr',
             label: 'Company default image · Set by Shiekh',
@@ -407,6 +412,10 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
       }
       const parsed = validateStorePageTiles(req.body?.tiles);
       if (!parsed.ok) return errorBody(res, 400, 'invalid_tiles', parsed.message);
+      const findStore = validateOptionalHttpsUrl(req.body?.findStoreUrl);
+      if (!findStore.ok) return errorBody(res, 400, 'invalid_url', findStore.message);
+      const defaultImageUrl = validateOptionalHttpsUrl(req.body?.defaultStoreImageUrl);
+      if (!defaultImageUrl.ok) return errorBody(res, 400, 'invalid_url', defaultImageUrl.message);
 
       const saved = await db.runTransaction(async (tx) => {
         const ref = db.collection('settings').doc('storePageDefaults');
@@ -415,10 +424,15 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
         if (currentVersion !== expectedVersion) {
           throw new HttpError(409, 'version_conflict', 'Store page defaults were updated. Reload and try again.');
         }
+        const current = snap.data();
+        const previousFind = typeof current?.findStoreUrl === 'string' ? current.findStoreUrl : null;
+        const previousImage = typeof current?.defaultStoreImageUrl === 'string' ? current.defaultStoreImageUrl : null;
         const now = new Date().toISOString();
         const nextVersion = currentVersion + 1;
         const doc = {
           tiles: parsed.tiles,
+          findStoreUrl: findStore.href,
+          defaultStoreImageUrl: defaultImageUrl.href,
           version: nextVersion,
           updatedAt: now,
           updatedBy: authUser.uid,
@@ -436,7 +450,11 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
           entityType: 'store-page',
           entityId: 'defaults',
           entityName: 'Store page defaults',
-          changes: [{ field: 'tiles', oldValue: null, newValue: 'updated' }],
+          changes: [
+            { field: 'tiles', oldValue: null, newValue: 'updated' },
+            { field: 'findStoreUrl', oldValue: previousFind, newValue: findStore.href },
+            { field: 'defaultStoreImageUrl', oldValue: previousImage, newValue: defaultImageUrl.href },
+          ],
           previousVersion: currentVersion,
           newVersion: nextVersion,
         });

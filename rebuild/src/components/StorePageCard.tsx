@@ -4,6 +4,7 @@ import { ExternalLink, Lock, Pencil } from 'lucide-react';
 import type { AuthUser } from '../types';
 import { apiGet, apiPatch, apiPost } from '../lib/api';
 import { Dialog, FormField } from './Dialog';
+import { storePageUrl } from '../constants/storePage';
 import { validateReviewUrl, parseMagentoStoreId } from '../lib/storePageValidation';
 
 interface StorePageTile {
@@ -207,15 +208,29 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
           )}
 
           <div>
-            <a
-              href={page.pageUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 text-blue-700 font-medium min-h-[44px] hover:underline"
-            >
-              Open page
-              <ExternalLink className="w-4 h-4" aria-hidden="true" />
-            </a>
+            {page.pageEnabled ? (
+              <a
+                href={storePageUrl(storeNumber)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-blue-700 font-medium min-h-[44px] hover:underline"
+              >
+                Open page
+                <ExternalLink className="w-4 h-4" aria-hidden="true" />
+              </a>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center gap-2 text-gray-400 font-medium min-h-[44px] cursor-not-allowed"
+                >
+                  Open page
+                  <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                </button>
+                <p className="text-gray-500">Page is off</p>
+              </>
+            )}
             <p className="text-gray-500">Changes show within 15 minutes</p>
             <p className="text-gray-500">
               {page.updatedAt ? `Last updated ${formatUpdated(page.updatedAt)}` : 'Last updated —'}

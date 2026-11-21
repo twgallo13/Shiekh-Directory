@@ -13,6 +13,7 @@ import {
   savedCompanyTileUrl,
   validateCompanyUrl,
   validateHoursException,
+  validateOptionalHttpsUrl,
   validateReviewUrl,
 } from '../../src/lib/storePageValidation';
 
@@ -156,10 +157,21 @@ function companyTiles(raw: unknown): Record<string, unknown>[] {
   return result;
 }
 
-async function loadTiles(db: Firestore): Promise<Record<string, unknown>[]> {
+function savedPublicUrl(raw: unknown): string | null {
+  const parsed = validateOptionalHttpsUrl(raw);
+  return parsed.ok ? parsed.href : null;
+}
+
+async function loadDefaults(db: Firestore): Promise<{ tiles: Record<string, unknown>[]; links: Record<string, string> }> {
   const snap = await db.collection('settings').doc('storePageDefaults').get();
-  if (!snap.exists) return [];
-  return companyTiles(snap.data()?.tiles);
+  if (!snap.exists) return { tiles: [], links: {} };
+  const data = snap.data();
+  const links: Record<string, string> = {};
+  const findStoreUrl = savedPublicUrl(data?.findStoreUrl);
+  const defaultStoreImageUrl = savedPublicUrl(data?.defaultStoreImageUrl);
+  if (findStoreUrl) links.findStoreUrl = findStoreUrl;
+  if (defaultStoreImageUrl) links.defaultStoreImageUrl = defaultStoreImageUrl;
+  return { tiles: companyTiles(data?.tiles), links };
 }
 
 function chooseLocation(docs: FirebaseFirestore.QueryDocumentSnapshot[]): FirebaseFirestore.QueryDocumentSnapshot | null {
@@ -215,9 +227,9 @@ export function createPublicProfileRouter(db: Firestore): Router {
 
   router.get('/stores', async (_req: Request, res: Response) => {
     try {
-      const [locationsSnap, tiles] = await Promise.all([
+      const [locationsSnap, defaults] = await Promise.all([
         db.collection('locations').where('kind', '==', 'store').get(),
-        loadTiles(db),
+        loadDefaults(db),
       ]);
       const byNumber = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
       for (const doc of locationsSnap.docs) {
@@ -234,12 +246,15 @@ export function createPublicProfileRouter(db: Firestore): Router {
         .sort((a, b) => String((a.data() as Location).storeNumber).localeCompare(String((b.data() as Location).storeNumber), undefined, { numeric: true }));
       const stores = [];
       for (const doc of chosen) stores.push(await toPublic(db, doc));
-      return res.json({
+      const body: Record<string, unknown> = {
         contractVersion: 'public-profile.v1',
         generatedAt: new Date().toISOString(),
-        companyTiles: tiles,
-        stores,
-      });
+        companyTiles: defaults.tiles,
+      };
+      if (defaults.links.findStoreUrl) body.findStoreUrl = defaults.links.findStoreUrl;
+      if (defaults.links.defaultStoreImageUrl) body.defaultStoreImageUrl = defaults.links.defaultStoreImageUrl;
+      body.stores = stores;
+      return res.json(body);
     } catch (error) {
       console.error('Public profile list error:', error);
       return sendLegacyError(res, 500, 'internal_error', 'An unexpected error occurred.');
@@ -255,13 +270,16 @@ export function createPublicProfileRouter(db: Firestore): Router {
       const locationsSnap = await db.collection('locations').where('storeNumber', '==', storeNumber).get();
       const chosen = chooseLocation(locationsSnap.docs);
       if (!chosen) return sendLegacyError(res, 404, NOT_FOUND.code, NOT_FOUND.message);
-      const tiles = await loadTiles(db);
-      return res.json({
+      const defaults = await loadDefaults(db);
+      const body: Record<string, unknown> = {
         contractVersion: 'public-profile.v1',
         generatedAt: new Date().toISOString(),
-        companyTiles: tiles,
-        stores: [await toPublic(db, chosen)],
-      });
+        companyTiles: defaults.tiles,
+      };
+      if (defaults.links.findStoreUrl) body.findStoreUrl = defaults.links.findStoreUrl;
+      if (defaults.links.defaultStoreImageUrl) body.defaultStoreImageUrl = defaults.links.defaultStoreImageUrl;
+      body.stores = [await toPublic(db, chosen)];
+      return res.json(body);
     } catch (error) {
       console.error('Public profile store error:', error);
       return sendLegacyError(res, 500, 'internal_error', 'An unexpected error occurred.');

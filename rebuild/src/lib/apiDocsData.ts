@@ -70,6 +70,7 @@ export const API_SCOPES: ApiScope[] = [
   { name: 'staffing:read', description: 'Read store staffing assignments' },
   { name: 'district-leadership:read', description: 'Read district and region leadership structure' },
   { name: 'district-leadership:contacts:read', description: 'Include DM work email addresses' },
+  { name: 'public-profile:read', description: 'Read the public store page allowlist. Does not include location inbox email or personnel.' },
 ];
 
 export const API_VERSIONS: ApiVersion[] = [
@@ -473,6 +474,61 @@ export const API_VERSIONS: ApiVersion[] = [
     "districtId": "dist_001"
   },
   "sync": { "mode": "full", "snapshotAt": "...", "contractVersion": "district-leadership-v3.1" }
+}`,
+      },
+    ],
+  },
+  {
+    version: 'public-profile.v1',
+    title: 'Public store page',
+    description: 'Field allowlist for the customer store page. Separate from v1. The default image is hosted by Dynamic QR and is not returned here.',
+    contractVersion: 'public-profile.v1',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/api/public-profile/v1/stores',
+        summary: 'List public store pages',
+        description: 'Active and retired stores. Planned stores are omitted. Page off and retired stores return a short record.',
+        scope: 'public-profile:read',
+        responseExample: `{
+  "contractVersion": "public-profile.v1",
+  "generatedAt": "2026-11-21T00:00:00.000Z",
+  "companyTiles": [
+    { "key": "instagram", "label": "Instagram", "url": "https://www.instagram.com/shiekh", "order": 7 }
+  ],
+  "stores": [
+    {
+      "storeNumber": "48",
+      "status": "Active",
+      "pageEnabled": true,
+      "updatedAt": "2026-11-21T00:00:00.000Z",
+      "name": "Inland Center",
+      "mallOrCenterName": "Inland Center",
+      "address": { "street": "500 Inland Center Dr", "suite": "", "city": "San Bernardino", "state": "CA", "zip": "92408" },
+      "timeZone": "America/Los_Angeles",
+      "phone": "+19093800200",
+      "hours": { "weekly": { "monday": { "closed": false, "intervals": [{ "open": "10:00", "close": "20:00" }] } }, "exceptions": [] },
+      "temporaryClosure": null,
+      "reviewUrl": "https://g.page/r/example/review",
+      "magentoStoreId": "4207"
+    }
+  ]
+}`,
+      },
+      {
+        method: 'GET',
+        path: '/api/public-profile/v1/stores/:storeNumber',
+        summary: 'One public store page',
+        description: 'storeNumber is digits only, including leading zeros. Unknown, planned, and non-store numbers return the same 404.',
+        scope: 'public-profile:read',
+        parameters: [
+          { name: 'storeNumber', type: 'string', required: true, description: 'Digits only, leading zeros kept' },
+        ],
+        responseExample: `{
+  "contractVersion": "public-profile.v1",
+  "generatedAt": "2026-11-21T00:00:00.000Z",
+  "companyTiles": [],
+  "stores": [ { "storeNumber": "48", "status": "Active", "pageEnabled": false } ]
 }`,
       },
     ],

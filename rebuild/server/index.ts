@@ -35,6 +35,7 @@ import { createEmailSettingsRouter } from './routes/emailSettings';
 import { createWorkflowRulesRouter } from './routes/workflowRules';
 import { createSignInSettingsRouter } from './routes/signInSettings';
 import { createStorePagesRouter } from './routes/storePages';
+import { createPublicProfileRouter } from './routes/publicProfile';
 import { createFirestoreClient } from './firebase';
 
 const app = express();
@@ -84,6 +85,7 @@ app.use('/api/store-auth', createOptionalAuthMiddleware(db), createAuthUserMiddl
 app.use('/api/v1', createLegacyApiAuthMiddleware(db), createLegacyV1Router(db));
 app.use('/api/v2', createLegacyApiAuthMiddleware(db), createLegacyV2Router(db));
 app.use('/api/v3', createLegacyApiAuthMiddleware(db), createLegacyV3Router(db));
+app.use('/api/public-profile/v1', createLegacyApiAuthMiddleware(db), createPublicProfileRouter(db));
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

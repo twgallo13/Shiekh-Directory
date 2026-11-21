@@ -122,9 +122,9 @@ describe('apiDocsData shared source', () => {
     expect(scopeNames).toContain('district-leadership:contacts:read');
   });
 
-  it('has expected number of endpoints (14 total)', () => {
-    // v1: 4 endpoints, v2: 5 endpoints, v3: 5 endpoints = 14 total
-    expect(getEndpointCount()).toBe(14);
+  it('has expected number of endpoints (16 total)', () => {
+    // v1: 4, v2: 5, v3: 5, public-profile: 2 = 16
+    expect(getEndpointCount()).toBe(16);
   });
 
   it('all endpoints have required fields', () => {

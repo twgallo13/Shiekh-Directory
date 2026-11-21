@@ -20,6 +20,7 @@ const VALID_SCOPES: LegacyApiScope[] = [
   'staffing:read',
   'district-leadership:read',
   'district-leadership:contacts:read',
+  'public-profile:read',
 ];
 
 function parseArgs(args: string[]): { project?: string; command?: string; name?: string; id?: string; scopes?: string } {

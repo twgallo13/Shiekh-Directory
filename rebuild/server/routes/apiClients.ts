@@ -15,6 +15,7 @@ const VALID_SCOPES: LegacyApiScope[] = [
   'staffing:read',
   'district-leadership:read',
   'district-leadership:contacts:read',
+  'public-profile:read',
 ];
 
 export function createApiClientsRouter(db: Firestore): Router {
@@ -93,6 +94,31 @@ export function createApiClientsRouter(db: Firestore): Router {
         });
       }
 
+      const publicProfileOnly = requestedScopes.includes('public-profile:read');
+      if (publicProfileOnly && requestedScopes.length !== 1) {
+        return res.status(400).json({
+          error: {
+            code: 'invalid_request',
+            message: 'public-profile:read cannot be combined with other scopes.',
+            requestId: res.locals.requestId || 'unknown',
+          },
+        });
+      }
+      let explicitRateLimit: number | undefined;
+      if (publicProfileOnly) {
+        const rateLimit = req.body?.rateLimit;
+        if (typeof rateLimit !== 'number' || !Number.isInteger(rateLimit) || rateLimit < 1 || rateLimit > 10000) {
+          return res.status(400).json({
+            error: {
+              code: 'rate_limit_required',
+              message: 'An explicit rateLimit from 1 to 10000 is required for a public-profile:read key. Use 60 for the store page pilot.',
+              requestId: res.locals.requestId || 'unknown',
+            },
+          });
+        }
+        explicitRateLimit = rateLimit;
+      }
+
       const token = generateApiToken();
       const tokenHash = hashToken(token);
       const clientId = `api-${randomUUID()}`;
@@ -105,6 +131,7 @@ export function createApiClientsRouter(db: Firestore): Router {
         active: true,
         version: 1,
         createdAt: now,
+        ...(explicitRateLimit !== undefined ? { rateLimit: explicitRateLimit } : {}),
       };
 
       await db.collection('apiClients').doc(clientId).set(clientDoc);
@@ -130,7 +157,7 @@ export function createApiClientsRouter(db: Firestore): Router {
           active: true,
           version: 1,
           createdAt: now,
-          rateLimit: 60,
+          rateLimit: explicitRateLimit ?? 60,
         },
         token,
       });

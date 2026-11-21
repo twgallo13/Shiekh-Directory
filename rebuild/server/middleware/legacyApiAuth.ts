@@ -7,7 +7,8 @@ export type LegacyApiScope =
   | 'personnel:read'
   | 'staffing:read'
   | 'district-leadership:read'
-  | 'district-leadership:contacts:read';
+  | 'district-leadership:contacts:read'
+  | 'public-profile:read';
 
 export interface ApiCredential {
   clientId: string;
@@ -245,6 +246,8 @@ function parseTestScopes(scopePart: string): LegacyApiScope[] {
     'staffing': ['staffing:read'],
     'district-leadership': ['district-leadership:read'],
     'district-leadership-contacts': ['district-leadership:read', 'district-leadership:contacts:read'],
+    // Kept off of 'all' so existing emulator v2/v3 grants hashes stay the same.
+    'public-profile': ['public-profile:read'],
   };
   return scopeMap[scopePart] || ['locations:read'];
 }

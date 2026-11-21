@@ -87,6 +87,12 @@ export interface AuthProfileError {
 }
 
 export function describeProfileError(status: number, code: string, serverMessage?: string): string {
+  if (code === 'account_disabled') {
+    return 'Your account is disabled. Please contact an Admin.';
+  }
+  if (code === 'not_registered') {
+    return "Your account isn't registered. Please contact an Admin and ask them to add you.";
+  }
   if (code === 'signin_restricted' || code === 'email_not_verified' || code === 'ambiguous_account' || code === 'link_conflict') {
     return serverMessage || "We couldn't open your account. Please contact an Admin.";
   }

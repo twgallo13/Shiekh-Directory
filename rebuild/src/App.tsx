@@ -42,7 +42,7 @@ function CorrectionsQueuePage() {
   return <CorrectionsQueue onBack={() => navigate('/')} />;
 }
 
-function ProtectedRoute({ 
+export function ProtectedRoute({ 
   children, 
   withLayout = true,
   storeAllowed = false,
@@ -51,10 +51,11 @@ function ProtectedRoute({
   withLayout?: boolean;
   storeAllowed?: boolean;
 }) {
-  const { user, loading, isStoreSession, storeSession, authError } = useAuth();
+  const { user, authUser, loading, isStoreSession, storeSession, authError } = useAuth();
   const isAuthenticated = !!user || isStoreSession;
+  const profilePending = !!user && !isStoreSession && !authUser && !authError;
   
-  if (loading) {
+  if (loading || profilePending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -85,12 +86,13 @@ function ProtectedRoute({
   return <>{children}</>;
 }
 
-function StoreLocationRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, isStoreSession, storeSession, authError } = useAuth();
+export function StoreLocationRoute({ children }: { children: React.ReactNode }) {
+  const { user, authUser, loading, isStoreSession, storeSession, authError } = useAuth();
   const { id } = useParams<{ id: string }>();
   const isAuthenticated = !!user || isStoreSession;
+  const profilePending = !!user && !isStoreSession && !authUser && !authError;
   
-  if (loading) {
+  if (loading || profilePending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">

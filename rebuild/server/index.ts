@@ -12,7 +12,7 @@ import { createPeopleRouter } from './routes/people';
 import { createAssignmentsRouter } from './routes/assignments';
 import { createHoursExceptionsRouter } from './routes/hoursExceptions';
 import { createVerificationRouter } from './routes/verification';
-import { createAuthMiddleware, createAuthUserMiddleware, createOptionalAuthMiddleware } from './middleware/auth';
+import { createAuthMiddleware, createAuthUserMiddleware, createOptionalAuthMiddleware, requireRegisteredUser } from './middleware/auth';
 import { createLegacyApiAuthMiddleware } from './middleware/legacyApiAuth';
 import { createLegacyV1Router } from './routes/legacyV1';
 import { createLegacyV2Router } from './routes/legacyV2';
@@ -46,6 +46,7 @@ const db = createFirestoreClient();
 
 app.use('/api/app', createAuthMiddleware(db));
 app.use('/api/app', createAuthUserMiddleware(db));
+app.use('/api/app', requireRegisteredUser());
 app.use('/api/app/search', createSearchRouter(db));
 app.use('/api/app/locations', createLocationsRouter(db));
 app.use('/api/app/import', createImportRouter(db));

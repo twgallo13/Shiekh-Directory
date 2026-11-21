@@ -2,8 +2,15 @@
  * Auth configuration for domain restrictions and admin bootstrapping
  * 
  * Environment variables:
- * - ALLOWED_DOMAINS: Comma-separated list of allowed email domains for Google sign-in
- *                    Default: shiekhshoes.org
+ * - ALLOWED_DOMAINS: Comma-separated domains for password, email-link, and invitation
+ *                    checks (isEmailDomainAllowed). Default: shiekhshoes.org.
+ *                    shiekhshoes.com is not in this list. Store mailboxes
+ *                    (store{n}@shiekhshoes.com) are a separate store-session flow.
+ *                    Existing user records pass regardless of domain.
+ * - Google Workspace sign-in is NOT this list. Only the exact domain
+ *   shiekhshoes.org is allowed, on every /api/app route, including when a
+ *   users record already exists. Password and email-link records are not
+ *   subject to that Google check.
  * - ADMIN_EMAILS: Comma-separated list of emails that should be bootstrapped as Admin
  *                 Example: theo@shiekhshoes.org,admin@shiekhshoes.org
  * 
@@ -39,6 +46,30 @@ export function isEmailDomainAllowed(email: string): boolean {
   
   const allowedDomains = getAllowedDomains();
   return allowedDomains.includes(domain);
+}
+
+/** Exact Google Workspace domain. Not configurable via ALLOWED_DOMAINS. */
+export const GOOGLE_WORKSPACE_DOMAIN = 'shiekhshoes.org';
+
+/**
+ * Google sign-in (sign_in_provider google.com) is allowed only when the email's
+ * domain is exactly shiekhshoes.org. This applies to existing records as well as
+ * create/link. Comparison is lowercase and exact (same split as
+ * isEmailDomainAllowed): subdomains and lookalikes fail.
+ * shiekhshoes.com is a store-mailbox / password domain, not a Google Workspace domain.
+ */
+export function isGoogleSignInDomainAllowed(email: string): boolean {
+  const domain = getEmailDomain(email.trim());
+  return domain === GOOGLE_WORKSPACE_DOMAIN;
+}
+
+/**
+ * A users/{uid} record is registered only when status is missing, 'active', or 'pending'.
+ * Every other value is blocked, including 'disabled', 'suspended', 'inactive',
+ * 'Disabled', 'deactivated', and ''.
+ */
+export function isRegisteredUserStatus(status: unknown): boolean {
+  return status === undefined || status === 'active' || status === 'pending';
 }
 
 export function isAdminEmail(email: string): boolean {

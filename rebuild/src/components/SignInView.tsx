@@ -236,7 +236,7 @@ export function SignInView() {
               {googleLoading ? 'Signing in...' : 'Sign in with Google'}
             </button>
             <p className="mt-2 text-xs text-center text-gray-500">
-              Company accounts only (@shiekhshoes.org or @shiekhshoes.com)
+              Company accounts only (@shiekhshoes.org)
             </p>
           </div>
           

@@ -1,7 +1,7 @@
 /**
  * Cloud Functions entry point - wraps Express app as a single function
  * 
- * Deploy with: firebase deploy --only functions --project shiekh-directory-v2
+ * Deploy with: firebase deploy --only functions:api --project shiekh-directory-v2
  * 
  * Note: Weekly backups are handled by Firestore's built-in scheduled exports
  * (configured in Firebase Console), not by Cloud Functions.

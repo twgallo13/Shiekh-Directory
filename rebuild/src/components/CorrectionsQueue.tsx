@@ -285,7 +285,7 @@ function CorrectionDetailDialog({ correction, onClose, onApprove, onReject, proc
       isOpen={true}
       onClose={onClose}
       title={correction.category === 'store-link'
-        ? `#${correction.storeNumber} - Store page link`
+        ? `#${correction.storeNumber} - Store landing page link`
         : `#${correction.storeNumber} - ${correction.type} Correction`}
       footer={dialogFooter}
       size="lg"

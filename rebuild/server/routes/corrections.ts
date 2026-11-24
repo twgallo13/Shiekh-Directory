@@ -324,12 +324,12 @@ export function createCorrectionsRouter(db: Firestore): Router {
         }
         if (type === 'store-page' && category !== 'store-link') {
           return res.status(400).json({
-            error: { code: 'invalid_type', message: 'store-page is only valid for a store page link request.', requestId: res.locals.requestId },
+            error: { code: 'invalid_type', message: 'store-page is only valid for a store landing page link request.', requestId: res.locals.requestId },
           });
         }
         if (category === 'store-link' && type !== 'store-page') {
           return res.status(400).json({
-            error: { code: 'invalid_type', message: 'A store page link request must use type store-page.', requestId: res.locals.requestId },
+            error: { code: 'invalid_type', message: 'A store landing page link request must use type store-page.', requestId: res.locals.requestId },
           });
         }
       }
@@ -355,7 +355,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
           return res.status(403).json({
             error: {
               code: 'use_direct_edit',
-              message: 'Edit the review link on the store page. Stewards and Admins do not file this request.',
+              message: 'Edit the review link on the store landing page. Stewards and Admins do not file this request.',
               requestId: res.locals.requestId,
             },
           });
@@ -378,7 +378,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
         const proposedKeys = Object.keys(proposedChanges as Record<string, unknown>);
         if (proposedKeys.length !== 1 || proposedKeys[0] !== 'reviewUrl') {
           return res.status(400).json({
-            error: { code: 'invalid_proposed_changes', message: 'A store page link request can only change the review link.', requestId: res.locals.requestId },
+            error: { code: 'invalid_proposed_changes', message: 'A store landing page link request can only change the review link.', requestId: res.locals.requestId },
           });
         }
         const review = validateReviewUrl((proposedChanges as Record<string, unknown>).reviewUrl);
@@ -456,7 +456,7 @@ export function createCorrectionsRouter(db: Firestore): Router {
               action: 'create',
               entityType: 'correction',
               entityId: correctionRef.id,
-              entityName: `Store page link for ${location.storeNumber}`,
+              entityName: `Store landing page link for ${location.storeNumber}`,
               changes: [
                 { field: 'category', newValue: 'store-link' },
                 { field: 'status', newValue: 'pending' },

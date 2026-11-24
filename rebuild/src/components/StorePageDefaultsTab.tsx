@@ -32,7 +32,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
       });
       const payload = await response.json();
       if (!response.ok) {
-        setError(payload.error?.message || 'Couldn\'t load store page defaults.');
+        setError(payload.error?.message || 'Couldn\'t load store landing page defaults.');
         return;
       }
       setDefaults(payload.data);
@@ -43,7 +43,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
       setImageError(null);
       setError(null);
     } catch {
-      setError('Couldn\'t load store page defaults.');
+      setError('Couldn\'t load store landing page defaults.');
     }
   }, [getIdToken]);
 
@@ -69,13 +69,13 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(payload.error?.message || 'Couldn\'t save store page defaults.');
+        setError(payload.error?.message || 'Couldn\'t save store landing page defaults.');
         return;
       }
       setConfirming(false);
       await load();
     } catch {
-      setError('Couldn\'t save store page defaults.');
+      setError('Couldn\'t save store landing page defaults.');
     } finally {
       setSaving(false);
     }
@@ -110,13 +110,13 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
   };
 
   if (!draft || !defaults) {
-    return <p className="text-sm text-gray-600">{error || 'Loading store page defaults...'}</p>;
+    return <p className="text-sm text-gray-600">{error || 'Loading store landing page defaults...'}</p>;
   }
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6 space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Store page defaults</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Store landing page defaults</h2>
         <p className="text-sm text-gray-600">Six fixed company tiles. Stores cannot add, remove, or reorder them. The shop tile is not here. Dynamic QR builds it from the Magento store ID.</p>
       </div>
       {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
@@ -203,7 +203,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
                   onChange={(event) => update(key, 'show', event.target.checked)}
                   aria-label={`Show ${COMPANY_TILE_LABELS[key]}`}
                 />
-                Show on the store page
+                Show on the store landing page
               </label>
             </div>
           );
@@ -218,12 +218,12 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
         onClick={requestSave}
         className="min-h-[44px] px-4 rounded-lg bg-blue-600 text-white font-medium"
       >
-        Save store page defaults
+        Save store landing page defaults
       </button>
       <Dialog
         isOpen={confirming}
         onClose={() => setConfirming(false)}
-        title="Save store page defaults"
+        title="Save store landing page defaults"
         size="sm"
         footer={
           <div className="flex gap-3">
@@ -232,7 +232,7 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
           </div>
         }
       >
-        <p className="text-gray-600">Save these company tiles for every store page? This is written to the change log.</p>
+        <p className="text-gray-600">Save these company tiles for every store landing page? This is written to the change log.</p>
       </Dialog>
     </div>
   );

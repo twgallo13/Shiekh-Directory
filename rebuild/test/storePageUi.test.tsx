@@ -140,14 +140,14 @@ describe('store page screens', () => {
     authMock.role = 'Viewer';
     renderStore();
     expect((await screen.findAllByText('#48 Test Store')).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('heading', { name: 'Store page' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Store landing page' })).toBeNull();
 
     cleanup();
     authMock.role = 'Store';
     authMock.storeLocationId = 'other-store';
     renderStore();
     expect(await screen.findByText('You can only report a problem for your own store.')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Store page' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Store landing page' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Report a Problem' })).toBeNull();
     expect(screen.queryByText('See something wrong?')).toBeNull();
   });
@@ -160,12 +160,13 @@ describe('store page screens', () => {
         <StorePageCard locationId="loc-1" storeNumber="48" lifecycle="active" authUser={admin} />
       </MemoryRouter>,
     );
+    expect(await screen.findByRole('heading', { name: 'Store landing page' })).toBeTruthy();
     expect(await screen.findByText('Set by Shiekh')).toBeTruthy();
     expect(screen.getAllByText('Not set').length).toBeGreaterThan(0);
     expect(screen.getByText('Company default image · Set by Shiekh')).toBeTruthy();
     fireEvent.click(screen.getByRole('switch'));
     expect(api.apiPost).not.toHaveBeenCalled();
-    expect(screen.getByText('Turn on the store page for #48? Customers who scan the code will see it within 15 minutes.')).toBeTruthy();
+    expect(screen.getByText('Turn on the store landing page for #48? Customers who scan the code will see it within 15 minutes.')).toBeTruthy();
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Yes, turn it on' }));
     await waitFor(() => {
@@ -185,6 +186,7 @@ describe('store page screens', () => {
         <StorePageCard locationId="loc-1" storeNumber="48" lifecycle="active" authUser={steward} />
       </MemoryRouter>,
     );
+    expect(await screen.findByRole('heading', { name: 'Store landing page' })).toBeTruthy();
     expect(await screen.findByText('Live')).toBeTruthy();
     expect(screen.queryByRole('switch')).toBeNull();
     expect(screen.getByText(/Theo adds IDs Monday/)).toBeTruthy();
@@ -203,7 +205,7 @@ describe('store page screens', () => {
       }),
     })));
     render(<StorePageDefaultsTab getIdToken={async () => 'token'} />);
-    expect(await screen.findByRole('heading', { name: 'Store page defaults' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Store landing page defaults' })).toBeTruthy();
     expect(screen.getAllByText('Fixed tile').length).toBe(6);
     expect(screen.getAllByText('Not set').length).toBe(8);
     for (const label of ['Get the app', 'Legacy rewards', 'Instagram', 'Launch Calendar', 'Sunbit card', 'Return policy']) {
@@ -221,7 +223,7 @@ describe('store page screens', () => {
     expect(screen.getByLabelText('Default store image URL')).toBeTruthy();
     expect(screen.getByText('The image file stays at the default store image URL. Leave that field blank and the public feed omits it.')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Find-a-store page URL'), { target: { value: 'http://www.shiekh.com/stores' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save store page defaults' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save store landing page defaults' }));
     expect(screen.getByText('Link must start with https.')).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
@@ -264,7 +266,7 @@ describe('store page screens', () => {
     expect(await screen.findByText('Store website URL')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Edit store website URL' }));
     expect(screen.getByLabelText('Store website URL')).toBeTruthy();
-    expect(screen.getByText("This store's page on shiekh.com. This is not the Store page on qr.shiekh.store, and it is not the company Find-a-store page URL.")).toBeTruthy();
+    expect(screen.getByText("This store's page on shiekh.com. This is not the Store landing page on qr.shiekh.store, and it is not the company Find-a-store page URL.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Store website URL'), { target: { value: 'http://www.shiekh.com/stores/48' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save store website URL' }));
     expect(screen.getByText('Link must start with https.')).toBeTruthy();

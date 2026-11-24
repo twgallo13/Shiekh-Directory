@@ -2,7 +2,7 @@ export type PublicProfileCheck =
   | { ok: true; rateLimit?: number }
   | { ok: false; code: string; message: string };
 
-const RATE_MESSAGE = 'An explicit rateLimit from 1 to 10000 is required for a public-profile:read key. Use 120 requests per minute for the store page pilot.';
+const RATE_MESSAGE = 'An explicit rateLimit from 1 to 10000 is required for a public-profile:read key. Use 120 requests per minute for the store landing page key.';
 
 /** public-profile:read stays alone, and its rate limit stays between 1 and 10000. */
 export function checkPublicProfileClient(

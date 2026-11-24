@@ -83,7 +83,7 @@ function formatFieldName(field: string): string {
     status: 'Status',
     reason: 'Reason',
     reviewUrl: 'Review link',
-    pageEnabled: 'Page on/off',
+    pageEnabled: 'Landing page is on',
     magentoStoreId: 'Magento store ID',
     tiles: 'Company tiles',
     findStoreUrl: 'Find-a-store page URL',
@@ -205,7 +205,7 @@ export function AuditHistory({ locationId }: AuditHistoryProps) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium text-gray-900 text-sm">
-                            {entry.entityType === 'store-page' ? 'Store page · ' : ''}
+                            {entry.entityType === 'store-page' ? 'Store landing page · ' : ''}
                             {ACTION_LABELS[entry.action] || entry.action}
                           </span>
                           <span className={`text-xs px-1.5 py-0.5 rounded ${ROLE_COLORS[entry.userRole]}`}>

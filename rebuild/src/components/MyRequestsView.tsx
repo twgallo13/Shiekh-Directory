@@ -12,7 +12,7 @@ const CATEGORY_LABELS: Record<CorrectionCategory, string> = {
   hours: 'Hours',
   manager: 'Manager Info',
   other: 'Other',
-  'store-link': 'Store page link',
+  'store-link': 'Store landing page link',
 };
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {

@@ -49,7 +49,7 @@ function mapTxError(error: unknown): HttpError | null {
   if (message.includes(MAGENTO_COLLECTION)) {
     return new HttpError(409, 'magento_id_taken', 'That Magento store ID is already used by another store.');
   }
-  return new HttpError(409, 'version_conflict', 'This store page was updated. Reload and try again.');
+  return new HttpError(409, 'version_conflict', 'This store landing page was updated. Reload and try again.');
 }
 
 async function loadTiles(db: Firestore): Promise<StorePageTileDefaults> {
@@ -169,7 +169,7 @@ export function createStorePagesRouter(db: Firestore): Router {
       });
     } catch (error) {
       console.error('Get store page error:', error);
-      return errorBody(res, 500, 'get_error', 'Failed to load the store page');
+      return errorBody(res, 500, 'get_error', 'Failed to load the store landing page');
     }
   });
 
@@ -178,7 +178,7 @@ export function createStorePagesRouter(db: Firestore): Router {
       const authUser = res.locals.authUser as AuthUser;
       if (!authUser) return errorBody(res, 401, 'unauthorized', 'Not authenticated');
       if (authUser.role !== 'Steward' && authUser.role !== 'Admin') {
-        return errorBody(res, 403, 'forbidden', 'Only a Steward or Admin can edit the store page');
+        return errorBody(res, 403, 'forbidden', 'Only a Steward or Admin can edit the store landing page');
       }
       const { locationId } = req.params;
       const expectedVersion = parseExpectedVersion(req.body?.expectedVersion);
@@ -216,7 +216,7 @@ export function createStorePagesRouter(db: Firestore): Router {
         locationId,
         expectedVersion,
         authUser,
-        entityName: `Store page ${location.storeNumber}`,
+        entityName: `Store landing page ${location.storeNumber}`,
         reviewHref,
         websiteHref,
         magentoId,
@@ -226,7 +226,7 @@ export function createStorePagesRouter(db: Firestore): Router {
       const mapped = mapTxError(error);
       if (mapped) return errorBody(res, mapped.status, mapped.code, mapped.message);
       console.error('Patch store page error:', error);
-      return errorBody(res, 500, 'update_error', 'Failed to update the store page');
+      return errorBody(res, 500, 'update_error', 'Failed to update the store landing page');
     }
   });
 
@@ -235,7 +235,7 @@ export function createStorePagesRouter(db: Firestore): Router {
       const authUser = res.locals.authUser as AuthUser;
       if (!authUser) return errorBody(res, 401, 'unauthorized', 'Not authenticated');
       if (authUser.role !== 'Admin') {
-        return errorBody(res, 403, 'forbidden', 'Only an Admin can turn a store page on or off');
+        return errorBody(res, 403, 'forbidden', 'Only an Admin can turn a store landing page on or off');
       }
       const { locationId } = req.params;
       const expectedVersion = parseExpectedVersion(req.body?.expectedVersion);
@@ -254,12 +254,12 @@ export function createStorePagesRouter(db: Firestore): Router {
         if (!locationSnap.exists) throw new HttpError(404, 'not_found', 'Location not found');
         const location = locationSnap.data() as Location;
         if (location.kind !== 'store' || location.lifecycle !== 'active') {
-          throw new HttpError(400, 'not_a_live_store', 'Store pages can only be turned on or off for active stores.');
+          throw new HttpError(400, 'not_a_live_store', 'Store landing pages can only be turned on or off for active stores.');
         }
         const pageSnap = await tx.get(pageRef);
         const currentVersion = pageSnap.exists ? Number(pageSnap.data()?.version ?? 0) : 0;
         if (currentVersion !== expectedVersion) {
-          throw new HttpError(409, 'version_conflict', 'This store page was updated. Reload and try again.');
+          throw new HttpError(409, 'version_conflict', 'This store landing page was updated. Reload and try again.');
         }
         const now = new Date().toISOString();
         const nextVersion = currentVersion + 1;
@@ -286,7 +286,7 @@ export function createStorePagesRouter(db: Firestore): Router {
         const entry = auditEntry(
           authUser,
           locationId,
-          `Store page ${location.storeNumber}`,
+          `Store landing page ${location.storeNumber}`,
           'update',
           [{ field: 'pageEnabled', oldValue: previous, newValue: enabled }],
           currentVersion,
@@ -300,7 +300,7 @@ export function createStorePagesRouter(db: Firestore): Router {
       const mapped = mapTxError(error);
       if (mapped) return errorBody(res, mapped.status, mapped.code, mapped.message);
       console.error('Store page visibility error:', error);
-      return errorBody(res, 500, 'update_error', 'Failed to update the store page');
+      return errorBody(res, 500, 'update_error', 'Failed to update the store landing page');
     }
   });
 
@@ -325,7 +325,7 @@ async function writeStorePage(db: Firestore, input: WriteInput): Promise<StorePa
     const current = pageSnap.exists ? pageSnap.data() as StorePageDoc : null;
     const currentVersion = current ? Number(current.version ?? 0) : 0;
     if (currentVersion !== input.expectedVersion) {
-      throw new HttpError(409, 'version_conflict', 'This store page was updated. Reload and try again.');
+      throw new HttpError(409, 'version_conflict', 'This store landing page was updated. Reload and try again.');
     }
     const oldMagento = current?.magentoStoreId ?? null;
     const nextMagento = input.magentoId !== undefined ? input.magentoId : oldMagento;
@@ -419,7 +419,7 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
       });
     } catch (error) {
       console.error('Get store page defaults error:', error);
-      return errorBody(res, 500, 'get_error', 'Failed to load store page defaults');
+      return errorBody(res, 500, 'get_error', 'Failed to load store landing page defaults');
     }
   });
 
@@ -442,7 +442,7 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
         const snap = await tx.get(ref);
         const currentVersion = snap.exists ? Number(snap.data()?.version ?? 0) : 0;
         if (currentVersion !== expectedVersion) {
-          throw new HttpError(409, 'version_conflict', 'Store page defaults were updated. Reload and try again.');
+          throw new HttpError(409, 'version_conflict', 'Store landing page defaults were updated. Reload and try again.');
         }
         const current = snap.data();
         const previousFind = typeof current?.findStoreUrl === 'string' ? current.findStoreUrl : null;
@@ -480,7 +480,7 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
           action: 'update',
           entityType: 'store-page',
           entityId: 'defaults',
-          entityName: 'Store page defaults',
+          entityName: 'Store landing page defaults',
           changes,
           previousVersion: currentVersion,
           newVersion: nextVersion,
@@ -492,7 +492,7 @@ export function registerStorePageDefaultRoutes(router: Router, db: Firestore): v
       const mapped = mapTxError(error);
       if (mapped) return errorBody(res, mapped.status, mapped.code, mapped.message);
       console.error('Save store page defaults error:', error);
-      return errorBody(res, 500, 'update_error', 'Failed to save store page defaults');
+      return errorBody(res, 500, 'update_error', 'Failed to save store landing page defaults');
     }
   });
 }

@@ -70,7 +70,7 @@ export const API_SCOPES: ApiScope[] = [
   { name: 'staffing:read', description: 'Read store staffing assignments' },
   { name: 'district-leadership:read', description: 'Read district and region leadership structure' },
   { name: 'district-leadership:contacts:read', description: 'Include DM work email addresses' },
-  { name: 'public-profile:read', description: 'Read the public store page allowlist. Does not include location inbox email or personnel.' },
+  { name: 'public-profile:read', description: 'Read the public store landing page allowlist. Does not include location inbox email or personnel.' },
 ];
 
 export const API_VERSIONS: ApiVersion[] = [
@@ -480,14 +480,14 @@ export const API_VERSIONS: ApiVersion[] = [
   },
   {
     version: 'public-profile.v1',
-    title: 'Public store page',
-    description: 'Field allowlist for the customer store page. Separate from v1. Company tiles appear only after an Admin saves an https URL. findStoreUrl and defaultStoreImageUrl are top-level. Each is omitted until an Admin saves an https URL on an allowed host, and a stored value that fails that check is omitted.',
+    title: 'Public store landing page',
+    description: 'Field allowlist for the customer store landing page. Separate from v1. Company tiles appear only after an Admin saves an https URL. findStoreUrl and defaultStoreImageUrl are top-level. Each is omitted until an Admin saves an https URL on an allowed host, and a stored value that fails that check is omitted.',
     contractVersion: 'public-profile.v1',
     endpoints: [
       {
         method: 'GET',
         path: '/api/public-profile/v1/stores',
-        summary: 'List public store pages',
+        summary: 'List public store landing pages',
         description: 'Active and retired stores. Planned stores are omitted. A page-off store that is not retired returns storeNumber, status, pageEnabled false, name, address city and state, reviewUrl, and websiteUrl. A retired store returns storeNumber, status, and name only. companyTiles is top-level and lists only saved https company links, in order: app (Get the app, order 3, hidden until an iOS or Android URL is saved), rewards (Legacy rewards, 4), instagram (Instagram, 5), launch (Launch Calendar, 6), card (Sunbit card, 7), returns (Return policy, 8). The shop tile is not returned. findStoreUrl (shiekh.com, www.shiekh.com, or qr.shiekh.store) and defaultStoreImageUrl (qr.shiekh.store only) sit next to companyTiles. Each is omitted when unset or when the stored value fails the https and host check. If no weekly hours are saved, hours is null. When hours is present, weekly always has monday through sunday. A missing or null day is { closed: false, intervals: [], unknown: true }. A day saved as closed is { closed: true, intervals: [] } and omits unknown. Known open days also omit unknown. Times are 24-hour HH:MM. Exception type is holiday or special.',
         scope: 'public-profile:read',
         responseExample: `{
@@ -519,7 +519,7 @@ export const API_VERSIONS: ApiVersion[] = [
       {
         method: 'GET',
         path: '/api/public-profile/v1/stores/:storeNumber',
-        summary: 'One public store page',
+        summary: 'One public store landing page',
         description: 'storeNumber is digits only, including leading zeros. Unknown, planned, and non-store numbers return the same 404. Page-off and retired shapes match the list route.',
         scope: 'public-profile:read',
         parameters: [

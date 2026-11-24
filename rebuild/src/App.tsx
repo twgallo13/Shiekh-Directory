@@ -166,7 +166,7 @@ function OptionalAuthLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function AppRoutes() {
+export function AppRoutes() {
   return (
     <Suspense fallback={<PageSkeleton />}>
       <Routes>
@@ -258,6 +258,16 @@ function AppRoutes() {
       />
       <Route
         path="/admin"
+        element={
+          <ProtectedRoute>
+            <RouteErrorBoundary>
+              <AdminView />
+            </RouteErrorBoundary>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/:section"
         element={
           <ProtectedRoute>
             <RouteErrorBoundary>

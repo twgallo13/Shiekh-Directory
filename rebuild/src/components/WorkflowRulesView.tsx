@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useAdminUnsavedChanges } from './admin/AdminUnsavedChanges';
 import { Settings, RotateCcw, Loader2, Clock, Calendar, Mail, Users, Shield, History, FileText, Eye, EyeOff, AlertTriangle, Store, Building2, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Dialog } from './Dialog';
@@ -260,6 +261,7 @@ export function WorkflowRulesView() {
   const [editingType, setEditingType] = useState<EmailType | null>(null);
   const [templateForm, setTemplateForm] = useState({ subject: '', bodyHtml: '', bodyText: '' });
   const [templateDirty, setTemplateDirty] = useState(false);
+  useAdminUnsavedChanges(templateDirty);
   const [showPreview, setShowPreview] = useState(false);
   const [confirmResetTemplate, setConfirmResetTemplate] = useState(false);
   const templateEditorRef = useRef<HTMLTextAreaElement>(null);
@@ -523,7 +525,7 @@ export function WorkflowRulesView() {
         <div className="flex items-center gap-3">
           <Settings className="w-6 h-6 text-gray-400" aria-hidden="true" />
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Workflow Rules</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Workflow rules</h2>
             <p className="text-sm text-gray-600">Configure timings and automation for verification workflows</p>
           </div>
         </div>
@@ -757,7 +759,7 @@ export function WorkflowRulesView() {
       )}
 
       <div className="bg-blue-50 rounded-lg p-4 text-sm text-blue-800">
-        <p className="font-medium mb-1">About Workflow Rules</p>
+        <p className="font-medium mb-1">About workflow rules</p>
         <p>
           These settings control automated workflows for store verification. Changes take effect immediately 
           and are applied to new requests. In-progress verifications use the settings that were active when they started.

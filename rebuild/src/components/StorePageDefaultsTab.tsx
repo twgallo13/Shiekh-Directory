@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react';
 import { COMPANY_TILE_KEYS, COMPANY_TILE_LABELS, type CompanyTileKey, type StorePageTileDefaults } from '../constants/storePage';
 import { validateDefaultStoreImageUrl, validateFindStoreUrl } from '../lib/storePageValidation';
 import { Dialog } from './Dialog';
+import { useAdminUnsavedChanges } from './admin/AdminUnsavedChanges';
 
 interface DefaultsPayload {
   version: number;
@@ -23,6 +24,13 @@ export function StorePageDefaultsTab({ getIdToken }: { getIdToken: () => Promise
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const isDirty = Boolean(defaults && draft && (
+    JSON.stringify(draft) !== JSON.stringify(defaults.tiles)
+    || findStoreUrl !== (defaults.findStoreUrl || '')
+    || defaultStoreImageUrl !== (defaults.defaultStoreImageUrl || '')
+  ));
+  useAdminUnsavedChanges(isDirty);
 
   const load = useCallback(async () => {
     try {

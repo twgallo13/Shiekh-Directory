@@ -53,7 +53,7 @@ describe('rate limit dialog', () => {
     }));
 
     render(<MemoryRouter><AdminView /></MemoryRouter>);
-    fireEvent.click(screen.getByRole('tab', { name: 'API Clients' }));
+    fireEvent.click(screen.getByRole('link', { name: 'API clients' }));
     fireEvent.click(await screen.findByRole('button', { name: '120/min' }));
     expect(screen.getByRole('dialog', { name: 'Edit Rate Limit' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

@@ -189,6 +189,7 @@ describe('store pages app API', () => {
       ['viewer', 'test-token-viewer'],
       ['store', `test-token-${storeUid}`],
       ['leader', `test-token-${leaderUid}`],
+      ['session', sessionToken],
     ] as Array<[string, string]>) {
       const denied = await api(`/api/app/store-pages/${ownId}`, token, {
         method: 'PATCH',
@@ -344,11 +345,18 @@ describe('store pages app API', () => {
     assert.equal(websiteAudits[0].data().userRole, 'Steward');
 
     const version = saved.data()?.version ?? 1;
-    const viewer = await api(`/api/app/store-pages/${id}`, 'test-token-viewer', {
-      method: 'PATCH',
-      body: JSON.stringify({ websiteUrl: 'https://shiekh.com/stores/48', expectedVersion: version }),
-    });
-    assert.equal(viewer.status, 403);
+    for (const [name, token] of [
+      ['viewer', 'test-token-viewer'],
+      ['leader', `test-token-${leaderUid}`],
+      ['store', `test-token-${storeUid}`],
+      ['session', sessionToken],
+    ] as Array<[string, string]>) {
+      const denied = await api(`/api/app/store-pages/${id}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ websiteUrl: 'https://shiekh.com/stores/48', expectedVersion: version }),
+      });
+      assert.equal(denied.status, 403, name);
+    }
     const afterForbidden = await getTestDb().collection('storePages').doc(id).get();
     assert.equal(afterForbidden.data()?.websiteUrl, good);
     assert.equal(afterForbidden.data()?.version, version);

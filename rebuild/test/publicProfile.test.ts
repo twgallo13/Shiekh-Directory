@@ -804,6 +804,173 @@ describe('public store profile', () => {
     }
   });
 
+  it('RC1: a missing storePages doc, a missing pageEnabled, and a non-boolean pageEnabled stay page-off on both routes', async () => {
+    const db = getTestDb();
+    const cases: Array<{
+      number: string;
+      name: string;
+      page: 'absent' | 'missingField' | 'stringTrue' | 'one';
+    }> = [
+      { number: `85${stamp.slice(-6)}`, name: 'No Page Doc', page: 'absent' },
+      { number: `86${stamp.slice(-6)}`, name: 'No Flag Field', page: 'missingField' },
+      { number: `87${stamp.slice(-6)}`, name: 'String True Flag', page: 'stringTrue' },
+      { number: `88${stamp.slice(-6)}`, name: 'Numeric One Flag', page: 'one' },
+    ];
+    const now = new Date().toISOString();
+    for (const row of cases) {
+      const id = await seedTestLocation({
+        storeNumber: row.number,
+        name: row.name,
+        kind: 'store',
+        lifecycle: 'active',
+      });
+      await db.collection('locations').doc(id).set({
+        address: { street: '200 Leak Ave', suite: '4', city: 'Pomona', state: 'CA', zip: '91766', country: 'US' },
+        mallOrCenterName: 'RC1 Mall',
+        timeZone: 'America/Los_Angeles',
+        phonePublic: true,
+        mainPhone: '+19095550200',
+        standardHours: WEEK_HOURS,
+      }, { merge: true });
+      await db.collection(`locations/${id}/closures`).add({
+        reason: 'Repair',
+        publicExplanation: 'SECRET_RC1_CLOSURE',
+        reasonNote: 'SECRET_RC1_NOTE',
+        startsAt: daysFromNow(-1).iso,
+        endsAt: daysFromNow(8).iso,
+        status: 'active',
+      });
+      if (row.page === 'absent') continue;
+      const page: Record<string, unknown> = {
+        reviewUrl: 'https://g.page/r/rc1/review',
+        websiteUrl: 'https://www.shiekh.com/stores/rc1',
+        magentoStoreId: '420731',
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: 'test',
+      };
+      if (row.page === 'stringTrue') page.pageEnabled = 'true';
+      if (row.page === 'one') page.pageEnabled = 1;
+      await db.collection('storePages').doc(id).set(page);
+    }
+
+    for (const row of cases) {
+      for (const path of [`/api/public-profile/v1/stores/${row.number}`, '/api/public-profile/v1/stores']) {
+        const response = await api(path, PUBLIC);
+        const body = await response.json() as { stores: Array<Record<string, unknown>> };
+        const store = path.endsWith(row.number)
+          ? body.stores[0]
+          : body.stores.find((item) => item.storeNumber === row.number);
+        assert.equal(response.status, 200, path);
+        assert.ok(store, path);
+        assert.deepEqual(Object.keys(store!).sort(), [...PAGE_OFF_KEYS].sort(), path);
+        assert.equal(store!.pageEnabled, false, path);
+        assert.equal(store!.name, row.name, path);
+        assert.equal(store!.status, 'Temporarily Closed', path);
+        assert.deepEqual(store!.address, { city: 'Pomona', state: 'CA' }, path);
+        const address = store!.address as Record<string, unknown>;
+        assert.deepEqual(Object.keys(address).sort(), ['city', 'state'], path);
+        if (row.page === 'absent') {
+          assert.equal(store!.reviewUrl, null, path);
+          assert.equal(store!.websiteUrl, null, path);
+        } else {
+          assert.equal(store!.reviewUrl, 'https://g.page/r/rc1/review', path);
+          assert.equal(store!.websiteUrl, 'https://www.shiekh.com/stores/rc1', path);
+        }
+        for (const key of PAGE_OFF_FORBIDDEN) {
+          assert.equal(key in store! || key in address, false, `${path} ${key}`);
+        }
+        const serialized = JSON.stringify(store);
+        for (const leak of ['200 Leak Ave', 'RC1 Mall', '+19095550200', '420731', 'SECRET_RC1', '91766']) {
+          assert.equal(serialized.includes(leak), false, `${path} ${leak}`);
+        }
+      }
+    }
+  });
+
+  it('RC2: a page-off store with a bad saved reviewUrl and websiteUrl returns null on both routes', async () => {
+    const number = `89${stamp.slice(-6)}`;
+    const id = await seedTestLocation({
+      storeNumber: number,
+      name: 'Bad Off Links',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    await getTestDb().collection('locations').doc(id).set({
+      address: { street: '12 Main', city: 'Redlands', state: 'CA', zip: '92373', country: 'US' },
+    }, { merge: true });
+    const now = new Date().toISOString();
+    const badReview = 'https://www.google.com/url?q=https://evil.example/review';
+    const badWebsite = 'http://www.shiekh.com/stores/bad-off';
+    await getTestDb().collection('storePages').doc(id).set({
+      reviewUrl: badReview,
+      websiteUrl: badWebsite,
+      magentoStoreId: '420732',
+      pageEnabled: false,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+    });
+    for (const path of [`/api/public-profile/v1/stores/${number}`, '/api/public-profile/v1/stores']) {
+      const response = await api(path, PUBLIC);
+      const body = await response.json() as { stores: Array<Record<string, unknown>> };
+      const store = path.endsWith(number)
+        ? body.stores[0]
+        : body.stores.find((item) => item.storeNumber === number);
+      assert.equal(response.status, 200, path);
+      assert.ok(store, path);
+      assert.deepEqual(Object.keys(store!).sort(), [...PAGE_OFF_KEYS].sort(), path);
+      assert.equal(store!.pageEnabled, false, path);
+      assert.equal(store!.reviewUrl, null, path);
+      assert.equal(store!.websiteUrl, null, path);
+      const serialized = JSON.stringify(store);
+      assert.equal(serialized.includes('evil.example'), false, path);
+      assert.equal(serialized.includes(badReview), false, path);
+      assert.equal(serialized.includes(badWebsite), false, path);
+      assert.equal(serialized.includes('http://www.shiekh.com'), false, path);
+    }
+  });
+
+  it('O3: page-off city and state are length-capped on both routes', async () => {
+    const number = `90${stamp.slice(-6)}`;
+    const longCity = `City${'x'.repeat(90)}`;
+    const longState = `State${'y'.repeat(50)}`;
+    const id = await seedTestLocation({
+      storeNumber: number,
+      name: 'Long Address',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    await getTestDb().collection('locations').doc(id).set({
+      address: { street: '1 Cap St', city: longCity, state: longState, zip: '90001', country: 'US' },
+    }, { merge: true });
+    const now = new Date().toISOString();
+    await getTestDb().collection('storePages').doc(id).set({
+      reviewUrl: null,
+      websiteUrl: null,
+      pageEnabled: false,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: 'test',
+    });
+    for (const path of [`/api/public-profile/v1/stores/${number}`, '/api/public-profile/v1/stores']) {
+      const response = await api(path, PUBLIC);
+      const body = await response.json() as { stores: Array<{ address?: { city?: string; state?: string } }> };
+      const store = path.endsWith(number)
+        ? body.stores[0]
+        : body.stores.find((item) => (item as { storeNumber?: string }).storeNumber === number);
+      assert.equal(response.status, 200, path);
+      assert.ok(store, path);
+      assert.equal(store!.address?.city, longCity.slice(0, 80), path);
+      assert.equal(store!.address?.state, longState.slice(0, 40), path);
+      assert.equal((store!.address?.city || '').length, 80, path);
+      assert.equal((store!.address?.state || '').length, 40, path);
+    }
+  });
+
   it('missing bearer key does not return store data', async () => {
     for (const path of ['/api/public-profile/v1/stores', '/api/public-profile/v1/stores/48']) {
       const response = await fetch(`${API_BASE}${path}`);

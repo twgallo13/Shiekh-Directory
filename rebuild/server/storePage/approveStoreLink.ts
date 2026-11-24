@@ -32,7 +32,7 @@ export async function approveStoreLinkRequest(
   if (!pre.exists) return fail(404, 'not_found', 'Correction not found', requestId);
   const preData = pre.data() as Correction;
   if (preData.category !== 'store-link') {
-    return fail(400, 'invalid_category', 'Not a store page link request', requestId);
+    return fail(400, 'invalid_category', 'Not a store landing page link request', requestId);
   }
 
   let leaderInScope = true;
@@ -47,7 +47,7 @@ export async function approveStoreLinkRequest(
       if (!correctionSnap.exists) throw new HttpError(404, 'not_found', 'Correction not found');
       const correction = correctionSnap.data() as Correction;
       if (correction.category !== 'store-link') {
-        throw new HttpError(400, 'invalid_category', 'Not a store page link request');
+        throw new HttpError(400, 'invalid_category', 'Not a store landing page link request');
       }
       if (correction.status !== 'pending') {
         throw new HttpError(400, 'invalid_status', 'Correction has already been reviewed');
@@ -59,7 +59,7 @@ export async function approveStoreLinkRequest(
       }
       const keys = Object.keys(proposed);
       if (keys.length !== 1 || keys[0] !== 'reviewUrl') {
-        throw new HttpError(400, 'invalid_proposed_changes', 'A store page link request can only change the review link.');
+        throw new HttpError(400, 'invalid_proposed_changes', 'A store landing page link request can only change the review link.');
       }
       const url = validateReviewUrl(proposed.reviewUrl);
       if (!url.ok) throw new HttpError(400, 'invalid_review_url', url.message);
@@ -92,7 +92,7 @@ export async function approveStoreLinkRequest(
       const currentVersion = pageSnap.exists ? Number(pageSnap.data()?.version ?? 0) : 0;
       const submittedVersion = typeof correction.storePageVersion === 'number' ? correction.storePageVersion : 0;
       if (currentVersion !== submittedVersion) {
-        throw new HttpError(409, 'version_conflict', 'The store page changed after this request was filed.');
+        throw new HttpError(409, 'version_conflict', 'The store landing page changed after this request was filed.');
       }
 
       const now = new Date().toISOString();
@@ -135,7 +135,7 @@ export async function approveStoreLinkRequest(
         action: 'approve',
         entityType: 'store-page',
         entityId: correction.locationId,
-        entityName: `Store page ${correction.storeNumber}`,
+        entityName: `Store landing page ${correction.storeNumber}`,
         changes: [{
           field: 'reviewUrl',
           oldValue: pageSnap.exists ? (pageSnap.data()?.reviewUrl ?? null) : null,

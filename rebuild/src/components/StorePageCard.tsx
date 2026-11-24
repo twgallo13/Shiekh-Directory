@@ -85,7 +85,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
     try {
       const response = await apiGet(`/api/app/store-pages/${locationId}`);
       if (!response.ok) {
-        setLoadError('Couldn\'t load the store page.');
+        setLoadError('Couldn\'t load the store landing page.');
         setPage(null);
         return;
       }
@@ -93,7 +93,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
       setPage(data);
       setLoadError(null);
     } catch {
-      setLoadError('Couldn\'t load the store page.');
+      setLoadError('Couldn\'t load the store landing page.');
     }
   }, [locationId]);
 
@@ -112,7 +112,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setActionError(payload.error?.message || 'Couldn\'t save the store page.');
+        setActionError(payload.error?.message || 'Couldn\'t save the store landing page.');
         return;
       }
       setEditingReview(false);
@@ -120,7 +120,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
       setEditingMagento(false);
       await load();
     } catch {
-      setActionError('Couldn\'t save the store page.');
+      setActionError('Couldn\'t save the store landing page.');
     } finally {
       setSaving(false);
     }
@@ -137,13 +137,13 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setActionError(payload.error?.message || 'Couldn\'t update the store page.');
+        setActionError(payload.error?.message || 'Couldn\'t update the store landing page.');
         return;
       }
       setConfirmEnabled(null);
       await load();
     } catch {
-      setActionError('Couldn\'t update the store page.');
+      setActionError('Couldn\'t update the store landing page.');
     } finally {
       setSaving(false);
     }
@@ -184,7 +184,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 lg:p-6">
       <div className="flex items-center justify-between gap-3 mb-3">
-        <h3 className="font-semibold text-gray-900">Store page</h3>
+        <h3 className="font-semibold text-gray-900">Store landing page</h3>
         {page && (
           <span className={`text-sm font-medium ${page.pageEnabled ? 'text-green-700' : 'text-gray-600'}`}>
             {page.pageEnabled ? 'Live' : 'Off'}
@@ -205,11 +205,11 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
               onClick={() => setConfirmEnabled(!page.pageEnabled)}
               className="min-h-[44px] px-4 py-2 rounded-lg border border-gray-300 font-medium text-gray-900 hover:bg-gray-50"
             >
-              {page.pageEnabled ? 'Turn off the store page' : 'Turn on the store page'}
+              {page.pageEnabled ? 'Turn off the store landing page' : 'Turn on the store landing page'}
             </button>
           )}
           {authUser.role === 'Admin' && lifecycle !== 'active' && (
-            <p className="text-gray-600">Page on/off is only for active stores.</p>
+            <p className="text-gray-600">Only active stores can have the landing page turned on.</p>
           )}
 
           <div>
@@ -354,7 +354,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
                   id="store-website-url"
                   label="Store website URL"
                   error={websiteError || undefined}
-                  hint="This store's page on shiekh.com. This is not the Store page on qr.shiekh.store, and it is not the company Find-a-store page URL."
+                  hint="This store's page on shiekh.com. This is not the Store landing page on qr.shiekh.store, and it is not the company Find-a-store page URL."
                 >
                   <input
                     id="store-website-url"
@@ -453,7 +453,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
       <Dialog
         isOpen={confirmEnabled !== null}
         onClose={() => setConfirmEnabled(null)}
-        title={confirmEnabled ? 'Turn on the store page' : 'Turn off the store page'}
+        title={confirmEnabled ? 'Turn on the store landing page' : 'Turn off the store landing page'}
         size="sm"
         footer={
           <div className="flex gap-3">
@@ -468,8 +468,8 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
       >
         <p className="text-gray-600">
           {confirmEnabled
-            ? `Turn on the store page for #${storeNumber}? Customers who scan the code will see it within 15 minutes.`
-            : `Turn off the store page for #${storeNumber}? Customers who scan the code will stop seeing it within 15 minutes.`}
+            ? `Turn on the store landing page for #${storeNumber}? Customers who scan the code will see it within 15 minutes.`
+            : `Turn off the store landing page for #${storeNumber}? Customers who scan the code will stop seeing it within 15 minutes.`}
         </p>
       </Dialog>
 

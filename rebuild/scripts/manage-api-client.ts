@@ -67,7 +67,7 @@ Options:
   --name <name>    Client name (for create)
   --id <id>        Client ID (for revoke/rotate)
   --scopes <list>  Comma-separated scopes (for create, default: locations:read)
-  --rate-limit <n> Required for public-profile:read. Integer from 1 to 10000. Use 120 for the store page pilot.
+  --rate-limit <n> Required for public-profile:read. Integer from 1 to 10000. Use 120 for the store landing page key.
 
 Valid scopes: ${VALID_SCOPES.join(', ')}
 

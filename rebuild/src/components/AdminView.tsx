@@ -62,7 +62,7 @@ const SCOPES = [
   { id: 'staffing:read', label: 'Staffing (Read)' },
   { id: 'district-leadership:read', label: 'District Leadership (Read)' },
   { id: 'district-leadership:contacts:read', label: 'District Leadership Contacts (Read)' },
-  { id: 'public-profile:read', label: 'Public store page (Read)' },
+  { id: 'public-profile:read', label: 'Public store landing page (Read)' },
 ];
 
 export function AdminView() {
@@ -93,7 +93,7 @@ export function AdminView() {
                 Hours Templates
               </TabButton>
               <TabButton id="store-page-defaults" active={activeTab === 'store-page-defaults'} onClick={setActiveTab} icon={Lock} panelId="panel-store-page-defaults">
-                Store page defaults
+                Store landing page defaults
               </TabButton>
               <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
               {/* Group 2: Workflows */}
@@ -998,7 +998,7 @@ function ApiClientsTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
             <p className="text-sm text-gray-600">
               Configure rate limit for <strong>{editingRateLimit.client.name}</strong>
             </p>
-            <FormField id="rate-limit-value" label="Requests per minute" hint={editingRateLimit.client.scopes.includes('public-profile:read') ? '1 to 10000 requests per minute. This key cannot be unlimited. The store page pilot uses 120.' : 'Set to 0 for unlimited. Default is 60 requests/min.'}>
+            <FormField id="rate-limit-value" label="Requests per minute" hint={editingRateLimit.client.scopes.includes('public-profile:read') ? '1 to 10000 requests per minute. This key cannot be unlimited. The store landing page key uses 120.' : 'Set to 0 for unlimited. Default is 60 requests/min.'}>
               <input
                 id="rate-limit-value"
                 type="number"

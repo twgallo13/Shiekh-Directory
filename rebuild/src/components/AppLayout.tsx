@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { canApproveCorrections, getRoleDisplayName } from '../lib/permissions';
+import { isAdminPath } from './admin/adminSections';
 import { OfflineBanner } from './OfflineBanner';
 import { PwaUpdateBanner } from './PwaUpdateBanner';
 import { HeaderSearch } from './HeaderSearch';
@@ -79,6 +80,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     if (!el) return;
     const apply = () => {
       el.style.setProperty('--app-chrome-height', `${el.offsetHeight}px`);
+      // Also expose it page-wide so sticky page elements (e.g. the Admin menu) sit below the header and any banners.
+      document.documentElement.style.setProperty('--app-chrome-height', `${el.offsetHeight}px`);
     };
     apply();
     if (typeof ResizeObserver === 'undefined') return;
@@ -266,7 +269,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               {isAdmin && (
                 <NavLink
                   onClick={() => handleNavigation('/admin')}
-                  isActive={isActivePath('/admin')}
+                  isActive={isAdminPath(location.pathname)}
                 >
                   Admin
                 </NavLink>
@@ -501,7 +504,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                       icon={User}
                       label="Admin"
                       onClick={() => handleNavigation('/admin')}
-                      isActive={isActivePath('/admin')}
+                      isActive={isAdminPath(location.pathname)}
                     />
                   </>
                 )}

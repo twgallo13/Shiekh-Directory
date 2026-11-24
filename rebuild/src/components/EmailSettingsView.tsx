@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAdminUnsavedChanges } from './admin/AdminUnsavedChanges';
 import {
   Mail, Power, PowerOff, Send, Clock, Server, FileText,
   AlertTriangle, Check, RefreshCw, Loader2,
@@ -238,17 +239,8 @@ export function EmailSettingsView() {
     if (activeSection === 'outbox') fetchOutbox();
   }, [activeSection, fetchOutbox]);
   
-  // Unsaved changes guard
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (senderDirty || smtpDirty || scheduleDirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [senderDirty, smtpDirty, scheduleDirty]);
+  // Unsaved changes guard: asks before leaving this Admin section, and on refresh/close.
+  useAdminUnsavedChanges(senderDirty || smtpDirty || scheduleDirty);
 
   const toggleMaster = async (enable: boolean) => {
     if (!settings) return;
@@ -446,25 +438,26 @@ export function EmailSettingsView() {
         ))}
       </div>
 
-      {/* Section Navigation */}
-      <nav aria-label="Email settings sections">
-        <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-4" role="tablist">
+      {/* Section Navigation: wraps instead of scrolling sideways; full labels at every width. */}
+      <nav aria-label="Email setup sections">
+        <div className="flex flex-wrap gap-x-1 gap-y-1 border-b border-gray-200" role="tablist">
           {sections.map(section => (
             <button
               key={section.id}
+              id={`tab-${section.id}`}
+              type="button"
               onClick={() => setActiveSection(section.id)}
               role="tab"
               aria-selected={activeSection === section.id}
               aria-controls={`panel-${section.id}`}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
+              className={`flex items-center gap-2 px-3 py-2 -mb-px border-b-2 text-sm font-medium whitespace-nowrap transition-colors min-h-[44px] ${
                 activeSection === section.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'border-blue-600 text-blue-700'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
               }`}
             >
-              <section.icon className="w-4 h-4" aria-hidden="true" />
-              <span className="hidden sm:inline">{section.label}</span>
-              <span className="sm:hidden">{section.label.split(' ')[0]}</span>
+              <section.icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>{section.label}</span>
             </button>
           ))}
         </div>
@@ -691,7 +684,7 @@ export function EmailSettingsView() {
               </div>
 
               <p className="text-sm text-gray-600 mt-4 p-3 bg-blue-50 rounded-lg">
-                Reminder timing (lead days, max reminders, send time) is managed in Workflow Rules.
+                Reminder timing (lead days, max reminders, send time) is managed in Workflow rules.
               </p>
 
               <div className="pt-4 border-t border-gray-200">

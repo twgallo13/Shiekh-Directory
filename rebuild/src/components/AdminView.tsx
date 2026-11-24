@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { Users, Key, Settings, Plus, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Clock, Database, Play, Lock } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
+import { Link, Navigate, useLocation } from 'react-router-dom';
+import { Settings, Plus, ArrowLeft, Copy, Check, X, Loader2, AlertTriangle, Eye, EyeOff, Trash2, Upload, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw, ArrowRight, Mail, History, Play } from 'lucide-react';
 import { StorePageDefaultsTab } from './StorePageDefaultsTab';
 import { PUBLIC_PROFILE_RATE_LIMIT } from '../constants/storePage';
 import { useAuth } from '../context/AuthContext';
@@ -10,8 +10,12 @@ import { WorkflowRulesView } from './WorkflowRulesView';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { Dialog, FormField } from './Dialog';
 import { AccessDenied } from './AccessDenied';
+import { AdminNav } from './admin/AdminNav';
+import { AdminUnsavedChangesProvider, useAdminNavigate } from './admin/AdminUnsavedChanges';
+import {
+  ADMIN_WIDE_MIN_PX, DEFAULT_ADMIN_SECTION, adminSectionPath, findAdminSection, type AdminSectionId,
+} from './admin/adminSections';
 
-type TabId = 'users' | 'api-clients' | 'custom-fields' | 'import' | 'communications' | 'email' | 'workflow-rules' | 'audit-log' | 'hours-templates' | 'backups' | 'data-quality' | 'store-page-defaults';
 
 interface User {
   id: string;
@@ -66,148 +70,163 @@ const SCOPES = [
 ];
 
 export function AdminView() {
-  useDocumentTitle('Admin');
-  
-  const [activeTab, setActiveTab] = useState<TabId>('users');
   const { getIdToken, authUser } = useAuth();
+  const location = useLocation();
+  const isWide = useIsWideAdminLayout();
+  const sectionParam = parseAdminSectionParam(location.pathname);
+  const section = findAdminSection(sectionParam);
+  useDocumentTitle(section ? `${section.label} - Admin` : 'Admin');
 
+  // Access is unchanged: Admin only (the server also returns 403 for everyone else).
   if (authUser?.role !== 'Admin') {
     return <AccessDenied />;
   }
 
+  // Unknown /admin/<x> goes back to /admin.
+  if (sectionParam && !section) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  // Wide screens: /admin opens Users (same default as before). Phones keep /admin as the section list.
+  if (!section && isWide) {
+    return <Navigate to={adminSectionPath(DEFAULT_ADMIN_SECTION)} replace />;
+  }
+
+  return (
+    <AdminUnsavedChangesProvider>
+      <AdminLayout sectionId={section?.id} sectionLabel={section?.label} isWide={isWide} getIdToken={getIdToken} />
+    </AdminUnsavedChangesProvider>
+  );
+}
+
+function parseAdminSectionParam(pathname: string): string | undefined {
+  const match = pathname.match(/^\/admin\/([^/]+)\/?$/);
+  if (match) return decodeURIComponent(match[1]);
+  // Deeper unknown paths such as /admin/a/b are treated as unknown sections.
+  if (pathname.startsWith('/admin/')) return pathname.slice('/admin/'.length);
+  return undefined;
+}
+
+const WIDE_QUERY = `(min-width: ${ADMIN_WIDE_MIN_PX}px)`;
+
+function readIsWide(): boolean {
+  if (typeof window === 'undefined') return true;
+  if (typeof window.matchMedia === 'function') return window.matchMedia(WIDE_QUERY).matches;
+  return window.innerWidth >= ADMIN_WIDE_MIN_PX;
+}
+
+function subscribeIsWide(onChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  if (typeof window.matchMedia === 'function') {
+    const mql = window.matchMedia(WIDE_QUERY);
+    mql.addEventListener?.('change', onChange);
+    return () => mql.removeEventListener?.('change', onChange);
+  }
+  window.addEventListener('resize', onChange);
+  return () => window.removeEventListener('resize', onChange);
+}
+
+/** 1024px and wider = sidebar layout; below (including 768-1023px) = phone list + back button, matching Dynamic QR. */
+function useIsWideAdminLayout(): boolean {
+  return useSyncExternalStore(subscribeIsWide, readIsWide, () => true);
+}
+
+function AdminLayout({ sectionId, sectionLabel, isWide, getIdToken }: {
+  sectionId?: AdminSectionId;
+  sectionLabel?: string;
+  isWide: boolean;
+  getIdToken: () => Promise<string>;
+}) {
+  const adminNavigate = useAdminNavigate();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const previousSection = useRef<AdminSectionId | undefined>(sectionId);
+
+  // When the open section changes, move focus to its heading so screen readers announce where you are.
+  useEffect(() => {
+    if (sectionId && previousSection.current !== sectionId) {
+      headingRef.current?.focus();
+    }
+    previousSection.current = sectionId;
+  }, [sectionId]);
+
+  const showList = !isWide && !sectionId;
+
   return (
     <div className="bg-gray-50 min-h-[calc(100vh-56px)]">
-      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-bold text-gray-900">Admin</h1>
-          </div>
-          <div className="relative mt-3 -mb-px">
-            <div className="flex gap-1 overflow-x-auto scrollbar-hide" role="tablist" aria-label="Admin sections">
-              {/* Group 1: Stores */}
-              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Stores</span>
-              <TabButton id="data-quality" active={activeTab === 'data-quality'} onClick={setActiveTab} icon={AlertTriangle} panelId="panel-data-quality">
-                Data Quality
-              </TabButton>
-              <TabButton id="hours-templates" active={activeTab === 'hours-templates'} onClick={setActiveTab} icon={Clock} panelId="panel-hours-templates">
-                Hours Templates
-              </TabButton>
-              <TabButton id="store-page-defaults" active={activeTab === 'store-page-defaults'} onClick={setActiveTab} icon={Lock} panelId="panel-store-page-defaults">
-                Store landing page defaults
-              </TabButton>
-              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
-              {/* Group 2: Workflows */}
-              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Workflows</span>
-              <TabButton id="workflow-rules" active={activeTab === 'workflow-rules'} onClick={setActiveTab} icon={Settings} panelId="panel-workflow-rules">
-                Workflow Rules
-              </TabButton>
-              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
-              {/* Group 3: Email */}
-              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Email</span>
-              <TabButton id="email" active={activeTab === 'email'} onClick={setActiveTab} icon={Mail} panelId="panel-email">
-                Settings
-              </TabButton>
-              <TabButton id="communications" active={activeTab === 'communications'} onClick={setActiveTab} icon={Mail} panelId="panel-communications">
-                Send
-              </TabButton>
-              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
-              {/* Group 4: People & Access */}
-              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">Access</span>
-              <TabButton id="users" active={activeTab === 'users'} onClick={setActiveTab} icon={Users} panelId="panel-users">
-                Users
-              </TabButton>
-              <TabButton id="api-clients" active={activeTab === 'api-clients'} onClick={setActiveTab} icon={Key} panelId="panel-api-clients">
-                API Clients
-              </TabButton>
-              <span className="w-px bg-gray-200 mx-1 self-stretch" aria-hidden="true" />
-              {/* Group 5: System */}
-              <span className="flex items-center text-xs font-medium text-gray-500 uppercase tracking-wider pr-2 whitespace-nowrap">System</span>
-              <TabButton id="custom-fields" active={activeTab === 'custom-fields'} onClick={setActiveTab} icon={Settings} panelId="panel-custom-fields">
-                Custom Fields
-              </TabButton>
-              <TabButton id="import" active={activeTab === 'import'} onClick={setActiveTab} icon={Upload} panelId="panel-import">
-                Import
-              </TabButton>
-              <TabButton id="backups" active={activeTab === 'backups'} onClick={setActiveTab} icon={Database} panelId="panel-backups">
-                Backups
-              </TabButton>
-              <TabButton id="audit-log" active={activeTab === 'audit-log'} onClick={setActiveTab} icon={History} panelId="panel-audit-log">
-                Audit Log
-              </TabButton>
-            </div>
-            {/* Scroll hint - gradient fade on right */}
-            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white pointer-events-none sm:hidden" aria-hidden="true" />
-          </div>
-        </div>
-      </div>
-
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div id="panel-users" role="tabpanel" aria-labelledby="tab-users" hidden={activeTab !== 'users'}>
-          {activeTab === 'users' && <UsersTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-api-clients" role="tabpanel" aria-labelledby="tab-api-clients" hidden={activeTab !== 'api-clients'}>
-          {activeTab === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-custom-fields" role="tabpanel" aria-labelledby="tab-custom-fields" hidden={activeTab !== 'custom-fields'}>
-          {activeTab === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-import" role="tabpanel" aria-labelledby="tab-import" hidden={activeTab !== 'import'}>
-          {activeTab === 'import' && <ImportTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-communications" role="tabpanel" aria-labelledby="tab-communications" hidden={activeTab !== 'communications'}>
-          {activeTab === 'communications' && <CommunicationsTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-email" role="tabpanel" aria-labelledby="tab-email" hidden={activeTab !== 'email'}>
-          {activeTab === 'email' && <EmailSettingsView />}
-        </div>
-        <div id="panel-workflow-rules" role="tabpanel" aria-labelledby="tab-workflow-rules" hidden={activeTab !== 'workflow-rules'}>
-          {activeTab === 'workflow-rules' && <WorkflowRulesView />}
-        </div>
-        <div id="panel-audit-log" role="tabpanel" aria-labelledby="tab-audit-log" hidden={activeTab !== 'audit-log'}>
-          {activeTab === 'audit-log' && <AuditLogTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-hours-templates" role="tabpanel" aria-labelledby="tab-hours-templates" hidden={activeTab !== 'hours-templates'}>
-          {activeTab === 'hours-templates' && <HoursTemplatesTab />}
-        </div>
-        <div id="panel-store-page-defaults" role="tabpanel" aria-labelledby="tab-store-page-defaults" hidden={activeTab !== 'store-page-defaults'}>
-          {activeTab === 'store-page-defaults' && <StorePageDefaultsTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-backups" role="tabpanel" aria-labelledby="tab-backups" hidden={activeTab !== 'backups'}>
-          {activeTab === 'backups' && <BackupsTab getIdToken={getIdToken} />}
-        </div>
-        <div id="panel-data-quality" role="tabpanel" aria-labelledby="tab-data-quality" hidden={activeTab !== 'data-quality'}>
-          {activeTab === 'data-quality' && <DataQualityTab />}
-        </div>
+        <h1 className="text-xl font-bold text-gray-900">Admin</h1>
+
+        {showList ? (
+          <div className="mt-4" data-admin-layout="list">
+            <AdminNav variant="list" />
+          </div>
+        ) : (
+          <div
+            className={isWide ? 'mt-4 grid grid-cols-[15rem_minmax(0,1fr)] gap-8 items-start' : 'mt-2'}
+            data-admin-layout={isWide ? 'sidebar' : 'section'}
+          >
+            {isWide && (
+              <aside
+                className="sticky overflow-y-auto pb-4"
+                style={{
+                  top: 'calc(var(--app-chrome-height, 3.5rem) + 1rem)',
+                  maxHeight: 'calc(100dvh - var(--app-chrome-height, 3.5rem) - 2rem)',
+                }}
+              >
+                <AdminNav variant="sidebar" activeId={sectionId} />
+              </aside>
+            )}
+
+            <section aria-labelledby="admin-section-title" className="min-w-0">
+              {!isWide && (
+                <a
+                  href="/admin"
+                  onClick={(e) => {
+                    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    adminNavigate('/admin');
+                  }}
+                  className="inline-flex items-center gap-2 -ml-2 px-2 mb-2 min-h-[44px] rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-50"
+                  data-admin-back
+                >
+                  <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+                  Admin
+                </a>
+              )}
+              {/* Phones/tablets: visible section name under the back button (like Dynamic QR). Wide screens: the sidebar shows it, so the heading is for screen readers only. */}
+              <h2
+                id="admin-section-title"
+                ref={headingRef}
+                tabIndex={-1}
+                className={isWide ? 'sr-only' : 'text-lg font-semibold text-gray-900 mb-3 outline-none'}
+              >
+                {sectionLabel}
+              </h2>
+              {sectionId && <AdminSectionBody sectionId={sectionId} getIdToken={getIdToken} />}
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function TabButton({ id, active, onClick, icon: Icon, children, panelId }: {
-  id: TabId;
-  active: boolean;
-  onClick: (id: TabId) => void;
-  icon: typeof Users;
-  children: React.ReactNode;
-  panelId: string;
-}) {
+function AdminSectionBody({ sectionId, getIdToken }: { sectionId: AdminSectionId; getIdToken: () => Promise<string> }) {
   return (
-    <button
-      id={`tab-${id}`}
-      role="tab"
-      aria-selected={active}
-      aria-controls={panelId}
-      tabIndex={active ? 0 : -1}
-      onClick={() => onClick(id)}
-      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors min-h-[44px] ${
-        active
-          ? 'text-blue-700 border-blue-600 bg-blue-50'
-          : 'text-gray-700 border-transparent hover:text-gray-900 hover:bg-gray-100'
-      }`}
-    >
-      <Icon className="w-4 h-4" aria-hidden="true" />
-      {children}
-    </button>
+    <div id={`panel-${sectionId}`} data-admin-section={sectionId}>
+      {sectionId === 'users' && <UsersTab getIdToken={getIdToken} />}
+      {sectionId === 'api-clients' && <ApiClientsTab getIdToken={getIdToken} />}
+      {sectionId === 'custom-fields' && <CustomFieldsTab getIdToken={getIdToken} />}
+      {sectionId === 'import' && <ImportTab getIdToken={getIdToken} />}
+      {sectionId === 'communications' && <CommunicationsTab getIdToken={getIdToken} />}
+      {sectionId === 'email' && <EmailSettingsView />}
+      {sectionId === 'workflow-rules' && <WorkflowRulesView />}
+      {sectionId === 'audit-log' && <AuditLogTab getIdToken={getIdToken} />}
+      {sectionId === 'hours-templates' && <HoursTemplatesTab />}
+      {sectionId === 'store-page-defaults' && <StorePageDefaultsTab getIdToken={getIdToken} />}
+      {sectionId === 'backups' && <BackupsTab getIdToken={getIdToken} />}
+      {sectionId === 'data-quality' && <DataQualityTab />}
+    </div>
   );
 }
 
@@ -1884,7 +1903,7 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <Mail className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900">User Invitations</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Invitations</h2>
           </div>
           <button
             onClick={() => setShowInviteModal(true)}
@@ -2003,7 +2022,7 @@ function CommunicationsTab({ getIdToken }: { getIdToken: () => Promise<string> }
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           <Settings className="w-5 h-5 text-gray-700" />
-          <h2 className="text-lg font-semibold text-gray-900">Email Sending Settings</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Email sending mode</h2>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -2493,7 +2512,7 @@ function AuditLogTab({ getIdToken }: { getIdToken: () => Promise<string> }) {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Audit Log</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Change history</h2>
           <p className="text-sm text-gray-700">Track who made changes, when, and what changed.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

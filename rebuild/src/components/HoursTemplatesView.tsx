@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useAdminUnsavedChanges } from './admin/AdminUnsavedChanges';
 import { useAuth } from '../context/AuthContext';
 import type { HoursTemplate, StandardHours, DayOfWeek, District, Region, LocationKind } from '../types';
 
@@ -60,12 +61,15 @@ export function HoursTemplatesView() {
   const [selectedTemplate, setSelectedTemplate] = useState<HoursTemplate | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  // Snapshot of the form when the editor opened, so we only warn when something actually changed.
+  const [editBaseline, setEditBaseline] = useState<string | null>(null);
   const [editData, setEditData] = useState<{ name: string; description: string; hours: StandardHours }>({
     name: '',
     description: '',
     hours: createEmptyHours(),
   });
   const [saving, setSaving] = useState(false);
+  useAdminUnsavedChanges(isEditing && editBaseline !== null && JSON.stringify(editData) !== editBaseline);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Bulk apply state
@@ -128,11 +132,13 @@ export function HoursTemplatesView() {
     setIsCreating(true);
     setIsEditing(true);
     setSelectedTemplate(null);
-    setEditData({
+    const blank = {
       name: '',
       description: '',
       hours: createEmptyHours(),
-    });
+    };
+    setEditData(blank);
+    setEditBaseline(JSON.stringify(blank));
     setActionError(null);
   };
 
@@ -140,11 +146,13 @@ export function HoursTemplatesView() {
     setSelectedTemplate(template);
     setIsEditing(true);
     setIsCreating(false);
-    setEditData({
+    const current = {
       name: template.name,
       description: template.description || '',
       hours: normalizeHours(template.hours),
-    });
+    };
+    setEditData(current);
+    setEditBaseline(JSON.stringify(current));
     setActionError(null);
   };
 
@@ -713,7 +721,7 @@ export function HoursTemplatesView() {
         flexWrap: 'wrap',
         gap: '1rem',
       }}>
-        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>Hours Templates</h2>
+        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>Hours templates</h2>
         <button
           onClick={handleCreate}
           style={{

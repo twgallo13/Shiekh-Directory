@@ -16,6 +16,7 @@ import {
   readDefaultStoreImageUrl,
   readFindStoreUrl,
   validateReviewUrl,
+  validateWebsiteUrl,
 } from '../../src/lib/storePageValidation';
 
 const DAYS: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -24,6 +25,7 @@ const NOT_FOUND = { code: 'store_not_found', message: 'Store not found.' };
 
 interface PageRecord {
   reviewUrl?: string | null;
+  websiteUrl?: string | null;
   magentoStoreId?: string | null;
   pageEnabled?: boolean;
   updatedAt?: string;
@@ -40,16 +42,30 @@ export function buildPublicStore(
   closure: Closure | null,
 ): Record<string, unknown> {
   const storeNumber = cleanText(location.storeNumber, 20);
+  const name = cleanText(location.name, 100);
   if (location.lifecycle === 'retired') {
-    return { storeNumber, status: 'Retired' };
+    return { storeNumber, status: 'Retired', name };
   }
   const status = closure ? 'Temporarily Closed' : 'Active';
+  const review = validateReviewUrl(page?.reviewUrl ?? null);
+  const website = validateWebsiteUrl(page?.websiteUrl ?? null);
   if (page?.pageEnabled !== true) {
-    return { storeNumber, status, pageEnabled: false };
+    const offAddress = location.address || { city: '', state: '' };
+    return {
+      storeNumber,
+      status,
+      pageEnabled: false,
+      name,
+      address: {
+        city: cleanText(offAddress.city, 80),
+        state: cleanText(offAddress.state, 40),
+      },
+      reviewUrl: review.ok ? review.href : null,
+      websiteUrl: website.ok ? website.href : null,
+    };
   }
 
   const address = location.address || { street: '', city: '', state: '', zip: '', country: 'US' };
-  const review = validateReviewUrl(page?.reviewUrl ?? null);
   const magento = parseMagentoStoreId(page?.magentoStoreId ?? null);
   const phone = location.phonePublic === true ? cleanText(location.mainPhone, 20) : '';
   const body: Record<string, unknown> = {
@@ -57,7 +73,7 @@ export function buildPublicStore(
     status,
     pageEnabled: true,
     updatedAt: typeof page?.updatedAt === 'string' ? page.updatedAt : null,
-    name: cleanText(location.name, 100),
+    name,
     mallOrCenterName: cleanText(location.mallOrCenterName, 100),
     address: {
       street: cleanText(address.street, 120),
@@ -71,6 +87,7 @@ export function buildPublicStore(
     hours: mapHours(location.standardHours, exceptions),
     temporaryClosure: mapClosure(closure),
     reviewUrl: review.ok ? review.href : null,
+    websiteUrl: website.ok ? website.href : null,
     magentoStoreId: magento.ok ? magento.id : null,
   };
   return body;

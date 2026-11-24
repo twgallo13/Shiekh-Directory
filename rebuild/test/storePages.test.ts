@@ -185,6 +185,18 @@ describe('store pages app API', () => {
       body: JSON.stringify({ reviewUrl: GOOD_REVIEW_URL, expectedVersion: 0 }),
     });
     assert.equal(storePatchOther.status, 403);
+    for (const [name, token] of [
+      ['viewer', 'test-token-viewer'],
+      ['store', `test-token-${storeUid}`],
+      ['leader', `test-token-${leaderUid}`],
+      ['session', sessionToken],
+    ] as Array<[string, string]>) {
+      const denied = await api(`/api/app/store-pages/${ownId}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ websiteUrl: 'https://www.shiekh.com/stores/own', expectedVersion: 0 }),
+      });
+      assert.equal(denied.status, 403, `${name} websiteUrl`);
+    }
 
     const before = await locationStamp(ownId);
     const stewardPatch = await api(`/api/app/store-pages/${ownId}`, 'test-token-steward', {
@@ -285,7 +297,73 @@ describe('store pages app API', () => {
     }
   });
 
+  it('T-D1c: websiteUrl rejects http and other hosts, Steward edits are audited, Viewer/Leader/Store get 403', async () => {
+    const id = await seedTestLocation({
+      storeNumber: `91${suffix.slice(-3)}`,
+      name: 'Website Url Store',
+      kind: 'store',
+      lifecycle: 'active',
+    });
+    const rejected = [
+      'http://www.shiekh.com/stores/48',
+      'javascript:alert(1)',
+      'https://qr.shiekh.store/s/48',
+      'https://directory.shiekh.store/',
+      'https://stores.shiekh.com/48',
+      'https://google.com/',
+      'https://user@www.shiekh.com/stores/48',
+      'https://www.shiekh.com:8443/stores/48',
+      'https://www.shiekh.com./stores/48',
+      'https://www.shiekh.com/stores/48\t',
+    ];
+    for (const websiteUrl of rejected) {
+      const response = await api(`/api/app/store-pages/${id}`, 'test-token-steward', {
+        method: 'PATCH',
+        body: JSON.stringify({ websiteUrl, expectedVersion: 0 }),
+      });
+      assert.equal(response.status, 400, websiteUrl);
+      const body = await response.json() as { error?: { code?: string } };
+      assert.equal(body.error?.code, 'invalid_website_url', websiteUrl);
+      const page = await getTestDb().collection('storePages').doc(id).get();
+      assert.equal(page.exists, false);
+    }
+
+    const good = 'https://www.shiekh.com/stores/48';
+    const steward = await api(`/api/app/store-pages/${id}`, 'test-token-steward', {
+      method: 'PATCH',
+      body: JSON.stringify({ websiteUrl: good, expectedVersion: 0 }),
+    });
+    assert.equal(steward.status, 200);
+    const saved = await getTestDb().collection('storePages').doc(id).get();
+    assert.equal(saved.data()?.websiteUrl, 'https://www.shiekh.com/stores/48');
+    const audits = await getTestDb().collection('auditLog').where('entityId', '==', id).get();
+    const websiteAudits = audits.docs.filter((doc) => {
+      const changes = doc.data().changes as Array<{ field?: string; newValue?: string }> | undefined;
+      return doc.data().entityType === 'store-page' && changes?.some((change) => change.field === 'websiteUrl' && change.newValue === good);
+    });
+    assert.equal(websiteAudits.length, 1);
+    assert.equal(websiteAudits[0].data().userRole, 'Steward');
+
+    const version = saved.data()?.version ?? 1;
+    for (const [name, token] of [
+      ['viewer', 'test-token-viewer'],
+      ['leader', `test-token-${leaderUid}`],
+      ['store', `test-token-${storeUid}`],
+      ['session', sessionToken],
+    ] as Array<[string, string]>) {
+      const denied = await api(`/api/app/store-pages/${id}`, token, {
+        method: 'PATCH',
+        body: JSON.stringify({ websiteUrl: 'https://shiekh.com/stores/48', expectedVersion: version }),
+      });
+      assert.equal(denied.status, 403, name);
+    }
+    const afterForbidden = await getTestDb().collection('storePages').doc(id).get();
+    assert.equal(afterForbidden.data()?.websiteUrl, good);
+    assert.equal(afterForbidden.data()?.version, version);
+  });
+
   it('magento_unique_concurrent', async () => {
+
     const left = await seedTestLocation({
       storeNumber: `86${suffix.slice(-3)}`,
       name: 'Magento A',
@@ -499,8 +577,20 @@ describe('store pages app API', () => {
       assert.equal(listedBody.defaultStoreImageUrl, defaultStoreImageUrl);
       const offStore = listedBody.stores.find((store) => store.storeNumber === offNumber);
       const retiredStore = listedBody.stores.find((store) => store.storeNumber === retiredNumber);
-      assert.deepEqual(offStore, { storeNumber: offNumber, status: 'Active', pageEnabled: false });
-      assert.deepEqual(retiredStore, { storeNumber: retiredNumber, status: 'Retired' });
+      assert.deepEqual(offStore, {
+        storeNumber: offNumber,
+        status: 'Active',
+        pageEnabled: false,
+        name: 'Defaults Off',
+        address: { city: 'Test City', state: 'CA' },
+        reviewUrl: 'https://g.page/r/defaults-off/review',
+        websiteUrl: null,
+      });
+      assert.deepEqual(retiredStore, {
+        storeNumber: retiredNumber,
+        status: 'Retired',
+        name: 'Defaults Retired',
+      });
 
       const cleared = await api('/api/app/admin/store-page-defaults', 'test-token-admin', {
         method: 'PUT',
@@ -701,7 +791,7 @@ describe('store pages app API', () => {
     }
   });
 
-  it('percent-encoded links past 2048 are rejected for review, tile, and find-a-store urls', async () => {
+  it('percent-encoded links past 2048 are rejected for review, website, tile, and find-a-store urls', async () => {
     const id = await seedTestLocation({
       storeNumber: `95${suffix.slice(-4)}`,
       name: 'Long Link',
@@ -714,6 +804,13 @@ describe('store pages app API', () => {
     });
     assert.equal(review.status, 400);
     assert.equal((await getTestDb().collection('storePages').doc(id).get()).data()?.reviewUrl, undefined);
+
+    const website = await api(`/api/app/store-pages/${id}`, 'test-token-steward', {
+      method: 'PATCH',
+      body: JSON.stringify({ websiteUrl: encodedPast2048('https://www.shiekh.com/'), expectedVersion: 0 }),
+    });
+    assert.equal(website.status, 400);
+    assert.equal((await getTestDb().collection('storePages').doc(id).get()).data()?.websiteUrl, undefined);
 
     const tiles = {
       ...EMPTY_STORE_PAGE_TILES,

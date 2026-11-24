@@ -488,7 +488,7 @@ export const API_VERSIONS: ApiVersion[] = [
         method: 'GET',
         path: '/api/public-profile/v1/stores',
         summary: 'List public store pages',
-        description: 'Active and retired stores. Planned stores are omitted. Page off and retired stores return a short record. companyTiles is top-level and lists only saved https company links, in order: app (Get the app, order 3, hidden until an iOS or Android URL is saved), rewards (Legacy rewards, 4), instagram (Instagram, 5), launch (Launch Calendar, 6), card (Sunbit card, 7), returns (Return policy, 8). The shop tile is not returned. findStoreUrl (shiekh.com, www.shiekh.com, or qr.shiekh.store) and defaultStoreImageUrl (qr.shiekh.store only) sit next to companyTiles. Each is omitted when unset or when the stored value fails the https and host check. If no weekly hours are saved, hours is null. When hours is present, weekly always has monday through sunday. A missing or null day is { closed: false, intervals: [], unknown: true }. A day saved as closed is { closed: true, intervals: [] } and omits unknown. Known open days also omit unknown. Times are 24-hour HH:MM. Exception type is holiday or special.',
+        description: 'Active and retired stores. Planned stores are omitted. A page-off store that is not retired returns storeNumber, status, pageEnabled false, name, address city and state, reviewUrl, and websiteUrl. A retired store returns storeNumber, status, and name only. companyTiles is top-level and lists only saved https company links, in order: app (Get the app, order 3, hidden until an iOS or Android URL is saved), rewards (Legacy rewards, 4), instagram (Instagram, 5), launch (Launch Calendar, 6), card (Sunbit card, 7), returns (Return policy, 8). The shop tile is not returned. findStoreUrl (shiekh.com, www.shiekh.com, or qr.shiekh.store) and defaultStoreImageUrl (qr.shiekh.store only) sit next to companyTiles. Each is omitted when unset or when the stored value fails the https and host check. If no weekly hours are saved, hours is null. When hours is present, weekly always has monday through sunday. A missing or null day is { closed: false, intervals: [], unknown: true }. A day saved as closed is { closed: true, intervals: [] } and omits unknown. Known open days also omit unknown. Times are 24-hour HH:MM. Exception type is holiday or special.',
         scope: 'public-profile:read',
         responseExample: `{
   "contractVersion": "public-profile.v1",
@@ -510,6 +510,7 @@ export const API_VERSIONS: ApiVersion[] = [
       "hours": { "weekly": { "monday": { "closed": false, "intervals": [{ "open": "10:00", "close": "20:00" }] } }, "exceptions": [] },
       "temporaryClosure": null,
       "reviewUrl": "https://g.page/r/example/review",
+      "websiteUrl": "https://www.shiekh.com/stores/inland-center",
       "magentoStoreId": "4207"
     }
   ]
@@ -519,7 +520,7 @@ export const API_VERSIONS: ApiVersion[] = [
         method: 'GET',
         path: '/api/public-profile/v1/stores/:storeNumber',
         summary: 'One public store page',
-        description: 'storeNumber is digits only, including leading zeros. Unknown, planned, and non-store numbers return the same 404.',
+        description: 'storeNumber is digits only, including leading zeros. Unknown, planned, and non-store numbers return the same 404. Page-off and retired shapes match the list route.',
         scope: 'public-profile:read',
         parameters: [
           { name: 'storeNumber', type: 'string', required: true, description: 'Digits only, leading zeros kept' },
@@ -528,7 +529,15 @@ export const API_VERSIONS: ApiVersion[] = [
   "contractVersion": "public-profile.v1",
   "generatedAt": "2026-11-21T00:00:00.000Z",
   "companyTiles": [],
-  "stores": [ { "storeNumber": "48", "status": "Active", "pageEnabled": false } ]
+  "stores": [ {
+    "storeNumber": "48",
+    "status": "Active",
+    "pageEnabled": false,
+    "name": "Inland Center",
+    "address": { "city": "San Bernardino", "state": "CA" },
+    "reviewUrl": "https://g.page/r/example/review",
+    "websiteUrl": "https://www.shiekh.com/stores/inland-center"
+  } ]
 }`,
       },
     ],

@@ -14,6 +14,11 @@ const REVIEW_HOSTS = new Set([
   'maps.app.goo.gl',
 ]);
 
+const WEBSITE_HOSTS = new Set([
+  'shiekh.com',
+  'www.shiekh.com',
+]);
+
 const COMPANY_HOSTS = new Set([
   'shiekh.com',
   'www.shiekh.com',
@@ -182,6 +187,20 @@ export function validateReviewUrl(raw: unknown): UrlResult {
   }
   return parsed;
 }
+
+/** Empty becomes null. Otherwise an https store website link on shiekh.com or www.shiekh.com. */
+export function validateWebsiteUrl(raw: unknown): UrlResult {
+  if (raw === null || raw === undefined) return { ok: true, href: null };
+  if (typeof raw !== 'string') return { ok: false, message: 'Enter a store website URL.' };
+  if (raw.trim() === '') return { ok: true, href: null };
+  const inspected = inspectHttps(raw, MAX_URL_LENGTH);
+  if (!inspected.ok) return inspected;
+  if (!hostAllowed(inspected.url.hostname, WEBSITE_HOSTS)) {
+    return { ok: false, message: 'Use an https link on shiekh.com or www.shiekh.com.' };
+  }
+  return { ok: true, href: inspected.url.href };
+}
+
 
 /** An Admin-saved https link on an allowlisted host. Anything else is not a public tile url. */
 export function savedCompanyTileUrl(key: CompanyTileKey, row: unknown): string | null {

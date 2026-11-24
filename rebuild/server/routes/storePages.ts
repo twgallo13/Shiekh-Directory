@@ -19,6 +19,7 @@ import {
   validateFindStoreUrl,
   validateReviewUrl,
   validateStorePageTiles,
+  validateWebsiteUrl,
 } from '../../src/lib/storePageValidation';
 import { HttpError, isAlreadyExists } from '../storePage/httpError';
 
@@ -26,6 +27,7 @@ const MAGENTO_COLLECTION = 'storePageMagentoIds';
 
 interface StorePageDoc {
   reviewUrl: string | null;
+  websiteUrl: string | null;
   magentoStoreId: string | null;
   pageEnabled: boolean;
   version: number;
@@ -141,6 +143,7 @@ export function createStorePagesRouter(db: Firestore): Router {
       return res.json({
         data: {
           reviewUrl: page?.reviewUrl ?? null,
+          websiteUrl: page?.websiteUrl ?? null,
           magentoStoreId: privileged ? magentoStoreId : null,
           shopTileVisible: !!magentoStoreId,
           pageEnabled: page?.pageEnabled === true,
@@ -183,14 +186,20 @@ export function createStorePagesRouter(db: Firestore): Router {
         return errorBody(res, 400, 'expected_version_required', 'expectedVersion is required');
       }
       const body = req.body ?? {};
-      if (body.reviewUrl === undefined && body.magentoStoreId === undefined) {
-        return errorBody(res, 400, 'no_changes', 'Send a review link or a Magento store ID');
+      if (body.reviewUrl === undefined && body.websiteUrl === undefined && body.magentoStoreId === undefined) {
+        return errorBody(res, 400, 'no_changes', 'Send a review link, a store website URL, or a Magento store ID');
       }
       let reviewHref: string | null | undefined;
       if (body.reviewUrl !== undefined) {
         const parsed = validateReviewUrl(body.reviewUrl);
         if (!parsed.ok) return errorBody(res, 400, 'invalid_review_url', parsed.message);
         reviewHref = parsed.href;
+      }
+      let websiteHref: string | null | undefined;
+      if (body.websiteUrl !== undefined) {
+        const parsed = validateWebsiteUrl(body.websiteUrl);
+        if (!parsed.ok) return errorBody(res, 400, 'invalid_website_url', parsed.message);
+        websiteHref = parsed.href;
       }
       let magentoId: string | null | undefined;
       if (body.magentoStoreId !== undefined) {
@@ -209,6 +218,7 @@ export function createStorePagesRouter(db: Firestore): Router {
         authUser,
         entityName: `Store page ${location.storeNumber}`,
         reviewHref,
+        websiteHref,
         magentoId,
       });
       return res.json({ data: page });
@@ -303,6 +313,7 @@ interface WriteInput {
   authUser: AuthUser;
   entityName: string;
   reviewHref?: string | null;
+  websiteHref?: string | null;
   magentoId?: string | null;
 }
 
@@ -337,8 +348,10 @@ async function writeStorePage(db: Firestore, input: WriteInput): Promise<StorePa
     const now = new Date().toISOString();
     const nextVersion = currentVersion + 1;
     const reviewUrl = input.reviewHref !== undefined ? input.reviewHref : (current?.reviewUrl ?? null);
+    const websiteUrl = input.websiteHref !== undefined ? input.websiteHref : (current?.websiteUrl ?? null);
     const next: StorePageDoc = {
       reviewUrl,
+      websiteUrl,
       magentoStoreId: nextMagento,
       pageEnabled: current?.pageEnabled === true,
       version: nextVersion,
@@ -350,6 +363,7 @@ async function writeStorePage(db: Firestore, input: WriteInput): Promise<StorePa
     } else {
       tx.update(pageRef, {
         reviewUrl,
+        websiteUrl,
         magentoStoreId: nextMagento,
         pageEnabled: next.pageEnabled,
         version: nextVersion,
@@ -366,6 +380,9 @@ async function writeStorePage(db: Firestore, input: WriteInput): Promise<StorePa
     const changes: AuditLogEntry['changes'] = [];
     if (input.reviewHref !== undefined) {
       changes.push({ field: 'reviewUrl', oldValue: current?.reviewUrl ?? null, newValue: input.reviewHref });
+    }
+    if (input.websiteHref !== undefined) {
+      changes.push({ field: 'websiteUrl', oldValue: current?.websiteUrl ?? null, newValue: input.websiteHref });
     }
     if (input.magentoId !== undefined) {
       changes.push({ field: 'magentoStoreId', oldValue: oldMagento, newValue: nextMagento });

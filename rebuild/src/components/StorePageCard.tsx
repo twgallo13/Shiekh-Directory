@@ -5,7 +5,7 @@ import type { AuthUser } from '../types';
 import { apiGet, apiPatch, apiPost } from '../lib/api';
 import { Dialog, FormField } from './Dialog';
 import { storePageUrl } from '../constants/storePage';
-import { validateReviewUrl, parseMagentoStoreId } from '../lib/storePageValidation';
+import { validateReviewUrl, validateWebsiteUrl, parseMagentoStoreId } from '../lib/storePageValidation';
 
 interface StorePageTile {
   key: string;
@@ -25,6 +25,7 @@ interface PendingRequest {
 
 interface StorePageData {
   reviewUrl: string | null;
+  websiteUrl: string | null;
   magentoStoreId: string | null;
   shopTileVisible: boolean;
   pageEnabled: boolean;
@@ -65,6 +66,9 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
   const [editingReview, setEditingReview] = useState(false);
   const [reviewDraft, setReviewDraft] = useState('');
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [editingWebsite, setEditingWebsite] = useState(false);
+  const [websiteDraft, setWebsiteDraft] = useState('');
+  const [websiteError, setWebsiteError] = useState<string | null>(null);
   const [editingMagento, setEditingMagento] = useState(false);
   const [magentoDraft, setMagentoDraft] = useState('');
   const [magentoError, setMagentoError] = useState<string | null>(null);
@@ -112,6 +116,7 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
         return;
       }
       setEditingReview(false);
+      setEditingWebsite(false);
       setEditingMagento(false);
       await load();
     } catch {
@@ -307,6 +312,63 @@ export function StorePageCard({ locationId, storeNumber, lifecycle, authUser }: 
                   My Requests
                 </Link>
               </p>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium text-gray-900">Store website URL</p>
+              {privileged && !editingWebsite && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebsiteDraft(page.websiteUrl || '');
+                    setWebsiteError(null);
+                    setEditingWebsite(true);
+                  }}
+                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-blue-700"
+                  aria-label="Edit store website URL"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {!editingWebsite && (
+              <p className="break-all text-gray-700">{page.websiteUrl || 'Not set'}</p>
+            )}
+            {editingWebsite && (
+              <form
+                className="space-y-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const parsed = validateWebsiteUrl(websiteDraft);
+                  if (!parsed.ok) {
+                    setWebsiteError(parsed.message);
+                    return;
+                  }
+                  setWebsiteError(null);
+                  void savePatch({ websiteUrl: websiteDraft });
+                }}
+              >
+                <FormField
+                  id="store-website-url"
+                  label="Store website URL"
+                  error={websiteError || undefined}
+                  hint="This store's page on shiekh.com. This is not the Store page on qr.shiekh.store, and it is not the company Find-a-store page URL."
+                >
+                  <input
+                    id="store-website-url"
+                    value={websiteDraft}
+                    onChange={(event) => setWebsiteDraft(event.target.value)}
+                    aria-invalid={!!websiteError}
+                    aria-describedby={websiteError ? 'store-website-url-error' : undefined}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
+                  />
+                </FormField>
+                <button type="submit" disabled={saving} className="min-h-[44px] px-4 rounded-lg bg-blue-600 text-white font-medium">
+                  Save store website URL
+                </button>
+              </form>
             )}
           </div>
 

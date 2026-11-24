@@ -82,6 +82,7 @@ function locationFixture() {
 function pageFixture(pageEnabled = false) {
   return {
     reviewUrl: null,
+    websiteUrl: null,
     magentoStoreId: '4207',
     shopTileVisible: true,
     pageEnabled,
@@ -250,5 +251,33 @@ describe('store page screens', () => {
     expect((disabled as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open page' })).toBeNull();
     expect(screen.getByText('Page is off')).toBeTruthy();
+  });
+
+  it('lets a Steward edit the Store website URL and hides the control from a Leader', async () => {
+    api.apiGet.mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: pageFixture(true) }) });
+    const steward: AuthUser = { uid: 'steward', email: 'steward@test.com', role: 'Steward', displayName: 'Steward' };
+    const { unmount } = render(
+      <MemoryRouter>
+        <StorePageCard locationId="loc-1" storeNumber="48" lifecycle="active" authUser={steward} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Store website URL')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit store website URL' }));
+    expect(screen.getByLabelText('Store website URL')).toBeTruthy();
+    expect(screen.getByText("This store's page on shiekh.com. This is not the Store page on qr.shiekh.store, and it is not the company Find-a-store page URL.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Store website URL'), { target: { value: 'http://www.shiekh.com/stores/48' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save store website URL' }));
+    expect(screen.getByText('Link must start with https.')).toBeTruthy();
+    expect(api.apiPatch).not.toHaveBeenCalled();
+    unmount();
+
+    const leader: AuthUser = { uid: 'leader', email: 'leader@test.com', role: 'Leader', displayName: 'Leader' };
+    render(
+      <MemoryRouter>
+        <StorePageCard locationId="loc-1" storeNumber="48" lifecycle="active" authUser={leader} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Store website URL')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit store website URL' })).toBeNull();
   });
 });
